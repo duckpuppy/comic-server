@@ -1,0 +1,205 @@
+# Comic Server - Claude Code Guide
+
+This guide helps Claude Code instances work effectively in the comic-server repository.
+
+## Project Overview
+
+**comic-server** is a headless standalone wireless sync server for ComicRack Android/iOS clients, written in Go. It implements the ComicRack wireless synchronization protocol to allow devices to sync comic books without requiring the full ComicRack desktop application.
+
+This project is housed within the [ComicRackCE](https://github.com/maforget/ComicRackCE) repository for reference purposes but is a completely separate project with its own git repository.
+
+## Important Rules
+
+⚠️ **CRITICAL**: This is a separate project from ComicRackCE.
+- **DO NOT** modify any files in the parent ComicRackCE directory
+- **DO NOT** commit changes to the parent ComicRackCE repository
+- All work should be confined to the `comic-server/` directory
+
+## Quick Start
+
+### Prerequisites
+- [mise](https://mise.jdx.dev) for tool version management
+- Go 1.25.1 (managed by mise)
+- just task runner (managed by mise)
+
+### Setup
+```bash
+# Install tools
+mise install
+
+# Build and test
+just dev
+
+# Run the server
+just run-dev  # Runs with production tablet ignored
+```
+
+### Common Commands
+```bash
+just --list          # Show all available tasks
+just build           # Build the binary
+just test            # Run all tests
+just test-coverage   # Generate coverage report
+just run-dev         # Run with production device ignored
+just lint            # Format and lint code
+just ci              # Run all checks (lint + test + build)
+```
+
+## Project Structure
+
+```
+comic-server/
+├── cmd/                    # CLI commands (Cobra framework)
+│   ├── root.go            # Root command
+│   ├── server.go          # Server command (device discovery & registry)
+│   ├── discover.go        # Discovery command
+│   └── version.go         # Version command
+├── internal/              # Internal packages (not importable)
+│   ├── device/           # Device discovery and management
+│   │   ├── discovery.go  # UDP multicast listener
+│   │   ├── info.go       # Device info parsing (INI format)
+│   │   └── registry.go   # Device tracking and validation
+│   └── protocol/         # Binary protocol implementation
+│       ├── protocol.go   # Encoding/decoding (big-endian)
+│       └── client.go     # TCP client for device communication
+├── main.go               # Application entry point
+├── go.mod                # Go module definition
+├── go.sum                # Dependency checksums
+├── .mise.toml            # Tool version management
+├── justfile              # Task definitions
+├── .gitignore            # Git ignore patterns
+└── WIRELESS_SYNC_PROTOCOL.md  # Protocol specification
+```
+
+## Architecture
+
+### Communication Protocol
+- **Discovery**: UDP multicast on 224.34.123.90:7615
+  - Devices broadcast: `ComicRack[Variant]:{device_id}[:Sync]`
+  - Variants: `ComicRack`, `ComicRackAndroid`, `ComicRackiOS`
+
+- **Device Communication**: TCP on port 7614
+  - Binary protocol with big-endian encoding
+  - Commands: ReadFile, WriteFile, FileExists, DeleteFile, etc.
+
+- **Server Control**: TCP on port 7620+
+
+### Binary Protocol Types
+- `INT`: 4-byte signed integer (big-endian)
+- `LONG`: 8-byte signed integer (big-endian)
+- `STRING`: INT(length) + UTF-8 bytes
+- `BOOL`: 1-byte (0 or 1)
+- `DATA`: INT(length) + raw bytes
+
+### Device Validation
+- Devices send `comicrack.ini` with metadata
+- Server validates device hash: SHA1(Model + Manufacturer + Serial + Edition + Version)
+- Registry tracks discovered devices with last-seen timestamps
+
+## Development Workflow
+
+### Making Changes
+1. Create/modify code
+2. Run tests: `just test`
+3. Format and lint: `just lint`
+4. Build: `just build`
+5. Test manually: `just run-dev`
+
+### Running Tests
+```bash
+just test              # All tests
+just test-verbose      # Verbose output
+just test-coverage     # Generate HTML coverage report
+just test-match PATTERN  # Run specific tests
+```
+
+### Device Ignore Functionality
+To protect production devices during development:
+```bash
+# In justfile: run-dev task ignores 192.168.0.24
+just run-dev
+
+# Manual ignore by IP, ID, or name:
+./comic-server server --library /path \
+  --ignore-device 192.168.0.24 \
+  --ignore-device "SM-T970"
+```
+
+## Key Implementation Details
+
+### Device Discovery (internal/device/discovery.go)
+- Uses `golang.org/x/net/ipv4` for proper multicast support
+- Joins multicast group on default network interface
+- Parses broadcasts using `strings.HasPrefix("ComicRack")` to match any variant
+- Sends discovered devices to channel for processing
+
+### Device Info Parsing (internal/device/info.go)
+- Parses INI format from `comicrack.ini`
+- Required fields: Name, Model, Manufacturer, Serial, ID, Hash, Version, Edition
+- Editions: "Android Free" (100 book limit), "Android Full" (unlimited), "iOS" (unlimited)
+- Validates SHA1 hash for authentication
+
+### TCP Client (internal/protocol/client.go)
+- Implements connection pooling with configurable timeout
+- Thread-safe command execution
+- Commands: ReadFile, WriteFile, FileExists, DeleteFile, GetDeviceInfo, etc.
+
+## Testing
+
+All tests must pass before committing:
+```bash
+just ci  # Runs lint + test + build
+```
+
+Current test coverage:
+- `internal/protocol/protocol_test.go`: Binary encoding/decoding (21 tests)
+- `internal/device/discovery_test.go`: Message parsing (11 tests)
+- `internal/device/info_test.go`: INI parsing and validation (multiple test suites)
+
+## Common Issues
+
+### Multicast Not Working
+- Check firewall: Ports 7615/udp, 7614/tcp, 7620/tcp, IGMP protocol
+- Verify network interface supports multicast
+- Ensure not running in WSL2 (use real Linux or Windows)
+
+### Device Not Discovered
+- Check device is broadcasting on network
+- Use tcpdump to verify packets: `sudo tcpdump -i any -n udp port 7615`
+- Ensure device broadcasts with "ComicRack" prefix
+
+### Tests Failing
+- Run `go mod tidy` to ensure dependencies are correct
+- Check Go version: `go version` (should be 1.25.1)
+- Run `mise install` to ensure tools are up to date
+
+## Protocol Reference
+
+See `WIRELESS_SYNC_PROTOCOL.md` for complete protocol specification including:
+- All command codes and formats
+- Device synchronization flow
+- Error handling
+- Extended protocol documentation
+
+## Contributing
+
+1. Keep changes focused and well-tested
+2. Update tests when adding features
+3. Maintain test coverage above 80%
+4. Follow existing code style (use `just lint`)
+5. Update this guide when adding major features
+
+## Status
+
+✅ Completed:
+- Binary protocol implementation
+- UDP multicast device discovery
+- Device registry and validation
+- TCP command handlers
+- Device ignore/filter functionality
+- Development tooling (mise + just)
+
+🚧 In Progress:
+- Sync logic implementation
+- Library management
+- Configuration system
