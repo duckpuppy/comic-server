@@ -1,0 +1,50 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Dependency directories (remove the comment below to include it)
+# vendor/
+
+# Go workspace file
+go.work
+
+# Build output
+comic-server
+comic-server-*
+/dist/
+/build/
+
+# IDE specific files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Config files (may contain sensitive data)
+*.yaml
+*.yml
+*.json
+!go.mod
+!go.sum
+
+# Test coverage
+coverage.txt
+coverage.html
+
+# Temporary files
+tmp/
+temp/

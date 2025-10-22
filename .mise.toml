@@ -1,0 +1,8 @@
+[tools]
+go = "1.25.1"
+just = "latest"
+
+[env]
+# Go environment variables
+_.path = ["./bin", "$PATH"]
+GOBIN = "{{config_root}}/bin"
