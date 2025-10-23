@@ -8,20 +8,20 @@ import (
 
 // Protocol command bytes (from WIRELESS_SYNC_PROTOCOL.md)
 const (
-	CommandListFiles        byte = 0
-	CommandReadFile         byte = 1
-	CommandFreeSpace        byte = 2
-	CommandFileExists       byte = 3
-	CommandDeleteFile       byte = 4
-	CommandWriteFile        byte = 5
-	CommandStart            byte = 6
-	CommandCompleted        byte = 7
-	CommandProgressUpdate   byte = 8
-	CommandInfo             byte = 9
-	CommandReadMultiFile    byte = 10
-	CommandCheckAbort       byte = 11
-	CommandClientPong       byte = 12
-	CommandServerAvailable  byte = 13
+	CommandListFiles       byte = 0
+	CommandReadFile        byte = 1
+	CommandFreeSpace       byte = 2
+	CommandFileExists      byte = 3
+	CommandDeleteFile      byte = 4
+	CommandWriteFile       byte = 5
+	CommandStart           byte = 6
+	CommandCompleted       byte = 7
+	CommandProgressUpdate  byte = 8
+	CommandInfo            byte = 9
+	CommandReadMultiFile   byte = 10
+	CommandCheckAbort      byte = 11
+	CommandClientPong      byte = 12
+	CommandServerAvailable byte = 13
 )
 
 // Protocol version

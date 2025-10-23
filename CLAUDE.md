@@ -59,6 +59,10 @@ comic-server/
 │   │   ├── discovery.go  # UDP multicast listener
 │   │   ├── info.go       # Device info parsing (INI format)
 │   │   └── registry.go   # Device tracking and validation
+│   ├── library/          # ComicRack library management
+│   │   ├── library.go    # Library XML parsing
+│   │   ├── time.go       # Custom time format handling
+│   │   └── library_test.go  # Comprehensive tests
 │   └── protocol/         # Binary protocol implementation
 │       ├── protocol.go   # Encoding/decoding (big-endian)
 │       └── client.go     # TCP client for device communication
@@ -144,6 +148,13 @@ just run-dev
 - Thread-safe command execution
 - Commands: ReadFile, WriteFile, FileExists, DeleteFile, GetDeviceInfo, etc.
 
+### Library Management (internal/library/library.go)
+- Reads ComicRackCE library XML format (`ComicDb.xml`)
+- Parses comic books with full metadata (series, title, publisher, credits, etc.)
+- Supports reading lists and smart lists
+- Custom time format handling for .NET DateTime compatibility
+- Library path typically: `~/.local/share/ComicRack/ComicDb.xml` (Linux) or `%APPDATA%/ComicRack/ComicDb.xml` (Windows)
+
 ## Testing
 
 All tests must pass before committing:
@@ -151,10 +162,39 @@ All tests must pass before committing:
 just ci  # Runs lint + test + build
 ```
 
-Current test coverage:
+### Test Organization
+
+**Unit Tests** - Component-level testing:
 - `internal/protocol/protocol_test.go`: Binary encoding/decoding (21 tests)
 - `internal/device/discovery_test.go`: Message parsing (11 tests)
 - `internal/device/info_test.go`: INI parsing and validation (multiple test suites)
+- `internal/library/library_test.go`: Library XML parsing (11 test suites, 24 test cases)
+
+**Integration Tests** - End-to-end workflow testing:
+- `internal/protocol/integration_test.go`: Client-server communication with mock device server
+  - Tests file transfer operations (ReadFile, FileExists)
+  - Tests device info retrieval (CommandInfo)
+  - Tests connection handling, retries, and large file transfers
+- `internal/device/integration_test.go`: Device discovery and registration workflows
+  - UDP multicast discovery testing with mock broadcasters
+  - Full device validation and registry management
+  - End-to-end discovery → connect → validate → register workflow
+- `internal/library/integration_test.go`: Real library parsing with testdata
+  - Uses actual ComicDB.xml file from `testdata/` directory
+  - Tests loading, parsing, and querying large comic libraries
+  - Benchmarks library loading performance
+
+### Test Infrastructure
+
+**Mock Device Server** (`internal/protocol/testserver.go`):
+- Simulates a ComicRack device for testing
+- Implements protocol commands (ReadFile, FileExists, CommandInfo)
+- Supports in-memory file system for test data
+- Used by integration tests to verify client-server communication
+
+**Test Data**:
+- `testdata/ComicDB.xml`: Real ComicRack library XML (226MB) with actual comic metadata
+- Used for integration testing library parsing and querying
 
 ## Common Issues
 
@@ -197,9 +237,9 @@ See `WIRELESS_SYNC_PROTOCOL.md` for complete protocol specification including:
 - Device registry and validation
 - TCP command handlers
 - Device ignore/filter functionality
+- Library XML parsing (ComicRackCE ComicDb.xml format)
 - Development tooling (mise + just)
 
 🚧 In Progress:
 - Sync logic implementation
-- Library management
-- Configuration system
+- Configuration system (library path, sync settings, etc.)

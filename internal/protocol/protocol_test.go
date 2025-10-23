@@ -171,7 +171,7 @@ func TestData(t *testing.T) {
 		{},
 		{0x00},
 		{0x48, 0x65, 0x6C, 0x6C, 0x6F}, // "Hello"
-		make([]byte, 1000),              // Large data
+		make([]byte, 1000),             // Large data
 	}
 
 	for _, expected := range tests {

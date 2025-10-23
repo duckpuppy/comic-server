@@ -12,10 +12,10 @@ import (
 )
 
 var (
-	serverPort     int
-	discoveryPort  int
-	libraryPath    string
-	ignoreDevices  []string
+	serverPort    int
+	discoveryPort int
+	libraryPath   string
+	ignoreDevices []string
 )
 
 var serverCmd = &cobra.Command{

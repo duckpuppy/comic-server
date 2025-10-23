@@ -1,0 +1,216 @@
+package library
+
+import (
+	"encoding/xml"
+	"os"
+)
+
+// ComicLibrary represents the root library container from ComicDb.xml
+type ComicLibrary struct {
+	XMLName    xml.Name        `xml:"ComicDatabase"`
+	ID         string          `xml:"Id,attr"`
+	Name       string          `xml:"Name,omitempty"`
+	Books      []ComicBook     `xml:"Books>Book"`
+	ComicLists []ComicListItem `xml:"ComicLists>Item"`
+}
+
+// ComicBook represents an individual comic entry in the library
+type ComicBook struct {
+	// Identification
+	ID       string `xml:"Id"`
+	FilePath string `xml:"File,attr,omitempty"` // File attribute for file path
+
+	// Title & Series
+	Title           string `xml:"Title,omitempty"`
+	Series          string `xml:"Series,omitempty"`
+	Number          string `xml:"Number,omitempty"`
+	Count           int    `xml:"Count,omitempty"`
+	Volume          int    `xml:"Volume,omitempty"`
+	AlternateSeries string `xml:"AlternateSeries,omitempty"`
+	AlternateNumber string `xml:"AlternateNumber,omitempty"`
+	AlternateCount  int    `xml:"AlternateCount,omitempty"`
+	StoryArc        string `xml:"StoryArc,omitempty"`
+	SeriesGroup     string `xml:"SeriesGroup,omitempty"`
+
+	// Content Metadata
+	Summary             string `xml:"Summary,omitempty"`
+	Notes               string `xml:"Notes,omitempty"`
+	Review              string `xml:"Review,omitempty"`
+	Tags                string `xml:"Tags,omitempty"`
+	Characters          string `xml:"Characters,omitempty"`
+	Teams               string `xml:"Teams,omitempty"`
+	MainCharacterOrTeam string `xml:"MainCharacterOrTeam,omitempty"`
+	Locations           string `xml:"Locations,omitempty"`
+
+	// Publishing Information
+	Year        int    `xml:"Year,omitempty"`
+	Month       int    `xml:"Month,omitempty"`
+	Day         int    `xml:"Day,omitempty"`
+	Publisher   string `xml:"Publisher,omitempty"`
+	Imprint     string `xml:"Imprint,omitempty"`
+	Format      string `xml:"Format,omitempty"`
+	LanguageISO string `xml:"LanguageISO,omitempty"`
+	Genre       string `xml:"Genre,omitempty"`
+	Web         string `xml:"Web,omitempty"`
+	AgeRating   string `xml:"AgeRating,omitempty"`
+
+	// Creative Credits
+	Writer      string `xml:"Writer,omitempty"`
+	Penciller   string `xml:"Penciller,omitempty"`
+	Inker       string `xml:"Inker,omitempty"`
+	Colorist    string `xml:"Colorist,omitempty"`
+	Letterer    string `xml:"Letterer,omitempty"`
+	CoverArtist string `xml:"CoverArtist,omitempty"`
+	Editor      string `xml:"Editor,omitempty"`
+	Translator  string `xml:"Translator,omitempty"`
+
+	// Physical Properties
+	PageCount           int    `xml:"PageCount,omitempty"`
+	BlackAndWhite       string `xml:"BlackAndWhite,omitempty"` // "Unknown", "Yes", "No"
+	Manga               string `xml:"Manga,omitempty"`         // "Unknown", "Yes", "YesRightToLeft"
+	PreferredFrontCover int    `xml:"PreferredFrontCover,omitempty"`
+
+	// User Tracking
+	Rating               float64   `xml:"Rating,omitempty"`
+	CommunityRating      float64   `xml:"CommunityRating,omitempty"`
+	CurrentPage          int       `xml:"CurrentPage,omitempty"`
+	LastPage             int       `xml:"LastPage,omitempty"`
+	OpenedTime           ComicTime `xml:"OpenedTime,omitempty"`
+	OpenCount            int       `xml:"OpenCount,omitempty"`
+	AddedTime            ComicTime `xml:"AddedTime,omitempty"`
+	ReleasedTime         ComicTime `xml:"ReleasedTime,omitempty"`
+	LastPageRead         int       `xml:"LastPageRead,omitempty"`
+	LastOpenedFromListID string    `xml:"LastOpenedFromListId,omitempty"`
+
+	// System Flags
+	Checked             bool   `xml:"Checked,omitempty"`
+	ComicInfoIsDirty    bool   `xml:"ComicInfoIsDirty,omitempty"`
+	SeriesComplete      string `xml:"SeriesComplete,omitempty"` // "Unknown", "Yes", "No"
+	EnableProposed      bool   `xml:"EnableProposed,omitempty"`
+	EnableDynamicUpdate bool   `xml:"EnableDynamicUpdate,omitempty"`
+
+	// Pages Information
+	Pages           []ComicPageInfo `xml:"Pages>Page,omitempty"`
+	ScanInformation string          `xml:"ScanInformation,omitempty"`
+}
+
+// ComicPageInfo represents page-level metadata
+type ComicPageInfo struct {
+	Image       int    `xml:"Image,attr"`
+	Type        string `xml:"Type,attr,omitempty"` // "FrontCover", "BackCover", "Story", etc.
+	Bookmark    string `xml:"Bookmark,attr,omitempty"`
+	ImageSize   int64  `xml:"ImageSize,attr,omitempty"`
+	ImageWidth  int    `xml:"ImageWidth,attr,omitempty"`
+	ImageHeight int    `xml:"ImageHeight,attr,omitempty"`
+	Key         string `xml:"Key,attr,omitempty"`
+}
+
+// ComicListItem represents a reading list or smart list
+// This is polymorphic in the C# code, but we'll parse common fields
+type ComicListItem struct {
+	Type        string `xml:"type,attr"` // xsi:type attribute
+	ID          string `xml:"Id"`
+	Name        string `xml:"Name"`
+	Description string `xml:"Description,omitempty"`
+	Favorite    bool   `xml:"Favorite,omitempty"`
+	BookCount   int    `xml:"BookCount,omitempty"`
+
+	// For ComicReadingList
+	Items []ComicReadingListItem `xml:"Books>Book,omitempty"`
+
+	// For ComicSmartListItem
+	MatcherMode string             `xml:"MatcherMode,omitempty"` // "And", "Or"
+	Matchers    []ComicBookMatcher `xml:"Matchers>ComicBookMatcher,omitempty"`
+
+	// For ComicListItemFolder
+	ChildItems []ComicListItem `xml:"Items>Item,omitempty"`
+	Collapsed  bool            `xml:"Collapsed,omitempty"`
+}
+
+// ComicReadingListItem represents a book reference in a reading list
+type ComicReadingListItem struct {
+	Series   string `xml:"Series,attr,omitempty"`
+	Number   string `xml:"Number,attr,omitempty"`
+	Volume   int    `xml:"Volume,attr,omitempty"`
+	Year     int    `xml:"Year,attr,omitempty"`
+	Format   string `xml:"Format,attr,omitempty"`
+	ID       string `xml:"Id,attr,omitempty"`
+	FileName string `xml:"FileName,omitempty"`
+}
+
+// ComicBookMatcher represents a filter rule for smart lists
+type ComicBookMatcher struct {
+	Type          string `xml:"Type,attr"`          // Property name to match
+	Operator      string `xml:"Operator,attr"`      // "Equal", "Contains", etc.
+	ArgumentValue string `xml:"ArgumentValue,attr"` // Value to match
+}
+
+// LoadLibrary loads and parses a ComicRack library XML file
+func LoadLibrary(path string) (*ComicLibrary, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if file is BZIP2 compressed (first byte = 0x01)
+	// For now, we'll assume uncompressed XML
+	// TODO: Add BZIP2 decompression support if needed
+
+	var library ComicLibrary
+	if err := xml.Unmarshal(data, &library); err != nil {
+		return nil, err
+	}
+
+	return &library, nil
+}
+
+// GetBook returns a book by ID
+func (l *ComicLibrary) GetBook(id string) *ComicBook {
+	for i := range l.Books {
+		if l.Books[i].ID == id {
+			return &l.Books[i]
+		}
+	}
+	return nil
+}
+
+// GetBooksByList returns books referenced in a reading list
+func (l *ComicLibrary) GetBooksByList(list *ComicListItem) []*ComicBook {
+	if list == nil {
+		return nil
+	}
+
+	books := make([]*ComicBook, 0, len(list.Items))
+	for _, item := range list.Items {
+		if book := l.GetBook(item.ID); book != nil {
+			books = append(books, book)
+		}
+	}
+	return books
+}
+
+// FindList finds a reading list by name
+func (l *ComicLibrary) FindList(name string) *ComicListItem {
+	for i := range l.ComicLists {
+		if l.ComicLists[i].Name == name {
+			return &l.ComicLists[i]
+		}
+		// Recursively search in folders
+		if found := findListRecursive(&l.ComicLists[i], name); found != nil {
+			return found
+		}
+	}
+	return nil
+}
+
+func findListRecursive(item *ComicListItem, name string) *ComicListItem {
+	for i := range item.ChildItems {
+		if item.ChildItems[i].Name == name {
+			return &item.ChildItems[i]
+		}
+		if found := findListRecursive(&item.ChildItems[i], name); found != nil {
+			return found
+		}
+	}
+	return nil
+}
