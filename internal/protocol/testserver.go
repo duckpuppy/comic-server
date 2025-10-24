@@ -164,8 +164,8 @@ func (m *MockDeviceServer) handleGetDeviceInfo(conn net.Conn) {
 	}
 
 	// Send mock device info
-	WriteBool(conn, true)                     // licensed
-	WriteInt(conn, 123)                       // version code
-	WriteString(conn, "MockCertificate")      // certificate
-	WriteBool(conn, false)                    // additional flag
+	WriteBool(conn, true)                // licensed
+	WriteInt(conn, 123)                  // version code
+	WriteString(conn, "MockCertificate") // certificate
+	WriteBool(conn, false)               // additional flag
 }

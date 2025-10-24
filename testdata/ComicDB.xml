@@ -1,5 +1,5 @@
-<?xml version="1.0"?>
-<ComicDatabase xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" Id="d8030ca9-4327-45a8-93e4-88275b661843">
+<?xml version='1.0' encoding='utf-8'?>
+<ComicDatabase xmlns:ns0="http://www.w3.org/2000/xmlns/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" Id="d8030ca9-4327-45a8-93e4-88275b661843" ns0:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <Books>
     <Book Id="552c8a8b-e81a-4e8b-8c26-5ff8cd90aa25" File="G:\Comics\Arcana Studio\Arcana Studio Presents - Free Comic Book Day (2004 FCBD)\Arcana Studio Presents - Free Comic Book Day Vol.2004 #2007 (January, 2007).cbz">
       <Series>Arcana Studio Presents: Free Comic Book Day</Series>
@@ -6261,7 +6261,244 @@ Scraped metadata from ComicVine [CVDB108687] on 2013.02.05 18:57:52.</Notes>
       <FileCreationTime>2019-03-04T21:42:37.9974241Z</FileCreationTime>
       <CustomValuesStore>,comicvine_issue=107551,comicvine_volume=18053</CustomValuesStore>
     </Book>
+    <Book Id="ffffffff-ffff-ffff-ffff-ffffffffffff" File="G:\Comics\Test\No Timestamps Book.cbz">
+      <Title>Book Without Timestamps</Title>
+      <Series>Test Series</Series>
+      <Number>1</Number>
+      <Volume>2025</Volume>
+      <Year>2025</Year>
+      <Month>10</Month>
+      <Publisher>Test Publisher</Publisher>
+      <PageCount>10</PageCount>
+      <Pages>
+        <Page Image="0" ImageWidth="1000" ImageHeight="1500" Type="FrontCover" />
+        <Page Image="1" ImageWidth="1000" ImageHeight="1500" />
+      </Pages>
+      <FileSize>1000000</FileSize>
+      <FileModifiedTime>2025-10-23T00:00:00Z</FileModifiedTime>
+      <FileCreationTime>2025-10-23T00:00:00Z</FileCreationTime>
+    </Book>
   </Books>
   <ComicLists>
+    <Item xsi:type="ComicSmartListItem" Id="6300352f-35f2-4f98-8953-6ef29162122a" Name="0 Day Folder" MatcherMode="Or">
+      <Matchers>
+        <ComicBookMatcher xsi:type="ComicBookDirectoryMatcher">
+          <MatchValue>D:\Users\Patrick\Documents\Newsbin\Zero_Day</MatchValue>
+        </ComicBookMatcher>
+        <ComicBookMatcher xsi:type="ComicBookDirectoryMatcher" MatchOperator="4">
+          <MatchValue>D:\Users\Patrick\Documents\Newsbin</MatchValue>
+        </ComicBookMatcher>
+        <ComicBookMatcher xsi:type="ComicBookDirectoryMatcher" MatchOperator="4">
+          <MatchValue>G:\Downloads\DC++</MatchValue>
+        </ComicBookMatcher>
+        <ComicBookMatcher xsi:type="ComicBookDirectoryMatcher" MatchOperator="4">
+          <MatchValue>G:\ComicsArchive</MatchValue>
+        </ComicBookMatcher>
+        <ComicBookMatcher xsi:type="ComicBookDirectoryMatcher" MatchOperator="4">
+          <MatchValue>Y:\torrents\complete</MatchValue>
+        </ComicBookMatcher>
+        <ComicBookMatcher xsi:type="ComicBookDirectoryMatcher" MatchOperator="4">
+          <MatchValue>Y:\ncdc</MatchValue>
+        </ComicBookMatcher>
+        <ComicBookMatcher xsi:type="ComicBookDirectoryMatcher">
+          <MatchValue>D:\Users\Patrick\Documents\Newsbin\Comics</MatchValue>
+        </ComicBookMatcher>
+        <ComicBookMatcher xsi:type="ComicBookDirectoryMatcher" MatchOperator="4">
+          <MatchValue>F:\</MatchValue>
+        </ComicBookMatcher>
+        <ComicBookMatcher xsi:type="ComicBookDirectoryMatcher" MatchOperator="4">
+          <MatchValue>W:\home\duckpuppy\downloads\ncdc</MatchValue>
+        </ComicBookMatcher>
+        <ComicBookMatcher xsi:type="ComicBookDirectoryMatcher" MatchOperator="4">
+          <MatchValue>C:\Users\paike\Downloads\ncdc</MatchValue>
+        </ComicBookMatcher>
+      </Matchers>
+    </Item>
+    <Item xsi:type="ComicSmartListItem" Id="09f24b64-d6c5-4de6-8200-eab2a7927e1c" Name="01 Convert to CBZ">
+      <Matchers>
+        <ComicBookMatcher xsi:type="ComicBookGroupMatcher" Not="true" MatcherMode="Or">
+          <Matchers>
+            <ComicBookMatcher xsi:type="ComicBookFileFormatMatcher" MatchOperator="1">
+              <MatchValue>ZIP</MatchValue>
+            </ComicBookMatcher>
+            <ComicBookMatcher xsi:type="ComicBookFileFormatMatcher" MatchOperator="1">
+              <MatchValue>7Z</MatchValue>
+            </ComicBookMatcher>
+            <ComicBookMatcher xsi:type="ComicBookFileFormatMatcher" MatchOperator="1">
+              <MatchValue>Web</MatchValue>
+            </ComicBookMatcher>
+            <ComicBookMatcher xsi:type="ComicBookIsLinkedMatcher" MatchOperator="1">
+              <MatchValue />
+            </ComicBookMatcher>
+          </Matchers>
+        </ComicBookMatcher>
+      </Matchers>
+    </Item>
+    <Item xsi:type="ComicSmartListItem" Id="94bc4d6c-05f3-4f51-8a23-b95525b864af" Name="02 To Scrape">
+      <Matchers>
+        <ComicBookMatcher xsi:type="ComicBookGroupMatcher" MatcherMode="Or">
+          <Matchers>
+            <ComicBookMatcher xsi:type="ComicBookGroupMatcher">
+              <Matchers>
+                <ComicBookMatcher xsi:type="ComicBookGroupMatcher" MatcherMode="Or">
+                  <Matchers>
+                    <ComicBookMatcher xsi:type="ComicBookCustomValuesMatcher">
+                      <MatchValue>comicvine_volume</MatchValue>
+                    </ComicBookMatcher>
+                    <ComicBookMatcher xsi:type="ComicBookCustomValuesMatcher">
+                      <MatchValue>comicvine_issue</MatchValue>
+                    </ComicBookMatcher>
+                  </Matchers>
+                </ComicBookMatcher>
+              </Matchers>
+            </ComicBookMatcher>
+            <ComicBookMatcher xsi:type="ComicBookPublisherMatcher">
+              <MatchValue />
+            </ComicBookMatcher>
+          </Matchers>
+        </ComicBookMatcher>
+        <ComicBookMatcher xsi:type="ComicBookGroupMatcher" Not="true" MatcherMode="Or">
+          <Matchers>
+            <ComicBookMatcher xsi:type="ComicBookFormatMatcher">
+              <MatchValue>Web Comic</MatchValue>
+            </ComicBookMatcher>
+            <ComicBookMatcher xsi:type="ComicBookTagsMatcher" MatchOperator="6">
+              <MatchValue>NOSCRAPE</MatchValue>
+            </ComicBookMatcher>
+            <ComicBookMatcher xsi:type="ComicBookTagsMatcher" MatchOperator="6">
+              <MatchValue>CVDBSKIP</MatchValue>
+            </ComicBookMatcher>
+            <ComicBookMatcher xsi:type="ComicBookIsLinkedMatcher" MatchOperator="1">
+              <MatchValue />
+            </ComicBookMatcher>
+            <ComicBookMatcher xsi:type="ComicBookGroupMatcher" MatcherMode="Or">
+              <Matchers>
+                <ComicBookMatcher xsi:type="ComicBookSeriesMatcher" MatchOperator="1">
+                  <MatchValue>DCP Archive</MatchValue>
+                </ComicBookMatcher>
+                <ComicBookMatcher xsi:type="ComicBookSeriesMatcher" MatchOperator="1">
+                  <MatchValue>DCP Essentials</MatchValue>
+                </ComicBookMatcher>
+                <ComicBookMatcher xsi:type="ComicBookSeriesMatcher" MatchOperator="1">
+                  <MatchValue>Minutemen Masterworks</MatchValue>
+                </ComicBookMatcher>
+              </Matchers>
+            </ComicBookMatcher>
+          </Matchers>
+        </ComicBookMatcher>
+      </Matchers>
+    </Item>
+    <Item xsi:type="ComicSmartListItem" Id="b3bcfb12-2283-4e49-a62f-9d358fdfc1aa" Name="03 Add Scanner Info">
+      <Matchers>
+        <ComicBookMatcher xsi:type="ComicBookScanInformationMatcher">
+          <MatchValue />
+        </ComicBookMatcher>
+        <ComicBookMatcher xsi:type="ComicBookScanInformationMatcher" Not="true">
+          <MatchValue>Scanner: Unknown</MatchValue>
+        </ComicBookMatcher>
+        <ComicBookMatcher xsi:type="ComicBookFullPathMatcher" Not="true">
+          <MatchValue />
+        </ComicBookMatcher>
+      </Matchers>
+    </Item>
+    <Item xsi:type="ComicSmartListItem" Id="3aea4335-a075-4e36-9338-f0720f2aade2" Name="04 CVDBSKIP">
+      <Matchers>
+        <ComicBookMatcher xsi:type="ComicBookPublisherMatcher">
+          <MatchValue />
+        </ComicBookMatcher>
+        <ComicBookMatcher xsi:type="ComicBookGroupMatcher" MatcherMode="Or">
+          <Matchers>
+            <ComicBookMatcher xsi:type="ComicBookTagsMatcher" MatchOperator="1">
+              <MatchValue>CVDBSKIP</MatchValue>
+            </ComicBookMatcher>
+            <ComicBookMatcher xsi:type="ComicBookNotesMatcher" MatchOperator="1">
+              <MatchValue>CVDBSKIP</MatchValue>
+            </ComicBookMatcher>
+          </Matchers>
+        </ComicBookMatcher>
+      </Matchers>
+    </Item>
+    <Item xsi:type="ComicSmartListItem" Id="ed8e0af1-8f88-4ec6-a932-d5f1426892c0" Name="05 Proposed Values">
+      <Matchers>
+        <ComicBookMatcher xsi:type="ComicBookDirectoryMatcher">
+          <MatchValue>C:\Users\Patrick\Downloads\Newsbin\Zero_Day</MatchValue>
+        </ComicBookMatcher>
+        <ComicBookMatcher xsi:type="ComicBookPluginMatcher" MatchOperator="9" PluginKey="findProposedValues">
+          <MatchValue />
+        </ComicBookMatcher>
+      </Matchers>
+    </Item>
+    <Item xsi:type="ComicSmartListItem" Id="94fd135b-d7d4-484c-ae8c-f17bae5819d2" Name="06 Duplicates Manager">
+      <Matchers>
+        <ComicBookMatcher xsi:type="ComicBookDirectoryMatcher">
+          <MatchValue>D:\Users\Patrick\Documents\Newsbin\Zero_Day</MatchValue>
+        </ComicBookMatcher>
+        <ComicBookMatcher xsi:type="ComicBookDuplicateMatcher">
+          <MatchValue />
+        </ComicBookMatcher>
+      </Matchers>
+    </Item>
+    <Item xsi:type="ComicSmartListItem" Id="7d61da88-d091-4cfd-ad2b-9e0d1f4a8fc2" Name="07 DataManager">
+      <Matchers>
+        <ComicBookMatcher xsi:type="ComicBookCustomValuesMatcher">
+          <MatchValue>DataManager.processed</MatchValue>
+        </ComicBookMatcher>
+        <ComicBookMatcher xsi:type="ComicBookCustomValuesMatcher" Not="true">
+          <MatchValue>comicvine_issue</MatchValue>
+        </ComicBookMatcher>
+      </Matchers>
+    </Item>
+    <Item xsi:type="ComicSmartListItem" Id="904ff0f4-ac5e-4555-9fc8-4dc7ed6a1a3b" Name="08 To Move">
+      <Matchers>
+        <ComicBookMatcher xsi:type="ComicBookFileMatcher" Not="true">
+          <MatchValue />
+        </ComicBookMatcher>
+        <ComicBookMatcher xsi:type="ComicBookTagsMatcher" Not="true" MatchOperator="6">
+          <MatchValue>NOSCRAPE</MatchValue>
+        </ComicBookMatcher>
+        <ComicBookMatcher xsi:type="ComicBookTagsMatcher" Not="true" MatchOperator="6">
+          <MatchValue>CVDBSKIP</MatchValue>
+        </ComicBookMatcher>
+        <ComicBookMatcher xsi:type="ComicBookCustomValuesMatcher" Not="true">
+          <MatchValue>comicvine_issue</MatchValue>
+        </ComicBookMatcher>
+        <ComicBookMatcher xsi:type="ComicBookGroupMatcher" MatcherMode="Or">
+          <Matchers>
+            <ComicBookMatcher xsi:type="ComicBookPublisherMatcher">
+              <MatchValue />
+            </ComicBookMatcher>
+            <ComicBookMatcher xsi:type="ComicBookDirectoryMatcher" Not="true" MatchOperator="4">
+              <MatchValue>G:\Comics\</MatchValue>
+            </ComicBookMatcher>
+            <ComicBookMatcher xsi:type="ComicBookGroupMatcher">
+              <Matchers>
+                <ComicBookMatcher xsi:type="ComicBookCountMatcher" Not="true">
+                  <MatchValue />
+                </ComicBookMatcher>
+                <ComicBookMatcher xsi:type="ComicBookFileMatcher" Not="true" MatchOperator="1">
+                  <MatchValue>(of</MatchValue>
+                </ComicBookMatcher>
+              </Matchers>
+            </ComicBookMatcher>
+          </Matchers>
+        </ComicBookMatcher>
+      </Matchers>
+    </Item>
+    <Item xsi:type="ComicSmartListItem" Id="922beb44-dd13-4333-9894-94453e93325b" Name="08 Library Organizer (DO NOT USE)">
+      <Matchers>
+        <ComicBookMatcher xsi:type="ComicBookDirectoryMatcher">
+          <MatchValue>C:\Users\Patrick\Downloads\Newsbin\Zero_Day</MatchValue>
+        </ComicBookMatcher>
+        <ComicBookMatcher xsi:type="ComicBookPublisherMatcher" Not="true">
+          <MatchValue />
+        </ComicBookMatcher>
+        <ComicBookMatcher xsi:type="ComicBookCustomValuesMatcher">
+          <MatchValue>DataManager.processed</MatchValue>
+        </ComicBookMatcher>
+        <ComicBookMatcher xsi:type="ComicBookCustomValuesMatcher" Not="true">
+          <MatchValue>comicvine_issue</MatchValue>
+        </ComicBookMatcher>
+      </Matchers>
+    </Item>
   </ComicLists>
 </ComicDatabase>

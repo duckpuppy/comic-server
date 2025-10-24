@@ -17,7 +17,7 @@ type ComicLibrary struct {
 // ComicBook represents an individual comic entry in the library
 type ComicBook struct {
 	// Identification
-	ID       string `xml:"Id"`
+	ID       string `xml:"Id,attr"`             // Id attribute
 	FilePath string `xml:"File,attr,omitempty"` // File attribute for file path
 
 	// Title & Series
@@ -75,15 +75,16 @@ type ComicBook struct {
 	CommunityRating      float64   `xml:"CommunityRating,omitempty"`
 	CurrentPage          int       `xml:"CurrentPage,omitempty"`
 	LastPage             int       `xml:"LastPage,omitempty"`
-	OpenedTime           ComicTime `xml:"OpenedTime,omitempty"`
+	OpenedTime           ComicTime `xml:"Opened,omitempty"`
 	OpenCount            int       `xml:"OpenCount,omitempty"`
-	AddedTime            ComicTime `xml:"AddedTime,omitempty"`
-	ReleasedTime         ComicTime `xml:"ReleasedTime,omitempty"`
+	AddedTime            ComicTime `xml:"Added,omitempty"`
+	ReleasedTime         ComicTime `xml:"Released,omitempty"`
 	LastPageRead         int       `xml:"LastPageRead,omitempty"`
 	LastOpenedFromListID string    `xml:"LastOpenedFromListId,omitempty"`
 
 	// System Flags
-	Checked             bool   `xml:"Checked,omitempty"`
+	Checked             bool   `xml:"Checked,attr,omitempty"` // Book attribute
+	FileIsMissing       bool   `xml:"Missing,omitempty"`      // File cannot be found
 	ComicInfoIsDirty    bool   `xml:"ComicInfoIsDirty,omitempty"`
 	SeriesComplete      string `xml:"SeriesComplete,omitempty"` // "Unknown", "Yes", "No"
 	EnableProposed      bool   `xml:"EnableProposed,omitempty"`
@@ -94,10 +95,22 @@ type ComicBook struct {
 	ScanInformation string          `xml:"ScanInformation,omitempty"`
 }
 
+// Page type constants as defined by ComicRack
+const (
+	PageTypeFrontCover    = "FrontCover"
+	PageTypeBackCover     = "BackCover"
+	PageTypeStory         = "Story"
+	PageTypeAdvertisement = "Advertisement"
+	PageTypeEditorial     = "Editorial"
+	PageTypeRoundUp       = "RoundUp"
+	PageTypeOther         = "Other"
+	PageTypeDeleted       = "Deleted"
+)
+
 // ComicPageInfo represents page-level metadata
 type ComicPageInfo struct {
 	Image       int    `xml:"Image,attr"`
-	Type        string `xml:"Type,attr,omitempty"` // "FrontCover", "BackCover", "Story", etc.
+	Type        string `xml:"Type,attr,omitempty"` // Use PageType* constants
 	Bookmark    string `xml:"Bookmark,attr,omitempty"`
 	ImageSize   int64  `xml:"ImageSize,attr,omitempty"`
 	ImageWidth  int    `xml:"ImageWidth,attr,omitempty"`
@@ -108,9 +121,10 @@ type ComicPageInfo struct {
 // ComicListItem represents a reading list or smart list
 // This is polymorphic in the C# code, but we'll parse common fields
 type ComicListItem struct {
-	Type        string `xml:"type,attr"` // xsi:type attribute
-	ID          string `xml:"Id"`
-	Name        string `xml:"Name"`
+	Type        string `xml:"type,attr"`        // xsi:type attribute
+	ID          string `xml:"Id,attr"`          // Id attribute
+	Name        string `xml:"Name,attr"`        // Name attribute
+	MatcherMode string `xml:"MatcherMode,attr"` // "And", "Or" - attribute for smart lists
 	Description string `xml:"Description,omitempty"`
 	Favorite    bool   `xml:"Favorite,omitempty"`
 	BookCount   int    `xml:"BookCount,omitempty"`
@@ -119,8 +133,7 @@ type ComicListItem struct {
 	Items []ComicReadingListItem `xml:"Books>Book,omitempty"`
 
 	// For ComicSmartListItem
-	MatcherMode string             `xml:"MatcherMode,omitempty"` // "And", "Or"
-	Matchers    []ComicBookMatcher `xml:"Matchers>ComicBookMatcher,omitempty"`
+	Matchers []ComicBookMatcher `xml:"Matchers>ComicBookMatcher,omitempty"`
 
 	// For ComicListItemFolder
 	ChildItems []ComicListItem `xml:"Items>Item,omitempty"`

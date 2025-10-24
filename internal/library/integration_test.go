@@ -105,24 +105,47 @@ func TestLoadRealLibrary(t *testing.T) {
 	})
 
 	t.Run("Timestamps", func(t *testing.T) {
-		// Check that books have timestamp information
+		// Check that timestamp fields are parsed correctly
 		booksWithAdded := 0
 		booksWithOpened := 0
+		booksWithBoth := 0
+		booksWithNeither := 0
 
 		for _, book := range lib.Books {
-			if !book.AddedTime.IsZero() {
+			hasAdded := !book.AddedTime.IsZero()
+			hasOpened := !book.OpenedTime.IsZero()
+
+			if hasAdded {
 				booksWithAdded++
 			}
-			if !book.OpenedTime.IsZero() {
+			if hasOpened {
 				booksWithOpened++
+			}
+			if hasAdded && hasOpened {
+				booksWithBoth++
+			}
+			if !hasAdded && !hasOpened {
+				booksWithNeither++
 			}
 		}
 
-		t.Logf("Books with AddedTime timestamp: %d/%d", booksWithAdded, len(lib.Books))
-		t.Logf("Books with OpenedTime timestamp: %d/%d", booksWithOpened, len(lib.Books))
+		t.Logf("Books with AddedTime: %d/%d", booksWithAdded, len(lib.Books))
+		t.Logf("Books with OpenedTime: %d/%d", booksWithOpened, len(lib.Books))
+		t.Logf("Books with both timestamps: %d/%d", booksWithBoth, len(lib.Books))
+		t.Logf("Books with no timestamps: %d/%d", booksWithNeither, len(lib.Books))
 
+		// Verify the test data has representative samples
 		if booksWithAdded == 0 {
-			t.Error("Expected at least some books to have AddedTime timestamps")
+			t.Error("Expected at least some books with AddedTime in test data")
+		}
+		if booksWithOpened == 0 {
+			t.Error("Expected at least some books with OpenedTime in test data")
+		}
+		if booksWithBoth == 0 {
+			t.Error("Expected at least some books with both timestamps in test data")
+		}
+		if booksWithNeither == 0 {
+			t.Error("Expected at least some books with no timestamps in test data")
 		}
 	})
 

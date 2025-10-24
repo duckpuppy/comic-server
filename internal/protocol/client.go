@@ -263,3 +263,170 @@ func (c *Client) SendProgressUpdate(percent int) error {
 		return nil
 	})
 }
+
+// ListFiles sends CommandListFiles and returns a newline-separated list of files
+// Request: BYTE(0)
+// Response: STRING(filelist)
+func (c *Client) ListFiles() (string, error) {
+	var fileList string
+
+	err := c.execute(func(conn net.Conn) error {
+		// Send command
+		if err := WriteByte(conn, CommandListFiles); err != nil {
+			return fmt.Errorf("failed to write command: %w", err)
+		}
+
+		// Read response
+		files, err := ReadString(conn)
+		if err != nil {
+			return fmt.Errorf("failed to read file list: %w", err)
+		}
+
+		fileList = files
+		return nil
+	})
+
+	return fileList, err
+}
+
+// WriteFile sends CommandWriteFile to write a file to the device
+// Request: BYTE(5) + STRING(filename) + DATA(contents)
+// Response: (none)
+func (c *Client) WriteFile(filename string, data []byte) error {
+	return c.execute(func(conn net.Conn) error {
+		// Send command
+		if err := WriteByte(conn, CommandWriteFile); err != nil {
+			return fmt.Errorf("failed to write command: %w", err)
+		}
+
+		if err := WriteString(conn, filename); err != nil {
+			return fmt.Errorf("failed to write filename: %w", err)
+		}
+
+		if err := WriteData(conn, data); err != nil {
+			return fmt.Errorf("failed to write file data: %w", err)
+		}
+
+		return nil
+	})
+}
+
+// DeleteFile sends CommandDeleteFile to delete a file from the device
+// Request: BYTE(4) + STRING(filename)
+// Response: (none)
+func (c *Client) DeleteFile(filename string) error {
+	return c.execute(func(conn net.Conn) error {
+		// Send command
+		if err := WriteByte(conn, CommandDeleteFile); err != nil {
+			return fmt.Errorf("failed to write command: %w", err)
+		}
+
+		if err := WriteString(conn, filename); err != nil {
+			return fmt.Errorf("failed to write filename: %w", err)
+		}
+
+		return nil
+	})
+}
+
+// GetFreeSpace sends CommandFreeSpace and returns available storage in bytes
+// Request: BYTE(2)
+// Response: LONG(bytes)
+func (c *Client) GetFreeSpace() (int64, error) {
+	var freeSpace int64
+
+	err := c.execute(func(conn net.Conn) error {
+		// Send command
+		if err := WriteByte(conn, CommandFreeSpace); err != nil {
+			return fmt.Errorf("failed to write command: %w", err)
+		}
+
+		// Read response
+		space, err := ReadLong(conn)
+		if err != nil {
+			return fmt.Errorf("failed to read free space: %w", err)
+		}
+
+		freeSpace = space
+		return nil
+	})
+
+	return freeSpace, err
+}
+
+// ReadMultiFile sends CommandReadMultiFile and returns multiple file contents
+// Request: BYTE(10) + STRING(filelist with newlines)
+// Response: INT(count) + [STRING(filename) + DATA(contents)] repeated
+func (c *Client) ReadMultiFile(filenames []string) (map[string][]byte, error) {
+	files := make(map[string][]byte)
+
+	err := c.execute(func(conn net.Conn) error {
+		// Send command
+		if err := WriteByte(conn, CommandReadMultiFile); err != nil {
+			return fmt.Errorf("failed to write command: %w", err)
+		}
+
+		// Join filenames with newlines
+		fileList := ""
+		for i, filename := range filenames {
+			if i > 0 {
+				fileList += "\n"
+			}
+			fileList += filename
+		}
+
+		if err := WriteString(conn, fileList); err != nil {
+			return fmt.Errorf("failed to write file list: %w", err)
+		}
+
+		// Read response - count of files
+		count, err := ReadInt(conn)
+		if err != nil {
+			return fmt.Errorf("failed to read file count: %w", err)
+		}
+
+		// Read each file
+		for i := int32(0); i < count; i++ {
+			filename, err := ReadString(conn)
+			if err != nil {
+				return fmt.Errorf("failed to read filename %d: %w", i, err)
+			}
+
+			data, err := ReadData(conn)
+			if err != nil {
+				return fmt.Errorf("failed to read data for %s: %w", filename, err)
+			}
+
+			files[filename] = data
+		}
+
+		return nil
+	})
+
+	return files, err
+}
+
+// CheckAbort sends CommandCheckAbort to check if user aborted sync
+// Request: BYTE(11)
+// Response: BOOL(aborted)
+func (c *Client) CheckAbort() (bool, error) {
+	var aborted bool
+
+	err := c.execute(func(conn net.Conn) error {
+		// Send command
+		if err := WriteByte(conn, CommandCheckAbort); err != nil {
+			return fmt.Errorf("failed to write command: %w", err)
+		}
+
+		// Read response
+		result, err := ReadBool(conn)
+		if err != nil {
+			return fmt.Errorf("failed to read abort status: %w", err)
+		}
+
+		aborted = result
+		return nil
+	})
+
+	return aborted, err
+}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/duckpuppy/comic-server/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -25,7 +26,19 @@ func Execute() {
 	}
 }
 
+var (
+	configFile string
+)
+
 func init() {
-	// Global flags can be added here
-	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.comic-server.yaml)")
+	// Global flags
+	rootCmd.PersistentFlags().StringVar(&configFile, "config", "", "config file (default is $XDG_CONFIG_HOME/comic-server/config.yaml)")
+}
+
+// GetConfigPath returns the config file path, using the flag value or default
+func GetConfigPath() (string, error) {
+	if configFile != "" {
+		return configFile, nil
+	}
+	return config.GetDefaultConfigPath()
 }

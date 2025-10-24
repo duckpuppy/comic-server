@@ -4,10 +4,14 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 
+	"github.com/duckpuppy/comic-server/internal/config"
 	"github.com/duckpuppy/comic-server/internal/device"
+	"github.com/duckpuppy/comic-server/internal/library"
 	"github.com/duckpuppy/comic-server/internal/protocol"
+	csync "github.com/duckpuppy/comic-server/internal/sync"
 	"github.com/spf13/cobra"
 )
 
@@ -17,6 +21,9 @@ var (
 	libraryPath   string
 	ignoreDevices []string
 )
+
+// syncMutex ensures only one device syncs at a time (v0.2 limitation)
+var syncMutex sync.Mutex
 
 var serverCmd = &cobra.Command{
 	Use:   "server",
@@ -33,6 +40,29 @@ func runServer(cmd *cobra.Command, args []string) error {
 	fmt.Printf("   Server control port: %d+\n", serverPort)
 	fmt.Printf("   Discovery port: %d (UDP multicast %s)\n", discoveryPort, device.MulticastGroup)
 	fmt.Printf("   Library path: %s\n", libraryPath)
+
+	// Load config
+	configPath, err := GetConfigPath()
+	if err != nil {
+		return fmt.Errorf("failed to get config path: %w", err)
+	}
+
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	fmt.Printf("   Config: %s\n", configPath)
+	fmt.Printf("   Configured devices: %d\n", len(cfg.Devices))
+	fmt.Println()
+
+	// Load library
+	lib, err := library.LoadLibrary(libraryPath)
+	if err != nil {
+		return fmt.Errorf("failed to load library: %w", err)
+	}
+
+	fmt.Printf("📚 Library loaded: %d books, %d lists\n", len(lib.Books), len(lib.ComicLists))
 	fmt.Println()
 
 	// Create device registry
@@ -153,6 +183,77 @@ func handleDiscoveredDevice(discovered device.DiscoveredDevice, registry *device
 
 	fmt.Printf("\n   📊 Total devices: %d\n", registry.Count())
 	fmt.Println()
+}
+
+// applyDeviceConfig applies a device's sync configuration to a syncer
+// This configures which smart lists to sync and their settings
+func applyDeviceConfig(syncer *csync.Syncer, deviceConfig *config.DeviceConfig, lib *library.ComicLibrary) error {
+	// For v0.2, we only sync the first enabled list
+	// TODO: v0.3 - support syncing multiple lists per device
+
+	for _, listConfig := range deviceConfig.Lists {
+		if !listConfig.Enabled {
+			continue
+		}
+
+		// 1. Lookup smart list by GUID
+		smartList := config.FindListByGUID(lib, listConfig.ListID)
+		if smartList == nil {
+			return fmt.Errorf("smart list %s (ID: %s) not found in library", listConfig.ListName, listConfig.ListID)
+		}
+
+		// 2. Set as filter list
+		if err := syncer.SetFilterList(smartList); err != nil {
+			return fmt.Errorf("failed to set filter list: %w", err)
+		}
+
+		// 3. Apply settings (use list settings or device defaults)
+		settings := listConfig.Settings
+		if settings == nil {
+			settings = deviceConfig.DefaultSettings
+		}
+		if settings == nil {
+			settings = csync.DefaultSettings()
+		}
+		syncer.SetSettings(settings)
+
+		fmt.Printf("   📋 Syncing list: %s\n", listConfig.ListName)
+
+		// For v0.2, only sync first enabled list
+		break
+	}
+
+	return nil
+}
+
+// handleSyncRequest handles a sync request from a device
+// This is a placeholder for actual sync implementation (coming in future)
+func handleSyncRequest(deviceID, deviceIP string, cfg *config.Config, lib *library.ComicLibrary) error {
+	// Acquire global sync lock (only one device can sync at a time in v0.2)
+	syncMutex.Lock()
+	defer syncMutex.Unlock()
+
+	fmt.Printf("🔄 Starting sync for device: %s\n", deviceID)
+
+	// Create protocol client
+	client := protocol.NewClient(deviceIP, device.DevicePort)
+
+	// Create syncer
+	syncer := csync.NewSyncer(client, lib)
+
+	// Apply device config if exists
+	if deviceConfig, ok := cfg.Devices[deviceID]; ok {
+		if err := applyDeviceConfig(syncer, deviceConfig, lib); err != nil {
+			return fmt.Errorf("failed to apply device config: %w", err)
+		}
+	} else {
+		fmt.Printf("   ℹ️  No sync configuration for device %s, syncing all books\n", deviceID)
+	}
+
+	// TODO: Call syncer.PerformSync() when sync implementation is complete
+	fmt.Printf("   ℹ️  Sync not yet implemented (coming in future milestone)\n")
+
+	return nil
 }
 
 func init() {

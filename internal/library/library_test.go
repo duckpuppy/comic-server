@@ -9,12 +9,10 @@ import (
 )
 
 const sampleLibraryXML = `<?xml version="1.0" encoding="utf-8"?>
-<ComicLibrary>
-  <Id>12345678-1234-1234-1234-123456789abc</Id>
+<ComicDatabase Id="12345678-1234-1234-1234-123456789abc">
   <Name>My Comic Library</Name>
   <Books>
-    <Book File="/comics/Batman #1.cbr">
-      <Id>aaaaaaaa-bbbb-cccc-dddd-111111111111</Id>
+    <Book Id="aaaaaaaa-bbbb-cccc-dddd-111111111111" File="/comics/Batman #1.cbr">
       <Title>The Court of Owls</Title>
       <Series>Batman</Series>
       <Number>1</Number>
@@ -32,15 +30,14 @@ const sampleLibraryXML = `<?xml version="1.0" encoding="utf-8"?>
       <Rating>4.5</Rating>
       <CurrentPage>5</CurrentPage>
       <OpenCount>3</OpenCount>
-      <AddedTime>2024-01-15T10:30:00</AddedTime>
+      <Added>2024-01-15T10:30:00</Added>
       <Pages>
         <Page Image="0" Type="FrontCover" ImageWidth="1280" ImageHeight="1920" />
         <Page Image="1" Type="Story" ImageWidth="1280" ImageHeight="1920" />
         <Page Image="2" Type="Story" ImageWidth="1280" ImageHeight="1920" />
       </Pages>
     </Book>
-    <Book File="/comics/Spider-Man #1.cbz">
-      <Id>bbbbbbbb-cccc-dddd-eeee-222222222222</Id>
+    <Book Id="bbbbbbbb-cccc-dddd-eeee-222222222222" File="/comics/Spider-Man #1.cbz">
       <Title>Coming Home</Title>
       <Series>The Amazing Spider-Man</Series>
       <Number>1</Number>
@@ -55,8 +52,7 @@ const sampleLibraryXML = `<?xml version="1.0" encoding="utf-8"?>
       <CurrentPage>0</CurrentPage>
       <AddedTime>2024-02-01T14:20:00</AddedTime>
     </Book>
-    <Book File="/comics/Saga #1.cbz">
-      <Id>cccccccc-dddd-eeee-ffff-333333333333</Id>
+    <Book Id="cccccccc-dddd-eeee-ffff-333333333333" File="/comics/Saga #1.cbz">
       <Title>Chapter One</Title>
       <Series>Saga</Series>
       <Number>1</Number>
@@ -74,14 +70,10 @@ const sampleLibraryXML = `<?xml version="1.0" encoding="utf-8"?>
     </Book>
   </Books>
   <ComicLists>
-    <Item xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="ComicLibraryListItem">
-      <Id>library-root</Id>
-      <Name>Library</Name>
+    <Item xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="ComicLibraryListItem" Id="library-root" Name="Library">
       <BookCount>3</BookCount>
     </Item>
-    <Item xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="ComicReadingList">
-      <Id>dddddddd-eeee-ffff-0000-444444444444</Id>
-      <Name>To Read</Name>
+    <Item xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="ComicReadingList" Id="dddddddd-eeee-ffff-0000-444444444444" Name="To Read">
       <Description>Books I want to read next</Description>
       <BookCount>2</BookCount>
       <Books>
@@ -89,24 +81,16 @@ const sampleLibraryXML = `<?xml version="1.0" encoding="utf-8"?>
         <Book Series="The Amazing Spider-Man" Number="1" Volume="2" Year="1999" Id="bbbbbbbb-cccc-dddd-eeee-222222222222" />
       </Books>
     </Item>
-    <Item xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="ComicSmartListItem">
-      <Id>eeeeeeee-ffff-0000-1111-555555555555</Id>
-      <Name>Favorites</Name>
+    <Item xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="ComicSmartListItem" Id="eeeeeeee-ffff-0000-1111-555555555555" Name="Favorites" MatcherMode="And">
       <Description>Highly rated comics</Description>
-      <MatcherMode>And</MatcherMode>
       <Matchers>
         <ComicBookMatcher Type="Rating" Operator="GreaterOrEqual" ArgumentValue="4" />
       </Matchers>
     </Item>
-    <Item xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="ComicListItemFolder">
-      <Id>ffffffff-0000-1111-2222-666666666666</Id>
-      <Name>Publishers</Name>
+    <Item xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="ComicListItemFolder" Id="ffffffff-0000-1111-2222-666666666666" Name="Publishers">
       <Collapsed>false</Collapsed>
       <Items>
-        <Item xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="ComicSmartListItem">
-          <Id>00000000-1111-2222-3333-777777777777</Id>
-          <Name>DC Comics</Name>
-          <MatcherMode>And</MatcherMode>
+        <Item xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="ComicSmartListItem" Id="00000000-1111-2222-3333-777777777777" Name="DC Comics" MatcherMode="And">
           <Matchers>
             <ComicBookMatcher Type="Publisher" Operator="Equal" ArgumentValue="DC Comics" />
           </Matchers>
@@ -114,7 +98,7 @@ const sampleLibraryXML = `<?xml version="1.0" encoding="utf-8"?>
       </Items>
     </Item>
   </ComicLists>
-</ComicLibrary>`
+</ComicDatabase>`
 
 func TestLoadLibrary(t *testing.T) {
 	// Create temporary test file
