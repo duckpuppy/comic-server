@@ -6,6 +6,10 @@ default:
 build:
     go build -o comic-server
 
+# Build the test client
+build-testclient:
+    go build -o testclient ./cmd/testclient
+
 # Build for multiple platforms
 build-all:
     GOOS=linux GOARCH=amd64 go build -o comic-server-linux-amd64
@@ -15,7 +19,7 @@ build-all:
 
 # Clean build artifacts
 clean:
-    rm -f comic-server comic-server-*
+    rm -f comic-server comic-server-* testclient testclient-*
 
 # Run all tests
 test:
@@ -88,3 +92,11 @@ ci: lint test build
 # Development workflow: clean, build, test
 dev: clean build test
     @echo "Development build complete!"
+
+# Run test client (simulates a ComicRack device)
+run-testclient: build-testclient
+    ./testclient --sync
+
+# Run test client with custom storage
+run-testclient-storage STORAGE: build-testclient
+    ./testclient --sync --storage {{STORAGE}}

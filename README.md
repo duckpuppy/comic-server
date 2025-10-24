@@ -45,10 +45,12 @@ just --list
 
 Common tasks:
 - `just build` - Build the server
+- `just build-testclient` - Build the test client
 - `just test` - Run all tests
 - `just test-coverage` - Run tests with coverage report
 - `just run` - Run the server with test library
 - `just run-dev` - Run with production tablet ignored (safe for development)
+- `just run-testclient` - Run test client that simulates a ComicRack device
 - `just lint` - Format code and run linters
 - `just dev` - Full development workflow (clean, build, test)
 - `just build-all` - Build for all platforms (Linux, macOS, Windows)
@@ -107,6 +109,40 @@ comic-server version
 comic-server --help
 ```
 
+## Testing Without Physical Devices
+
+A test client is included to simulate ComicRack devices:
+
+```bash
+# Build and run test client
+just run-testclient
+
+# Or manually
+./testclient --sync --storage ./test-comics
+```
+
+The test client:
+- Broadcasts device discovery messages every 5 seconds
+- Listens for server commands on port 7614
+- Saves received comic files to local storage
+- Displays all protocol commands and metadata
+
+See [cmd/testclient/README.md](cmd/testclient/README.md) for detailed usage.
+
+### End-to-End Testing
+
+**Terminal 1 - Start test client:**
+```bash
+just run-testclient
+```
+
+**Terminal 2 - Start server with auto-sync:**
+```bash
+./comic-server server --library ~/.local/share/ComicRack/ComicDb.xml --auto-sync
+```
+
+The test client will show all received commands and save synced files to `./test-storage/`.
+
 ## Project Structure
 
 ```
@@ -115,16 +151,25 @@ comic-server/
 │   ├── root.go            # Root command
 │   ├── server.go          # Server subcommand
 │   ├── discover.go        # Device discovery
-│   └── version.go         # Version info
+│   ├── version.go         # Version info
+│   └── testclient/        # Test client (simulates device)
+│       ├── main.go
+│       └── README.md
 ├── internal/              # Private application code
 │   ├── protocol/          # Binary protocol encoding/decoding
 │   ├── device/            # Device management and registry
+│   ├── library/           # ComicRack library management
+│   ├── config/            # Configuration system
 │   └── sync/              # Sync logic
+├── testdata/              # Test data
+│   └── ComicDB.xml        # Sample library file
 ├── main.go                # Entry point
 └── WIRELESS_SYNC_PROTOCOL.md  # Protocol specification
 ```
 
 ## Development Roadmap
+
+### v0.2 - Complete! ✅
 
 - [x] Project initialization
 - [x] CLI framework setup (Cobra)
@@ -132,11 +177,21 @@ comic-server/
 - [x] Binary protocol implementation
 - [x] Device discovery (UDP multicast)
 - [x] Device registry and validation
-- [x] TCP command handlers (ReadFile, FileExists, etc.)
+- [x] TCP command handlers (ReadFile, WriteFile, DeleteFile, etc.)
 - [x] Device ignore/filter functionality
-- [ ] Sync logic
-- [ ] Library management
-- [ ] Configuration system
+- [x] Library management (ComicDB.xml parsing)
+- [x] Configuration system (YAML/TOML, env vars, CLI flags)
+- [x] Smart list filtering
+- [x] Per-device configuration
+- [x] Sync logic (file transfers, metadata, reading lists)
+- [x] Test client for development
+
+### v0.3 - Planned
+
+- [ ] Multiple smart lists per device
+- [ ] Concurrent device sync support
+- [ ] SQLite storage investigation
+- [ ] Viper configuration migration (optional)
 
 ## License
 

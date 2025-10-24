@@ -20,6 +20,8 @@ go.work
 # Build output
 comic-server
 comic-server-*
+testclient
+testclient-*
 /dist/
 /build/
 
@@ -48,3 +50,4 @@ coverage.html
 # Temporary files
 tmp/
 temp/
+test-storage/

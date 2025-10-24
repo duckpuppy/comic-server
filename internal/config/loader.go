@@ -51,6 +51,19 @@ func Load(path string) (*Config, error) {
 		config.Devices = make(map[string]*DeviceConfig)
 	}
 
+	// Apply defaults for missing values
+	config.ApplyDefaults()
+
+	// Apply environment variable overrides
+	if err := config.ApplyEnvironment(); err != nil {
+		return nil, fmt.Errorf("failed to apply environment variables: %w", err)
+	}
+
+	// Validate configuration
+	if err := config.Validate(); err != nil {
+		return nil, fmt.Errorf("config validation failed: %w", err)
+	}
+
 	return config, nil
 }
 

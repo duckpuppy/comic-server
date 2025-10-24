@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/duckpuppy/comic-server/internal/library"
 )
@@ -36,8 +37,6 @@ func (s *Syncer) PerformSync() (*SyncResult, error) {
 		return result, fmt.Errorf("failed to get free space: %w", err)
 	}
 	log.Printf("Device free space: %d bytes (%.2f MB)\n", freeSpace, float64(freeSpace)/(1024*1024))
-
-	// TODO: Calculate required space and validate it's sufficient
 
 	// Step 4: Get current device state
 	log.Println("Retrieving device book list...")
@@ -74,6 +73,21 @@ func (s *Syncer) PerformSync() (*SyncResult, error) {
 	}
 	log.Printf("  Add: %d, Update: %d, Delete: %d, Metadata-only: %d\n",
 		addCount, updateCount, deleteCount, metadataOnlyCount)
+
+	// Validate storage space
+	requiredSpace, err := s.calculateRequiredSpace(operations)
+	if err != nil {
+		return result, fmt.Errorf("failed to calculate required space: %w", err)
+	}
+	log.Printf("Required space: %d bytes (%.2f MB)\n", requiredSpace, float64(requiredSpace)/(1024*1024))
+
+	// Add 10% buffer for overhead
+	requiredSpaceWithBuffer := int64(float64(requiredSpace) * 1.1)
+	if requiredSpaceWithBuffer > freeSpace {
+		return result, fmt.Errorf("insufficient storage: need %.2f MB, have %.2f MB",
+			float64(requiredSpaceWithBuffer)/(1024*1024),
+			float64(freeSpace)/(1024*1024))
+	}
 
 	// Step 6: Execute sync operations
 	totalOps := len(operations)
@@ -172,15 +186,13 @@ func (s *Syncer) addBook(book *library.ComicBook) error {
 	}
 
 	// 2. Write comic book file (.cbp)
-	// TODO: Generate .cbp file from library book (Phase 2)
-	// For now, just write sidecar
-	// bookData, err := s.generateCBP(book)
-	// if err != nil {
-	// 	return fmt.Errorf("failed to generate CBP: %w", err)
-	// }
-	// if err := s.client.WriteFile(filename, bookData); err != nil {
-	// 	return fmt.Errorf("failed to write book file: %w", err)
-	// }
+	bookData, err := s.readComicFile(book)
+	if err != nil {
+		return fmt.Errorf("failed to read comic file: %w", err)
+	}
+	if err := s.client.WriteFile(filename, bookData); err != nil {
+		return fmt.Errorf("failed to write book file: %w", err)
+	}
 
 	// 3. Write sidecar metadata (.cbp.xml)
 	sidecarData, err := s.generateSidecar(book)
@@ -250,15 +262,87 @@ func (s *Syncer) generateSidecar(book *library.ComicBook) ([]byte, error) {
 	return xmlData, nil
 }
 
+// SyncInformation represents the sync_information.xml structure
+type SyncInformation struct {
+	XMLName xml.Name `xml:"SyncInformation"`
+	Name    string   `xml:"Name"`
+	Version int      `xml:"Version"`
+	Lists   *Lists   `xml:"Lists,omitempty"`
+}
+
+// Lists contains all reading lists
+type Lists struct {
+	List []ReadingList `xml:"List"`
+}
+
+// ReadingList represents a single reading list
+type ReadingList struct {
+	Name        string  `xml:"Name,attr"`
+	Description string  `xml:"Description,omitempty"`
+	Books       *BookIDs `xml:"Books,omitempty"`
+}
+
+// BookIDs contains comic book GUIDs
+type BookIDs struct {
+	ID []string `xml:"Id"`
+}
+
 // writeSyncInformation writes reading lists to sync_information.xml
 func (s *Syncer) writeSyncInformation() error {
-	// TODO: Generate proper sync_information.xml with reading lists
-	// For now, write empty/placeholder file
-	syncInfo := `<?xml version="1.0" encoding="utf-8"?>
-<SyncInformation>
-</SyncInformation>
-`
-	return s.client.WriteFile("sync_information.xml", []byte(syncInfo))
+	syncInfo := SyncInformation{
+		Name:    "ComicRack",
+		Version: 1,
+	}
+
+	// Get all reading lists from the library
+	readingLists := s.getReadingLists()
+	if len(readingLists) > 0 {
+		syncInfo.Lists = &Lists{
+			List: readingLists,
+		}
+	}
+
+	// Marshal to XML
+	data, err := xml.MarshalIndent(syncInfo, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal sync information: %w", err)
+	}
+
+	// Add XML declaration
+	xmlData := []byte(xml.Header + string(data))
+	return s.client.WriteFile("sync_information.xml", xmlData)
+}
+
+// getReadingLists extracts reading lists from the library
+// Only includes non-smart lists (regular reading lists)
+func (s *Syncer) getReadingLists() []ReadingList {
+	var lists []ReadingList
+
+	for _, listItem := range s.library.ComicLists {
+		// Skip smart lists - only sync regular reading lists
+		if listItem.Type == "comicrack:ComicSmartListItem" {
+			continue
+		}
+
+		readingList := ReadingList{
+			Name:        listItem.Name,
+			Description: "", // ComicListItem doesn't have description in current implementation
+		}
+
+		// Add book IDs from the list
+		if len(listItem.Items) > 0 {
+			readingList.Books = &BookIDs{
+				ID: make([]string, 0, len(listItem.Items)),
+			}
+			for _, item := range listItem.Items {
+				readingList.Books.ID = append(readingList.Books.ID, item.ID)
+			}
+		}
+
+		lists = append(lists, readingList)
+	}
+
+	return lists
 }
 
 // getTitleForOp extracts a displayable title from a sync operation
@@ -276,4 +360,52 @@ func getTitleForOp(op SyncOperation) string {
 		return op.Device.Filename
 	}
 	return "(unknown)"
+}
+
+// readComicFile reads a comic book file from disk
+// The file path is stored in the library metadata
+func (s *Syncer) readComicFile(book *library.ComicBook) ([]byte, error) {
+	if book.FilePath == "" {
+		return nil, fmt.Errorf("book %s has no file path", book.ID)
+	}
+
+	data, err := os.ReadFile(book.FilePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read comic file %s: %w", book.FilePath, err)
+	}
+
+	return data, nil
+}
+
+// calculateRequiredSpace estimates the total space needed for sync operations
+// Returns the total bytes required
+func (s *Syncer) calculateRequiredSpace(operations []SyncOperation) (int64, error) {
+	var totalBytes int64
+
+	for _, op := range operations {
+		switch op.Type {
+		case OperationAdd, OperationUpdate:
+			// Need space for both book file and sidecar
+			if op.Book.FilePath != "" {
+				fileInfo, err := os.Stat(op.Book.FilePath)
+				if err != nil {
+					// If we can't stat the file, estimate conservatively
+					log.Printf("Warning: cannot stat %s: %v", op.Book.FilePath, err)
+					// Assume 50MB per book if we can't get size
+					totalBytes += 50 * 1024 * 1024
+					continue
+				}
+				totalBytes += fileInfo.Size()
+			}
+			// Add space for sidecar (typically small, ~10KB)
+			totalBytes += 10 * 1024
+
+		case OperationUpdateMetadataOnly:
+			// Only need space for sidecar update
+			totalBytes += 10 * 1024
+		// OperationDelete frees space, so we don't count it
+		}
+	}
+
+	return totalBytes, nil
 }

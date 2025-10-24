@@ -16,10 +16,25 @@ import (
 )
 
 var (
-	serverPort    int
-	discoveryPort int
-	libraryPath   string
-	ignoreDevices []string
+	// CLI flag values (when explicitly provided, override config file)
+	serverPort      int
+	discoveryPort   int
+	libraryPath     string
+	ignoreDevices   []string
+	bindAddress     string
+	autoSync        bool
+	logLevel        string
+	logFormat       string
+
+	// Track which flags were explicitly set by user
+	serverPortSet      bool
+	discoveryPortSet   bool
+	libraryPathSet     bool
+	ignoreDevicesSet   bool
+	bindAddressSet     bool
+	autoSyncSet        bool
+	logLevelSet        bool
+	logFormatSet       bool
 )
 
 // syncMutex ensures only one device syncs at a time (v0.2 limitation)
@@ -37,11 +52,8 @@ sync requests from ComicRack Android/iOS clients.`,
 
 func runServer(cmd *cobra.Command, args []string) error {
 	fmt.Println("🚀 Starting comic-server...")
-	fmt.Printf("   Server control port: %d+\n", serverPort)
-	fmt.Printf("   Discovery port: %d (UDP multicast %s)\n", discoveryPort, device.MulticastGroup)
-	fmt.Printf("   Library path: %s\n", libraryPath)
 
-	// Load config
+	// Load config (applies defaults and environment variables)
 	configPath, err := GetConfigPath()
 	if err != nil {
 		return fmt.Errorf("failed to get config path: %w", err)
@@ -52,12 +64,61 @@ func runServer(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
+	// Apply CLI flag overrides (CLI flags take precedence over config file and environment)
+	if serverPortSet {
+		cfg.Server.ServerPort = serverPort
+	}
+	if discoveryPortSet {
+		cfg.Server.DiscoveryPort = discoveryPort
+	}
+	if libraryPathSet {
+		cfg.Server.LibraryPath = libraryPath
+	}
+	if ignoreDevicesSet {
+		cfg.Server.IgnoreDevices = ignoreDevices
+	}
+	if bindAddressSet {
+		cfg.Server.BindAddress = bindAddress
+	}
+	if autoSyncSet {
+		cfg.Server.AutoSync = autoSync
+	}
+	if logLevelSet {
+		cfg.Server.LogLevel = logLevel
+	}
+	if logFormatSet {
+		cfg.Server.LogFormat = logFormat
+	}
+
+	// Validate final configuration (after CLI overrides)
+	if err := cfg.Validate(); err != nil {
+		return fmt.Errorf("configuration validation failed: %w", err)
+	}
+
+	// Check that library path is set
+	if cfg.Server.LibraryPath == "" {
+		return fmt.Errorf("library path is required (set via --library flag, config file, or COMIC_SERVER_LIBRARY_PATH environment variable)")
+	}
+
+	// Display configuration
+	fmt.Printf("   Server control port: %d+\n", cfg.Server.ServerPort)
+	fmt.Printf("   Discovery port: %d (UDP multicast %s)\n", cfg.Server.DiscoveryPort, device.MulticastGroup)
+	fmt.Printf("   Library path: %s\n", cfg.Server.LibraryPath)
+	if cfg.Server.BindAddress != "" {
+		fmt.Printf("   Bind address: %s\n", cfg.Server.BindAddress)
+	}
+	if len(cfg.Server.IgnoreDevices) > 0 {
+		fmt.Printf("   Ignoring devices: %v\n", cfg.Server.IgnoreDevices)
+	}
+	fmt.Printf("   Auto-sync: %v\n", cfg.Server.AutoSync)
+	fmt.Printf("   Log level: %s\n", cfg.Server.LogLevel)
+	fmt.Printf("   Log format: %s\n", cfg.Server.LogFormat)
 	fmt.Printf("   Config: %s\n", configPath)
 	fmt.Printf("   Configured devices: %d\n", len(cfg.Devices))
 	fmt.Println()
 
 	// Load library
-	lib, err := library.LoadLibrary(libraryPath)
+	lib, err := library.LoadLibrary(cfg.Server.LibraryPath)
 	if err != nil {
 		return fmt.Errorf("failed to load library: %w", err)
 	}
@@ -97,13 +158,13 @@ func runServer(cmd *cobra.Command, args []string) error {
 			fmt.Printf("⚠️  Error: %v\n", err)
 
 		case discovered := <-deviceChan:
-			handleDiscoveredDevice(discovered, registry)
+			handleDiscoveredDevice(discovered, registry, cfg, lib)
 		}
 	}
 }
 
-func shouldIgnoreDevice(ipAddress, deviceID, deviceName string) bool {
-	for _, ignore := range ignoreDevices {
+func shouldIgnoreDevice(ipAddress, deviceID, deviceName string, ignoreList []string) bool {
+	for _, ignore := range ignoreList {
 		if ignore == ipAddress || ignore == deviceID || ignore == deviceName {
 			return true
 		}
@@ -111,9 +172,9 @@ func shouldIgnoreDevice(ipAddress, deviceID, deviceName string) bool {
 	return false
 }
 
-func handleDiscoveredDevice(discovered device.DiscoveredDevice, registry *device.Registry) {
+func handleDiscoveredDevice(discovered device.DiscoveredDevice, registry *device.Registry, cfg *config.Config, lib *library.ComicLibrary) {
 	// Check if this device should be ignored by IP (early check)
-	if shouldIgnoreDevice(discovered.IPAddress, "", "") {
+	if shouldIgnoreDevice(discovered.IPAddress, "", "", cfg.Server.IgnoreDevices) {
 		return
 	}
 
@@ -156,7 +217,7 @@ func handleDiscoveredDevice(discovered device.DiscoveredDevice, registry *device
 	}
 
 	// Check if device should be ignored by ID or name
-	if shouldIgnoreDevice(discovered.IPAddress, info.ID, info.Name) {
+	if shouldIgnoreDevice(discovered.IPAddress, info.ID, info.Name, cfg.Server.IgnoreDevices) {
 		fmt.Printf("   ⏭️  Ignoring device (matches ignore filter)\n\n")
 		return
 	}
@@ -183,6 +244,19 @@ func handleDiscoveredDevice(discovered device.DiscoveredDevice, registry *device
 
 	fmt.Printf("\n   📊 Total devices: %d\n", registry.Count())
 	fmt.Println()
+
+	// Handle sync request if device wants sync and auto-sync is enabled
+	if discovered.WantsSync && cfg.Server.AutoSync {
+		fmt.Printf("📲 Device requested sync, starting automatic sync...\n")
+		// Note: We're already in handleDiscoveredDevice which is called from the main loop,
+		// so we need to be careful about blocking. For v0.2, we'll sync synchronously.
+		// v0.3 can improve this with goroutines and better concurrency.
+		if err := handleSyncRequest(info.ID, discovered.IPAddress, cfg, lib); err != nil {
+			fmt.Printf("   ❌ Sync failed: %v\n\n", err)
+		}
+	} else if discovered.WantsSync && !cfg.Server.AutoSync {
+		fmt.Printf("   ℹ️  Device requested sync but auto-sync is disabled\n\n")
+	}
 }
 
 // applyDeviceConfig applies a device's sync configuration to a syncer
@@ -227,7 +301,6 @@ func applyDeviceConfig(syncer *csync.Syncer, deviceConfig *config.DeviceConfig, 
 }
 
 // handleSyncRequest handles a sync request from a device
-// This is a placeholder for actual sync implementation (coming in future)
 func handleSyncRequest(deviceID, deviceIP string, cfg *config.Config, lib *library.ComicLibrary) error {
 	// Acquire global sync lock (only one device can sync at a time in v0.2)
 	syncMutex.Lock()
@@ -250,8 +323,24 @@ func handleSyncRequest(deviceID, deviceIP string, cfg *config.Config, lib *libra
 		fmt.Printf("   ℹ️  No sync configuration for device %s, syncing all books\n", deviceID)
 	}
 
-	// TODO: Call syncer.PerformSync() when sync implementation is complete
-	fmt.Printf("   ℹ️  Sync not yet implemented (coming in future milestone)\n")
+	// Perform sync
+	result, err := syncer.PerformSync()
+	if err != nil {
+		return fmt.Errorf("sync failed: %w", err)
+	}
+
+	// Display sync results
+	fmt.Printf("✅ Sync completed:\n")
+	fmt.Printf("   Added: %d books\n", result.BooksAdded)
+	fmt.Printf("   Updated: %d books\n", result.BooksUpdated)
+	fmt.Printf("   Deleted: %d books\n", result.BooksDeleted)
+	if len(result.Errors) > 0 {
+		fmt.Printf("   ⚠️  Errors: %d\n", len(result.Errors))
+		for _, err := range result.Errors {
+			fmt.Printf("      - %v\n", err)
+		}
+	}
+	fmt.Println()
 
 	return nil
 }
@@ -259,9 +348,25 @@ func handleSyncRequest(deviceID, deviceIP string, cfg *config.Config, lib *libra
 func init() {
 	rootCmd.AddCommand(serverCmd)
 
-	serverCmd.Flags().IntVarP(&serverPort, "port", "p", 7620, "Server control port (TCP)")
-	serverCmd.Flags().IntVarP(&discoveryPort, "discovery-port", "d", 7615, "Device discovery port (UDP multicast)")
-	serverCmd.Flags().StringVarP(&libraryPath, "library", "l", "", "Path to comic library directory (required)")
-	serverCmd.Flags().StringSliceVarP(&ignoreDevices, "ignore-device", "i", []string{}, "Devices to ignore (can be IP address, device ID, or device name)")
-	serverCmd.MarkFlagRequired("library")
+	serverCmd.Flags().IntVarP(&serverPort, "port", "p", 0, "Server control port (TCP, default: 7620)")
+	serverCmd.Flags().IntVarP(&discoveryPort, "discovery-port", "d", 0, "Device discovery port (UDP multicast, default: 7615)")
+	serverCmd.Flags().StringVarP(&libraryPath, "library", "l", "", "Path to ComicDB.xml file")
+	serverCmd.Flags().StringSliceVarP(&ignoreDevices, "ignore-device", "i", nil, "Devices to ignore (can be IP address, device ID, or device name)")
+	serverCmd.Flags().StringVarP(&bindAddress, "bind", "b", "", "Network interface to bind to (default: all interfaces)")
+	serverCmd.Flags().BoolVar(&autoSync, "auto-sync", false, "Automatically sync devices when they connect")
+	serverCmd.Flags().StringVar(&logLevel, "log-level", "", "Log level: debug, info, warn, error (default: info)")
+	serverCmd.Flags().StringVar(&logFormat, "log-format", "", "Log format: text, json (default: text)")
+
+	// Mark which flags to check for being explicitly set
+	serverCmd.PreRunE = func(cmd *cobra.Command, args []string) error {
+		serverPortSet = cmd.Flags().Changed("port")
+		discoveryPortSet = cmd.Flags().Changed("discovery-port")
+		libraryPathSet = cmd.Flags().Changed("library")
+		ignoreDevicesSet = cmd.Flags().Changed("ignore-device")
+		bindAddressSet = cmd.Flags().Changed("bind")
+		autoSyncSet = cmd.Flags().Changed("auto-sync")
+		logLevelSet = cmd.Flags().Changed("log-level")
+		logFormatSet = cmd.Flags().Changed("log-format")
+		return nil
+	}
 }
