@@ -1,0 +1,18 @@
+<?xml version='1.0' encoding='utf-8'?>
+<ComicDatabase xmlns:ns0="http://www.w3.org/2000/xmlns/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" Id="test-library-001" ns0:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <Books>
+    <Book Id="book-001" File="testdata/comics/test-comic-001.cbz">
+      <Series>Test Series</Series>
+      <Title>Test Comic #1</Title>
+      <Number>1</Number>
+      <Volume>2025</Volume>
+      <Year>2025</Year>
+      <Month>10</Month>
+      <Publisher>Test Publisher</Publisher>
+      <PageCount>2</PageCount>
+      <Format>Comic</Format>
+      <FileSize>370</FileSize>
+    </Book>
+  </Books>
+  <ComicLists />
+</ComicDatabase>

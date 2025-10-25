@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/xml"
 	"fmt"
 	"log"
@@ -50,10 +52,46 @@ func init() {
 	rootCmd.Flags().IntVar(&devicePort, "device-port", 7614, "Device TCP port")
 }
 
+// createComicRackINI creates a comicrack.ini file with device information
+func createComicRackINI() error {
+	// Device info
+	model := "Test Device Model"
+	manufacturer := "Test Manufacturer"
+	serial := deviceID
+	edition := "Android Full"
+	version := "100"
+
+	// Calculate hash: SHA1(Model + Manufacturer + Serial + Edition + Version)
+	hashInput := model + manufacturer + serial + edition + version
+	hash := sha1.Sum([]byte(hashInput))
+	hashStr := hex.EncodeToString(hash[:])
+
+	// Create INI content
+	iniContent := fmt.Sprintf(`[Device]
+Name=%s
+Model=%s
+Manufacturer=%s
+Serial=%s
+ID=%s
+Hash=%s
+Version=%s
+Edition=%s
+`, deviceName, model, manufacturer, serial, deviceID, hashStr, version, edition)
+
+	// Write to storage directory
+	iniPath := filepath.Join(storageDir, "comicrack.ini")
+	return os.WriteFile(iniPath, []byte(iniContent), 0644)
+}
+
 func runClient(cmd *cobra.Command, args []string) error {
 	// Create storage directory
 	if err := os.MkdirAll(storageDir, 0755); err != nil {
 		return fmt.Errorf("failed to create storage directory: %w", err)
+	}
+
+	// Create comicrack.ini file for device info
+	if err := createComicRackINI(); err != nil {
+		return fmt.Errorf("failed to create comicrack.ini: %w", err)
 	}
 
 	fmt.Println("🤖 ComicRack Test Client")
@@ -119,6 +157,8 @@ func handleConnection(conn net.Conn) {
 		handleCommandCompleted(conn)
 	case protocol.CommandFreeSpace:
 		handleCommandFreeSpace(conn)
+	case protocol.CommandFileExists:
+		handleCommandFileExists(conn)
 	case protocol.CommandListFiles:
 		handleCommandListFiles(conn)
 	case protocol.CommandReadFile:
@@ -193,6 +233,28 @@ func handleCommandFreeSpace(conn net.Conn) {
 	if err := protocol.WriteLong(conn, freeSpace); err != nil {
 		log.Printf("Error writing free space: %v", err)
 	}
+}
+
+// handleCommandFileExists checks if a file exists
+func handleCommandFileExists(conn net.Conn) {
+	filename, err := protocol.ReadString(conn)
+	if err != nil {
+		log.Printf("Error reading filename: %v", err)
+		return
+	}
+
+	fmt.Printf("📥 CommandFileExists - Checking %s\n", filename)
+
+	// Check if file exists in storage
+	filePath := filepath.Join(storageDir, filename)
+	_, err = os.Stat(filePath)
+	exists := err == nil
+
+	if err := protocol.WriteBool(conn, exists); err != nil {
+		log.Printf("Error writing exists status: %v", err)
+	}
+
+	fmt.Printf("   File exists: %v\n", exists)
 }
 
 // handleCommandListFiles returns list of files on device

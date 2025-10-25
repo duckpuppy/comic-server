@@ -1,0 +1,43 @@
+<?xml version='1.0' encoding='utf-8'?>
+<ComicDatabase xmlns:ns0="http://www.w3.org/2000/xmlns/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" Id="real-test-library" ns0:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <Books>
+    <Book Id="league-001-id" File="testdata/real-comics/league-001.cbz">
+      <Series>The League of Extraordinary Gentlemen: Century</Series>
+      <Title>The League of Extraordinary Gentlemen: Century #1</Title>
+      <Number>1</Number>
+      <Volume>2009</Volume>
+      <Year>2009</Year>
+      <Month>5</Month>
+      <Writer>Alan Moore</Writer>
+      <Penciller>Kevin O'Neill</Penciller>
+      <Publisher>Top Shelf</Publisher>
+      <PageCount>80</PageCount>
+      <Format>Trade Paperback</Format>
+    </Book>
+    <Book Id="league-002-id" File="testdata/real-comics/league-002.cbz">
+      <Series>The League of Extraordinary Gentlemen: Century</Series>
+      <Title>The League of Extraordinary Gentlemen: Century #2</Title>
+      <Number>2</Number>
+      <Volume>2009</Volume>
+      <Year>2011</Year>
+      <Month>7</Month>
+      <Writer>Alan Moore</Writer>
+      <Penciller>Kevin O'Neill</Penciller>
+      <Publisher>Top Shelf</Publisher>
+      <PageCount>80</PageCount>
+      <Format>Trade Paperback</Format>
+    </Book>
+    <Book Id="kids-club-002-id" File="testdata/real-comics/kids-club-002.cbz">
+      <Series>Top Shelf Kids Club</Series>
+      <Title>Top Shelf Kids Club #2</Title>
+      <Number>2</Number>
+      <Volume>2011</Volume>
+      <Year>2012</Year>
+      <Month>5</Month>
+      <Publisher>Top Shelf</Publisher>
+      <PageCount>48</PageCount>
+      <Format>Comic</Format>
+    </Book>
+  </Books>
+  <ComicLists />
+</ComicDatabase>

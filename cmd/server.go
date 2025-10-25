@@ -10,6 +10,7 @@ import (
 	"github.com/duckpuppy/comic-server/internal/config"
 	"github.com/duckpuppy/comic-server/internal/device"
 	"github.com/duckpuppy/comic-server/internal/library"
+	"github.com/duckpuppy/comic-server/internal/log"
 	"github.com/duckpuppy/comic-server/internal/protocol"
 	csync "github.com/duckpuppy/comic-server/internal/sync"
 	"github.com/spf13/cobra"
@@ -51,8 +52,6 @@ sync requests from ComicRack Android/iOS clients.`,
 }
 
 func runServer(cmd *cobra.Command, args []string) error {
-	fmt.Println("🚀 Starting comic-server...")
-
 	// Load config (applies defaults and environment variables)
 	configPath, err := GetConfigPath()
 	if err != nil {
@@ -95,50 +94,63 @@ func runServer(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("configuration validation failed: %w", err)
 	}
 
+	// Initialize logging with validated configuration
+	if err := log.Init(log.Config{
+		Level:  cfg.Server.LogLevel,
+		Format: cfg.Server.LogFormat,
+		Output: "stdout",
+	}); err != nil {
+		return fmt.Errorf("failed to initialize logging: %w", err)
+	}
+
 	// Check that library path is set
 	if cfg.Server.LibraryPath == "" {
 		return fmt.Errorf("library path is required (set via --library flag, config file, or COMIC_SERVER_LIBRARY_PATH environment variable)")
 	}
 
-	// Display configuration
-	fmt.Printf("   Server control port: %d+\n", cfg.Server.ServerPort)
-	fmt.Printf("   Discovery port: %d (UDP multicast %s)\n", cfg.Server.DiscoveryPort, device.MulticastGroup)
-	fmt.Printf("   Library path: %s\n", cfg.Server.LibraryPath)
-	if cfg.Server.BindAddress != "" {
-		fmt.Printf("   Bind address: %s\n", cfg.Server.BindAddress)
-	}
-	if len(cfg.Server.IgnoreDevices) > 0 {
-		fmt.Printf("   Ignoring devices: %v\n", cfg.Server.IgnoreDevices)
-	}
-	fmt.Printf("   Auto-sync: %v\n", cfg.Server.AutoSync)
-	fmt.Printf("   Log level: %s\n", cfg.Server.LogLevel)
-	fmt.Printf("   Log format: %s\n", cfg.Server.LogFormat)
-	fmt.Printf("   Config: %s\n", configPath)
-	fmt.Printf("   Configured devices: %d\n", len(cfg.Devices))
-	fmt.Println()
+	// Log server startup and configuration
+	log.Info().Msg("Starting comic-server")
+	log.Info().
+		Int("server_port", cfg.Server.ServerPort).
+		Int("discovery_port", cfg.Server.DiscoveryPort).
+		Str("multicast_group", device.MulticastGroup).
+		Str("library_path", cfg.Server.LibraryPath).
+		Str("bind_address", cfg.Server.BindAddress).
+		Strs("ignore_devices", cfg.Server.IgnoreDevices).
+		Bool("auto_sync", cfg.Server.AutoSync).
+		Str("log_level", cfg.Server.LogLevel).
+		Str("log_format", cfg.Server.LogFormat).
+		Str("config_path", configPath).
+		Int("configured_devices", len(cfg.Devices)).
+		Msg("Server configuration loaded")
 
 	// Load library
+	log.Debug().Str("path", cfg.Server.LibraryPath).Msg("Loading comic library")
 	lib, err := library.LoadLibrary(cfg.Server.LibraryPath)
 	if err != nil {
 		return fmt.Errorf("failed to load library: %w", err)
 	}
 
-	fmt.Printf("📚 Library loaded: %d books, %d lists\n", len(lib.Books), len(lib.ComicLists))
-	fmt.Println()
+	log.Info().
+		Int("books", len(lib.Books)).
+		Int("lists", len(lib.ComicLists)).
+		Msg("Library loaded successfully")
 
 	// Create device registry
 	registry := device.NewRegistry()
 
 	// Start UDP multicast listener
+	log.Debug().Msg("Creating discovery listener")
 	listener, err := device.NewDiscoveryListener()
 	if err != nil {
 		return fmt.Errorf("failed to start discovery listener: %w", err)
 	}
 	defer listener.Stop()
 
-	fmt.Printf("🔍 Listening for device broadcasts on %s:%d...\n", device.MulticastGroup, device.DiscoveryPort)
-	fmt.Println("   Press Ctrl+C to stop")
-	fmt.Println()
+	log.Info().
+		Str("multicast_group", device.MulticastGroup).
+		Int("port", device.DiscoveryPort).
+		Msg("Listening for device broadcasts")
 
 	// Start listening
 	deviceChan, errorChan := listener.Start()
@@ -147,15 +159,17 @@ func runServer(cmd *cobra.Command, args []string) error {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
+	log.Info().Msg("Server ready - press Ctrl+C to stop")
+
 	// Main loop
 	for {
 		select {
 		case <-sigChan:
-			fmt.Println("\n\n👋 Shutting down server...")
+			log.Info().Msg("Shutting down server")
 			return nil
 
 		case err := <-errorChan:
-			fmt.Printf("⚠️  Error: %v\n", err)
+			log.Error().Err(err).Msg("Discovery listener error")
 
 		case discovered := <-deviceChan:
 			handleDiscoveredDevice(discovered, registry, cfg, lib)
@@ -173,95 +187,95 @@ func shouldIgnoreDevice(ipAddress, deviceID, deviceName string, ignoreList []str
 }
 
 func handleDiscoveredDevice(discovered device.DiscoveredDevice, registry *device.Registry, cfg *config.Config, lib *library.ComicLibrary) {
+	logger := log.With().
+		Str("ip", discovered.IPAddress).
+		Str("device_key", discovered.Key).
+		Logger()
+
 	// Check if this device should be ignored by IP (early check)
 	if shouldIgnoreDevice(discovered.IPAddress, "", "", cfg.Server.IgnoreDevices) {
+		logger.Debug().Msg("Device ignored by IP filter")
 		return
 	}
 
 	// Check if we already know this device
 	if _, ok := registry.Get(discovered.Key); ok {
 		// Device already registered, just update last seen timestamp
-		// DEBUG: Uncomment to see repeated discoveries
-		// fmt.Printf("   Device %s already known\n", discovered.Key)
+		logger.Debug().Msg("Device already registered, updating last seen")
 		registry.UpdateLastSeen(discovered.Key)
 		return
 	}
 
-	fmt.Printf("📱 Device discovered: %s", discovered.IPAddress)
-	if discovered.WantsSync {
-		fmt.Printf(" (requesting sync)")
-	}
-	fmt.Println()
+	logger.Info().
+		Bool("wants_sync", discovered.WantsSync).
+		Msg("New device discovered")
 
 	// Connect to device and read comicrack.ini
 	client := protocol.NewClient(discovered.IPAddress, device.DevicePort)
 
-	fmt.Printf("   Reading device info...\n")
+	logger.Debug().Msg("Reading device info")
 	iniData, err := client.ReadFile("comicrack.ini")
 	if err != nil {
-		fmt.Printf("   ❌ Failed to read device info: %v\n\n", err)
+		logger.Error().Err(err).Msg("Failed to read device info")
 		return
 	}
 
 	// Parse device info
 	info, err := device.ParseINI(iniData)
 	if err != nil {
-		fmt.Printf("   ❌ Failed to parse device info: %v\n\n", err)
+		logger.Error().Err(err).Msg("Failed to parse device info")
 		return
 	}
 
 	// Validate device
 	if err := info.Validate(); err != nil {
-		fmt.Printf("   ❌ Device validation failed: %v\n\n", err)
+		logger.Error().Err(err).Msg("Device validation failed")
 		return
 	}
 
+	// Update logger with device details
+	logger = log.With().
+		Str("ip", discovered.IPAddress).
+		Str("device_id", info.ID).
+		Str("device_name", info.Name).
+		Logger()
+
 	// Check if device should be ignored by ID or name
 	if shouldIgnoreDevice(discovered.IPAddress, info.ID, info.Name, cfg.Server.IgnoreDevices) {
-		fmt.Printf("   ⏭️  Ignoring device (matches ignore filter)\n\n")
+		logger.Info().Msg("Device ignored by filter")
 		return
 	}
 
 	// Add to registry
 	registry.Add(info, discovered.IPAddress)
 
-	// Display device information
-	fmt.Printf("   ✅ %s\n", info.Name)
-	fmt.Printf("      Model: %s %s\n", info.Manufacturer, info.Model)
-	fmt.Printf("      Edition: %s (v%d)\n", info.Edition, info.Version)
-	fmt.Printf("      ID: %s\n", info.ID)
-
+	// Log device information
 	bookLimit := info.BookLimit()
-	if bookLimit > 0 {
-		fmt.Printf("      Book limit: %d\n", bookLimit)
-	} else {
-		fmt.Printf("      Book limit: unlimited\n")
-	}
-
-	if len(info.Capabilities) > 0 {
-		fmt.Printf("      Capabilities: %v\n", info.Capabilities)
-	}
-
-	fmt.Printf("\n   📊 Total devices: %d\n", registry.Count())
-	fmt.Println()
+	logger.Info().
+		Str("model", fmt.Sprintf("%s %s", info.Manufacturer, info.Model)).
+		Str("edition", string(info.Edition)).
+		Int("version", info.Version).
+		Int("book_limit", bookLimit).
+		Strs("capabilities", info.Capabilities).
+		Int("total_devices", registry.Count()).
+		Msg("Device registered successfully")
 
 	// Handle sync request if device wants sync and auto-sync is enabled
 	if discovered.WantsSync && cfg.Server.AutoSync {
-		fmt.Printf("📲 Device requested sync, starting automatic sync...\n")
-		// Note: We're already in handleDiscoveredDevice which is called from the main loop,
-		// so we need to be careful about blocking. For v0.2, we'll sync synchronously.
-		// v0.3 can improve this with goroutines and better concurrency.
+		logger.Info().Msg("Device requested sync, starting automatic sync")
 		if err := handleSyncRequest(info.ID, discovered.IPAddress, cfg, lib); err != nil {
-			fmt.Printf("   ❌ Sync failed: %v\n\n", err)
+			logger.Error().Err(err).Msg("Sync failed")
 		}
 	} else if discovered.WantsSync && !cfg.Server.AutoSync {
-		fmt.Printf("   ℹ️  Device requested sync but auto-sync is disabled\n\n")
+		logger.Info().Msg("Device requested sync but auto-sync is disabled")
 	}
 }
 
 // applyDeviceConfig applies a device's sync configuration to a syncer
 // This configures which smart lists to sync and their settings
 func applyDeviceConfig(syncer *csync.Syncer, deviceConfig *config.DeviceConfig, lib *library.ComicLibrary) error {
+	logger := log.With().Str("device_id", deviceConfig.DeviceID).Logger()
+
 	// For v0.2, we only sync the first enabled list
 	// TODO: v0.3 - support syncing multiple lists per device
 
@@ -291,7 +305,10 @@ func applyDeviceConfig(syncer *csync.Syncer, deviceConfig *config.DeviceConfig, 
 		}
 		syncer.SetSettings(settings)
 
-		fmt.Printf("   📋 Syncing list: %s\n", listConfig.ListName)
+		logger.Info().
+			Str("list_id", listConfig.ListID).
+			Str("list_name", listConfig.ListName).
+			Msg("Applied list configuration to syncer")
 
 		// For v0.2, only sync first enabled list
 		break
@@ -302,11 +319,16 @@ func applyDeviceConfig(syncer *csync.Syncer, deviceConfig *config.DeviceConfig, 
 
 // handleSyncRequest handles a sync request from a device
 func handleSyncRequest(deviceID, deviceIP string, cfg *config.Config, lib *library.ComicLibrary) error {
+	logger := log.With().
+		Str("device_id", deviceID).
+		Str("device_ip", deviceIP).
+		Logger()
+
 	// Acquire global sync lock (only one device can sync at a time in v0.2)
 	syncMutex.Lock()
 	defer syncMutex.Unlock()
 
-	fmt.Printf("🔄 Starting sync for device: %s\n", deviceID)
+	logger.Info().Msg("Starting sync")
 
 	// Create protocol client
 	client := protocol.NewClient(deviceIP, device.DevicePort)
@@ -320,27 +342,32 @@ func handleSyncRequest(deviceID, deviceIP string, cfg *config.Config, lib *libra
 			return fmt.Errorf("failed to apply device config: %w", err)
 		}
 	} else {
-		fmt.Printf("   ℹ️  No sync configuration for device %s, syncing all books\n", deviceID)
+		logger.Info().Msg("No sync configuration found, syncing all books")
 	}
 
 	// Perform sync
+	logger.Debug().Msg("Performing sync operation")
 	result, err := syncer.PerformSync()
 	if err != nil {
 		return fmt.Errorf("sync failed: %w", err)
 	}
 
-	// Display sync results
-	fmt.Printf("✅ Sync completed:\n")
-	fmt.Printf("   Added: %d books\n", result.BooksAdded)
-	fmt.Printf("   Updated: %d books\n", result.BooksUpdated)
-	fmt.Printf("   Deleted: %d books\n", result.BooksDeleted)
+	// Log sync results
+	syncLogger := logger.With().
+		Int("books_added", result.BooksAdded).
+		Int("books_updated", result.BooksUpdated).
+		Int("books_deleted", result.BooksDeleted).
+		Int("errors", len(result.Errors)).
+		Logger()
+
 	if len(result.Errors) > 0 {
-		fmt.Printf("   ⚠️  Errors: %d\n", len(result.Errors))
+		syncLogger.Warn().Msg("Sync completed with errors")
 		for _, err := range result.Errors {
-			fmt.Printf("      - %v\n", err)
+			logger.Error().Err(err).Msg("Sync error")
 		}
+	} else {
+		syncLogger.Info().Msg("Sync completed successfully")
 	}
-	fmt.Println()
 
 	return nil
 }
