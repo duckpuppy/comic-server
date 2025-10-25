@@ -349,11 +349,10 @@ comic-server config set-options "My Tablet" "Currently Reading" \
 comic-server config remove-list "My Tablet" "Currently Reading"
 ```
 
-**v0.2 Limitations**:
+**Current Limitations**:
 
 - **Single-device sync**: Only one device can sync at a time (enforced by mutex)
-- **Single list per device**: Only first enabled list is synced (v0.3 will support multiple)
-- Concurrent sync support planned for v0.3
+- Concurrent sync support planned for v1.0
 
 ## Structured Logging
 
@@ -589,11 +588,11 @@ See issues #15, #16, #17 for:
 
 ### v0.4 Milestone - Planned (Security & Multi-List Support):
 
-- Multiple smart lists per device - Full implementation - Issue #21
-  - Remove single-list limitation from v0.2/v0.3
-  - Sync all enabled lists per device
-  - Handle books appearing in multiple lists
-  - Per-list sync statistics
+- ✅ Multiple smart lists per device - Issue #21 (COMPLETED)
+  - Removed single-list limitation
+  - Syncs all enabled lists per device (union of all lists)
+  - Automatically deduplicates books appearing in multiple lists
+  - Backward compatible with single-list SetFilterList API
 - Security hardening - Issue #10
   - Device authentication validation review
   - Rate limiting for protocol commands

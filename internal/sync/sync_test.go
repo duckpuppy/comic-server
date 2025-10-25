@@ -669,3 +669,321 @@ func TestGenerateSidecar(t *testing.T) {
 		t.Errorf("expected Title %s, got %s", book.Title, parsed.Title)
 	}
 }
+
+func TestSetFilterLists_MultipleSmartLists(t *testing.T) {
+	// Create test library with books
+	lib := &library.ComicLibrary{
+		Books: []library.ComicBook{
+			{ID: "book1", Series: "Series A", Title: "Book 1"},
+			{ID: "book2", Series: "Series B", Title: "Book 2"},
+			{ID: "book3", Series: "Series A", Title: "Book 3"},
+			{ID: "book4", Series: "Series C", Title: "Book 4"},
+		},
+		ComicLists: []library.ComicListItem{
+			{
+				ID:          "list1",
+				Name:        "Series A Books",
+				Type:        "ComicSmartListItem",
+				MatcherMode: "And",
+				Matchers: []library.ComicBookMatcher{
+					{Type: "Series", Operator: "0", ArgumentValue: "Series A"},
+				},
+			},
+			{
+				ID:          "list2",
+				Name:        "Series B Books",
+				Type:        "ComicSmartListItem",
+				MatcherMode: "And",
+				Matchers: []library.ComicBookMatcher{
+					{Type: "Series", Operator: "0", ArgumentValue: "Series B"},
+				},
+			},
+			{
+				ID:   "list3",
+				Name: "Regular List",
+				Type: "ReadingList",
+			},
+		},
+	}
+
+	client := NewMockClient()
+	syncer := NewSyncer(client, lib)
+
+	// Test setting multiple smart lists
+	smartList1 := &lib.ComicLists[0]
+	smartList2 := &lib.ComicLists[1]
+
+	err := syncer.SetFilterLists([]*library.ComicListItem{smartList1, smartList2})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify filterLists is set and filterList is cleared
+	if len(syncer.filterLists) != 2 {
+		t.Errorf("expected 2 filter lists, got %d", len(syncer.filterLists))
+	}
+	if syncer.filterList != nil {
+		t.Error("expected filterList to be cleared when filterLists is set")
+	}
+
+	// Test setting non-smart list should fail
+	regularList := &lib.ComicLists[2]
+	err = syncer.SetFilterLists([]*library.ComicListItem{smartList1, regularList})
+	if err == nil {
+		t.Error("expected error when setting non-smart list, got nil")
+	}
+}
+
+func TestSetFilterLists_BackwardCompatibility(t *testing.T) {
+	lib := &library.ComicLibrary{
+		Books: []library.ComicBook{
+			{ID: "book1", Title: "Book 1"},
+		},
+		ComicLists: []library.ComicListItem{
+			{
+				ID:          "list1",
+				Name:        "Smart List",
+				Type:        "ComicSmartListItem",
+				MatcherMode: "And",
+				Matchers: []library.ComicBookMatcher{
+					{Type: "Title", Operator: "2", ArgumentValue: "Book"}, // Contains "Book"
+				},
+			},
+		},
+	}
+
+	client := NewMockClient()
+	syncer := NewSyncer(client, lib)
+
+	smartList := &lib.ComicLists[0]
+
+	// Test that SetFilterList clears filterLists
+	syncer.filterLists = []*library.ComicListItem{smartList}
+	err := syncer.SetFilterList(smartList)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if syncer.filterList != smartList {
+		t.Error("expected filterList to be set")
+	}
+	if len(syncer.filterLists) != 0 {
+		t.Error("expected filterLists to be cleared when filterList is set")
+	}
+
+	// Test that SetFilterLists clears filterList
+	syncer.filterList = smartList
+	err = syncer.SetFilterLists([]*library.ComicListItem{smartList})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(syncer.filterLists) != 1 {
+		t.Error("expected filterLists to be set")
+	}
+	if syncer.filterList != nil {
+		t.Error("expected filterList to be cleared when filterLists is set")
+	}
+}
+
+func TestComputeUnionOfLists(t *testing.T) {
+	// Create test library with overlapping books in lists
+	lib := &library.ComicLibrary{
+		Books: []library.ComicBook{
+			{ID: "book1", Series: "Series A", Title: "Book 1"},
+			{ID: "book2", Series: "Series B", Title: "Book 2"},
+			{ID: "book3", Series: "Series A", Title: "Book 3"},
+			{ID: "book4", Series: "Series C", Title: "Book 4"},
+		},
+		ComicLists: []library.ComicListItem{
+			{
+				ID:          "list1",
+				Name:        "List 1 (Series A or B)",
+				Type:        "ComicSmartListItem",
+				MatcherMode: "Or",
+				Matchers: []library.ComicBookMatcher{
+					{Type: "Series", Operator: "0", ArgumentValue: "Series A"},
+					{Type: "Series", Operator: "0", ArgumentValue: "Series B"},
+				},
+			},
+			{
+				ID:          "list2",
+				Name:        "List 2 (Series B only)",
+				Type:        "ComicSmartListItem",
+				MatcherMode: "And",
+				Matchers: []library.ComicBookMatcher{
+					{Type: "Series", Operator: "0", ArgumentValue: "Series B"}, // book2 overlaps with list1
+				},
+			},
+		},
+	}
+
+	client := NewMockClient()
+	syncer := NewSyncer(client, lib)
+
+	// Set multiple filter lists
+	err := syncer.SetFilterLists([]*library.ComicListItem{
+		&lib.ComicLists[0],
+		&lib.ComicLists[1],
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Compute union
+	books := syncer.computeUnionOfLists()
+
+	// Verify union contains book1, book2, book3 (no duplicates)
+	if len(books) != 3 {
+		t.Errorf("expected 3 books in union, got %d", len(books))
+	}
+
+	// Verify book IDs
+	bookIDs := make(map[string]bool)
+	for _, book := range books {
+		bookIDs[book.ID] = true
+	}
+
+	expectedIDs := []string{"book1", "book2", "book3"}
+	for _, id := range expectedIDs {
+		if !bookIDs[id] {
+			t.Errorf("expected book %s in union, but not found", id)
+		}
+	}
+
+	// Verify book4 is NOT in union (not in any list)
+	if bookIDs["book4"] {
+		t.Error("book4 should not be in union")
+	}
+}
+
+func TestComputeSyncPlan_MultipleFilterLists(t *testing.T) {
+	// Create test library
+	lib := &library.ComicLibrary{
+		Books: []library.ComicBook{
+			{ID: "book1", Series: "Series A", Title: "Book 1", FilePath: "/path/book1.cbz"},
+			{ID: "book2", Series: "Series B", Title: "Book 2", FilePath: "/path/book2.cbz"},
+			{ID: "book3", Series: "Series A", Title: "Book 3", FilePath: "/path/book3.cbz"},
+			{ID: "book4", Series: "Series C", Title: "Book 4", FilePath: "/path/book4.cbz"},
+		},
+		ComicLists: []library.ComicListItem{
+			{
+				ID:          "list1",
+				Name:        "List 1 (Series A only)",
+				Type:        "ComicSmartListItem",
+				MatcherMode: "And",
+				Matchers: []library.ComicBookMatcher{
+					{Type: "Series", Operator: "0", ArgumentValue: "Series A"},
+				},
+			},
+			{
+				ID:          "list2",
+				Name:        "List 2 (Series B only)",
+				Type:        "ComicSmartListItem",
+				MatcherMode: "And",
+				Matchers: []library.ComicBookMatcher{
+					{Type: "Series", Operator: "0", ArgumentValue: "Series B"},
+				},
+			},
+		},
+	}
+
+	client := NewMockClient()
+	syncer := NewSyncer(client, lib)
+
+	// Set multiple filter lists
+	err := syncer.SetFilterLists([]*library.ComicListItem{
+		&lib.ComicLists[0], // book1, book3 (Series A)
+		&lib.ComicLists[1], // book2 (Series B)
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Device has no books
+	deviceBooks := make(map[string]*DeviceBook)
+
+	// Compute sync plan
+	operations, err := syncer.ComputeSyncPlan(deviceBooks)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should have 3 add operations (book1, book2, book3) from union of lists
+	// book1 & book3 from list1 (Series A), book2 from list2 (Series B)
+	// book4 should NOT be included (Series C not in any list)
+	if len(operations) != 3 {
+		t.Errorf("expected 3 operations, got %d", len(operations))
+	}
+
+	// Verify all are add operations
+	for _, op := range operations {
+		if op.Type != OperationAdd {
+			t.Errorf("expected OperationAdd, got %v", op.Type)
+		}
+	}
+
+	// Verify book IDs
+	bookIDs := make(map[string]bool)
+	for _, op := range operations {
+		bookIDs[op.Book.ID] = true
+	}
+
+	expectedIDs := []string{"book1", "book2", "book3"}
+	for _, id := range expectedIDs {
+		if !bookIDs[id] {
+			t.Errorf("expected book %s in operations, but not found", id)
+		}
+	}
+
+	if bookIDs["book4"] {
+		t.Error("book4 should not be in operations (not in any filter list)")
+	}
+}
+
+func TestComputeSyncPlan_SingleFilterList_BackwardCompatibility(t *testing.T) {
+	// Create test library
+	lib := &library.ComicLibrary{
+		Books: []library.ComicBook{
+			{ID: "book1", Title: "Book 1", FilePath: "/path/book1.cbz"},
+			{ID: "book2", Title: "Book 2", FilePath: "/path/book2.cbz"},
+		},
+		ComicLists: []library.ComicListItem{
+			{
+				ID:          "list1",
+				Name:        "Smart List",
+				Type:        "ComicSmartListItem",
+				MatcherMode: "And",
+				Matchers: []library.ComicBookMatcher{
+					{Type: "Title", Operator: "2", ArgumentValue: "Book 1"}, // Contains "Book 1"
+				},
+			},
+		},
+	}
+
+	client := NewMockClient()
+	syncer := NewSyncer(client, lib)
+
+	// Use deprecated SetFilterList (backward compatibility)
+	err := syncer.SetFilterList(&lib.ComicLists[0])
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	deviceBooks := make(map[string]*DeviceBook)
+
+	// Compute sync plan
+	operations, err := syncer.ComputeSyncPlan(deviceBooks)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should have 1 add operation (book1 only)
+	if len(operations) != 1 {
+		t.Errorf("expected 1 operation, got %d", len(operations))
+	}
+
+	if operations[0].Book.ID != "book1" {
+		t.Errorf("expected book1, got %s", operations[0].Book.ID)
+	}
+}

@@ -348,43 +348,45 @@ func handleDiscoveredDevice(discovered device.DiscoveredDevice, registry *device
 func applyDeviceConfig(syncer *csync.Syncer, deviceConfig *config.DeviceConfig, lib *library.ComicLibrary) error {
 	logger := log.With().Str("device_id", deviceConfig.DeviceID).Logger()
 
-	// For v0.2, we only sync the first enabled list
-	// TODO: v0.3 - support syncing multiple lists per device
+	// Collect all enabled smart lists
+	var smartLists []*library.ComicListItem
+	var listNames []string
 
 	for _, listConfig := range deviceConfig.Lists {
 		if !listConfig.Enabled {
 			continue
 		}
 
-		// 1. Lookup smart list by GUID
+		// Lookup smart list by GUID
 		smartList := config.FindListByGUID(lib, listConfig.ListID)
 		if smartList == nil {
 			return fmt.Errorf("smart list %s (ID: %s) not found in library", listConfig.ListName, listConfig.ListID)
 		}
 
-		// 2. Set as filter list
-		if err := syncer.SetFilterList(smartList); err != nil {
-			return fmt.Errorf("failed to set filter list: %w", err)
-		}
+		smartLists = append(smartLists, smartList)
+		listNames = append(listNames, listConfig.ListName)
+	}
 
-		// 3. Apply settings (use list settings or device defaults)
-		settings := listConfig.Settings
-		if settings == nil {
-			settings = deviceConfig.DefaultSettings
+	// Set all filter lists (union of all lists)
+	if len(smartLists) > 0 {
+		if err := syncer.SetFilterLists(smartLists); err != nil {
+			return fmt.Errorf("failed to set filter lists: %w", err)
 		}
-		if settings == nil {
-			settings = csync.DefaultSettings()
-		}
-		syncer.SetSettings(settings)
 
 		logger.Info().
-			Str("list_id", listConfig.ListID).
-			Str("list_name", listConfig.ListName).
-			Msg("Applied list configuration to syncer")
-
-		// For v0.2, only sync first enabled list
-		break
+			Int("list_count", len(smartLists)).
+			Strs("list_names", listNames).
+			Msg("Applied multiple smart lists to syncer")
 	}
+
+	// Apply settings (use device default settings)
+	// Note: Per-list settings are not currently supported with multi-list sync
+	// All lists use the device's default settings
+	settings := deviceConfig.DefaultSettings
+	if settings == nil {
+		settings = csync.DefaultSettings()
+	}
+	syncer.SetSettings(settings)
 
 	return nil
 }

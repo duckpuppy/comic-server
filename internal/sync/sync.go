@@ -28,10 +28,11 @@ type Client interface {
 
 // Syncer orchestrates synchronization between the library and a device
 type Syncer struct {
-	client     Client
-	library    *library.ComicLibrary
-	filterList *library.ComicListItem // Optional smart list to filter books
-	settings   *SharedListSettings    // Sync settings to apply (filtering, sorting, limiting)
+	client      Client
+	library     *library.ComicLibrary
+	filterList  *library.ComicListItem   // Optional single smart list to filter books (deprecated, use filterLists)
+	filterLists []*library.ComicListItem // Optional multiple smart lists to filter books (union of all lists)
+	settings    *SharedListSettings      // Sync settings to apply (filtering, sorting, limiting)
 }
 
 // NewSyncer creates a new sync orchestrator
@@ -46,6 +47,7 @@ func NewSyncer(client Client, lib *library.ComicLibrary) *Syncer {
 
 // SetFilterList sets a smart list to filter which books get synced
 // Pass nil to sync all books
+// Deprecated: Use SetFilterLists for multi-list support
 func (s *Syncer) SetFilterList(list *library.ComicListItem) error {
 	if list != nil {
 		// Validate it's a smart list
@@ -54,6 +56,22 @@ func (s *Syncer) SetFilterList(list *library.ComicListItem) error {
 		}
 	}
 	s.filterList = list
+	s.filterLists = nil // Clear multi-list if single list is set
+	return nil
+}
+
+// SetFilterLists sets multiple smart lists to filter which books get synced
+// Books matching ANY list will be synced (union of all lists)
+// Pass nil or empty slice to sync all books
+func (s *Syncer) SetFilterLists(lists []*library.ComicListItem) error {
+	// Validate all lists are smart lists
+	for _, list := range lists {
+		if list != nil && !strings.Contains(list.Type, "SmartList") {
+			return fmt.Errorf("list %q is not a smart list (type: %s)", list.Name, list.Type)
+		}
+	}
+	s.filterLists = lists
+	s.filterList = nil // Clear single list if multi-list is set
 	return nil
 }
 
@@ -187,6 +205,38 @@ func (s *Syncer) GetDeviceBooks() (map[string]*DeviceBook, error) {
 	return deviceBooks, nil
 }
 
+// computeUnionOfLists computes the union of all filter lists
+// Returns all books that match ANY of the filter lists (no duplicates)
+func (s *Syncer) computeUnionOfLists() []*library.ComicBook {
+	bookMap := make(map[string]*library.ComicBook)
+
+	for _, list := range s.filterLists {
+		if list == nil {
+			continue
+		}
+
+		// Get books matching this list
+		matchedBooks, err := s.library.MatchBooks(list)
+		if err != nil {
+			// Log error but continue with other lists
+			continue
+		}
+
+		// Add to union (map automatically deduplicates by book ID)
+		for _, book := range matchedBooks {
+			bookMap[book.ID] = book
+		}
+	}
+
+	// Convert map to slice
+	result := make([]*library.ComicBook, 0, len(bookMap))
+	for _, book := range bookMap {
+		result = append(result, book)
+	}
+
+	return result
+}
+
 // ComputeSyncPlan compares library books against device books and determines
 // what operations are needed to synchronize them
 func (s *Syncer) ComputeSyncPlan(deviceBooks map[string]*DeviceBook) ([]SyncOperation, error) {
@@ -194,8 +244,11 @@ func (s *Syncer) ComputeSyncPlan(deviceBooks map[string]*DeviceBook) ([]SyncOper
 
 	// Get filtered book list if a filter is set
 	var booksToSync []*library.ComicBook
-	if s.filterList != nil {
-		// Apply smart list filter
+	if len(s.filterLists) > 0 {
+		// Apply multiple smart list filters (union of all lists)
+		booksToSync = s.computeUnionOfLists()
+	} else if s.filterList != nil {
+		// Apply single smart list filter (backward compatibility)
 		filteredBooks, err := s.library.MatchBooks(s.filterList)
 		if err != nil {
 			return nil, fmt.Errorf("failed to apply filter list: %w", err)
