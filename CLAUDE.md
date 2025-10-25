@@ -78,6 +78,9 @@ comic-server/
 │   │   ├── library.go    # Library XML parsing
 │   │   ├── time.go       # Custom time format handling
 │   │   └── library_test.go  # Comprehensive tests
+│   ├── log/              # Structured logging (zerolog)
+│   │   ├── log.go        # Logger initialization and convenience functions
+│   │   └── log_test.go   # Logging tests
 │   ├── protocol/         # Binary protocol implementation
 │   │   ├── protocol.go   # Encoding/decoding (big-endian)
 │   │   └── client.go     # TCP client for device communication
@@ -85,6 +88,10 @@ comic-server/
 │       ├── sync.go       # Sync orchestration
 │       ├── settings.go   # Sync settings (OnlyUnread, Limit, Sort, etc.)
 │       └── ...
+├── scripts/               # Service/daemon files
+│   ├── README.md          # Service installation guide
+│   ├── comic-server.service  # systemd service file
+│   └── com.comic-server.plist  # launchd plist
 ├── main.go               # Application entry point
 ├── go.mod                # Go module definition
 ├── go.sum                # Dependency checksums
@@ -348,6 +355,61 @@ comic-server config remove-list "My Tablet" "Currently Reading"
 - **Single list per device**: Only first enabled list is synced (v0.3 will support multiple)
 - Concurrent sync support planned for v0.3
 
+## Structured Logging
+
+The server uses **zerolog** for structured, high-performance logging with zero allocations.
+
+**Logger Initialization** (`internal/log/log.go`):
+
+```go
+import "github.com/duckpuppy/comic-server/internal/log"
+
+// Initialize logger (called at server startup)
+log.Init(log.Config{
+    Level:  "info",      // debug, info, warn, error
+    Format: "text",      // text (colorized) or json (machine-parseable)
+    Output: "stdout",    // stdout, stderr, or file path
+})
+
+// Use convenience functions
+log.Info().Msg("Server starting")
+log.Debug().Str("path", libraryPath).Msg("Loading library")
+log.Error().Err(err).Msg("Failed to connect")
+```
+
+**Contextual Logging**:
+
+```go
+// Create logger with device context
+logger := log.With().
+    Str("device_id", deviceID).
+    Str("device_ip", deviceIP).
+    Logger()
+
+logger.Info().Msg("Device discovered")
+logger.Debug().Int("books", len(books)).Msg("Sync started")
+```
+
+**Log Levels**:
+
+- `debug`: Verbose information for troubleshooting
+- `info`: General operational events (default)
+- `warn`: Warning conditions
+- `error`: Error conditions
+
+**Log Formats**:
+
+- `text`: Human-readable with colors and timestamps (development)
+- `json`: Machine-parseable JSON (production, monitoring)
+
+**Configuration**:
+
+Logging can be configured via:
+- CLI flags: `--log-level debug --log-format json`
+- Environment: `COMIC_SERVER_LOG_LEVEL=debug`
+- Config file: `server.log_level: debug`
+- SIGHUP reload: Change config and send SIGHUP to reload without restart
+
 ## Testing
 
 All tests must pass before committing:
@@ -371,6 +433,7 @@ just ci  # Runs lint + test + build
 - `internal/config/loader_test.go`: YAML/TOML loading and saving (9 tests)
 - `internal/config/helpers_test.go`: Device and smart list resolution (9 tests)
 - `internal/config/xdg_test.go`: XDG directory resolution (2 tests)
+- `internal/log/log_test.go`: Logging initialization and output (7 tests)
 
 **Integration Tests** - End-to-end workflow testing:
 
@@ -481,7 +544,7 @@ See issues #15, #16, #17 for:
 
 ## Status
 
-✅ Completed:
+### v0.2 Milestone - Complete! ✅
 
 - Binary protocol implementation
 - UDP multicast device discovery
@@ -505,14 +568,29 @@ See issues #15, #16, #17 for:
   - Automatic sync on device discovery (when enabled)
 - Development tooling (mise + just)
 
-🚧 In Progress (v0.2 Milestone):
+### v0.3 Milestone - Complete! ✅
 
-- (No pending tasks - v0.2 complete!)
+- Structured logging with zerolog - Issue #6 ✓
+  - Log levels: debug, info, warn, error
+  - Text format (colorized, human-readable)
+  - JSON format (machine-parseable)
+  - Contextual logging with structured fields
+  - Configurable via CLI, environment, config file
+- Per-device sync configuration storage - Issue #16 ✓
+  - YAML/TOML configuration files
+  - Device-specific smart list assignments
+  - Per-list sync settings overrides
+  - Device and list resolution helpers
+- Daemon/service mode - Issue #11 ✓
+  - SIGHUP signal handling for config reload
+  - systemd service file with security hardening
+  - launchd plist for macOS
+  - Comprehensive service installation documentation
 
-📋 Backlog (v0.3+):
+### 📋 Backlog (v0.4+):
 
 - Concurrent sync support (multi-device) - Issue #18
+- Multiple smart lists per device - Full implementation
+- Web UI for configuration and monitoring
+- REST API for remote management
 - SQLite storage investigation - Issue #19
-- Multiple smart lists per device - Issue #16
-- Daemon/service mode - Issue #11
-- Web UI for monitoring - Issue #12

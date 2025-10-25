@@ -86,14 +86,24 @@ CGO_ENABLED=0 go build -o comic-server
 
 ## Usage
 
+### Basic Usage
+
 ```bash
 # Start the sync server
-comic-server server --library /path/to/comics
+comic-server server --library /path/to/ComicDb.xml
+
+# Start with automatic sync enabled
+comic-server server --library /path/to/ComicDb.xml --auto-sync
 
 # Start with specific devices ignored (useful for protecting production devices)
-comic-server server --library /path/to/comics \
+comic-server server --library /path/to/ComicDb.xml \
   --ignore-device 192.168.0.24 \
   --ignore-device "Galaxy Tab"
+
+# Configure logging
+comic-server server --library /path/to/ComicDb.xml \
+  --log-level debug \
+  --log-format json
 
 # Using just (recommended for development)
 just run              # Run with test library
@@ -107,6 +117,58 @@ comic-server version
 
 # Show help
 comic-server --help
+```
+
+### Configuration File
+
+Create a configuration file at `~/.config/comic-server/config.yaml`:
+
+```yaml
+server:
+  library_path: "/path/to/ComicDb.xml"
+  auto_sync: true
+  log_level: "info"
+  log_format: "text"
+  ignore_devices:
+    - "192.168.0.24"
+    - "Galaxy Tab"
+
+# Per-device sync configuration
+devices:
+  tablet-abc123:
+    device_id: "tablet-abc123"
+    device_name: "Samsung Galaxy Tab"
+    lists:
+      - list_id: "6300352f-35f2-4f98-8953-6ef29162122a"
+        list_name: "Recent Comics"
+        enabled: true
+        settings:
+          only_unread: true
+          limit: true
+          limit_value: 50
+```
+
+### Running as a Service
+
+See [scripts/README.md](scripts/README.md) for detailed installation instructions.
+
+**Linux (systemd):**
+```bash
+# Install and start
+sudo cp comic-server /usr/local/bin/
+sudo cp scripts/comic-server.service /etc/systemd/system/
+sudo systemctl enable --now comic-server
+
+# Reload configuration (SIGHUP)
+sudo systemctl reload comic-server
+```
+
+**macOS (launchd):**
+```bash
+# Install and start
+sudo cp comic-server /usr/local/bin/
+cp scripts/com.comic-server.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.comic-server.plist
 ```
 
 ## Testing Without Physical Devices
@@ -149,7 +211,7 @@ The test client will show all received commands and save synced files to `./test
 comic-server/
 ├── cmd/                    # CLI commands
 │   ├── root.go            # Root command
-│   ├── server.go          # Server subcommand
+│   ├── server.go          # Server subcommand (discovery, registry, signal handling)
 │   ├── discover.go        # Device discovery
 │   ├── version.go         # Version info
 │   └── testclient/        # Test client (simulates device)
@@ -159,10 +221,15 @@ comic-server/
 │   ├── protocol/          # Binary protocol encoding/decoding
 │   ├── device/            # Device management and registry
 │   ├── library/           # ComicRack library management
-│   ├── config/            # Configuration system
-│   └── sync/              # Sync logic
+│   ├── config/            # Configuration system (YAML/TOML)
+│   ├── sync/              # Sync logic and file transfers
+│   └── log/               # Structured logging (zerolog)
+├── scripts/               # Service/daemon files
+│   ├── README.md          # Service installation guide
+│   ├── comic-server.service  # systemd service file
+│   └── com.comic-server.plist  # launchd plist
 ├── testdata/              # Test data
-│   └── ComicDB.xml        # Sample library file
+│   └── ComicDB.xml        # Sample library file (226MB)
 ├── main.go                # Entry point
 └── WIRELESS_SYNC_PROTOCOL.md  # Protocol specification
 ```
@@ -186,12 +253,23 @@ comic-server/
 - [x] Sync logic (file transfers, metadata, reading lists)
 - [x] Test client for development
 
-### v0.3 - Planned
+### v0.3 - Complete! ✅
+
+- [x] Structured logging with zerolog (debug, info, warn, error levels)
+- [x] JSON and text log formats
+- [x] Per-device sync configuration storage (YAML/TOML)
+- [x] Daemon/service mode support
+- [x] SIGHUP signal handling for config reload
+- [x] systemd service file (Linux)
+- [x] launchd plist (macOS)
+- [x] Service installation documentation
+
+### v0.4 - Planned
 
 - [ ] Multiple smart lists per device
 - [ ] Concurrent device sync support
-- [ ] SQLite storage investigation
-- [ ] Viper configuration migration (optional)
+- [ ] Web UI for configuration
+- [ ] REST API for remote management
 
 ## License
 
