@@ -155,18 +155,90 @@ func runServer(cmd *cobra.Command, args []string) error {
 	// Start listening
 	deviceChan, errorChan := listener.Start()
 
-	// Handle Ctrl+C gracefully
+	// Handle signals gracefully
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 
 	log.Info().Msg("Server ready - press Ctrl+C to stop")
 
 	// Main loop
 	for {
 		select {
-		case <-sigChan:
-			log.Info().Msg("Shutting down server")
-			return nil
+		case sig := <-sigChan:
+			switch sig {
+			case syscall.SIGHUP:
+				log.Info().Msg("Received SIGHUP, reloading configuration")
+				// Reload configuration
+				newCfg, err := config.Load(configPath)
+				if err != nil {
+					log.Error().Err(err).Msg("Failed to reload configuration")
+					continue
+				}
+
+				// Re-apply CLI flag overrides
+				if serverPortSet {
+					newCfg.Server.ServerPort = serverPort
+				}
+				if discoveryPortSet {
+					newCfg.Server.DiscoveryPort = discoveryPort
+				}
+				if libraryPathSet {
+					newCfg.Server.LibraryPath = libraryPath
+				}
+				if ignoreDevicesSet {
+					newCfg.Server.IgnoreDevices = ignoreDevices
+				}
+				if bindAddressSet {
+					newCfg.Server.BindAddress = bindAddress
+				}
+				if autoSyncSet {
+					newCfg.Server.AutoSync = autoSync
+				}
+				if logLevelSet {
+					newCfg.Server.LogLevel = logLevel
+				}
+				if logFormatSet {
+					newCfg.Server.LogFormat = logFormat
+				}
+
+				// Validate new configuration
+				if err := newCfg.Validate(); err != nil {
+					log.Error().Err(err).Msg("Invalid configuration, keeping current config")
+					continue
+				}
+
+				// Reinitialize logging with new config
+				if err := log.Init(log.Config{
+					Level:  newCfg.Server.LogLevel,
+					Format: newCfg.Server.LogFormat,
+					Output: "stdout",
+				}); err != nil {
+					log.Error().Err(err).Msg("Failed to reinitialize logging")
+				}
+
+				// Reload library if path changed
+				if newCfg.Server.LibraryPath != cfg.Server.LibraryPath {
+					log.Info().Str("path", newCfg.Server.LibraryPath).Msg("Library path changed, reloading library")
+					newLib, err := library.LoadLibrary(newCfg.Server.LibraryPath)
+					if err != nil {
+						log.Error().Err(err).Msg("Failed to reload library, keeping current library")
+					} else {
+						lib = newLib
+						log.Info().
+							Int("books", len(lib.Books)).
+							Int("lists", len(lib.ComicLists)).
+							Msg("Library reloaded successfully")
+					}
+				}
+
+				// Update configuration
+				cfg = newCfg
+				log.Info().Msg("Configuration reloaded successfully")
+
+			case os.Interrupt, syscall.SIGTERM:
+				log.Info().Str("signal", sig.String()).Msg("Shutting down server")
+				return nil
+			}
 
 		case err := <-errorChan:
 			log.Error().Err(err).Msg("Discovery listener error")

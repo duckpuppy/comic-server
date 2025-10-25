@@ -1,0 +1,35 @@
+[Unit]
+Description=Comic Server - Wireless sync server for ComicRack clients
+Documentation=https://github.com/duckpuppy/comic-server
+After=network.target
+
+[Service]
+Type=simple
+User=comic-server
+Group=comic-server
+WorkingDirectory=/opt/comic-server
+
+# Main service command
+ExecStart=/usr/local/bin/comic-server server --library /path/to/ComicDb.xml --auto-sync
+
+# Reload configuration on SIGHUP
+ExecReload=/bin/kill -HUP $MAINPID
+
+# Restart policy
+Restart=on-failure
+RestartSec=10s
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/comic-server
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=comic-server
+
+[Install]
+WantedBy=multi-user.target
