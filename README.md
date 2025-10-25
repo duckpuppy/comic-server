@@ -264,12 +264,21 @@ comic-server/
 - [x] launchd plist (macOS)
 - [x] Service installation documentation
 
-### v0.4 - Planned
+### v0.4 - Planned (Security & Multi-List Support)
 
-- [ ] Multiple smart lists per device
-- [ ] Concurrent device sync support
-- [ ] Web UI for configuration
-- [ ] REST API for remote management
+- [ ] Multiple smart lists per device - Full implementation (Issue #21)
+- [ ] Security hardening (Issue #10)
+  - Device authentication validation
+  - Rate limiting and connection limits
+  - Input validation and sanitization
+  - Security audit and testing
+
+### v1.0 - Planned (Production Ready)
+
+- [ ] Concurrent device sync support (Issue #18)
+- [ ] User documentation (Issue #8)
+- [ ] Performance optimization (Issue #9)
+- [ ] Web UI for configuration and monitoring
 
 ## License
 

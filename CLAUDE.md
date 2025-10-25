@@ -587,10 +587,26 @@ See issues #15, #16, #17 for:
   - launchd plist for macOS
   - Comprehensive service installation documentation
 
-### 📋 Backlog (v0.4+):
+### v0.4 Milestone - Planned (Security & Multi-List Support):
+
+- Multiple smart lists per device - Full implementation - Issue #21
+  - Remove single-list limitation from v0.2/v0.3
+  - Sync all enabled lists per device
+  - Handle books appearing in multiple lists
+  - Per-list sync statistics
+- Security hardening - Issue #10
+  - Device authentication validation review
+  - Rate limiting for protocol commands
+  - Connection limits per device
+  - Input validation and sanitization
+  - File path security (prevent directory traversal)
+  - Security testing and audit
+
+### 📋 Backlog (v1.0+):
 
 - Concurrent sync support (multi-device) - Issue #18
-- Multiple smart lists per device - Full implementation
-- Web UI for configuration and monitoring
+- User documentation - Issue #8
+- Performance optimization - Issue #9
+- Web UI for configuration and monitoring - Issue #12
 - REST API for remote management
 - SQLite storage investigation - Issue #19
