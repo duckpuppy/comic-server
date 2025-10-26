@@ -27,8 +27,14 @@ type ServerConfig struct {
 	IgnoreDevices []string `yaml:"ignore_devices,omitempty" toml:"ignore_devices,omitempty"` // Device IPs/IDs/names to ignore
 
 	// Sync settings
-	AutoSync         bool `yaml:"auto_sync,omitempty" toml:"auto_sync,omitempty"`                   // Enable automatic sync when devices connect
-	MaxConcurrentSync int  `yaml:"max_concurrent_sync,omitempty" toml:"max_concurrent_sync,omitempty"` // Max concurrent syncs (0 = unlimited)
+	AutoSync              bool `yaml:"auto_sync,omitempty" toml:"auto_sync,omitempty"`                           // Enable automatic sync when devices connect
+	MaxConcurrentSync     int  `yaml:"max_concurrent_sync,omitempty" toml:"max_concurrent_sync,omitempty"`       // Max concurrent syncs (0 = unlimited)
+	MaxConcurrentConnections int `yaml:"max_concurrent_connections,omitempty" toml:"max_concurrent_connections,omitempty"` // Max concurrent connections (0 = unlimited)
+
+	// Rate limiting settings
+	MaxConnectionsPerIP    int `yaml:"max_connections_per_ip,omitempty" toml:"max_connections_per_ip,omitempty"`       // Max connection attempts per IP per minute (0 = unlimited)
+	MaxRequestsPerDevice   int `yaml:"max_requests_per_device,omitempty" toml:"max_requests_per_device,omitempty"`     // Max requests per device per minute (0 = unlimited)
+	RateLimitWindowSeconds int `yaml:"rate_limit_window_seconds,omitempty" toml:"rate_limit_window_seconds,omitempty"` // Rate limit time window in seconds
 
 	// Logging settings
 	LogLevel  string `yaml:"log_level,omitempty" toml:"log_level,omitempty"`   // Log level: debug, info, warn, error
@@ -63,14 +69,18 @@ func NewConfig() *Config {
 // DefaultServerConfig returns the default server configuration
 func DefaultServerConfig() ServerConfig {
 	return ServerConfig{
-		ServerPort:       7620,
-		DiscoveryPort:    7615,
-		BindAddress:      "", // Empty = bind to all interfaces
-		IgnoreDevices:    []string{},
-		AutoSync:         false,
-		MaxConcurrentSync: 0, // 0 = unlimited (v0.2 has mutex limiting to 1)
-		LogLevel:         "info",
-		LogFormat:        "text",
+		ServerPort:               7620,
+		DiscoveryPort:            7615,
+		BindAddress:              "", // Empty = bind to all interfaces
+		IgnoreDevices:            []string{},
+		AutoSync:                 false,
+		MaxConcurrentSync:        0,  // 0 = unlimited (v0.2 has mutex limiting to 1)
+		MaxConcurrentConnections: 5,  // Default: 5 concurrent connections
+		MaxConnectionsPerIP:      10, // Default: 10 connections/minute per IP
+		MaxRequestsPerDevice:     100,// Default: 100 requests/minute per device
+		RateLimitWindowSeconds:   60, // Default: 60 seconds (1 minute)
+		LogLevel:                 "info",
+		LogFormat:                "text",
 	}
 }
 
@@ -83,6 +93,18 @@ func (c *Config) ApplyDefaults() {
 	}
 	if c.Server.DiscoveryPort == 0 {
 		c.Server.DiscoveryPort = defaults.DiscoveryPort
+	}
+	if c.Server.MaxConcurrentConnections == 0 {
+		c.Server.MaxConcurrentConnections = defaults.MaxConcurrentConnections
+	}
+	if c.Server.MaxConnectionsPerIP == 0 {
+		c.Server.MaxConnectionsPerIP = defaults.MaxConnectionsPerIP
+	}
+	if c.Server.MaxRequestsPerDevice == 0 {
+		c.Server.MaxRequestsPerDevice = defaults.MaxRequestsPerDevice
+	}
+	if c.Server.RateLimitWindowSeconds == 0 {
+		c.Server.RateLimitWindowSeconds = defaults.RateLimitWindowSeconds
 	}
 	if c.Server.LogLevel == "" {
 		c.Server.LogLevel = defaults.LogLevel
@@ -103,6 +125,20 @@ func (c *Config) Validate() error {
 	}
 	if c.Server.DiscoveryPort < 1 || c.Server.DiscoveryPort > 65535 {
 		return fmt.Errorf("discovery_port must be between 1 and 65535, got %d", c.Server.DiscoveryPort)
+	}
+
+	// Validate rate limiting parameters (must be non-negative)
+	if c.Server.MaxConcurrentConnections < 0 {
+		return fmt.Errorf("max_concurrent_connections must be >= 0, got %d", c.Server.MaxConcurrentConnections)
+	}
+	if c.Server.MaxConnectionsPerIP < 0 {
+		return fmt.Errorf("max_connections_per_ip must be >= 0, got %d", c.Server.MaxConnectionsPerIP)
+	}
+	if c.Server.MaxRequestsPerDevice < 0 {
+		return fmt.Errorf("max_requests_per_device must be >= 0, got %d", c.Server.MaxRequestsPerDevice)
+	}
+	if c.Server.RateLimitWindowSeconds < 1 {
+		return fmt.Errorf("rate_limit_window_seconds must be >= 1, got %d", c.Server.RateLimitWindowSeconds)
 	}
 
 	// Validate log level
