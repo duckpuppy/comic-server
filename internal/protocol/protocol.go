@@ -27,6 +27,17 @@ const (
 // Protocol version
 const CurrentSyncVersion = 1
 
+// Security limits to prevent memory exhaustion and DoS attacks
+const (
+	// MaxStringLength is the maximum allowed string length (1MB)
+	// Reasonable for filenames, paths, and metadata fields
+	MaxStringLength = 1 * 1024 * 1024 // 1MB
+
+	// MaxDataLength is the maximum allowed data payload (100MB)
+	// Allows for large comic files while preventing extreme memory exhaustion
+	MaxDataLength = 100 * 1024 * 1024 // 100MB
+)
+
 // WriteByte writes a single byte to the writer
 func WriteByte(w io.Writer, b byte) error {
 	_, err := w.Write([]byte{b})
@@ -119,7 +130,11 @@ func ReadString(r io.Reader) (string, error) {
 	}
 
 	if length < 0 {
-		return "", fmt.Errorf("invalid string length: %d", length)
+		return "", fmt.Errorf("invalid string length: %d (negative)", length)
+	}
+
+	if length > MaxStringLength {
+		return "", fmt.Errorf("invalid string length: %d (exceeds maximum of %d bytes)", length, MaxStringLength)
 	}
 
 	if length == 0 {
@@ -157,7 +172,11 @@ func ReadData(r io.Reader) ([]byte, error) {
 	}
 
 	if length < 0 {
-		return nil, fmt.Errorf("invalid data length: %d", length)
+		return nil, fmt.Errorf("invalid data length: %d (negative)", length)
+	}
+
+	if length > MaxDataLength {
+		return nil, fmt.Errorf("invalid data length: %d (exceeds maximum of %d bytes)", length, MaxDataLength)
 	}
 
 	if length == 0 {
