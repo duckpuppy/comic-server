@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 
@@ -15,6 +14,7 @@ import (
 	"github.com/duckpuppy/comic-server/internal/protocol"
 	"github.com/duckpuppy/comic-server/internal/ratelimit"
 	csync "github.com/duckpuppy/comic-server/internal/sync"
+	"github.com/duckpuppy/comic-server/internal/syncstate"
 	"github.com/spf13/cobra"
 )
 
@@ -47,9 +47,6 @@ var (
 	logLevelSet               bool
 	logFormatSet              bool
 )
-
-// syncMutex ensures only one device syncs at a time (v0.2 limitation)
-var syncMutex sync.Mutex
 
 var serverCmd = &cobra.Command{
 	Use:   "server",
@@ -160,6 +157,9 @@ func runServer(cmd *cobra.Command, args []string) error {
 
 	// Create device registry
 	registry := device.NewRegistry()
+
+	// Create sync state manager (max 100 history entries)
+	syncManager := syncstate.NewManager(100)
 
 	// Initialize rate limiters
 	var ipLimiter *ratelimit.IPLimiter
@@ -301,7 +301,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 			log.Error().Err(err).Msg("Discovery listener error")
 
 		case discovered := <-deviceChan:
-			handleDiscoveredDevice(discovered, registry, cfg, lib, ipLimiter, deviceLimiter, syncSemaphore)
+			handleDiscoveredDevice(discovered, registry, syncManager, cfg, lib, ipLimiter, deviceLimiter, syncSemaphore)
 		}
 	}
 }
@@ -318,6 +318,7 @@ func shouldIgnoreDevice(ipAddress, deviceID, deviceName string, ignoreList []str
 func handleDiscoveredDevice(
 	discovered device.DiscoveredDevice,
 	registry *device.Registry,
+	syncManager *syncstate.Manager,
 	cfg *config.Config,
 	lib *library.ComicLibrary,
 	ipLimiter *ratelimit.IPLimiter,
@@ -408,7 +409,7 @@ func handleDiscoveredDevice(
 	// Handle sync request if device wants sync and auto-sync is enabled
 	if discovered.WantsSync && cfg.Server.AutoSync {
 		logger.Info().Msg("Device requested sync, starting automatic sync")
-		if err := handleSyncRequest(info.ID, discovered.IPAddress, cfg, lib, deviceLimiter, syncSemaphore); err != nil {
+		if err := handleSyncRequest(info, discovered.IPAddress, cfg, lib, syncManager, deviceLimiter, syncSemaphore); err != nil {
 			logger.Error().Err(err).Msg("Sync failed")
 		}
 	} else if discovered.WantsSync && !cfg.Server.AutoSync {
@@ -466,12 +467,15 @@ func applyDeviceConfig(syncer *csync.Syncer, deviceConfig *config.DeviceConfig, 
 
 // handleSyncRequest handles a sync request from a device
 func handleSyncRequest(
-	deviceID, deviceIP string,
+	deviceInfo *device.Info,
+	deviceIP string,
 	cfg *config.Config,
 	lib *library.ComicLibrary,
+	syncManager *syncstate.Manager,
 	deviceLimiter *ratelimit.DeviceLimiter,
 	syncSemaphore chan struct{},
 ) error {
+	deviceID := deviceInfo.ID
 	logger := log.With().
 		Str("device_id", deviceID).
 		Str("device_ip", deviceIP).
@@ -485,6 +489,21 @@ func handleSyncRequest(
 			Msg("Sync rejected: device rate limit exceeded")
 		return fmt.Errorf("device rate limit exceeded (%.2f tokens available)", availableTokens)
 	}
+
+	// Start tracking sync state
+	if err := syncManager.StartSync(deviceID, deviceIP, deviceInfo.Name); err != nil {
+		// Device is already syncing
+		logger.Warn().Msg("Sync rejected: device is already syncing")
+		return err
+	}
+
+	// Ensure sync state is cleaned up on exit
+	defer func() {
+		// Check if sync is still active (might have been completed/failed already)
+		if syncManager.IsDeviceSyncing(deviceID) {
+			syncManager.AbortSync(deviceID)
+		}
+	}()
 
 	// Acquire semaphore slot if connection limiting is enabled
 	if syncSemaphore != nil {
@@ -500,12 +519,9 @@ func handleSyncRequest(
 			logger.Warn().
 				Int("max_concurrent", cap(syncSemaphore)).
 				Msg("Sync rejected: maximum concurrent connections reached")
+			syncManager.FailSync(deviceID, "maximum concurrent connections reached")
 			return fmt.Errorf("maximum concurrent connections (%d) reached", cap(syncSemaphore))
 		}
-	} else {
-		// Fallback to old mutex for backward compatibility (when semaphore is nil)
-		syncMutex.Lock()
-		defer syncMutex.Unlock()
 	}
 
 	logger.Info().Msg("Starting sync")
@@ -529,8 +545,12 @@ func handleSyncRequest(
 	logger.Debug().Msg("Performing sync operation")
 	result, err := syncer.PerformSync()
 	if err != nil {
+		syncManager.FailSync(deviceID, err.Error())
 		return fmt.Errorf("sync failed: %w", err)
 	}
+
+	// Mark sync as completed
+	syncManager.CompleteSync(deviceID, result.BooksAdded, result.BooksUpdated, result.BooksDeleted, len(result.Errors))
 
 	// Log sync results
 	syncLogger := logger.With().

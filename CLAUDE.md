@@ -84,10 +84,20 @@ comic-server/
 │   ├── protocol/         # Binary protocol implementation
 │   │   ├── protocol.go   # Encoding/decoding (big-endian)
 │   │   └── client.go     # TCP client for device communication
-│   └── sync/             # Synchronization logic
-│       ├── sync.go       # Sync orchestration
-│       ├── settings.go   # Sync settings (OnlyUnread, Limit, Sort, etc.)
-│       └── ...
+│   ├── ratelimit/        # Rate limiting infrastructure
+│   │   ├── ip_limiter.go      # IP-based rate limiting (sliding window)
+│   │   ├── device_limiter.go  # Device-based rate limiting (token bucket)
+│   │   └── *_test.go          # Rate limiter tests (22 tests)
+│   ├── sync/             # Synchronization logic
+│   │   ├── sync.go       # Sync orchestration
+│   │   ├── settings.go   # Sync settings (OnlyUnread, Limit, Sort, etc.)
+│   │   └── ...
+│   ├── syncstate/        # Sync state tracking
+│   │   ├── manager.go    # Thread-safe sync state manager
+│   │   └── manager_test.go  # State manager tests (12 tests)
+│   └── api/              # REST API for monitoring
+│       ├── api.go        # HTTP handlers and server
+│       └── api_test.go   # API endpoint tests (9 tests)
 ├── scripts/               # Service/daemon files
 │   ├── README.md          # Service installation guide
 │   ├── comic-server.service  # systemd service file
@@ -611,11 +621,27 @@ See issues #15, #16, #17 for:
     - Enhanced logging and audit trails
     - Intrusion detection capabilities
 
+### v0.5 Milestone - Complete! ✅
+
+- ✅ Concurrent sync support (multi-device) - Issue #18 (COMPLETED)
+  - Semaphore-based concurrent connection limiting
+  - Per-device sync state tracking with `syncstate.Manager`
+  - Prevents same device from syncing twice simultaneously
+  - Removed old mutex-based single-device sync limitation
+  - Thread-safe sync progress tracking
+  - Comprehensive sync state manager tests (12 tests)
+- ✅ REST API for monitoring and control (COMPLETED)
+  - `GET /api/health` - Health check with uptime
+  - `GET /api/sync/status` - Get all active syncs
+  - `GET /api/sync/history?limit=N` - Get recent sync history
+  - `GET /api/devices` - List all registered devices with sync status
+  - `GET /api/stats` - Server statistics and configuration
+  - JSON response format for all endpoints
+  - Comprehensive API tests (9 tests)
+
 ### 📋 Backlog (v1.0+):
 
-- Concurrent sync support (multi-device) - Issue #18
 - User documentation - Issue #8
 - Performance optimization - Issue #9
 - Web UI for configuration and monitoring - Issue #12
-- REST API for remote management
 - SQLite storage investigation - Issue #19
