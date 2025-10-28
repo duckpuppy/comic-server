@@ -593,13 +593,23 @@ See issues #15, #16, #17 for:
   - Syncs all enabled lists per device (union of all lists)
   - Automatically deduplicates books appearing in multiple lists
   - Backward compatible with single-list SetFilterList API
-- Security hardening - Issue #10
-  - Device authentication validation review
-  - Rate limiting for protocol commands
-  - Connection limits per device
-  - Input validation and sanitization
-  - File path security (prevent directory traversal)
-  - Security testing and audit
+- ✅ Security hardening - Phase 1 & 2 - Issue #10 (COMPLETED)
+  - ✅ Phase 1: Input Validation
+    - Device authentication and SHA1 hash verification
+    - Device registry with tracked devices
+    - Configurable device ignore/filter lists
+  - ✅ Phase 2: Rate Limiting and Resource Management
+    - IP-based rate limiting (sliding window algorithm)
+    - Device-based rate limiting (token bucket algorithm)
+    - Concurrent connection limiting (semaphore-based)
+    - CLI flags and configuration support
+    - 22 comprehensive tests with full coverage
+    - SECURITY.md documentation
+  - 🚧 Phase 3: Advanced Security (Planned)
+    - TLS/SSL encryption for device communication
+    - Certificate-based device authentication
+    - Enhanced logging and audit trails
+    - Intrusion detection capabilities
 
 ### 📋 Backlog (v1.0+):
 
