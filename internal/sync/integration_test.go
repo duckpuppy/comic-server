@@ -3,6 +3,7 @@ package sync
 import (
 	"encoding/xml"
 	"errors"
+	"os"
 	"testing"
 
 	"github.com/duckpuppy/comic-server/internal/library"
@@ -59,11 +60,24 @@ func TestPerformSync_EmptyLibraryAndDevice(t *testing.T) {
 
 // TestPerformSync_AddBooks tests adding new books to device
 func TestPerformSync_AddBooks(t *testing.T) {
+	// Create temporary comic book files
+	tmpDir := t.TempDir()
+	book1Path := tmpDir + "/book1.cbz"
+	book2Path := tmpDir + "/book2.cbz"
+
+	// Write dummy comic book data
+	if err := os.WriteFile(book1Path, []byte("dummy comic 1 data"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+	if err := os.WriteFile(book2Path, []byte("dummy comic 2 data"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
 	mockClient := NewMockClient()
 	lib := &library.ComicLibrary{
 		Books: []library.ComicBook{
-			{ID: "book1", Title: "Book 1", PageCount: 10},
-			{ID: "book2", Title: "Book 2", PageCount: 15},
+			{ID: "book1", Title: "Book 1", PageCount: 10, FilePath: book1Path},
+			{ID: "book2", Title: "Book 2", PageCount: 15, FilePath: book2Path},
 		},
 	}
 	syncer := NewSyncer(mockClient, lib)
@@ -214,6 +228,13 @@ func TestPerformSync_UpdateMetadataOnly(t *testing.T) {
 
 // TestPerformSync_MixedOperations tests a complex sync scenario
 func TestPerformSync_MixedOperations(t *testing.T) {
+	// Create temporary comic book files for books that need to be added
+	tmpDir := t.TempDir()
+	book4Path := tmpDir + "/book4.cbz"
+	if err := os.WriteFile(book4Path, []byte("dummy comic 4 data"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
 	mockClient := NewMockClient()
 
 	// Setup device with existing books
@@ -227,9 +248,9 @@ func TestPerformSync_MixedOperations(t *testing.T) {
 
 	lib := &library.ComicLibrary{
 		Books: []library.ComicBook{
-			{ID: "book1", Title: "Unchanged", PageCount: 10}, // No change
-			{ID: "book2", Title: "New Title", PageCount: 10}, // Metadata update
-			{ID: "book4", Title: "New Book", PageCount: 5},   // Add
+			{ID: "book1", Title: "Unchanged", PageCount: 10},       // No change
+			{ID: "book2", Title: "New Title", PageCount: 10},       // Metadata update
+			{ID: "book4", Title: "New Book", PageCount: 5, FilePath: book4Path}, // Add
 		},
 		// book3 is not in library -> Delete
 	}
@@ -380,13 +401,28 @@ func TestPerformSync_AbortHandling(t *testing.T) {
 
 // TestPerformSync_ProgressUpdates tests that progress is reported correctly
 func TestPerformSync_ProgressUpdates(t *testing.T) {
+	// Create temporary comic book files
+	tmpDir := t.TempDir()
+	book1Path := tmpDir + "/book1.cbz"
+	book2Path := tmpDir + "/book2.cbz"
+	book3Path := tmpDir + "/book3.cbz"
+	if err := os.WriteFile(book1Path, []byte("dummy comic 1 data"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+	if err := os.WriteFile(book2Path, []byte("dummy comic 2 data"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+	if err := os.WriteFile(book3Path, []byte("dummy comic 3 data"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
 	mockClient := NewMockClient()
 
 	lib := &library.ComicLibrary{
 		Books: []library.ComicBook{
-			{ID: "book1", Title: "Book 1"},
-			{ID: "book2", Title: "Book 2"},
-			{ID: "book3", Title: "Book 3"},
+			{ID: "book1", Title: "Book 1", FilePath: book1Path},
+			{ID: "book2", Title: "Book 2", FilePath: book2Path},
+			{ID: "book3", Title: "Book 3", FilePath: book3Path},
 		},
 	}
 	syncer := NewSyncer(mockClient, lib)
