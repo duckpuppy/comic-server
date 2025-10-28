@@ -6,36 +6,46 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/duckpuppy/comic-server/internal/config"
 	"github.com/duckpuppy/comic-server/internal/device"
 	"github.com/duckpuppy/comic-server/internal/library"
 	"github.com/duckpuppy/comic-server/internal/log"
 	"github.com/duckpuppy/comic-server/internal/protocol"
+	"github.com/duckpuppy/comic-server/internal/ratelimit"
 	csync "github.com/duckpuppy/comic-server/internal/sync"
 	"github.com/spf13/cobra"
 )
 
 var (
 	// CLI flag values (when explicitly provided, override config file)
-	serverPort      int
-	discoveryPort   int
-	libraryPath     string
-	ignoreDevices   []string
-	bindAddress     string
-	autoSync        bool
-	logLevel        string
-	logFormat       string
+	serverPort             int
+	discoveryPort          int
+	libraryPath            string
+	ignoreDevices          []string
+	bindAddress            string
+	autoSync               bool
+	maxConcurrentConns     int
+	maxConnectionsPerIP    int
+	maxRequestsPerDevice   int
+	rateLimitWindowSeconds int
+	logLevel               string
+	logFormat              string
 
 	// Track which flags were explicitly set by user
-	serverPortSet      bool
-	discoveryPortSet   bool
-	libraryPathSet     bool
-	ignoreDevicesSet   bool
-	bindAddressSet     bool
-	autoSyncSet        bool
-	logLevelSet        bool
-	logFormatSet       bool
+	serverPortSet             bool
+	discoveryPortSet          bool
+	libraryPathSet            bool
+	ignoreDevicesSet          bool
+	bindAddressSet            bool
+	autoSyncSet               bool
+	maxConcurrentConnsSet     bool
+	maxConnectionsPerIPSet    bool
+	maxRequestsPerDeviceSet   bool
+	rateLimitWindowSecondsSet bool
+	logLevelSet               bool
+	logFormatSet              bool
 )
 
 // syncMutex ensures only one device syncs at a time (v0.2 limitation)
@@ -81,6 +91,18 @@ func runServer(cmd *cobra.Command, args []string) error {
 	}
 	if autoSyncSet {
 		cfg.Server.AutoSync = autoSync
+	}
+	if maxConcurrentConnsSet {
+		cfg.Server.MaxConcurrentConnections = maxConcurrentConns
+	}
+	if maxConnectionsPerIPSet {
+		cfg.Server.MaxConnectionsPerIP = maxConnectionsPerIP
+	}
+	if maxRequestsPerDeviceSet {
+		cfg.Server.MaxRequestsPerDevice = maxRequestsPerDevice
+	}
+	if rateLimitWindowSecondsSet {
+		cfg.Server.RateLimitWindowSeconds = rateLimitWindowSeconds
 	}
 	if logLevelSet {
 		cfg.Server.LogLevel = logLevel
@@ -138,6 +160,41 @@ func runServer(cmd *cobra.Command, args []string) error {
 
 	// Create device registry
 	registry := device.NewRegistry()
+
+	// Initialize rate limiters
+	var ipLimiter *ratelimit.IPLimiter
+	var deviceLimiter *ratelimit.DeviceLimiter
+	var syncSemaphore chan struct{}
+
+	// Create IP rate limiter if enabled
+	if cfg.Server.MaxConnectionsPerIP > 0 {
+		window := time.Duration(cfg.Server.RateLimitWindowSeconds) * time.Second
+		ipLimiter = ratelimit.NewIPLimiter(cfg.Server.MaxConnectionsPerIP, window)
+		defer ipLimiter.Stop()
+		log.Info().
+			Int("max_per_ip", cfg.Server.MaxConnectionsPerIP).
+			Int("window_seconds", cfg.Server.RateLimitWindowSeconds).
+			Msg("IP rate limiting enabled")
+	}
+
+	// Create device rate limiter if enabled
+	if cfg.Server.MaxRequestsPerDevice > 0 {
+		window := time.Duration(cfg.Server.RateLimitWindowSeconds) * time.Second
+		deviceLimiter = ratelimit.NewDeviceLimiter(cfg.Server.MaxRequestsPerDevice, window)
+		defer deviceLimiter.Stop()
+		log.Info().
+			Int("max_per_device", cfg.Server.MaxRequestsPerDevice).
+			Int("window_seconds", cfg.Server.RateLimitWindowSeconds).
+			Msg("Device rate limiting enabled")
+	}
+
+	// Create connection semaphore if concurrent connection limit is set
+	if cfg.Server.MaxConcurrentConnections > 0 {
+		syncSemaphore = make(chan struct{}, cfg.Server.MaxConcurrentConnections)
+		log.Info().
+			Int("max_concurrent", cfg.Server.MaxConcurrentConnections).
+			Msg("Concurrent connection limiting enabled")
+	}
 
 	// Start UDP multicast listener
 	log.Debug().Msg("Creating discovery listener")
@@ -244,7 +301,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 			log.Error().Err(err).Msg("Discovery listener error")
 
 		case discovered := <-deviceChan:
-			handleDiscoveredDevice(discovered, registry, cfg, lib)
+			handleDiscoveredDevice(discovered, registry, cfg, lib, ipLimiter, deviceLimiter, syncSemaphore)
 		}
 	}
 }
@@ -258,11 +315,27 @@ func shouldIgnoreDevice(ipAddress, deviceID, deviceName string, ignoreList []str
 	return false
 }
 
-func handleDiscoveredDevice(discovered device.DiscoveredDevice, registry *device.Registry, cfg *config.Config, lib *library.ComicLibrary) {
+func handleDiscoveredDevice(
+	discovered device.DiscoveredDevice,
+	registry *device.Registry,
+	cfg *config.Config,
+	lib *library.ComicLibrary,
+	ipLimiter *ratelimit.IPLimiter,
+	deviceLimiter *ratelimit.DeviceLimiter,
+	syncSemaphore chan struct{},
+) {
 	logger := log.With().
 		Str("ip", discovered.IPAddress).
 		Str("device_key", discovered.Key).
 		Logger()
+
+	// Check IP rate limit first (before any processing)
+	if ipLimiter != nil && !ipLimiter.Allow(discovered.IPAddress) {
+		logger.Warn().
+			Int("current_attempts", ipLimiter.GetAttemptCount(discovered.IPAddress)).
+			Msg("Device connection rejected: IP rate limit exceeded")
+		return
+	}
 
 	// Check if this device should be ignored by IP (early check)
 	if shouldIgnoreDevice(discovered.IPAddress, "", "", cfg.Server.IgnoreDevices) {
@@ -335,7 +408,7 @@ func handleDiscoveredDevice(discovered device.DiscoveredDevice, registry *device
 	// Handle sync request if device wants sync and auto-sync is enabled
 	if discovered.WantsSync && cfg.Server.AutoSync {
 		logger.Info().Msg("Device requested sync, starting automatic sync")
-		if err := handleSyncRequest(info.ID, discovered.IPAddress, cfg, lib); err != nil {
+		if err := handleSyncRequest(info.ID, discovered.IPAddress, cfg, lib, deviceLimiter, syncSemaphore); err != nil {
 			logger.Error().Err(err).Msg("Sync failed")
 		}
 	} else if discovered.WantsSync && !cfg.Server.AutoSync {
@@ -392,15 +465,48 @@ func applyDeviceConfig(syncer *csync.Syncer, deviceConfig *config.DeviceConfig, 
 }
 
 // handleSyncRequest handles a sync request from a device
-func handleSyncRequest(deviceID, deviceIP string, cfg *config.Config, lib *library.ComicLibrary) error {
+func handleSyncRequest(
+	deviceID, deviceIP string,
+	cfg *config.Config,
+	lib *library.ComicLibrary,
+	deviceLimiter *ratelimit.DeviceLimiter,
+	syncSemaphore chan struct{},
+) error {
 	logger := log.With().
 		Str("device_id", deviceID).
 		Str("device_ip", deviceIP).
 		Logger()
 
-	// Acquire global sync lock (only one device can sync at a time in v0.2)
-	syncMutex.Lock()
-	defer syncMutex.Unlock()
+	// Check device rate limit
+	if deviceLimiter != nil && !deviceLimiter.Allow(deviceID) {
+		availableTokens := deviceLimiter.GetAvailableTokens(deviceID)
+		logger.Warn().
+			Float64("available_tokens", availableTokens).
+			Msg("Sync rejected: device rate limit exceeded")
+		return fmt.Errorf("device rate limit exceeded (%.2f tokens available)", availableTokens)
+	}
+
+	// Acquire semaphore slot if connection limiting is enabled
+	if syncSemaphore != nil {
+		select {
+		case syncSemaphore <- struct{}{}:
+			// Got a slot, continue
+			defer func() { <-syncSemaphore }()
+			logger.Debug().
+				Int("slots_available", cap(syncSemaphore)-len(syncSemaphore)).
+				Msg("Acquired sync connection slot")
+		default:
+			// No slots available
+			logger.Warn().
+				Int("max_concurrent", cap(syncSemaphore)).
+				Msg("Sync rejected: maximum concurrent connections reached")
+			return fmt.Errorf("maximum concurrent connections (%d) reached", cap(syncSemaphore))
+		}
+	} else {
+		// Fallback to old mutex for backward compatibility (when semaphore is nil)
+		syncMutex.Lock()
+		defer syncMutex.Unlock()
+	}
 
 	logger.Info().Msg("Starting sync")
 
@@ -455,6 +561,10 @@ func init() {
 	serverCmd.Flags().StringSliceVarP(&ignoreDevices, "ignore-device", "i", nil, "Devices to ignore (can be IP address, device ID, or device name)")
 	serverCmd.Flags().StringVarP(&bindAddress, "bind", "b", "", "Network interface to bind to (default: all interfaces)")
 	serverCmd.Flags().BoolVar(&autoSync, "auto-sync", false, "Automatically sync devices when they connect")
+	serverCmd.Flags().IntVar(&maxConcurrentConns, "max-concurrent", 0, "Maximum concurrent connections (0 = unlimited, default: 5)")
+	serverCmd.Flags().IntVar(&maxConnectionsPerIP, "max-connections-per-ip", 0, "Max connection attempts per IP per window (0 = unlimited, default: 10)")
+	serverCmd.Flags().IntVar(&maxRequestsPerDevice, "max-requests-per-device", 0, "Max requests per device per window (0 = unlimited, default: 100)")
+	serverCmd.Flags().IntVar(&rateLimitWindowSeconds, "rate-limit-window", 0, "Rate limit window in seconds (default: 60)")
 	serverCmd.Flags().StringVar(&logLevel, "log-level", "", "Log level: debug, info, warn, error (default: info)")
 	serverCmd.Flags().StringVar(&logFormat, "log-format", "", "Log format: text, json (default: text)")
 
@@ -466,6 +576,10 @@ func init() {
 		ignoreDevicesSet = cmd.Flags().Changed("ignore-device")
 		bindAddressSet = cmd.Flags().Changed("bind")
 		autoSyncSet = cmd.Flags().Changed("auto-sync")
+		maxConcurrentConnsSet = cmd.Flags().Changed("max-concurrent")
+		maxConnectionsPerIPSet = cmd.Flags().Changed("max-connections-per-ip")
+		maxRequestsPerDeviceSet = cmd.Flags().Changed("max-requests-per-device")
+		rateLimitWindowSecondsSet = cmd.Flags().Changed("rate-limit-window")
 		logLevelSet = cmd.Flags().Changed("log-level")
 		logFormatSet = cmd.Flags().Changed("log-format")
 		return nil
