@@ -631,13 +631,16 @@ See issues #15, #16, #17 for:
   - Thread-safe sync progress tracking
   - Comprehensive sync state manager tests (12 tests)
 - ✅ REST API for monitoring and control (COMPLETED)
-  - `GET /api/health` - Health check with uptime
+  - HTTP server on configurable port (default: 7620)
+  - `GET /api/health` - Health check with uptime and version info
+  - `GET /api/version` - Build version information
   - `GET /api/sync/status` - Get all active syncs
   - `GET /api/sync/history?limit=N` - Get recent sync history
   - `GET /api/devices` - List all registered devices with sync status
   - `GET /api/stats` - Server statistics and configuration
   - JSON response format for all endpoints
-  - Comprehensive API tests (9 tests)
+  - Graceful shutdown with 5-second timeout
+  - Comprehensive API tests (10 tests)
 
 ### 📋 Backlog (v1.0+):
 

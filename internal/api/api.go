@@ -13,21 +13,30 @@ import (
 	"github.com/duckpuppy/comic-server/internal/syncstate"
 )
 
+// VersionInfo contains build version information
+type VersionInfo struct {
+	Version   string
+	GitCommit string
+	BuildDate string
+}
+
 // Server provides REST API endpoints for monitoring and control
 type Server struct {
 	syncManager *syncstate.Manager
 	registry    *device.Registry
 	config      *config.Config
+	version     VersionInfo
 	mux         *http.ServeMux
 	startTime   time.Time
 }
 
-// NewServer creates a new API server
-func NewServer(syncManager *syncstate.Manager, registry *device.Registry, cfg *config.Config) *Server {
+// NewServer creates a new API server with version information
+func NewServer(syncManager *syncstate.Manager, registry *device.Registry, cfg *config.Config, version VersionInfo) *Server {
 	s := &Server{
 		syncManager: syncManager,
 		registry:    registry,
 		config:      cfg,
+		version:     version,
 		mux:         http.NewServeMux(),
 		startTime:   time.Now(),
 	}
@@ -44,6 +53,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // registerRoutes sets up all API endpoints
 func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/health", s.handleHealth)
+	s.mux.HandleFunc("/api/version", s.handleVersion)
 	s.mux.HandleFunc("/api/sync/status", s.handleSyncStatus)
 	s.mux.HandleFunc("/api/sync/history", s.handleSyncHistory)
 	s.mux.HandleFunc("/api/devices", s.handleDevices)
@@ -52,8 +62,11 @@ func (s *Server) registerRoutes() {
 
 // Health check response
 type HealthResponse struct {
-	Status string `json:"status"`
-	Uptime string `json:"uptime"`
+	Status    string `json:"status"`
+	Uptime    string `json:"uptime"`
+	Version   string `json:"version"`
+	GitCommit string `json:"git_commit"`
+	BuildDate string `json:"build_date"`
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -64,8 +77,33 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 	uptime := time.Since(s.startTime)
 	response := HealthResponse{
-		Status: "healthy",
-		Uptime: uptime.String(),
+		Status:    "healthy",
+		Uptime:    uptime.String(),
+		Version:   s.version.Version,
+		GitCommit: s.version.GitCommit,
+		BuildDate: s.version.BuildDate,
+	}
+
+	s.writeJSON(w, http.StatusOK, response)
+}
+
+// Version response
+type VersionResponse struct {
+	Version   string `json:"version"`
+	GitCommit string `json:"git_commit"`
+	BuildDate string `json:"build_date"`
+}
+
+func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	response := VersionResponse{
+		Version:   s.version.Version,
+		GitCommit: s.version.GitCommit,
+		BuildDate: s.version.BuildDate,
 	}
 
 	s.writeJSON(w, http.StatusOK, response)

@@ -16,8 +16,9 @@ func TestNewServer(t *testing.T) {
 	syncManager := syncstate.NewManager(10)
 	registry := device.NewRegistry()
 	cfg := &config.Config{}
+	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
 
-	server := NewServer(syncManager, registry, cfg)
+	server := NewServer(syncManager, registry, cfg, version)
 	if server == nil {
 		t.Fatal("NewServer returned nil")
 	}
@@ -30,13 +31,17 @@ func TestNewServer(t *testing.T) {
 	if server.config != cfg {
 		t.Error("config not set correctly")
 	}
+	if server.version.Version != "test" {
+		t.Error("version not set correctly")
+	}
 }
 
 func TestHandleHealth(t *testing.T) {
 	syncManager := syncstate.NewManager(10)
 	registry := device.NewRegistry()
 	cfg := &config.Config{}
-	server := NewServer(syncManager, registry, cfg)
+	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
+	server := NewServer(syncManager, registry, cfg, version)
 
 	// Wait a bit to ensure uptime is > 0
 	time.Sleep(10 * time.Millisecond)
@@ -61,13 +66,55 @@ func TestHandleHealth(t *testing.T) {
 	if response.Uptime == "" {
 		t.Error("uptime should not be empty")
 	}
+	if response.Version != "test" {
+		t.Errorf("expected version 'test', got '%s'", response.Version)
+	}
+	if response.GitCommit != "abc123" {
+		t.Errorf("expected git commit 'abc123', got '%s'", response.GitCommit)
+	}
+	if response.BuildDate != "2024-01-01" {
+		t.Errorf("expected build date '2024-01-01', got '%s'", response.BuildDate)
+	}
+}
+
+func TestHandleVersion(t *testing.T) {
+	syncManager := syncstate.NewManager(10)
+	registry := device.NewRegistry()
+	cfg := &config.Config{}
+	version := VersionInfo{Version: "v1.2.3", GitCommit: "def456", BuildDate: "2024-02-01"}
+	server := NewServer(syncManager, registry, cfg, version)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/version", nil)
+	w := httptest.NewRecorder()
+
+	server.handleVersion(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+
+	var response VersionResponse
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if response.Version != "v1.2.3" {
+		t.Errorf("expected version 'v1.2.3', got '%s'", response.Version)
+	}
+	if response.GitCommit != "def456" {
+		t.Errorf("expected git commit 'def456', got '%s'", response.GitCommit)
+	}
+	if response.BuildDate != "2024-02-01" {
+		t.Errorf("expected build date '2024-02-01', got '%s'", response.BuildDate)
+	}
 }
 
 func TestHandleHealthMethodNotAllowed(t *testing.T) {
 	syncManager := syncstate.NewManager(10)
 	registry := device.NewRegistry()
 	cfg := &config.Config{}
-	server := NewServer(syncManager, registry, cfg)
+	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
+	server := NewServer(syncManager, registry, cfg, version)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/health", nil)
 	w := httptest.NewRecorder()
@@ -83,7 +130,8 @@ func TestHandleSyncStatus(t *testing.T) {
 	syncManager := syncstate.NewManager(10)
 	registry := device.NewRegistry()
 	cfg := &config.Config{}
-	server := NewServer(syncManager, registry, cfg)
+	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
+	server := NewServer(syncManager, registry, cfg, version)
 
 	// Start some syncs
 	syncManager.StartSync("device1", "192.168.1.100", "Tablet 1")
@@ -115,7 +163,8 @@ func TestHandleSyncHistory(t *testing.T) {
 	syncManager := syncstate.NewManager(10)
 	registry := device.NewRegistry()
 	cfg := &config.Config{}
-	server := NewServer(syncManager, registry, cfg)
+	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
+	server := NewServer(syncManager, registry, cfg, version)
 
 	// Complete some syncs
 	syncManager.StartSync("device1", "192.168.1.100", "Tablet 1")
@@ -150,7 +199,8 @@ func TestHandleSyncHistoryWithLimit(t *testing.T) {
 	syncManager := syncstate.NewManager(100)
 	registry := device.NewRegistry()
 	cfg := &config.Config{}
-	server := NewServer(syncManager, registry, cfg)
+	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
+	server := NewServer(syncManager, registry, cfg, version)
 
 	// Complete 10 syncs
 	for i := 1; i <= 10; i++ {
@@ -184,7 +234,8 @@ func TestHandleDevices(t *testing.T) {
 	syncManager := syncstate.NewManager(10)
 	registry := device.NewRegistry()
 	cfg := &config.Config{}
-	server := NewServer(syncManager, registry, cfg)
+	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
+	server := NewServer(syncManager, registry, cfg, version)
 
 	// Add devices to registry
 	info1 := &device.Info{
@@ -265,7 +316,8 @@ func TestHandleStats(t *testing.T) {
 			MaxRequestsPerDevice:     100,
 		},
 	}
-	server := NewServer(syncManager, registry, cfg)
+	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
+	server := NewServer(syncManager, registry, cfg, version)
 
 	// Add a device
 	info := &device.Info{
@@ -319,7 +371,8 @@ func TestServeHTTP(t *testing.T) {
 	syncManager := syncstate.NewManager(10)
 	registry := device.NewRegistry()
 	cfg := &config.Config{}
-	server := NewServer(syncManager, registry, cfg)
+	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
+	server := NewServer(syncManager, registry, cfg, version)
 
 	// Test that routes are registered correctly
 	tests := []struct {
@@ -328,11 +381,13 @@ func TestServeHTTP(t *testing.T) {
 		expectedStatus int
 	}{
 		{"/api/health", http.MethodGet, http.StatusOK},
+		{"/api/version", http.MethodGet, http.StatusOK},
 		{"/api/sync/status", http.MethodGet, http.StatusOK},
 		{"/api/sync/history", http.MethodGet, http.StatusOK},
 		{"/api/devices", http.MethodGet, http.StatusOK},
 		{"/api/stats", http.MethodGet, http.StatusOK},
 		{"/api/health", http.MethodPost, http.StatusMethodNotAllowed},
+		{"/api/version", http.MethodPost, http.StatusMethodNotAllowed},
 		{"/api/nonexistent", http.MethodGet, http.StatusNotFound},
 	}
 

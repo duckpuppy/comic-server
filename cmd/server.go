@@ -1,12 +1,15 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/duckpuppy/comic-server/internal/api"
 	"github.com/duckpuppy/comic-server/internal/config"
 	"github.com/duckpuppy/comic-server/internal/device"
 	"github.com/duckpuppy/comic-server/internal/library"
@@ -212,6 +215,29 @@ func runServer(cmd *cobra.Command, args []string) error {
 	// Start listening
 	deviceChan, errorChan := listener.Start()
 
+	// Start REST API HTTP server
+	apiVersion := api.VersionInfo{
+		Version:   Version,
+		GitCommit: GitCommit,
+		BuildDate: BuildDate,
+	}
+	apiServer := api.NewServer(syncManager, registry, cfg, apiVersion)
+
+	httpServer := &http.Server{
+		Addr:    fmt.Sprintf(":%d", cfg.Server.ServerPort),
+		Handler: apiServer,
+	}
+
+	// Start HTTP server in background
+	go func() {
+		log.Info().
+			Int("port", cfg.Server.ServerPort).
+			Msg("REST API server listening")
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Error().Err(err).Msg("REST API server error")
+		}
+	}()
+
 	// Handle signals gracefully
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
@@ -294,6 +320,14 @@ func runServer(cmd *cobra.Command, args []string) error {
 
 			case os.Interrupt, syscall.SIGTERM:
 				log.Info().Str("signal", sig.String()).Msg("Shutting down server")
+
+				// Gracefully shutdown HTTP server
+				shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				if err := httpServer.Shutdown(shutdownCtx); err != nil {
+					log.Error().Err(err).Msg("Failed to shutdown HTTP server gracefully")
+				}
+
 				return nil
 			}
 
