@@ -587,6 +587,19 @@ func handleSyncRequest(
 	logger.Debug().Msg("Performing sync operation")
 	result, err := syncer.PerformSync()
 	if err != nil {
+		// Check if this is a network error (disconnection/timeout)
+		if protocol.IsNetworkError(err) {
+			errorType := protocol.ErrorTypeString(err)
+			logger.Warn().
+				Str("error_type", errorType).
+				Err(err).
+				Msg("Device disconnected during sync")
+			syncManager.FailSync(deviceID, fmt.Sprintf("device disconnected: %s", errorType))
+			return fmt.Errorf("device disconnected (%s): %w", errorType, err)
+		}
+
+		// Other errors (logic, file I/O, etc.)
+		logger.Error().Err(err).Msg("Sync failed with non-network error")
 		syncManager.FailSync(deviceID, err.Error())
 		return fmt.Errorf("sync failed: %w", err)
 	}

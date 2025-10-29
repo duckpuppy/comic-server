@@ -650,14 +650,20 @@ See issues #15, #16, #17 for:
   - Metrics recorded at all sync lifecycle stages (start, complete, fail, abort)
   - Standard Go runtime metrics included automatically
 
+### v0.6 Milestone - In Progress:
+
+- ✅ Graceful device disconnect handling (COMPLETED)
+  - Network error detection in `internal/protocol/errors.go`
+  - Detects connection issues: timeouts, refused/reset/aborted connections, broken pipes, unreachable hosts
+  - Differentiates network errors from application logic errors
+  - Proper sync state updates with specific error messages
+  - Connection timeout detection with configurable deadlines
+  - Comprehensive error detection tests (18 test cases)
+  - Enhanced logging with error type classification
+
 ### 📋 Backlog (v1.0+):
 
 **API Enhancements:**
-- Graceful device disconnect handling
-  - Add proper cleanup when devices disconnect mid-sync
-  - Ensure resources (connections, memory) are freed properly
-  - Update sync state to "aborted" with appropriate error message
-  - Add connection timeout detection
 - Pagination support for sync history endpoint
   - Currently has `limit` parameter but no offset/cursor
   - Add cursor-based pagination for better performance with large histories
