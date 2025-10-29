@@ -1,0 +1,59 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Build artifacts
+comic-server
+testclient
+*.exe
+*.dll
+*.so
+*.dylib
+dist/
+bin/
+
+# Test data and coverage
+testdata/ComicDB.xml
+*.test
+*.out
+*.prof
+coverage.html
+coverage.txt
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Documentation (not needed in image)
+*.md
+docs/
+scripts/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Development
+.env
+.env.*
+*.log
+*.pid
+
+# Test storage
+test-storage/
+test-comics/
+
+# Temporary files
+tmp/
+temp/
+
+# Keep these files (negate ignore)
+!go.mod
+!go.sum
+!*.go
+!Dockerfile

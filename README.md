@@ -84,6 +84,40 @@ go build -ldflags "-X github.com/duckpuppy/comic-server/cmd.Version=1.0.0 \
 CGO_ENABLED=0 go build -o comic-server
 ```
 
+## Docker Deployment
+
+The easiest way to run comic-server is using Docker:
+
+```bash
+# Pull the latest image
+docker pull ghcr.io/duckpuppy/comic-server:latest
+
+# Run with docker run
+docker run -d \
+  --name comic-server \
+  --network host \
+  -v ~/.local/share/ComicRack/ComicDb.xml:/data/ComicDb.xml:ro \
+  -v ~/Comics:/comics:ro \
+  -e COMIC_SERVER_LOG_LEVEL=info \
+  -e COMIC_SERVER_AUTO_SYNC=true \
+  ghcr.io/duckpuppy/comic-server:latest
+
+# Or use docker-compose
+curl -O https://raw.githubusercontent.com/duckpuppy/comic-server/master/docker-compose.yml
+docker-compose up -d
+```
+
+**Available images:**
+- `latest` - Latest build from master/main
+- `vX.Y.Z` - Specific release versions
+- `X.Y` - Major.minor versions
+
+**Platforms:**
+- `linux/amd64` - x86_64
+- `linux/arm64` - ARM64 (Raspberry Pi 4+, Apple Silicon)
+
+See [docs/DOCKER.md](docs/DOCKER.md) for detailed Docker deployment guide.
+
 ## Usage
 
 ### Basic Usage

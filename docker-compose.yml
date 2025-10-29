@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  comic-server:
+    image: ghcr.io/duckpuppy/comic-server:latest
+    container_name: comic-server
+
+    # Required for multicast discovery to work
+    network_mode: host
+
+    # Environment variables
+    environment:
+      - COMIC_SERVER_LOG_LEVEL=info
+      - COMIC_SERVER_LOG_FORMAT=json
+      - COMIC_SERVER_AUTO_SYNC=true
+      # Optional: ignore specific devices
+      # - COMIC_SERVER_IGNORE_DEVICES=192.168.0.24,SM-T970
+
+    # Volumes
+    volumes:
+      # Mount your ComicRack library file (read-only)
+      - ${LIBRARY_PATH:-~/.local/share/ComicRack/ComicDb.xml}:/data/ComicDb.xml:ro
+
+      # Mount your comics directory (read-only)
+      - ${COMICS_PATH:-~/Comics}:/comics:ro
+
+      # Optional: Config directory for per-device settings
+      - ./config:/config
+
+    # Restart policy
+    restart: unless-stopped
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/comic-server", "version"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+    # Resource limits (optional)
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
