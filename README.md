@@ -258,12 +258,14 @@ comic-server/
 │   ├── config/            # Configuration system (YAML/TOML)
 │   ├── sync/              # Sync logic and file transfers
 │   └── log/               # Structured logging (zerolog)
-├── scripts/               # Service/daemon files
+├── scripts/               # Utility scripts
 │   ├── README.md          # Service installation guide
 │   ├── comic-server.service  # systemd service file
-│   └── com.comic-server.plist  # launchd plist
+│   ├── com.comic-server.plist  # launchd plist
+│   └── reduce-comics.go   # Script to reduce CBZ file sizes
 ├── testdata/              # Test data
-│   └── ComicDB.xml        # Sample library file (226MB)
+│   ├── ComicDB.xml        # Sample library file (226MB)
+│   └── real-comics/       # Test CBZ files (reduced to 3 pages each)
 ├── main.go                # Entry point
 └── WIRELESS_SYNC_PROTOCOL.md  # Protocol specification
 ```
