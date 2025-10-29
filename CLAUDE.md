@@ -681,10 +681,16 @@ See issues #15, #16, #17 for:
 
 ### 📋 Backlog (v1.0+):
 
-**API Enhancements:**
+**Documentation:**
+- ✅ User documentation - Issue #8 (COMPLETED)
+  - Created comprehensive documentation in `docs/` directory
+  - Installation guide with platform-specific instructions
+  - Configuration reference covering all options
+  - Complete API reference with examples
+  - Troubleshooting guide with common issues and solutions
+  - Updated README.md with v0.6 status
 
 **Other Items:**
-- User documentation - Issue #8
 - Performance optimization - Issue #9
 - Web UI for configuration and monitoring - Issue #12
 - SQLite storage investigation - Issue #19

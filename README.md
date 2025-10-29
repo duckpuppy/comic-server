@@ -6,11 +6,11 @@ A headless, standalone wireless sync server for ComicRack Android/iOS clients.
 
 `comic-server` implements the ComicRack wireless synchronization protocol, allowing Android and iOS devices to sync comic books without requiring the full ComicRack desktop application.
 
-This project is currently under development and located within the [ComicRackCE](https://github.com/maforget/ComicRackCE) repository for reference purposes. It will eventually be split into its own repository.
+This is a standalone project with its own git repository, located alongside the [ComicRackCE](https://github.com/maforget/ComicRackCE) project.
 
 ## Status
 
-🚧 **Work in Progress** - Core protocol implementation is underway.
+✅ **Production Ready** - Core functionality is complete and tested. The server successfully syncs comic libraries with Android/iOS devices.
 
 See [WIRELESS_SYNC_PROTOCOL.md](./WIRELESS_SYNC_PROTOCOL.md) for the complete protocol specification.
 
@@ -234,6 +234,81 @@ comic-server/
 └── WIRELESS_SYNC_PROTOCOL.md  # Protocol specification
 ```
 
+## Monitoring and Management
+
+### REST API
+
+The server provides a REST API on port 7620 for monitoring and management:
+
+**Health Check:**
+```bash
+curl http://localhost:7620/api/health
+```
+
+**Version Information:**
+```bash
+curl http://localhost:7620/api/version
+```
+
+**Active Sync Operations:**
+```bash
+curl http://localhost:7620/api/sync/status
+```
+
+**Sync History (with pagination):**
+```bash
+# Get first 20 entries
+curl http://localhost:7620/api/sync/history?limit=20&offset=0
+
+# Get next page
+curl http://localhost:7620/api/sync/history?limit=20&offset=20
+```
+
+**Device List (with filtering):**
+```bash
+# All devices
+curl http://localhost:7620/api/devices
+
+# Filter by edition
+curl http://localhost:7620/api/devices?edition=Android+Full
+
+# Filter by sync status
+curl http://localhost:7620/api/devices?syncing=true
+
+# Filter by last seen (RFC3339 format)
+curl "http://localhost:7620/api/devices?last_seen_after=2025-01-01T00:00:00Z"
+
+# Combine filters
+curl "http://localhost:7620/api/devices?edition=iOS&syncing=false&last_seen_after=2025-01-01T00:00:00Z"
+```
+
+**Server Statistics:**
+```bash
+curl http://localhost:7620/api/stats
+```
+
+### Prometheus Metrics
+
+The server exposes Prometheus metrics at `/metrics`:
+
+```bash
+curl http://localhost:7620/metrics
+```
+
+Available metrics:
+- `comic_server_syncs_total` - Total sync operations (by status)
+- `comic_server_active_syncs` - Current active syncs
+- `comic_server_books_processed_total` - Books processed (by operation)
+- `comic_server_sync_duration_seconds` - Sync duration histogram
+
+Example Prometheus scrape configuration:
+```yaml
+scrape_configs:
+  - job_name: 'comic-server'
+    static_configs:
+      - targets: ['localhost:7620']
+```
+
 ## Development Roadmap
 
 ### v0.2 - Complete! ✅
@@ -264,20 +339,51 @@ comic-server/
 - [x] launchd plist (macOS)
 - [x] Service installation documentation
 
-### v0.4 - Planned (Security & Multi-List Support)
+### v0.4 - Complete! ✅
 
-- [ ] Multiple smart lists per device - Full implementation (Issue #21)
-- [ ] Security hardening (Issue #10)
+- [x] Multiple smart lists per device - Full implementation
+- [x] Security hardening
   - Device authentication validation
   - Rate limiting and connection limits
   - Input validation and sanitization
   - Security audit and testing
 
-### v1.0 - Planned (Production Ready)
+### v0.5 - Complete! ✅
 
-- [ ] Concurrent device sync support (Issue #18)
-- [ ] User documentation (Issue #8)
-- [ ] Performance optimization (Issue #9)
+- [x] Prometheus metrics for monitoring
+  - Active syncs gauge
+  - Sync operations counter (by status)
+  - Books processed counter (by operation)
+  - Sync duration histogram
+- [x] REST API enhancements
+  - `/api/health` - Health check with version info
+  - `/api/version` - Version information
+  - `/api/sync/status` - Active sync operations
+  - `/api/sync/history` - Completed sync history
+  - `/api/devices` - Connected devices
+  - `/api/stats` - Server statistics
+  - `/metrics` - Prometheus metrics endpoint
+
+### v0.6 - Complete! ✅
+
+- [x] Graceful device disconnect handling
+  - Network error detection and classification
+  - Proper error logging for disconnections vs. application errors
+  - Timeout and connection reset detection
+- [x] Pagination support for sync history
+  - Offset-based pagination with metadata
+  - Configurable page size (up to 100 entries)
+  - Backward-compatible API
+- [x] Device list filtering
+  - Filter by edition (Android Full, Android Free, iOS)
+  - Filter by sync status (currently syncing)
+  - Filter by last seen timestamp
+  - Combined filters with AND logic
+
+### v1.0 - Planned (Enhanced Features)
+
+- [ ] Concurrent device sync support
+- [ ] Performance optimization
 - [ ] Web UI for configuration and monitoring
 
 ## License
