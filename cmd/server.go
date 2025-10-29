@@ -233,6 +233,13 @@ func runServer(cmd *cobra.Command, args []string) error {
 		log.Info().
 			Int("port", cfg.Server.ServerPort).
 			Msg("REST API server listening")
+		log.Info().Msg("Available API endpoints:")
+		log.Info().Msgf("  GET  http://localhost:%d/api/health - Health check with version info", cfg.Server.ServerPort)
+		log.Info().Msgf("  GET  http://localhost:%d/api/version - Build version information", cfg.Server.ServerPort)
+		log.Info().Msgf("  GET  http://localhost:%d/api/sync/status - Active sync operations", cfg.Server.ServerPort)
+		log.Info().Msgf("  GET  http://localhost:%d/api/sync/history?limit=N - Sync history", cfg.Server.ServerPort)
+		log.Info().Msgf("  GET  http://localhost:%d/api/devices - Registered devices", cfg.Server.ServerPort)
+		log.Info().Msgf("  GET  http://localhost:%d/api/stats - Server statistics", cfg.Server.ServerPort)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Error().Err(err).Msg("REST API server error")
 		}
