@@ -301,3 +301,165 @@ func TestConcurrentAccess(t *testing.T) {
 		t.Errorf("expected 0 active syncs, got %d", m.GetActiveCount())
 	}
 }
+
+func TestGetHistoryPaginated(t *testing.T) {
+	m := NewManager(100)
+
+	// Create 25 sync entries
+	for i := 1; i <= 25; i++ {
+		deviceID := "device" + string(rune('0'+i))
+		m.StartSync(deviceID, "192.168.1.100", "Tablet")
+		m.CompleteSync(deviceID, i, i, i, 0)
+	}
+
+	// Test first page (most recent 10)
+	page := m.GetHistoryPaginated(10, 0)
+	if page.Total != 25 {
+		t.Errorf("expected total 25, got %d", page.Total)
+	}
+	if page.Offset != 0 {
+		t.Errorf("expected offset 0, got %d", page.Offset)
+	}
+	if page.Limit != 10 {
+		t.Errorf("expected limit 10, got %d", page.Limit)
+	}
+	if len(page.History) != 10 {
+		t.Fatalf("expected 10 entries, got %d", len(page.History))
+	}
+	if !page.HasMore {
+		t.Error("expected has_more to be true")
+	}
+	if page.NextOffset == nil || *page.NextOffset != 10 {
+		t.Errorf("expected next_offset 10, got %v", page.NextOffset)
+	}
+
+	// Verify first page contains entries 16-25 (most recent)
+	if page.History[0].BooksAdded != 16 {
+		t.Errorf("expected first entry BooksAdded=16, got %d", page.History[0].BooksAdded)
+	}
+	if page.History[9].BooksAdded != 25 {
+		t.Errorf("expected last entry BooksAdded=25, got %d", page.History[9].BooksAdded)
+	}
+
+	// Test second page
+	page = m.GetHistoryPaginated(10, 10)
+	if len(page.History) != 10 {
+		t.Fatalf("expected 10 entries, got %d", len(page.History))
+	}
+	if !page.HasMore {
+		t.Error("expected has_more to be true")
+	}
+	if page.NextOffset == nil || *page.NextOffset != 20 {
+		t.Errorf("expected next_offset 20, got %v", page.NextOffset)
+	}
+
+	// Verify second page contains entries 6-15
+	if page.History[0].BooksAdded != 6 {
+		t.Errorf("expected first entry BooksAdded=6, got %d", page.History[0].BooksAdded)
+	}
+	if page.History[9].BooksAdded != 15 {
+		t.Errorf("expected last entry BooksAdded=15, got %d", page.History[9].BooksAdded)
+	}
+
+	// Test third page (partial)
+	page = m.GetHistoryPaginated(10, 20)
+	if len(page.History) != 5 {
+		t.Fatalf("expected 5 entries, got %d", len(page.History))
+	}
+	if page.HasMore {
+		t.Error("expected has_more to be false")
+	}
+	if page.NextOffset != nil {
+		t.Errorf("expected next_offset nil, got %v", page.NextOffset)
+	}
+
+	// Verify third page contains entries 1-5
+	if page.History[0].BooksAdded != 1 {
+		t.Errorf("expected first entry BooksAdded=1, got %d", page.History[0].BooksAdded)
+	}
+	if page.History[4].BooksAdded != 5 {
+		t.Errorf("expected last entry BooksAdded=5, got %d", page.History[4].BooksAdded)
+	}
+}
+
+func TestGetHistoryPaginatedEmpty(t *testing.T) {
+	m := NewManager(10)
+
+	page := m.GetHistoryPaginated(20, 0)
+	if page.Total != 0 {
+		t.Errorf("expected total 0, got %d", page.Total)
+	}
+	if len(page.History) != 0 {
+		t.Errorf("expected 0 entries, got %d", len(page.History))
+	}
+	if page.HasMore {
+		t.Error("expected has_more to be false")
+	}
+	if page.NextOffset != nil {
+		t.Errorf("expected next_offset nil, got %v", page.NextOffset)
+	}
+}
+
+func TestGetHistoryPaginatedOffsetBeyondEnd(t *testing.T) {
+	m := NewManager(10)
+
+	// Create 5 entries
+	for i := 1; i <= 5; i++ {
+		deviceID := "device" + string(rune('0'+i))
+		m.StartSync(deviceID, "192.168.1.100", "Tablet")
+		m.CompleteSync(deviceID, i, i, i, 0)
+	}
+
+	// Request page beyond available data
+	page := m.GetHistoryPaginated(10, 10)
+	if page.Total != 5 {
+		t.Errorf("expected total 5, got %d", page.Total)
+	}
+	if len(page.History) != 0 {
+		t.Errorf("expected 0 entries, got %d", len(page.History))
+	}
+	if page.HasMore {
+		t.Error("expected has_more to be false")
+	}
+	if page.NextOffset != nil {
+		t.Errorf("expected next_offset nil, got %v", page.NextOffset)
+	}
+}
+
+func TestGetHistoryPaginatedLimitValidation(t *testing.T) {
+	m := NewManager(100)
+
+	// Create 50 entries
+	for i := 1; i <= 50; i++ {
+		deviceID := "device" + string(rune('0'+i))
+		m.StartSync(deviceID, "192.168.1.100", "Tablet")
+		m.CompleteSync(deviceID, i, i, i, 0)
+	}
+
+	// Test limit=0 (should use default 20)
+	page := m.GetHistoryPaginated(0, 0)
+	if page.Limit != 20 {
+		t.Errorf("expected limit 20 (default), got %d", page.Limit)
+	}
+	if len(page.History) != 20 {
+		t.Errorf("expected 20 entries, got %d", len(page.History))
+	}
+
+	// Test limit=-5 (should use default 20)
+	page = m.GetHistoryPaginated(-5, 0)
+	if page.Limit != 20 {
+		t.Errorf("expected limit 20 (default), got %d", page.Limit)
+	}
+
+	// Test limit=150 (should cap at 100)
+	page = m.GetHistoryPaginated(150, 0)
+	if page.Limit != 100 {
+		t.Errorf("expected limit 100 (capped), got %d", page.Limit)
+	}
+
+	// Test offset=-5 (should use 0)
+	page = m.GetHistoryPaginated(10, -5)
+	if page.Offset != 0 {
+		t.Errorf("expected offset 0, got %d", page.Offset)
+	}
+}

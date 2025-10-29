@@ -156,6 +156,23 @@ func (s *Server) handleSyncHistory(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Get offset from query parameter (default: 0)
+	offset := 0
+	if offsetStr := r.URL.Query().Get("offset"); offsetStr != "" {
+		var parsedOffset int
+		if _, err := fmt.Sscanf(offsetStr, "%d", &parsedOffset); err == nil && parsedOffset >= 0 {
+			offset = parsedOffset
+		}
+	}
+
+	// Use paginated API if offset is specified
+	if r.URL.Query().Has("offset") {
+		page := s.syncManager.GetHistoryPaginated(limit, offset)
+		s.writeJSON(w, http.StatusOK, page)
+		return
+	}
+
+	// Legacy behavior: return simple list without pagination metadata
 	history := s.syncManager.GetHistory(limit)
 	response := SyncHistoryResponse{
 		History: history,

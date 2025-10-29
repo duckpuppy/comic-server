@@ -256,6 +256,84 @@ func (m *Manager) GetHistory(limit int) []*SyncState {
 	return history
 }
 
+// HistoryPage represents a page of sync history with pagination metadata
+type HistoryPage struct {
+	History    []*SyncState `json:"history"`
+	Total      int          `json:"total"`       // Total number of history entries
+	Offset     int          `json:"offset"`      // Current offset
+	Limit      int          `json:"limit"`       // Page size
+	HasMore    bool         `json:"has_more"`    // Whether there are more entries
+	NextOffset *int         `json:"next_offset"` // Offset for next page (nil if no more)
+}
+
+// GetHistoryPaginated returns a page of sync history with pagination support.
+// History is returned in chronological order (oldest first) within each page.
+// offset=0 returns the most recent entries.
+func (m *Manager) GetHistoryPaginated(limit, offset int) *HistoryPage {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	total := len(m.history)
+
+	// Validate and adjust limit
+	if limit <= 0 {
+		limit = 20 // Default page size
+	}
+	if limit > 100 {
+		limit = 100 // Cap at 100
+	}
+
+	// Validate offset
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= total {
+		// Return empty page
+		return &HistoryPage{
+			History:    []*SyncState{},
+			Total:      total,
+			Offset:     offset,
+			Limit:      limit,
+			HasMore:    false,
+			NextOffset: nil,
+		}
+	}
+
+	// Calculate slice indices (offset from most recent)
+	// history is FIFO, so most recent is at end
+	// offset=0 means start from end, offset=1 means skip 1 from end, etc.
+	end := total - offset
+	start := end - limit
+	if start < 0 {
+		start = 0
+	}
+
+	// Extract page
+	pageSize := end - start
+	history := make([]*SyncState, pageSize)
+	for i := 0; i < pageSize; i++ {
+		stateCopy := *m.history[start+i]
+		history[i] = &stateCopy
+	}
+
+	// Calculate pagination metadata
+	hasMore := start > 0
+	var nextOffset *int
+	if hasMore {
+		next := offset + pageSize
+		nextOffset = &next
+	}
+
+	return &HistoryPage{
+		History:    history,
+		Total:      total,
+		Offset:     offset,
+		Limit:      limit,
+		HasMore:    hasMore,
+		NextOffset: nextOffset,
+	}
+}
+
 // IsDeviceSyncing returns true if the device is currently syncing
 func (m *Manager) IsDeviceSyncing(deviceID string) bool {
 	m.mu.RLock()

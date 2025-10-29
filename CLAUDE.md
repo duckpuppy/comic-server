@@ -650,7 +650,7 @@ See issues #15, #16, #17 for:
   - Metrics recorded at all sync lifecycle stages (start, complete, fail, abort)
   - Standard Go runtime metrics included automatically
 
-### v0.6 Milestone - In Progress:
+### v0.6 Milestone - Complete! ✅
 
 - ✅ Graceful device disconnect handling (COMPLETED)
   - Network error detection in `internal/protocol/errors.go`
@@ -661,14 +661,18 @@ See issues #15, #16, #17 for:
   - Comprehensive error detection tests (18 test cases)
   - Enhanced logging with error type classification
 
+- ✅ Pagination support for sync history endpoint (COMPLETED)
+  - Added `GetHistoryPaginated` method to `syncstate.Manager`
+  - Offset-based pagination with metadata (total, offset, limit, has_more, next_offset)
+  - Backward-compatible API: `/api/sync/history?limit=N` (legacy) vs `/api/sync/history?limit=N&offset=M` (paginated)
+  - Default page size: 20, max: 100
+  - Returns pagination metadata: total count, has_more flag, next_offset pointer
+  - Comprehensive tests for manager (4 test functions) and API (2 test functions)
+  - Handles edge cases: empty history, offset beyond end, limit validation
+
 ### 📋 Backlog (v1.0+):
 
 **API Enhancements:**
-- Pagination support for sync history endpoint
-  - Currently has `limit` parameter but no offset/cursor
-  - Add cursor-based pagination for better performance with large histories
-  - Return `next_cursor` in response for fetching next page
-  - Add `offset` parameter as alternative to cursor
 - Device list filtering
   - Filter by edition: `?edition=android_full` or `?edition=ios`
   - Filter by sync status: `?syncing=true` or `?syncing=false`

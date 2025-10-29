@@ -468,3 +468,133 @@ func TestServeHTTP(t *testing.T) {
 		}
 	}
 }
+
+func TestHandleSyncHistoryPaginated(t *testing.T) {
+	syncManager := syncstate.NewManager(100)
+	registry := device.NewRegistry()
+	cfg := &config.Config{}
+	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
+	server := NewServer(syncManager, registry, cfg, version)
+
+	// Create 25 sync entries
+	for i := 1; i <= 25; i++ {
+		deviceID := "device"
+		syncManager.StartSync(deviceID, "192.168.1.100", "Tablet")
+		syncManager.CompleteSync(deviceID, i, i, i, 0)
+	}
+
+	// Test first page with offset
+	req := httptest.NewRequest(http.MethodGet, "/api/sync/history?limit=10&offset=0", nil)
+	w := httptest.NewRecorder()
+	server.handleSyncHistory(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+
+	var page syncstate.HistoryPage
+	if err := json.NewDecoder(w.Body).Decode(&page); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if page.Total != 25 {
+		t.Errorf("expected total 25, got %d", page.Total)
+	}
+	if page.Offset != 0 {
+		t.Errorf("expected offset 0, got %d", page.Offset)
+	}
+	if page.Limit != 10 {
+		t.Errorf("expected limit 10, got %d", page.Limit)
+	}
+	if len(page.History) != 10 {
+		t.Errorf("expected 10 entries, got %d", len(page.History))
+	}
+	if !page.HasMore {
+		t.Error("expected has_more to be true")
+	}
+	if page.NextOffset == nil || *page.NextOffset != 10 {
+		t.Errorf("expected next_offset 10, got %v", page.NextOffset)
+	}
+
+	// Test second page
+	req = httptest.NewRequest(http.MethodGet, "/api/sync/history?limit=10&offset=10", nil)
+	w = httptest.NewRecorder()
+	server.handleSyncHistory(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+
+	if err := json.NewDecoder(w.Body).Decode(&page); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(page.History) != 10 {
+		t.Errorf("expected 10 entries, got %d", len(page.History))
+	}
+	if !page.HasMore {
+		t.Error("expected has_more to be true")
+	}
+	if page.NextOffset == nil || *page.NextOffset != 20 {
+		t.Errorf("expected next_offset 20, got %v", page.NextOffset)
+	}
+
+	// Test last page (partial)
+	req = httptest.NewRequest(http.MethodGet, "/api/sync/history?limit=10&offset=20", nil)
+	w = httptest.NewRecorder()
+	server.handleSyncHistory(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+
+	if err := json.NewDecoder(w.Body).Decode(&page); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(page.History) != 5 {
+		t.Errorf("expected 5 entries, got %d", len(page.History))
+	}
+	if page.HasMore {
+		t.Error("expected has_more to be false")
+	}
+	if page.NextOffset != nil {
+		t.Errorf("expected next_offset nil, got %v", page.NextOffset)
+	}
+}
+
+func TestHandleSyncHistoryLegacyFormat(t *testing.T) {
+	syncManager := syncstate.NewManager(100)
+	registry := device.NewRegistry()
+	cfg := &config.Config{}
+	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
+	server := NewServer(syncManager, registry, cfg, version)
+
+	// Create 10 sync entries
+	for i := 1; i <= 10; i++ {
+		deviceID := "device"
+		syncManager.StartSync(deviceID, "192.168.1.100", "Tablet")
+		syncManager.CompleteSync(deviceID, i, i, i, 0)
+	}
+
+	// Test without offset parameter (legacy format)
+	req := httptest.NewRequest(http.MethodGet, "/api/sync/history?limit=5", nil)
+	w := httptest.NewRecorder()
+	server.handleSyncHistory(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+
+	var response SyncHistoryResponse
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if response.Count != 5 {
+		t.Errorf("expected count 5, got %d", response.Count)
+	}
+	if len(response.History) != 5 {
+		t.Errorf("expected 5 entries, got %d", len(response.History))
+	}
+}
