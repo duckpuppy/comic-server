@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -367,6 +368,70 @@ func TestHandleStats(t *testing.T) {
 	}
 }
 
+func TestHandleMetrics(t *testing.T) {
+	syncManager := syncstate.NewManager(10)
+	registry := device.NewRegistry()
+	cfg := &config.Config{}
+	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
+	server := NewServer(syncManager, registry, cfg, version)
+
+	// Simulate some sync activity to generate metrics
+	syncManager.StartSync("device1", "192.168.1.100", "Tablet 1")
+	syncManager.CompleteSync("device1", 10, 5, 2, 0)
+
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	w := httptest.NewRecorder()
+
+	server.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+
+	// Verify Content-Type starts with text/plain for Prometheus format
+	contentType := w.Header().Get("Content-Type")
+	if !strings.HasPrefix(contentType, "text/plain") {
+		t.Errorf("expected Prometheus content type starting with 'text/plain', got '%s'", contentType)
+	}
+
+	body := w.Body.String()
+
+	// Verify key metrics are present
+	expectedMetrics := []string{
+		"comic_server_active_syncs",
+		"comic_server_syncs_total",
+		"comic_server_books_processed_total",
+		"comic_server_sync_duration_seconds",
+	}
+
+	for _, metric := range expectedMetrics {
+		if !strings.Contains(body, metric) {
+			t.Errorf("expected metric '%s' not found in metrics output", metric)
+		}
+	}
+
+	// Verify completed sync was recorded (metrics may be cumulative from other tests)
+	if !strings.Contains(body, "comic_server_syncs_total{status=\"completed\"}") {
+		t.Error("expected completed sync counter metric to exist")
+	}
+
+	// Verify books processed metrics exist
+	if !strings.Contains(body, "comic_server_books_processed_total{operation=\"added\"}") {
+		t.Error("expected books added counter metric to exist")
+	}
+	if !strings.Contains(body, "comic_server_books_processed_total{operation=\"updated\"}") {
+		t.Error("expected books updated counter metric to exist")
+	}
+	if !strings.Contains(body, "comic_server_books_processed_total{operation=\"deleted\"}") {
+		t.Error("expected books deleted counter metric to exist")
+	}
+
+	// Verify active syncs gauge exists (should be 0 since sync completed)
+	if !strings.Contains(body, "comic_server_active_syncs") {
+		t.Error("expected active syncs gauge metric to exist")
+	}
+}
+
 func TestServeHTTP(t *testing.T) {
 	syncManager := syncstate.NewManager(10)
 	registry := device.NewRegistry()
@@ -386,6 +451,7 @@ func TestServeHTTP(t *testing.T) {
 		{"/api/sync/history", http.MethodGet, http.StatusOK},
 		{"/api/devices", http.MethodGet, http.StatusOK},
 		{"/api/stats", http.MethodGet, http.StatusOK},
+		{"/metrics", http.MethodGet, http.StatusOK},
 		{"/api/health", http.MethodPost, http.StatusMethodNotAllowed},
 		{"/api/version", http.MethodPost, http.StatusMethodNotAllowed},
 		{"/api/nonexistent", http.MethodGet, http.StatusNotFound},
