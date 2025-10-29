@@ -11,6 +11,8 @@ import (
 	"github.com/duckpuppy/comic-server/internal/device"
 	"github.com/duckpuppy/comic-server/internal/log"
 	"github.com/duckpuppy/comic-server/internal/syncstate"
+	ws "github.com/duckpuppy/comic-server/internal/websocket"
+	"github.com/gorilla/websocket"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -29,10 +31,12 @@ type Server struct {
 	version     VersionInfo
 	mux         *http.ServeMux
 	startTime   time.Time
+	wsHub       *ws.Hub
+	upgrader    websocket.Upgrader
 }
 
 // NewServer creates a new API server with version information
-func NewServer(syncManager *syncstate.Manager, registry *device.Registry, cfg *config.Config, version VersionInfo) *Server {
+func NewServer(syncManager *syncstate.Manager, registry *device.Registry, cfg *config.Config, version VersionInfo, wsHub *ws.Hub) *Server {
 	s := &Server{
 		syncManager: syncManager,
 		registry:    registry,
@@ -40,6 +44,13 @@ func NewServer(syncManager *syncstate.Manager, registry *device.Registry, cfg *c
 		version:     version,
 		mux:         http.NewServeMux(),
 		startTime:   time.Now(),
+		wsHub:       wsHub,
+		upgrader: websocket.Upgrader{
+			CheckOrigin: func(r *http.Request) bool {
+				// Allow all origins for now (in production, check against allowed origins)
+				return true
+			},
+		},
 	}
 
 	s.registerRoutes()
@@ -58,7 +69,10 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/sync/status", s.handleSyncStatus)
 	s.mux.HandleFunc("/api/sync/history", s.handleSyncHistory)
 	s.mux.HandleFunc("/api/devices", s.handleDevices)
+	s.mux.HandleFunc("/api/devices/register", s.handleDeviceRegister)
+	s.mux.HandleFunc("/api/devices/unregister", s.handleDeviceUnregister)
 	s.mux.HandleFunc("/api/stats", s.handleStats)
+	s.mux.HandleFunc("/ws", s.handleWebSocket)
 	s.mux.Handle("/metrics", promhttp.Handler())
 }
 
@@ -314,4 +328,97 @@ func parsePathParam(path, prefix string) string {
 		return ""
 	}
 	return strings.TrimPrefix(path, prefix)
+}
+
+// handleWebSocket handles WebSocket upgrade requests
+func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
+	conn, err := s.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to upgrade WebSocket connection")
+		return
+	}
+
+	client := ws.NewClient(s.wsHub, conn)
+	s.wsHub.Register(client)
+	client.Start()
+
+	log.Info().
+		Str("remote_addr", conn.RemoteAddr().String()).
+		Msg("WebSocket client connected")
+}
+
+// Device registration request
+type DeviceRegisterRequest struct {
+	DeviceID string `json:"device_id"`
+}
+
+// handleDeviceRegister handles device registration requests
+func (s *Server) handleDeviceRegister(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req DeviceRegisterRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.DeviceID == "" {
+		http.Error(w, "device_id is required", http.StatusBadRequest)
+		return
+	}
+
+	// TODO: Implement device registration logic
+	// For now, just acknowledge the request
+	log.Info().Str("device_id", req.DeviceID).Msg("Device registration requested")
+
+	// Broadcast device registered event
+	s.wsHub.Broadcast(ws.EventDeviceRegistered, map[string]interface{}{
+		"device_id": req.DeviceID,
+	})
+
+	s.writeJSON(w, http.StatusOK, map[string]string{
+		"status":  "registered",
+		"message": "Device registered successfully",
+	})
+}
+
+// handleDeviceUnregister handles device unregistration requests
+func (s *Server) handleDeviceUnregister(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req DeviceRegisterRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.DeviceID == "" {
+		http.Error(w, "device_id is required", http.StatusBadRequest)
+		return
+	}
+
+	// TODO: Implement device unregistration logic
+	// For now, just acknowledge the request
+	log.Info().Str("device_id", req.DeviceID).Msg("Device unregistration requested")
+
+	// Broadcast device unregistered event
+	s.wsHub.Broadcast(ws.EventDeviceUnregistered, map[string]interface{}{
+		"device_id": req.DeviceID,
+	})
+
+	s.writeJSON(w, http.StatusOK, map[string]string{
+		"status":  "unregistered",
+		"message": "Device unregistered successfully",
+	})
+}
+
+// GetHub returns the WebSocket hub for broadcasting events
+func (s *Server) GetHub() *ws.Hub {
+	return s.wsHub
 }

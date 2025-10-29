@@ -18,6 +18,7 @@ import (
 	"github.com/duckpuppy/comic-server/internal/ratelimit"
 	csync "github.com/duckpuppy/comic-server/internal/sync"
 	"github.com/duckpuppy/comic-server/internal/syncstate"
+	"github.com/duckpuppy/comic-server/internal/websocket"
 	"github.com/spf13/cobra"
 )
 
@@ -215,13 +216,18 @@ func runServer(cmd *cobra.Command, args []string) error {
 	// Start listening
 	deviceChan, errorChan := listener.Start()
 
+	// Create and start WebSocket hub
+	wsHub := websocket.NewHub()
+	go wsHub.Run()
+	log.Info().Msg("WebSocket hub started")
+
 	// Start REST API HTTP server
 	apiVersion := api.VersionInfo{
 		Version:   Version,
 		GitCommit: GitCommit,
 		BuildDate: BuildDate,
 	}
-	apiServer := api.NewServer(syncManager, registry, cfg, apiVersion)
+	apiServer := api.NewServer(syncManager, registry, cfg, apiVersion, wsHub)
 
 	httpServer := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.Server.ServerPort),
