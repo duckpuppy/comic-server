@@ -1,0 +1,50 @@
+# Prometheus configuration for comic-server monitoring
+#
+# Usage:
+#   1. Update the 'targets' field below with your comic-server address
+#   2. Run Prometheus: prometheus --config.file=prometheus.yml
+#   3. Access Prometheus UI at http://localhost:9090
+
+global:
+  scrape_interval: 15s      # Scrape metrics every 15 seconds
+  evaluation_interval: 15s  # Evaluate rules every 15 seconds
+
+  # Attach these labels to all time series scraped
+  external_labels:
+    monitor: 'comic-server-monitor'
+
+# Scrape configurations
+scrape_configs:
+  # comic-server metrics
+  - job_name: 'comic-server'
+
+    # Override global scrape_interval for this job
+    scrape_interval: 10s
+
+    static_configs:
+      - targets: ['localhost:7620']  # Update with your comic-server address
+        labels:
+          service: 'comic-server'
+          environment: 'production'   # Change as needed (production, staging, dev)
+
+    # Optional: Basic auth if you add authentication to comic-server
+    # basic_auth:
+    #   username: 'prometheus'
+    #   password: 'your-password'
+
+    # Optional: TLS configuration if using HTTPS
+    # tls_config:
+    #   ca_file: /path/to/ca.crt
+    #   cert_file: /path/to/client.crt
+    #   key_file: /path/to/client.key
+    #   insecure_skip_verify: false
+
+# Optional: Alerting rules
+# rule_files:
+#   - 'alerts.yml'
+
+# Optional: Alertmanager configuration
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ['localhost:9093']
