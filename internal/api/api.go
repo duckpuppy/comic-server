@@ -11,6 +11,7 @@ import (
 	"github.com/duckpuppy/comic-server/internal/device"
 	"github.com/duckpuppy/comic-server/internal/log"
 	"github.com/duckpuppy/comic-server/internal/syncstate"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // VersionInfo contains build version information
@@ -58,6 +59,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/sync/history", s.handleSyncHistory)
 	s.mux.HandleFunc("/api/devices", s.handleDevices)
 	s.mux.HandleFunc("/api/stats", s.handleStats)
+	s.mux.Handle("/metrics", promhttp.Handler())
 }
 
 // Health check response

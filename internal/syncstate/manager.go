@@ -3,6 +3,40 @@ package syncstate
 import (
 	"sync"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+)
+
+// Prometheus metrics
+var (
+	syncsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "comic_server_syncs_total",
+			Help: "Total number of sync operations by status",
+		},
+		[]string{"status"},
+	)
+	activeSyncsGauge = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "comic_server_active_syncs",
+			Help: "Current number of active sync operations",
+		},
+	)
+	booksProcessedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "comic_server_books_processed_total",
+			Help: "Total number of books processed by operation",
+		},
+		[]string{"operation"},
+	)
+	syncDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "comic_server_sync_duration_seconds",
+			Help:    "Duration of sync operations in seconds",
+			Buckets: prometheus.DefBuckets,
+		},
+	)
 )
 
 // SyncStatus represents the current status of a sync operation
@@ -74,6 +108,11 @@ func (m *Manager) StartSync(deviceID, deviceIP, deviceName string) error {
 	}
 
 	m.activeSyncs[deviceID] = state
+
+	// Update metrics
+	syncsTotal.WithLabelValues(string(StatusStarting)).Inc()
+	activeSyncsGauge.Inc()
+
 	return nil
 }
 
@@ -108,6 +147,15 @@ func (m *Manager) CompleteSync(deviceID string, added, updated, deleted, errorCo
 		state.BooksDeleted = deleted
 		state.ErrorCount = errorCount
 
+		// Update metrics
+		duration := time.Since(state.StartTime).Seconds()
+		syncDurationSeconds.Observe(duration)
+		syncsTotal.WithLabelValues(string(StatusCompleted)).Inc()
+		activeSyncsGauge.Dec()
+		booksProcessedTotal.WithLabelValues("added").Add(float64(added))
+		booksProcessedTotal.WithLabelValues("updated").Add(float64(updated))
+		booksProcessedTotal.WithLabelValues("deleted").Add(float64(deleted))
+
 		// Move to history
 		m.addToHistory(state)
 		delete(m.activeSyncs, deviceID)
@@ -125,6 +173,12 @@ func (m *Manager) FailSync(deviceID string, errorMsg string) {
 		state.Status = StatusFailed
 		state.ErrorMessage = errorMsg
 
+		// Update metrics
+		duration := time.Since(state.StartTime).Seconds()
+		syncDurationSeconds.Observe(duration)
+		syncsTotal.WithLabelValues(string(StatusFailed)).Inc()
+		activeSyncsGauge.Dec()
+
 		// Move to history
 		m.addToHistory(state)
 		delete(m.activeSyncs, deviceID)
@@ -140,6 +194,12 @@ func (m *Manager) AbortSync(deviceID string) {
 		now := time.Now()
 		state.EndTime = &now
 		state.Status = StatusAborted
+
+		// Update metrics
+		duration := time.Since(state.StartTime).Seconds()
+		syncDurationSeconds.Observe(duration)
+		syncsTotal.WithLabelValues(string(StatusAborted)).Inc()
+		activeSyncsGauge.Dec()
 
 		// Move to history
 		m.addToHistory(state)

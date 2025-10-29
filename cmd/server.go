@@ -240,6 +240,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 		log.Info().Msgf("  GET  http://localhost:%d/api/sync/history?limit=N - Sync history", cfg.Server.ServerPort)
 		log.Info().Msgf("  GET  http://localhost:%d/api/devices - Registered devices", cfg.Server.ServerPort)
 		log.Info().Msgf("  GET  http://localhost:%d/api/stats - Server statistics", cfg.Server.ServerPort)
+		log.Info().Msgf("  GET  http://localhost:%d/metrics - Prometheus metrics", cfg.Server.ServerPort)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Error().Err(err).Msg("REST API server error")
 		}
