@@ -652,6 +652,24 @@ See issues #15, #16, #17 for:
 
 ### 📋 Backlog (v1.0+):
 
+**API Enhancements:**
+- Graceful device disconnect handling
+  - Add proper cleanup when devices disconnect mid-sync
+  - Ensure resources (connections, memory) are freed properly
+  - Update sync state to "aborted" with appropriate error message
+  - Add connection timeout detection
+- Pagination support for sync history endpoint
+  - Currently has `limit` parameter but no offset/cursor
+  - Add cursor-based pagination for better performance with large histories
+  - Return `next_cursor` in response for fetching next page
+  - Add `offset` parameter as alternative to cursor
+- Device list filtering
+  - Filter by edition: `?edition=android_full` or `?edition=ios`
+  - Filter by sync status: `?syncing=true` or `?syncing=false`
+  - Filter by last seen: `?last_seen_after=2024-01-01T00:00:00Z`
+  - Combine multiple filters with AND logic
+
+**Other Items:**
 - User documentation - Issue #8
 - Performance optimization - Issue #9
 - Web UI for configuration and monitoring - Issue #12
