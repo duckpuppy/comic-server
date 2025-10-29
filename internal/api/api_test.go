@@ -598,3 +598,291 @@ func TestHandleSyncHistoryLegacyFormat(t *testing.T) {
 		t.Errorf("expected 5 entries, got %d", len(response.History))
 	}
 }
+
+func TestHandleDevicesFilterByEdition(t *testing.T) {
+	syncManager := syncstate.NewManager(10)
+	registry := device.NewRegistry()
+	cfg := &config.Config{}
+	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
+	server := NewServer(syncManager, registry, cfg, version)
+
+	// Add devices with different editions
+	androidFull := &device.Info{
+		ID:           "android1",
+		Name:         "Android Tablet",
+		Model:        "SM-T970",
+		Manufacturer: "Samsung",
+		Edition:      device.EditionAndroidFull,
+		Version:      100,
+	}
+	androidFree := &device.Info{
+		ID:           "android2",
+		Name:         "Android Phone",
+		Model:        "Pixel",
+		Manufacturer: "Google",
+		Edition:      device.EditionAndroidFree,
+		Version:      100,
+	}
+	ios := &device.Info{
+		ID:           "ios1",
+		Name:         "iPad",
+		Model:        "iPad Pro",
+		Manufacturer: "Apple",
+		Edition:      device.EditionIOS,
+		Version:      1,
+	}
+
+	registry.Add(androidFull, "192.168.1.100")
+	registry.Add(androidFree, "192.168.1.101")
+	registry.Add(ios, "192.168.1.102")
+
+	// Filter by Android Full
+	req := httptest.NewRequest(http.MethodGet, "/api/devices?edition=Android+Full", nil)
+	w := httptest.NewRecorder()
+	server.handleDevices(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+
+	var response DevicesResponse
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if response.Count != 1 {
+		t.Errorf("expected 1 device, got %d", response.Count)
+	}
+	if len(response.Devices) != 1 {
+		t.Fatalf("expected 1 device in array, got %d", len(response.Devices))
+	}
+	if response.Devices[0].ID != "android1" {
+		t.Errorf("expected device 'android1', got '%s'", response.Devices[0].ID)
+	}
+}
+
+func TestHandleDevicesFilterBySyncing(t *testing.T) {
+	syncManager := syncstate.NewManager(10)
+	registry := device.NewRegistry()
+	cfg := &config.Config{}
+	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
+	server := NewServer(syncManager, registry, cfg, version)
+
+	// Add devices
+	dev1 := &device.Info{
+		ID:           "device1",
+		Name:         "Syncing Device",
+		Model:        "SM-T970",
+		Manufacturer: "Samsung",
+		Edition:      device.EditionAndroidFull,
+		Version:      100,
+	}
+	dev2 := &device.Info{
+		ID:           "device2",
+		Name:         "Idle Device",
+		Model:        "iPad",
+		Manufacturer: "Apple",
+		Edition:      device.EditionIOS,
+		Version:      1,
+	}
+
+	registry.Add(dev1, "192.168.1.100")
+	registry.Add(dev2, "192.168.1.101")
+
+	// Start sync for device1
+	syncManager.StartSync("device1", "192.168.1.100", "Syncing Device")
+
+	// Filter by syncing=true
+	req := httptest.NewRequest(http.MethodGet, "/api/devices?syncing=true", nil)
+	w := httptest.NewRecorder()
+	server.handleDevices(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+
+	var response DevicesResponse
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if response.Count != 1 {
+		t.Errorf("expected 1 syncing device, got %d", response.Count)
+	}
+	if len(response.Devices) != 1 {
+		t.Fatalf("expected 1 device in array, got %d", len(response.Devices))
+	}
+	if response.Devices[0].ID != "device1" {
+		t.Errorf("expected device 'device1', got '%s'", response.Devices[0].ID)
+	}
+
+	// Filter by syncing=false
+	req = httptest.NewRequest(http.MethodGet, "/api/devices?syncing=false", nil)
+	w = httptest.NewRecorder()
+	server.handleDevices(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if response.Count != 1 {
+		t.Errorf("expected 1 idle device, got %d", response.Count)
+	}
+	if len(response.Devices) != 1 {
+		t.Fatalf("expected 1 device in array, got %d", len(response.Devices))
+	}
+	if response.Devices[0].ID != "device2" {
+		t.Errorf("expected device 'device2', got '%s'", response.Devices[0].ID)
+	}
+}
+
+func TestHandleDevicesFilterByLastSeenAfter(t *testing.T) {
+	syncManager := syncstate.NewManager(10)
+	registry := device.NewRegistry()
+	cfg := &config.Config{}
+	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
+	server := NewServer(syncManager, registry, cfg, version)
+
+	// Add devices with manipulated LastSeen times
+	dev1 := &device.Info{
+		ID:           "device1",
+		Name:         "Recent Device",
+		Model:        "SM-T970",
+		Manufacturer: "Samsung",
+		Edition:      device.EditionAndroidFull,
+		Version:      100,
+	}
+	dev2 := &device.Info{
+		ID:           "device2",
+		Name:         "Old Device",
+		Model:        "iPad",
+		Manufacturer: "Apple",
+		Edition:      device.EditionIOS,
+		Version:      1,
+	}
+
+	registry.Add(dev1, "192.168.1.100")
+	registry.Add(dev2, "192.168.1.101")
+
+	// Manually set LastSeen times
+	devices := registry.List()
+	for i := range devices {
+		if devices[i].Info.ID == "device1" {
+			devices[i].LastSeen = time.Now().Add(-1 * time.Hour)
+		} else if devices[i].Info.ID == "device2" {
+			devices[i].LastSeen = time.Now().Add(-25 * time.Hour)
+		}
+	}
+
+	// Filter by last_seen_after (last 24 hours)
+	cutoff := time.Now().Add(-24 * time.Hour).Format(time.RFC3339)
+	req := httptest.NewRequest(http.MethodGet, "/api/devices?last_seen_after="+cutoff, nil)
+	w := httptest.NewRecorder()
+	server.handleDevices(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+
+	var response DevicesResponse
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if response.Count != 1 {
+		t.Errorf("expected 1 recent device, got %d", response.Count)
+	}
+	if len(response.Devices) != 1 {
+		t.Fatalf("expected 1 device in array, got %d", len(response.Devices))
+	}
+	if response.Devices[0].ID != "device1" {
+		t.Errorf("expected device 'device1', got '%s'", response.Devices[0].ID)
+	}
+}
+
+func TestHandleDevicesFilterCombined(t *testing.T) {
+	syncManager := syncstate.NewManager(10)
+	registry := device.NewRegistry()
+	cfg := &config.Config{}
+	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
+	server := NewServer(syncManager, registry, cfg, version)
+
+	// Add devices
+	android1 := &device.Info{
+		ID:           "android1",
+		Name:         "Android Syncing",
+		Model:        "SM-T970",
+		Manufacturer: "Samsung",
+		Edition:      device.EditionAndroidFull,
+		Version:      100,
+	}
+	android2 := &device.Info{
+		ID:           "android2",
+		Name:         "Android Idle",
+		Model:        "Pixel",
+		Manufacturer: "Google",
+		Edition:      device.EditionAndroidFull,
+		Version:      100,
+	}
+	ios1 := &device.Info{
+		ID:           "ios1",
+		Name:         "iOS Syncing",
+		Model:        "iPad",
+		Manufacturer: "Apple",
+		Edition:      device.EditionIOS,
+		Version:      1,
+	}
+
+	registry.Add(android1, "192.168.1.100")
+	registry.Add(android2, "192.168.1.101")
+	registry.Add(ios1, "192.168.1.102")
+
+	// Start sync for android1 and ios1
+	syncManager.StartSync("android1", "192.168.1.100", "Android Syncing")
+	syncManager.StartSync("ios1", "192.168.1.102", "iOS Syncing")
+
+	// Filter by edition=Android Full AND syncing=true
+	req := httptest.NewRequest(http.MethodGet, "/api/devices?edition=Android+Full&syncing=true", nil)
+	w := httptest.NewRecorder()
+	server.handleDevices(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+
+	var response DevicesResponse
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if response.Count != 1 {
+		t.Errorf("expected 1 device (android_full AND syncing), got %d", response.Count)
+	}
+	if len(response.Devices) != 1 {
+		t.Fatalf("expected 1 device in array, got %d", len(response.Devices))
+	}
+	if response.Devices[0].ID != "android1" {
+		t.Errorf("expected device 'android1', got '%s'", response.Devices[0].ID)
+	}
+}
+
+func TestHandleDevicesInvalidTimestampFormat(t *testing.T) {
+	syncManager := syncstate.NewManager(10)
+	registry := device.NewRegistry()
+	cfg := &config.Config{}
+	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
+	server := NewServer(syncManager, registry, cfg, version)
+
+	// Try invalid timestamp format
+	req := httptest.NewRequest(http.MethodGet, "/api/devices?last_seen_after=invalid", nil)
+	w := httptest.NewRecorder()
+	server.handleDevices(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected status 400, got %d", w.Code)
+	}
+}

@@ -670,14 +670,18 @@ See issues #15, #16, #17 for:
   - Comprehensive tests for manager (4 test functions) and API (2 test functions)
   - Handles edge cases: empty history, offset beyond end, limit validation
 
+- ✅ Device list filtering (COMPLETED)
+  - Filter by edition: `?edition=Android+Full`, `?edition=Android+Free`, or `?edition=iOS`
+  - Filter by sync status: `?syncing=true` or `?syncing=false`
+  - Filter by last seen: `?last_seen_after=2024-01-01T00:00:00Z` (RFC3339 format)
+  - Combine multiple filters with AND logic
+  - Returns 400 Bad Request for invalid timestamp format
+  - Comprehensive tests (5 test functions): edition, syncing, timestamp, combined, invalid input
+  - Example: `/api/devices?edition=Android+Full&syncing=true` returns only syncing Android Full devices
+
 ### 📋 Backlog (v1.0+):
 
 **API Enhancements:**
-- Device list filtering
-  - Filter by edition: `?edition=android_full` or `?edition=ios`
-  - Filter by sync status: `?syncing=true` or `?syncing=false`
-  - Filter by last seen: `?last_seen_after=2024-01-01T00:00:00Z`
-  - Combine multiple filters with AND logic
 
 **Other Items:**
 - User documentation - Issue #8

@@ -206,6 +206,22 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Parse filter parameters
+	editionFilter := r.URL.Query().Get("edition")
+	syncingFilter := r.URL.Query().Get("syncing")
+	lastSeenAfterStr := r.URL.Query().Get("last_seen_after")
+
+	// Parse last_seen_after timestamp
+	var lastSeenAfter time.Time
+	if lastSeenAfterStr != "" {
+		parsed, err := time.Parse(time.RFC3339, lastSeenAfterStr)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Invalid last_seen_after format (use RFC3339): %v", err), http.StatusBadRequest)
+			return
+		}
+		lastSeenAfter = parsed
+	}
+
 	devices := s.registry.List()
 	deviceInfos := make([]DeviceInfo, 0, len(devices))
 
@@ -220,6 +236,23 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 			LastSeen:     dev.LastSeen,
 			IsSyncing:    s.syncManager.IsDeviceSyncing(dev.Info.ID),
 		}
+
+		// Apply filters (AND logic - all must match)
+		if editionFilter != "" && info.Edition != editionFilter {
+			continue
+		}
+
+		if syncingFilter != "" {
+			syncingWanted := syncingFilter == "true"
+			if info.IsSyncing != syncingWanted {
+				continue
+			}
+		}
+
+		if !lastSeenAfter.IsZero() && info.LastSeen.Before(lastSeenAfter) {
+			continue
+		}
+
 		deviceInfos = append(deviceInfos, info)
 	}
 
