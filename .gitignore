@@ -51,3 +51,4 @@ coverage.html
 tmp/
 temp/
 test-storage/
+server.log
