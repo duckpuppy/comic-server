@@ -1,8 +1,10 @@
 package api
 
 import (
+	"embed"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"strings"
 	"time"
@@ -15,6 +17,9 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
+
+//go:embed web
+var webFS embed.FS
 
 // VersionInfo contains build version information
 type VersionInfo struct {
@@ -64,6 +69,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // registerRoutes sets up all API endpoints
 func (s *Server) registerRoutes() {
+	// API endpoints
 	s.mux.HandleFunc("/api/health", s.handleHealth)
 	s.mux.HandleFunc("/api/version", s.handleVersion)
 	s.mux.HandleFunc("/api/sync/status", s.handleSyncStatus)
@@ -72,8 +78,19 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/devices/register", s.handleDeviceRegister)
 	s.mux.HandleFunc("/api/devices/unregister", s.handleDeviceUnregister)
 	s.mux.HandleFunc("/api/stats", s.handleStats)
+
+	// WebSocket endpoint
 	s.mux.HandleFunc("/ws", s.handleWebSocket)
+
+	// Metrics endpoint
 	s.mux.Handle("/metrics", promhttp.Handler())
+
+	// Static files (web UI)
+	webRoot, err := fs.Sub(webFS, "web")
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to create web filesystem")
+	}
+	s.mux.Handle("/", http.FileServer(http.FS(webRoot)))
 }
 
 // Health check response

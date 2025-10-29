@@ -650,6 +650,18 @@ See issues #15, #16, #17 for:
   - Metrics recorded at all sync lifecycle stages (start, complete, fail, abort)
   - Standard Go runtime metrics included automatically
 
+### v0.7 Milestone - Complete! ✅
+
+- ✅ Web UI for server monitoring (COMPLETED)
+  - Real-time dashboard with WebSocket updates
+  - Device management (registration/unregistration)
+  - Sync progress monitoring with progress bars
+  - Sync history with file statistics
+  - Responsive design with vanilla JavaScript
+  - Static file serving with Go embed package
+  - WebSocket hub for broadcasting events to all connected clients
+  - REST API integration for device and sync operations
+
 ### v0.6 Milestone - Complete! ✅
 
 - ✅ Graceful device disconnect handling (COMPLETED)
@@ -692,5 +704,67 @@ See issues #15, #16, #17 for:
 
 **Other Items:**
 - Performance optimization - Issue #9
-- Web UI for configuration and monitoring - Issue #12
 - SQLite storage investigation - Issue #19
+
+### Web UI (v0.7)
+
+**Access**: http://localhost:7620/ (served by the REST API server)
+
+**Technology Stack**:
+- Vanilla JavaScript (no framework dependencies)
+- WebSocket for real-time updates
+- Go's embed package for static file serving
+- Responsive CSS Grid/Flexbox layout
+
+**Architecture** (`internal/api/web/`):
+- `index.html` - Main dashboard structure with templates
+- `css/style.css` - Modern, responsive styling with CSS custom properties
+- `js/websocket.js` - WebSocket client with automatic reconnection
+- `js/devices.js` - Device management and registration controls
+- `js/sync.js` - Sync progress monitoring with progress bars
+- `js/app.js` - Application initialization and stats updates
+
+**Features**:
+- **Real-time Dashboard** - Live server statistics (devices, syncs, uptime, WebSocket clients)
+- **Device Sidebar** - Shows all discovered devices with status indicators:
+  - Connected (< 2 min since last_seen)
+  - Idle (2-30 min)
+  - Offline (> 30 min)
+  - Syncing (during active sync)
+- **Device Management**:
+  - Register button for unregistered discovered devices
+  - Unregister button with confirmation dialog
+  - Device info: model, IP address, last seen timestamp
+- **Sync Progress Monitoring**:
+  - Active syncs with real-time progress bars
+  - Current file being transferred
+  - File counts (completed/total)
+  - Data transferred and transfer speed
+- **Sync History**:
+  - Recent sync operations (last 10 by default)
+  - File statistics (added/updated/deleted)
+  - Duration and completion status
+  - Timestamp with relative time display
+
+**WebSocket Events** (`internal/websocket/`):
+- `device_discovered` - New device found on network
+- `device_connected` - Device connected to server
+- `device_disconnected` - Device disconnected
+- `device_registered` - Device added to registry
+- `device_unregistered` - Device removed from registry
+- `sync_started` - Sync operation began
+- `sync_progress` - Progress update during sync
+- `sync_completed` - Sync finished successfully
+- `sync_failed` - Sync encountered error
+
+**Browser Compatibility**:
+- Modern browsers with WebSocket support
+- ES6+ JavaScript features
+- CSS Grid and Flexbox required
+- Tested: Chrome, Firefox, Safari (latest versions)
+
+**Static File Serving**:
+- Files embedded in binary using `//go:embed web` directive
+- No external dependencies for deployment
+- Served from root path `/` by API server
+- Automatic content-type detection

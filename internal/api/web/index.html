@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Comic Server Dashboard</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>Comic Server Dashboard</h1>
+            <div class="server-status">
+                <span class="status-indicator" id="ws-status"></span>
+                <span id="ws-status-text">Connecting...</span>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Dashboard Stats -->
+            <section class="stats-section">
+                <div class="stat-card">
+                    <h3>Total Devices</h3>
+                    <div class="stat-value" id="stat-total-devices">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Active Syncs</h3>
+                    <div class="stat-value" id="stat-active-syncs">0</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Server Uptime</h3>
+                    <div class="stat-value" id="stat-uptime">--</div>
+                </div>
+                <div class="stat-card">
+                    <h3>WebSocket Clients</h3>
+                    <div class="stat-value" id="stat-ws-clients">0</div>
+                </div>
+            </section>
+
+            <!-- Content Area with Sidebar -->
+            <div class="content-with-sidebar">
+                <!-- Main Content Area -->
+                <section class="content-area">
+                    <!-- Active Syncs -->
+                    <div class="panel">
+                        <h2>Active Sync Operations</h2>
+                        <div id="active-syncs" class="sync-list">
+                            <p class="empty-message">No active sync operations</p>
+                        </div>
+                    </div>
+
+                    <!-- Recent Sync History -->
+                    <div class="panel">
+                        <h2>Recent Sync History</h2>
+                        <div id="sync-history" class="history-list">
+                            <p class="empty-message">No sync history</p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Devices Sidebar -->
+                <aside class="devices-sidebar">
+                    <h2>Connected Devices</h2>
+                    <div id="devices-list" class="devices-list">
+                        <p class="empty-message">No devices discovered</p>
+                    </div>
+                </aside>
+            </div>
+        </div>
+    </div>
+
+    <!-- Templates -->
+    <template id="device-card-template">
+        <div class="device-card" data-device-id="">
+            <div class="device-header">
+                <h3 class="device-name"></h3>
+                <span class="device-status"></span>
+            </div>
+            <div class="device-info">
+                <p class="device-model"></p>
+                <p class="device-ip"></p>
+                <p class="device-last-seen"></p>
+            </div>
+            <div class="device-actions">
+                <button class="btn btn-register">Register</button>
+                <button class="btn btn-unregister">Unregister</button>
+            </div>
+        </div>
+    </template>
+
+    <template id="sync-progress-template">
+        <div class="sync-progress" data-device-id="">
+            <div class="sync-header">
+                <h3 class="sync-device-name"></h3>
+                <span class="sync-status"></span>
+            </div>
+            <div class="sync-details">
+                <p class="sync-current-file"></p>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: 0%"></div>
+                </div>
+                <p class="sync-stats"></p>
+            </div>
+        </div>
+    </template>
+
+    <template id="history-item-template">
+        <div class="history-item">
+            <div class="history-header">
+                <span class="history-device"></span>
+                <span class="history-timestamp"></span>
+            </div>
+            <div class="history-stats">
+                <span class="history-stat">Files: <strong class="history-files"></strong></span>
+                <span class="history-stat">Duration: <strong class="history-duration"></strong></span>
+                <span class="history-stat">Status: <strong class="history-status"></strong></span>
+            </div>
+        </div>
+    </template>
+
+    <!-- Scripts -->
+    <script src="/js/websocket.js"></script>
+    <script src="/js/devices.js"></script>
+    <script src="/js/sync.js"></script>
+    <script src="/js/app.js"></script>
+</body>
+</html>
