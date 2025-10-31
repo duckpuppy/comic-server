@@ -880,6 +880,8 @@ Each release includes:
 ### Configuration Files
 
 - `.goreleaser.yml` - GoReleaser configuration
+- `.release-please-config.json` - Release Please configuration (v4 format)
+- `.release-please-manifest.json` - Current version manifest
 - `.github/workflows/release-please.yml` - Release Please workflow
 - `.github/workflows/release.yml` - GoReleaser workflow
 - `.github/workflows/docker-publish.yml` - Docker build workflow
