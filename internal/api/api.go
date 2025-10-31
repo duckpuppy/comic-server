@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/duckpuppy/comic-server/internal/config"
@@ -30,26 +31,29 @@ type VersionInfo struct {
 
 // Server provides REST API endpoints for monitoring and control
 type Server struct {
-	syncManager *syncstate.Manager
-	registry    *device.Registry
-	config      *config.Config
-	version     VersionInfo
-	mux         *http.ServeMux
-	startTime   time.Time
-	wsHub       *ws.Hub
-	upgrader    websocket.Upgrader
+	syncManager       *syncstate.Manager
+	registry          *device.Registry
+	config            *config.Config
+	version           VersionInfo
+	mux               *http.ServeMux
+	startTime         time.Time
+	wsHub             *ws.Hub
+	upgrader          websocket.Upgrader
+	registeredDevices map[string]bool // In-memory registered device tracking
+	mu                sync.RWMutex    // Protects registeredDevices
 }
 
 // NewServer creates a new API server with version information
 func NewServer(syncManager *syncstate.Manager, registry *device.Registry, cfg *config.Config, version VersionInfo, wsHub *ws.Hub) *Server {
 	s := &Server{
-		syncManager: syncManager,
-		registry:    registry,
-		config:      cfg,
-		version:     version,
-		mux:         http.NewServeMux(),
-		startTime:   time.Now(),
-		wsHub:       wsHub,
+		syncManager:       syncManager,
+		registry:          registry,
+		config:            cfg,
+		version:           version,
+		mux:               http.NewServeMux(),
+		startTime:         time.Now(),
+		wsHub:             wsHub,
+		registeredDevices: make(map[string]bool),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
 				// Allow all origins for now (in production, check against allowed origins)
@@ -223,6 +227,7 @@ type DeviceInfo struct {
 	Edition      string    `json:"edition"`
 	LastSeen     time.Time `json:"last_seen"`
 	IsSyncing    bool      `json:"is_syncing"`
+	IsRegistered bool      `json:"is_registered"`
 }
 
 // Devices response
@@ -256,6 +261,9 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 	devices := s.registry.List()
 	deviceInfos := make([]DeviceInfo, 0, len(devices))
 
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	for _, dev := range devices {
 		info := DeviceInfo{
 			ID:           dev.Info.ID,
@@ -266,6 +274,7 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 			Edition:      string(dev.Info.Edition),
 			LastSeen:     dev.LastSeen,
 			IsSyncing:    s.syncManager.IsDeviceSyncing(dev.Info.ID),
+			IsRegistered: s.registeredDevices[dev.Info.ID],
 		}
 
 		// Apply filters (AND logic - all must match)
@@ -387,13 +396,27 @@ func (s *Server) handleDeviceRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Implement device registration logic
-	// For now, just acknowledge the request
-	log.Info().Str("device_id", req.DeviceID).Msg("Device registration requested")
+	// Verify device exists in registry
+	dev, exists := s.registry.Get(req.DeviceID)
+	if !exists {
+		http.Error(w, "Device not found", http.StatusNotFound)
+		return
+	}
+
+	// Mark device as registered
+	s.mu.Lock()
+	s.registeredDevices[req.DeviceID] = true
+	s.mu.Unlock()
+
+	log.Info().
+		Str("device_id", req.DeviceID).
+		Str("device_name", dev.Info.Name).
+		Msg("Device registered")
 
 	// Broadcast device registered event
 	s.wsHub.Broadcast(ws.EventDeviceRegistered, map[string]interface{}{
-		"device_id": req.DeviceID,
+		"device_id":   req.DeviceID,
+		"device_name": dev.Info.Name,
 	})
 
 	s.writeJSON(w, http.StatusOK, map[string]string{
@@ -420,13 +443,27 @@ func (s *Server) handleDeviceUnregister(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// TODO: Implement device unregistration logic
-	// For now, just acknowledge the request
-	log.Info().Str("device_id", req.DeviceID).Msg("Device unregistration requested")
+	// Get device info for logging
+	dev, exists := s.registry.Get(req.DeviceID)
+	deviceName := req.DeviceID
+	if exists {
+		deviceName = dev.Info.Name
+	}
+
+	// Mark device as unregistered
+	s.mu.Lock()
+	delete(s.registeredDevices, req.DeviceID)
+	s.mu.Unlock()
+
+	log.Info().
+		Str("device_id", req.DeviceID).
+		Str("device_name", deviceName).
+		Msg("Device unregistered")
 
 	// Broadcast device unregistered event
 	s.wsHub.Broadcast(ws.EventDeviceUnregistered, map[string]interface{}{
-		"device_id": req.DeviceID,
+		"device_id":   req.DeviceID,
+		"device_name": deviceName,
 	})
 
 	s.writeJSON(w, http.StatusOK, map[string]string{
