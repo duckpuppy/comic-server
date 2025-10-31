@@ -186,9 +186,26 @@ class DeviceManager {
         // Set up action buttons
         const registerBtn = card.querySelector('.btn-register');
         const unregisterBtn = card.querySelector('.btn-unregister');
+        const configureBtn = card.querySelector('.btn-configure');
 
         registerBtn.onclick = () => this.registerDevice(device.id);
         unregisterBtn.onclick = () => this.unregisterDevice(device.id);
+        configureBtn.onclick = () => {
+            if (typeof ListManager !== 'undefined') {
+                ListManager.openConfigModal(device.id, device.name);
+            }
+        };
+
+        // Enable/disable buttons based on registration status
+        if (device.is_registered) {
+            registerBtn.style.display = 'none';
+            unregisterBtn.style.display = 'inline-block';
+            configureBtn.disabled = false;
+        } else {
+            registerBtn.style.display = 'inline-block';
+            unregisterBtn.style.display = 'none';
+            configureBtn.disabled = true;
+        }
 
         return card;
     }

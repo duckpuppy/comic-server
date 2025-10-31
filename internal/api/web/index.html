@@ -71,6 +71,27 @@
         </div>
     </div>
 
+    <!-- Device Config Modal -->
+    <div id="device-config-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modal-device-name">Device Configuration</h2>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <h3>Assigned Smart Lists</h3>
+                <div id="assigned-lists" class="assigned-lists">
+                    <p class="empty-message">No lists assigned</p>
+                </div>
+
+                <h3>Available Smart Lists</h3>
+                <div id="available-lists" class="available-lists">
+                    <p class="empty-message">Loading...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Templates -->
     <template id="device-card-template">
         <div class="device-card" data-device-id="">
@@ -86,6 +107,7 @@
             <div class="device-actions">
                 <button class="btn btn-register">Register</button>
                 <button class="btn btn-unregister">Unregister</button>
+                <button class="btn btn-configure" disabled>Configure Lists</button>
             </div>
         </div>
     </template>
@@ -124,6 +146,7 @@
     <script src="/js/websocket.js"></script>
     <script src="/js/devices.js"></script>
     <script src="/js/sync.js"></script>
+    <script src="/js/lists.js"></script>
     <script src="/js/app.js"></script>
 </body>
 </html>
