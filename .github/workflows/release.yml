@@ -39,7 +39,7 @@ jobs:
     needs: goreleaser
     steps:
       - name: Trigger Docker workflow
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             await github.rest.actions.createWorkflowDispatch({
