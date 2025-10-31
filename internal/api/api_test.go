@@ -17,7 +17,7 @@ import (
 // createTestServer creates a test server with a WebSocket hub
 func createTestServer(syncManager *syncstate.Manager, registry *device.Registry, cfg *config.Config, version VersionInfo) *Server {
 	wsHub := websocket.NewHub()
-	return NewServer(syncManager, registry, cfg, version, wsHub)
+	return NewServer(syncManager, registry, cfg, "", version, wsHub) // Empty config path for tests
 }
 
 func TestNewServer(t *testing.T) {

@@ -34,6 +34,7 @@ type Server struct {
 	syncManager       *syncstate.Manager
 	registry          *device.Registry
 	config            *config.Config
+	configPath        string          // Path to config file for saving
 	version           VersionInfo
 	mux               *http.ServeMux
 	startTime         time.Time
@@ -44,11 +45,12 @@ type Server struct {
 }
 
 // NewServer creates a new API server with version information
-func NewServer(syncManager *syncstate.Manager, registry *device.Registry, cfg *config.Config, version VersionInfo, wsHub *ws.Hub) *Server {
+func NewServer(syncManager *syncstate.Manager, registry *device.Registry, cfg *config.Config, configPath string, version VersionInfo, wsHub *ws.Hub) *Server {
 	s := &Server{
 		syncManager:       syncManager,
 		registry:          registry,
 		config:            cfg,
+		configPath:        configPath,
 		version:           version,
 		mux:               http.NewServeMux(),
 		startTime:         time.Now(),
@@ -60,6 +62,11 @@ func NewServer(syncManager *syncstate.Manager, registry *device.Registry, cfg *c
 				return true
 			},
 		},
+	}
+
+	// Load initial registration state from config
+	for deviceID := range cfg.Devices {
+		s.registeredDevices[deviceID] = true
 	}
 
 	s.registerRoutes()
@@ -403,10 +410,30 @@ func (s *Server) handleDeviceRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Mark device as registered
+	// Mark device as registered (in-memory)
 	s.mu.Lock()
 	s.registeredDevices[req.DeviceID] = true
 	s.mu.Unlock()
+
+	// Create device config entry if it doesn't exist
+	if s.config.Devices == nil {
+		s.config.Devices = make(map[string]*config.DeviceConfig)
+	}
+
+	if _, exists := s.config.Devices[req.DeviceID]; !exists {
+		s.config.Devices[req.DeviceID] = &config.DeviceConfig{
+			DeviceID:     req.DeviceID,
+			FriendlyName: dev.Info.Name,
+			LastSeen:     dev.LastSeen,
+			Lists:        []config.SharedListConfig{},
+		}
+	}
+
+	// Save config to disk
+	if err := config.Save(s.config, s.configPath); err != nil {
+		log.Error().Err(err).Msg("Failed to save config after device registration")
+		// Don't fail the request - registration is still in memory
+	}
 
 	log.Info().
 		Str("device_id", req.DeviceID).
@@ -450,10 +477,21 @@ func (s *Server) handleDeviceUnregister(w http.ResponseWriter, r *http.Request) 
 		deviceName = dev.Info.Name
 	}
 
-	// Mark device as unregistered
+	// Mark device as unregistered (in-memory)
 	s.mu.Lock()
 	delete(s.registeredDevices, req.DeviceID)
 	s.mu.Unlock()
+
+	// Remove from config
+	if s.config.Devices != nil {
+		delete(s.config.Devices, req.DeviceID)
+
+		// Save config to disk
+		if err := config.Save(s.config, s.configPath); err != nil {
+			log.Error().Err(err).Msg("Failed to save config after device unregistration")
+			// Don't fail the request - unregistration is still in memory
+		}
+	}
 
 	log.Info().
 		Str("device_id", req.DeviceID).
