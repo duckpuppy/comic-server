@@ -16,15 +16,7 @@ jobs:
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
-      version: ${{ steps.release.outputs.major }}.${{ steps.release.outputs.minor }}.${{ steps.release.outputs.patch }}
+      version: ${{ steps.release.outputs.version }}
     steps:
       - uses: googleapis/release-please-action@v4
         id: release
-        with:
-          # Release type for Go projects
-          release-type: go
-          # Package name (used for release title)
-          package-name: comic-server
-          # Bump versions for minor/patch even on main branch
-          bump-minor-pre-major: true
-          bump-patch-for-minor-pre-major: true
