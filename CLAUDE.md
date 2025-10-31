@@ -768,3 +768,119 @@ See issues #15, #16, #17 for:
 - No external dependencies for deployment
 - Served from root path `/` by API server
 - Automatic content-type detection
+
+## Release Process
+
+### Automated Release Workflow
+
+This project uses **GoReleaser** + **Release Please** for fully automated releases.
+
+**Tools**:
+- **Release Please**: Automates versioning and changelog generation based on Conventional Commits
+- **GoReleaser**: Builds multi-platform binaries and creates GitHub releases
+- **Docker**: Automated image builds for tagged releases
+
+### How It Works
+
+1. **Commit with Conventional Commits format**:
+   ```bash
+   git commit -m "feat: add new feature"
+   git commit -m "fix: resolve bug"
+   git commit -m "feat!: breaking change"
+   ```
+
+2. **Release Please creates PR automatically**:
+   - Monitors commits on `master` branch
+   - Creates/updates a release PR with:
+     - Version bump (based on commit types)
+     - Updated CHANGELOG.md
+     - Version file updates
+
+3. **Merge the release PR**:
+   - Review the CHANGELOG
+   - Merge the PR to `master`
+
+4. **Release Please tags and creates GitHub Release**:
+   - Creates a git tag (e.g., `v0.8.0`)
+   - Creates GitHub Release with CHANGELOG
+
+5. **GoReleaser builds and publishes artifacts**:
+   - Multi-platform binaries (Linux/macOS/Windows, amd64/arm64)
+   - Archives (.tar.gz, .zip)
+   - Checksums
+   - Attaches to GitHub Release
+
+6. **Docker workflow builds container images**:
+   - Triggers automatically on new tag
+   - Publishes to GitHub Container Registry
+
+### Commit Message Format
+
+Follow [Conventional Commits](https://www.conventionalcommits.org/):
+
+**Types**:
+- `feat:` - New feature (minor version bump)
+- `fix:` - Bug fix (patch version bump)
+- `docs:` - Documentation changes
+- `chore:` - Maintenance tasks
+- `refactor:` - Code refactoring
+- `test:` - Test changes
+- `ci:` - CI/CD changes
+
+**Breaking Changes**:
+- Add `!` after type: `feat!:` or `fix!:`
+- Or include `BREAKING CHANGE:` in commit body
+- Triggers major version bump
+
+**Examples**:
+```bash
+git commit -m "feat: add sync progress bar to web UI"
+git commit -m "fix: resolve memory leak in sync manager"
+git commit -m "feat!: change API response format
+
+BREAKING CHANGE: The /api/devices endpoint now returns an object instead of an array."
+```
+
+### Local Testing
+
+Test the release process locally without publishing:
+
+```bash
+# Validate configuration
+goreleaser check
+
+# Build snapshot (no publish)
+goreleaser release --snapshot --clean --skip=publish
+
+# Check artifacts
+ls -lh dist/
+```
+
+### Manual Release (Emergency)
+
+If automation fails, you can manually create a release:
+
+```bash
+# 1. Update CHANGELOG.md manually
+# 2. Create and push a tag
+git tag -a v0.8.0 -m "Release v0.8.0"
+git push origin v0.8.0
+
+# 3. GoReleaser will automatically build and publish
+```
+
+### Release Artifacts
+
+Each release includes:
+- **Binaries**: `comic-server_VERSION_OS_ARCH.tar.gz` (or .zip for Windows)
+- **Checksums**: `checksums.txt` (SHA256 hashes)
+- **Documentation**: README.md, CLAUDE.md, CHANGELOG.md included in archives
+- **Docker Images**: `ghcr.io/duckpuppy/comic-server:VERSION`
+
+### Configuration Files
+
+- `.goreleaser.yml` - GoReleaser configuration
+- `.github/workflows/release-please.yml` - Release Please workflow
+- `.github/workflows/release.yml` - GoReleaser workflow
+- `.github/workflows/docker-publish.yml` - Docker build workflow
+- `CHANGELOG.md` - Auto-generated changelog

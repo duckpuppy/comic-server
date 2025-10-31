@@ -1,0 +1,94 @@
+version: 2
+
+before:
+  hooks:
+    # Ensure dependencies are up to date
+    - go mod tidy
+    # Run tests before building
+    - go test ./...
+
+builds:
+  - id: comic-server
+    main: ./main.go
+    binary: comic-server
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    # Build with version information
+    ldflags:
+      - -s -w
+      - -X github.com/duckpuppy/comic-server/cmd.version={{.Version}}
+      - -X github.com/duckpuppy/comic-server/cmd.gitCommit={{.FullCommit}}
+      - -X github.com/duckpuppy/comic-server/cmd.buildDate={{.Date}}
+    # Skip unsupported combinations
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: default
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    files:
+      - README.md
+      - CLAUDE.md
+      - CHANGELOG.md
+      - docs/**/*
+
+checksum:
+  name_template: 'checksums.txt'
+
+changelog:
+  # Let Release Please handle the changelog
+  disable: true
+
+release:
+  # Release Please creates the release, so we just attach artifacts
+  mode: append
+  # Add installation instructions to release notes
+  header: |
+    ## Installation
+
+    ### Download Binary
+
+    Download the appropriate archive for your platform from the assets below, extract it, and place the `comic-server` binary in your PATH.
+
+    ### Docker
+
+    ```bash
+    docker pull ghcr.io/{{ .Env.GITHUB_REPOSITORY }}:{{ .Version }}
+    ```
+
+    ### Homebrew (macOS/Linux)
+
+    ```bash
+    # Coming soon
+    ```
+
+  footer: |
+    ## What's Changed
+
+    See the [CHANGELOG](https://github.com/{{ .Env.GITHUB_REPOSITORY }}/blob/master/CHANGELOG.md) for detailed changes.
+
+    **Full Changelog**: https://github.com/{{ .Env.GITHUB_REPOSITORY }}/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+# Note: Completion scripts and man pages can be added later
+# when the CLI commands are implemented
+
+# Announce releases (optional - uncomment if you want Discord/Slack notifications)
+# announce:
+#   discord:
+#     enabled: true
+#     message_template: 'comic-server {{ .Tag }} is out! Check it out: {{ .ReleaseURL }}'

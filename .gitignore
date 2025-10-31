@@ -25,6 +25,13 @@ testclient-*
 /dist/
 /build/
 
+# GoReleaser output
+dist/
+*.tar.gz
+*.zip
+checksums.txt
+completions/
+
 # IDE specific files
 .vscode/
 .idea/
@@ -42,6 +49,8 @@ Thumbs.db
 *.json
 !go.mod
 !go.sum
+!.goreleaser.yml
+!.github/workflows/*.yml
 
 # Test coverage
 coverage.txt
