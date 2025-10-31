@@ -54,12 +54,14 @@ jobs:
             type=ref,event=branch
             # Tag with PR number
             type=ref,event=pr
-            # Tag with semver
+            # Tag with semver for simple v*.*.* tags
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-            # Tag with git commit SHA (only for branch pushes, not PRs)
-            type=sha,prefix={{branch}}-,enable=${{ github.event_name != 'pull_request' }}
+            # Tag with semver for comic-server-v*.*.* tags (strip prefix)
+            type=match,pattern=comic-server-v(.*),group=1
+            # Tag with git commit SHA (only for branch pushes, not PRs or tags)
+            type=sha,prefix={{branch}}-,enable=${{ github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/') }}
             # Always tag latest on main/master
             type=raw,value=latest,enable={{is_default_branch}}
 
