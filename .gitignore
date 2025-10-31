@@ -51,7 +51,7 @@ Thumbs.db
 !go.sum
 !.goreleaser.yml
 !.github/workflows/*.yml
-!.release-please-config.json
+!release-please-config.json
 !.release-please-manifest.json
 
 # Test coverage
@@ -63,3 +63,4 @@ tmp/
 temp/
 test-storage/
 server.log
+bin/
