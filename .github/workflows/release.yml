@@ -32,19 +32,3 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-
-  # Trigger Docker build for the new tag
-  trigger-docker:
-    runs-on: ubuntu-latest
-    needs: goreleaser
-    steps:
-      - name: Trigger Docker workflow
-        uses: actions/github-script@v8
-        with:
-          script: |
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'docker-publish.yml',
-              ref: context.ref
-            });
