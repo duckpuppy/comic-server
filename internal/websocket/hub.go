@@ -21,6 +21,7 @@ const (
 	EventSyncFailed         EventType = "sync_failed"
 	EventDeviceRegistered   EventType = "device_registered"
 	EventDeviceUnregistered EventType = "device_unregistered"
+	EventDeviceUpdated      EventType = "device_updated"
 )
 
 // Event represents a WebSocket event to be broadcast

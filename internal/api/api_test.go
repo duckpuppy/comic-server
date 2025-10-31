@@ -10,14 +10,20 @@ import (
 
 	"github.com/duckpuppy/comic-server/internal/config"
 	"github.com/duckpuppy/comic-server/internal/device"
+	"github.com/duckpuppy/comic-server/internal/library"
 	"github.com/duckpuppy/comic-server/internal/syncstate"
 	"github.com/duckpuppy/comic-server/internal/websocket"
 )
 
 // createTestServer creates a test server with a WebSocket hub
 func createTestServer(syncManager *syncstate.Manager, registry *device.Registry, cfg *config.Config, version VersionInfo) *Server {
+	// Create empty library for tests
+	lib := &library.ComicLibrary{
+		Books:      []library.ComicBook{},
+		ComicLists: []library.ComicListItem{},
+	}
 	wsHub := websocket.NewHub()
-	return NewServer(syncManager, registry, cfg, "", version, wsHub) // Empty config path for tests
+	return NewServer(syncManager, registry, lib, cfg, "", version, wsHub) // Empty config path for tests
 }
 
 func TestNewServer(t *testing.T) {

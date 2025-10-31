@@ -227,7 +227,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 		GitCommit: GitCommit,
 		BuildDate: BuildDate,
 	}
-	apiServer := api.NewServer(syncManager, registry, cfg, configPath, apiVersion, wsHub)
+	apiServer := api.NewServer(syncManager, registry, lib, cfg, configPath, apiVersion, wsHub)
 
 	httpServer := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.Server.ServerPort),

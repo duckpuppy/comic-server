@@ -12,7 +12,9 @@ import (
 
 	"github.com/duckpuppy/comic-server/internal/config"
 	"github.com/duckpuppy/comic-server/internal/device"
+	"github.com/duckpuppy/comic-server/internal/library"
 	"github.com/duckpuppy/comic-server/internal/log"
+	csync "github.com/duckpuppy/comic-server/internal/sync"
 	"github.com/duckpuppy/comic-server/internal/syncstate"
 	ws "github.com/duckpuppy/comic-server/internal/websocket"
 	"github.com/gorilla/websocket"
@@ -33,6 +35,7 @@ type VersionInfo struct {
 type Server struct {
 	syncManager       *syncstate.Manager
 	registry          *device.Registry
+	library           *library.ComicLibrary // Comic library for smart list management
 	config            *config.Config
 	configPath        string          // Path to config file for saving
 	version           VersionInfo
@@ -45,10 +48,11 @@ type Server struct {
 }
 
 // NewServer creates a new API server with version information
-func NewServer(syncManager *syncstate.Manager, registry *device.Registry, cfg *config.Config, configPath string, version VersionInfo, wsHub *ws.Hub) *Server {
+func NewServer(syncManager *syncstate.Manager, registry *device.Registry, lib *library.ComicLibrary, cfg *config.Config, configPath string, version VersionInfo, wsHub *ws.Hub) *Server {
 	s := &Server{
 		syncManager:       syncManager,
 		registry:          registry,
+		library:           lib,
 		config:            cfg,
 		configPath:        configPath,
 		version:           version,
@@ -89,6 +93,13 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/devices/register", s.handleDeviceRegister)
 	s.mux.HandleFunc("/api/devices/unregister", s.handleDeviceUnregister)
 	s.mux.HandleFunc("/api/stats", s.handleStats)
+
+	// Library endpoints
+	s.mux.HandleFunc("/api/library/lists", s.handleLibraryLists)
+
+	// Device configuration endpoints
+	s.mux.HandleFunc("/api/devices/config/", s.handleDeviceConfig)
+	s.mux.HandleFunc("/api/devices/lists/", s.handleDeviceLists)
 
 	// WebSocket endpoint
 	s.mux.HandleFunc("/ws", s.handleWebSocket)
@@ -513,4 +524,266 @@ func (s *Server) handleDeviceUnregister(w http.ResponseWriter, r *http.Request) 
 // GetHub returns the WebSocket hub for broadcasting events
 func (s *Server) GetHub() *ws.Hub {
 	return s.wsHub
+}
+
+// SmartListInfo provides basic info about a smart list for API responses
+type SmartListInfo struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	MatcherCount int    `json:"matcher_count"`
+	MatcherMode  string `json:"matcher_mode"`
+}
+
+// LibraryListsResponse provides list of all smart lists in the library
+type LibraryListsResponse struct {
+	Lists []SmartListInfo `json:"lists"`
+	Count int             `json:"count"`
+}
+
+// handleLibraryLists returns all smart lists from the library
+func (s *Server) handleLibraryLists(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var smartLists []SmartListInfo
+	for _, list := range s.library.ComicLists {
+		// Filter for smart lists only (Type contains "SmartList")
+		if strings.Contains(list.Type, "SmartList") {
+			smartLists = append(smartLists, SmartListInfo{
+				ID:           list.ID,
+				Name:         list.Name,
+				MatcherCount: len(list.Matchers),
+				MatcherMode:  list.MatcherMode,
+			})
+		}
+	}
+
+	response := LibraryListsResponse{
+		Lists: smartLists,
+		Count: len(smartLists),
+	}
+
+	s.writeJSON(w, http.StatusOK, response)
+}
+
+// DeviceConfigResponse provides device configuration including assigned lists
+type DeviceConfigResponse struct {
+	DeviceID     string                    `json:"device_id"`
+	FriendlyName string                    `json:"friendly_name"`
+	LastSeen     time.Time                 `json:"last_seen"`
+	Lists        []config.SharedListConfig `json:"lists"`
+	Settings     *csync.SharedListSettings `json:"default_settings,omitempty"`
+}
+
+// handleDeviceConfig returns device configuration (GET /api/devices/config/{deviceId})
+func (s *Server) handleDeviceConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	deviceID := parsePathParam(r.URL.Path, "/api/devices/config/")
+	if deviceID == "" {
+		http.Error(w, "device_id is required", http.StatusBadRequest)
+		return
+	}
+
+	// Get device config
+	deviceConfig, exists := s.config.Devices[deviceID]
+	if !exists {
+		http.Error(w, "Device configuration not found", http.StatusNotFound)
+		return
+	}
+
+	response := DeviceConfigResponse{
+		DeviceID:     deviceConfig.DeviceID,
+		FriendlyName: deviceConfig.FriendlyName,
+		LastSeen:     deviceConfig.LastSeen,
+		Lists:        deviceConfig.Lists,
+		Settings:     deviceConfig.DefaultSettings,
+	}
+
+	s.writeJSON(w, http.StatusOK, response)
+}
+
+// AddListRequest is the request body for adding a list to a device
+type AddListRequest struct {
+	ListID   string                    `json:"list_id"`
+	ListName string                    `json:"list_name"`
+	Enabled  bool                      `json:"enabled"`
+	Settings *csync.SharedListSettings `json:"settings,omitempty"`
+}
+
+// handleDeviceLists handles adding/removing lists from devices
+// POST /api/devices/lists/{deviceId} - Add list to device
+// DELETE /api/devices/lists/{deviceId}/{listId} - Remove list from device
+func (s *Server) handleDeviceLists(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost:
+		s.handleDeviceListAdd(w, r)
+	case http.MethodDelete:
+		s.handleDeviceListRemove(w, r)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleDeviceListAdd adds a smart list to a device's sync configuration
+func (s *Server) handleDeviceListAdd(w http.ResponseWriter, r *http.Request) {
+	deviceID := parsePathParam(r.URL.Path, "/api/devices/lists/")
+	if deviceID == "" {
+		http.Error(w, "device_id is required", http.StatusBadRequest)
+		return
+	}
+
+	var req AddListRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.ListID == "" {
+		http.Error(w, "list_id is required", http.StatusBadRequest)
+		return
+	}
+
+	// Verify list exists in library
+	found := false
+	for _, list := range s.library.ComicLists {
+		if list.ID == req.ListID && strings.Contains(list.Type, "SmartList") {
+			found = true
+			if req.ListName == "" {
+				req.ListName = list.Name
+			}
+			break
+		}
+	}
+
+	if !found {
+		http.Error(w, "Smart list not found in library", http.StatusNotFound)
+		return
+	}
+
+	// Get or create device config
+	if s.config.Devices == nil {
+		s.config.Devices = make(map[string]*config.DeviceConfig)
+	}
+
+	deviceConfig, exists := s.config.Devices[deviceID]
+	if !exists {
+		// Device not registered
+		http.Error(w, "Device not registered", http.StatusNotFound)
+		return
+	}
+
+	// Check if list is already added
+	for _, listConfig := range deviceConfig.Lists {
+		if listConfig.ListID == req.ListID {
+			http.Error(w, "List already assigned to device", http.StatusConflict)
+			return
+		}
+	}
+
+	// Add list to device config
+	newList := config.SharedListConfig{
+		ListID:   req.ListID,
+		ListName: req.ListName,
+		Enabled:  req.Enabled,
+		Settings: req.Settings,
+	}
+
+	deviceConfig.Lists = append(deviceConfig.Lists, newList)
+
+	// Save config to disk
+	if err := config.Save(s.config, s.configPath); err != nil {
+		log.Error().Err(err).Msg("Failed to save config after adding list to device")
+		// Don't fail the request - list is still in memory
+	}
+
+	log.Info().
+		Str("device_id", deviceID).
+		Str("list_id", req.ListID).
+		Str("list_name", req.ListName).
+		Msg("Smart list added to device")
+
+	// Broadcast list added event
+	s.wsHub.Broadcast(ws.EventDeviceUpdated, map[string]interface{}{
+		"device_id": deviceID,
+		"list_id":   req.ListID,
+		"list_name": req.ListName,
+		"action":    "list_added",
+	})
+
+	s.writeJSON(w, http.StatusOK, map[string]string{
+		"status":  "success",
+		"message": "List added to device successfully",
+	})
+}
+
+// handleDeviceListRemove removes a smart list from a device's sync configuration
+func (s *Server) handleDeviceListRemove(w http.ResponseWriter, r *http.Request) {
+	// Parse path: /api/devices/lists/{deviceId}/{listId}
+	path := strings.TrimPrefix(r.URL.Path, "/api/devices/lists/")
+	parts := strings.SplitN(path, "/", 2)
+
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		http.Error(w, "device_id and list_id are required", http.StatusBadRequest)
+		return
+	}
+
+	deviceID := parts[0]
+	listID := parts[1]
+
+	// Get device config
+	deviceConfig, exists := s.config.Devices[deviceID]
+	if !exists {
+		http.Error(w, "Device configuration not found", http.StatusNotFound)
+		return
+	}
+
+	// Find and remove the list
+	listIndex := -1
+	var removedListName string
+	for i, listConfig := range deviceConfig.Lists {
+		if listConfig.ListID == listID {
+			listIndex = i
+			removedListName = listConfig.ListName
+			break
+		}
+	}
+
+	if listIndex == -1 {
+		http.Error(w, "List not found in device configuration", http.StatusNotFound)
+		return
+	}
+
+	// Remove list from slice
+	deviceConfig.Lists = append(deviceConfig.Lists[:listIndex], deviceConfig.Lists[listIndex+1:]...)
+
+	// Save config to disk
+	if err := config.Save(s.config, s.configPath); err != nil {
+		log.Error().Err(err).Msg("Failed to save config after removing list from device")
+		// Don't fail the request - list is still removed in memory
+	}
+
+	log.Info().
+		Str("device_id", deviceID).
+		Str("list_id", listID).
+		Str("list_name", removedListName).
+		Msg("Smart list removed from device")
+
+	// Broadcast list removed event
+	s.wsHub.Broadcast(ws.EventDeviceUpdated, map[string]interface{}{
+		"device_id": deviceID,
+		"list_id":   listID,
+		"list_name": removedListName,
+		"action":    "list_removed",
+	})
+
+	s.writeJSON(w, http.StatusOK, map[string]string{
+		"status":  "success",
+		"message": "List removed from device successfully",
+	})
 }
