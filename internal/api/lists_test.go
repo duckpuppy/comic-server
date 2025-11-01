@@ -78,3 +78,82 @@ func TestHandleGetLists(t *testing.T) {
 		t.Errorf("Expected count 2847, got %d", response.Lists[0].BookCount)
 	}
 }
+
+func TestHandleGetListDetail(t *testing.T) {
+	lib := &library.ComicLibrary{
+		ComicLists: []library.ComicListItem{
+			{
+				ID:          "list-123",
+				Name:        "Currently Reading",
+				Type:        "ComicSmartListItem",
+				MatcherMode: "And",
+				Matchers: []library.ComicBookMatcher{
+					{Type: "Series", Operator: "1", ArgumentValue: "Batman"},
+					{Type: "Year", Operator: "2", ArgumentValue: "2020"},
+				},
+			},
+		},
+	}
+
+	cache := library.NewListCache(5 * time.Minute)
+	cache.SetCount("list-123", 2847)
+
+	server := &Server{
+		library:   lib,
+		listCache: cache,
+	}
+
+	req := httptest.NewRequest("GET", "/api/library/lists/list-123", nil)
+	w := httptest.NewRecorder()
+
+	server.handleGetListDetail(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	var response struct {
+		ID                   string   `json:"id"`
+		Name                 string   `json:"name"`
+		MatcherMode          string   `json:"matcher_mode"`
+		MatcherModeFormatted string   `json:"matcher_mode_formatted"`
+		BookCount            int      `json:"book_count"`
+		Matchers             []string `json:"matchers"`
+	}
+
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if response.ID != "list-123" {
+		t.Errorf("Expected list-123, got %s", response.ID)
+	}
+
+	if len(response.Matchers) != 2 {
+		t.Errorf("Expected 2 matchers, got %d", len(response.Matchers))
+	}
+
+	if response.MatcherModeFormatted != "Match ALL (AND)" {
+		t.Errorf("Expected 'Match ALL (AND)', got %s", response.MatcherModeFormatted)
+	}
+}
+
+func TestHandleGetListDetail_NotFound(t *testing.T) {
+	lib := &library.ComicLibrary{
+		ComicLists: []library.ComicListItem{},
+	}
+
+	server := &Server{
+		library:   lib,
+		listCache: library.NewListCache(5 * time.Minute),
+	}
+
+	req := httptest.NewRequest("GET", "/api/library/lists/nonexistent", nil)
+	w := httptest.NewRecorder()
+
+	server.handleGetListDetail(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("Expected status 404, got %d", w.Code)
+	}
+}
