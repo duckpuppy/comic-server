@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/duckpuppy/comic-server/internal/config"
 	"github.com/duckpuppy/comic-server/internal/library"
 )
 
@@ -218,5 +219,60 @@ func TestHandleGetListPreview(t *testing.T) {
 
 	if response.Limit != 2 {
 		t.Errorf("Expected limit 2, got %d", response.Limit)
+	}
+}
+
+func TestHandleGetListDevices(t *testing.T) {
+	// Create config with device assigned to list
+	cfg := &config.Config{
+		Devices: map[string]*config.DeviceConfig{
+			"device-1": {
+				DeviceID:     "device-1",
+				FriendlyName: "Samsung Tablet",
+				Lists: []config.SharedListConfig{
+					{ListID: "list-123", ListName: "Batman", Enabled: true},
+				},
+			},
+			"device-2": {
+				DeviceID:     "device-2",
+				FriendlyName: "iPad Pro",
+				Lists: []config.SharedListConfig{
+					{ListID: "list-456", ListName: "Superman", Enabled: true},
+				},
+			},
+		},
+	}
+
+	server := &Server{
+		config: cfg,
+	}
+
+	req := httptest.NewRequest("GET", "/api/library/lists/list-123/devices", nil)
+	w := httptest.NewRecorder()
+
+	server.handleGetListDevices(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	var response struct {
+		Devices []struct {
+			DeviceID     string `json:"device_id"`
+			FriendlyName string `json:"friendly_name"`
+			Enabled      bool   `json:"enabled"`
+		} `json:"devices"`
+	}
+
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if len(response.Devices) != 1 {
+		t.Errorf("Expected 1 device, got %d", len(response.Devices))
+	}
+
+	if response.Devices[0].DeviceID != "device-1" {
+		t.Errorf("Expected device-1, got %s", response.Devices[0].DeviceID)
 	}
 }

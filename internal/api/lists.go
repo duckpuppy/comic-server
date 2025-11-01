@@ -257,3 +257,54 @@ func (s *Server) handleGetListPreview(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
+
+// DeviceAssignment represents a device assigned to a list
+type DeviceAssignment struct {
+	DeviceID     string `json:"device_id"`
+	FriendlyName string `json:"friendly_name"`
+	Enabled      bool   `json:"enabled"`
+}
+
+// handleGetListDevices returns devices assigned to a specific list
+func (s *Server) handleGetListDevices(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract list ID
+	path := r.URL.Path
+	listID := path[len("/api/library/lists/"):]
+	if idx := strings.Index(listID, "/"); idx != -1 {
+		listID = listID[:idx]
+	}
+
+	assignments := []DeviceAssignment{}
+
+	// Scan all devices for this list
+	// Note: Using the existing server mutex pattern from api.go
+	s.mu.RLock()
+	if s.config != nil && s.config.Devices != nil {
+		for _, device := range s.config.Devices {
+			for _, list := range device.Lists {
+				if list.ListID == listID {
+					assignments = append(assignments, DeviceAssignment{
+						DeviceID:     device.DeviceID,
+						FriendlyName: device.FriendlyName,
+						Enabled:      list.Enabled,
+					})
+					break
+				}
+			}
+		}
+	}
+	s.mu.RUnlock()
+
+	response := map[string]interface{}{
+		"devices": assignments,
+		"total":   len(assignments),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
