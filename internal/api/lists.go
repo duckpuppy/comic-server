@@ -3,6 +3,8 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/duckpuppy/comic-server/internal/library"
 	"github.com/duckpuppy/comic-server/internal/log"
@@ -144,4 +146,114 @@ func (s *Server) handleGetListDetail(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(detail)
+}
+
+// ComicPreview represents a comic for preview display
+type ComicPreview struct {
+	ID        string `json:"id"`
+	Series    string `json:"series"`
+	Number    string `json:"number"`
+	Title     string `json:"title"`
+	Volume    int    `json:"volume"`
+	Publisher string `json:"publisher"`
+	Year      int    `json:"year"`
+}
+
+// handleGetListPreview returns a preview of comics matching the list
+func (s *Server) handleGetListPreview(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if s.library == nil {
+		http.Error(w, "Library not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Extract list ID from URL
+	path := r.URL.Path
+	listID := path[len("/api/library/lists/"):]
+	if idx := strings.Index(listID, "/"); idx != -1 {
+		listID = listID[:idx]
+	}
+
+	// Parse query parameters
+	query := r.URL.Query()
+	limit := 20 // Default
+	if l := query.Get("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
+			limit = parsed
+			if limit > 100 {
+				limit = 100 // Max limit
+			}
+		}
+	}
+
+	offset := 0
+	if o := query.Get("offset"); o != "" {
+		if parsed, err := strconv.Atoi(o); err == nil && parsed >= 0 {
+			offset = parsed
+		}
+	}
+
+	// Find the list
+	var targetList *library.ComicListItem
+	for i := range s.library.ComicLists {
+		if s.library.ComicLists[i].ID == listID {
+			targetList = &s.library.ComicLists[i]
+			break
+		}
+	}
+
+	if targetList == nil {
+		http.Error(w, "List not found", http.StatusNotFound)
+		return
+	}
+
+	// Evaluate list
+	matches, err := s.library.MatchBooks(targetList)
+	if err != nil {
+		log.Error().Err(err).Str("list_id", listID).Msg("Failed to match books for list")
+		http.Error(w, "Failed to evaluate list", http.StatusInternalServerError)
+		return
+	}
+
+	total := len(matches)
+
+	// Apply pagination
+	start := offset
+	if start > total {
+		start = total
+	}
+
+	end := start + limit
+	if end > total {
+		end = total
+	}
+
+	// Build preview
+	previews := make([]ComicPreview, 0, end-start)
+	for i := start; i < end; i++ {
+		comic := matches[i]
+		previews = append(previews, ComicPreview{
+			ID:        comic.ID,
+			Series:    comic.Series,
+			Number:    comic.Number,
+			Title:     comic.Title,
+			Volume:    comic.Volume,
+			Publisher: comic.Publisher,
+			Year:      comic.Year,
+		})
+	}
+
+	response := map[string]interface{}{
+		"comics": previews,
+		"total":  total,
+		"limit":  limit,
+		"offset": offset,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }

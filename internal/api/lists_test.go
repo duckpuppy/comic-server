@@ -157,3 +157,66 @@ func TestHandleGetListDetail_NotFound(t *testing.T) {
 		t.Errorf("Expected status 404, got %d", w.Code)
 	}
 }
+
+func TestHandleGetListPreview(t *testing.T) {
+	lib := &library.ComicLibrary{
+		Books: []library.ComicBook{
+			{ID: "comic-1", Series: "Batman", Number: "1", Title: "Issue 1"},
+			{ID: "comic-2", Series: "Batman", Number: "2", Title: "Issue 2"},
+			{ID: "comic-3", Series: "Batman", Number: "3", Title: "Issue 3"},
+		},
+		ComicLists: []library.ComicListItem{
+			{
+				ID:          "list-123",
+				Name:        "Batman",
+				Type:        "ComicSmartListItem",
+				MatcherMode: "And",
+				Matchers: []library.ComicBookMatcher{
+					{Type: "Series", Operator: "0", ArgumentValue: "Batman"},
+				},
+			},
+		},
+	}
+
+	server := &Server{
+		library:   lib,
+		listCache: library.NewListCache(5 * time.Minute),
+	}
+
+	req := httptest.NewRequest("GET", "/api/library/lists/list-123/preview?limit=2", nil)
+	w := httptest.NewRecorder()
+
+	server.handleGetListPreview(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	var response struct {
+		Comics []struct {
+			GUID   string `json:"guid"`
+			Series string `json:"series"`
+			Number string `json:"number"`
+			Title  string `json:"title"`
+		} `json:"comics"`
+		Total  int `json:"total"`
+		Limit  int `json:"limit"`
+		Offset int `json:"offset"`
+	}
+
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if response.Total != 3 {
+		t.Errorf("Expected total 3, got %d", response.Total)
+	}
+
+	if len(response.Comics) != 2 {
+		t.Errorf("Expected 2 comics in preview, got %d", len(response.Comics))
+	}
+
+	if response.Limit != 2 {
+		t.Errorf("Expected limit 2, got %d", response.Limit)
+	}
+}
