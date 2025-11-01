@@ -36,6 +36,7 @@ type Server struct {
 	syncManager       *syncstate.Manager
 	registry          *device.Registry
 	library           *library.ComicLibrary // Comic library for smart list management
+	listCache         *library.ListCache    // Cache for smart list book counts
 	config            *config.Config
 	configPath        string          // Path to config file for saving
 	version           VersionInfo
@@ -53,6 +54,7 @@ func NewServer(syncManager *syncstate.Manager, registry *device.Registry, lib *l
 		syncManager:       syncManager,
 		registry:          registry,
 		library:           lib,
+		listCache:         library.NewListCache(15 * time.Minute), // 15 min TTL
 		config:            cfg,
 		configPath:        configPath,
 		version:           version,
@@ -95,7 +97,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/stats", s.handleStats)
 
 	// Library endpoints
-	s.mux.HandleFunc("/api/library/lists", s.handleLibraryLists)
+	s.mux.HandleFunc("/api/library/lists", s.handleGetLists)
 
 	// Device configuration endpoints
 	s.mux.HandleFunc("/api/devices/config/", s.handleDeviceConfig)
@@ -526,47 +528,6 @@ func (s *Server) GetHub() *ws.Hub {
 	return s.wsHub
 }
 
-// SmartListInfo provides basic info about a smart list for API responses
-type SmartListInfo struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	MatcherCount int    `json:"matcher_count"`
-	MatcherMode  string `json:"matcher_mode"`
-}
-
-// LibraryListsResponse provides list of all smart lists in the library
-type LibraryListsResponse struct {
-	Lists []SmartListInfo `json:"lists"`
-	Count int             `json:"count"`
-}
-
-// handleLibraryLists returns all smart lists from the library
-func (s *Server) handleLibraryLists(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var smartLists []SmartListInfo
-	for _, list := range s.library.ComicLists {
-		// Filter for smart lists only (Type contains "SmartList")
-		if strings.Contains(list.Type, "SmartList") {
-			smartLists = append(smartLists, SmartListInfo{
-				ID:           list.ID,
-				Name:         list.Name,
-				MatcherCount: len(list.Matchers),
-				MatcherMode:  list.MatcherMode,
-			})
-		}
-	}
-
-	response := LibraryListsResponse{
-		Lists: smartLists,
-		Count: len(smartLists),
-	}
-
-	s.writeJSON(w, http.StatusOK, response)
-}
 
 // DeviceConfigResponse provides device configuration including assigned lists
 type DeviceConfigResponse struct {
