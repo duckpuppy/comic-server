@@ -98,6 +98,7 @@ func (s *Server) registerRoutes() {
 
 	// Library endpoints
 	s.mux.HandleFunc("/api/library/lists", s.handleGetLists)
+	s.mux.HandleFunc("/api/library/lists/", s.handleListsRouter)
 
 	// Device configuration endpoints
 	s.mux.HandleFunc("/api/devices/config/", s.handleDeviceConfig)

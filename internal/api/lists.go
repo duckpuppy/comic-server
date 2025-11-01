@@ -74,6 +74,32 @@ func (s *Server) handleGetLists(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+// handleListsRouter routes requests to list detail, preview, or devices endpoints
+func (s *Server) handleListsRouter(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Path
+
+	// Check for sub-paths
+	// /api/library/lists/:listId
+	if !strings.Contains(path[len("/api/library/lists/"):], "/") {
+		s.handleGetListDetail(w, r)
+		return
+	}
+
+	// /api/library/lists/:listId/preview
+	if strings.HasSuffix(path, "/preview") {
+		s.handleGetListPreview(w, r)
+		return
+	}
+
+	// /api/library/lists/:listId/devices
+	if strings.HasSuffix(path, "/devices") {
+		s.handleGetListDevices(w, r)
+		return
+	}
+
+	http.NotFound(w, r)
+}
+
 // ListDetail represents full details of a smart list
 type ListDetail struct {
 	ID                   string   `json:"id"`
