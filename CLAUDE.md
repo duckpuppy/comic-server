@@ -706,12 +706,13 @@ See issues #15, #16, #17 for:
 - Performance optimization - Issue #9
 - SQLite storage investigation - Issue #19
 
-### Web UI (v0.7)
+### Web UI (v0.8)
 
 **Access**: http://localhost:7620/ (served by the REST API server)
 
 **Technology Stack**:
 - Vanilla JavaScript (no framework dependencies)
+- Client-side routing using History API
 - WebSocket for real-time updates
 - Go's embed package for static file serving
 - Responsive CSS Grid/Flexbox layout
@@ -719,13 +720,62 @@ See issues #15, #16, #17 for:
 **Architecture** (`internal/api/web/`):
 - `index.html` - Main dashboard structure with templates
 - `css/style.css` - Modern, responsive styling with CSS custom properties
+- `css/navigation.css` - Navigation tab styling
+- `css/lists.css` - Smart lists browser and detail page styling
+- `js/router.js` - Client-side router (History API, no framework)
+- `js/navigation.js` - Navigation component with tabs
 - `js/websocket.js` - WebSocket client with automatic reconnection
 - `js/devices.js` - Device management and registration controls
 - `js/sync.js` - Sync progress monitoring with progress bars
-- `js/app.js` - Application initialization and stats updates
+- `js/listsBrowser.js` - Smart lists browser with search/filter
+- `js/listDetail.js` - List detail page with preview
+- `js/app.js` - Application initialization and route registration
+
+**Client-Side Routing**:
+
+The UI now features multi-page navigation with the following routes:
+
+- `/` - Dashboard (overview with stats, devices, sync history)
+- `/lists` - Smart lists browser with search and filtering
+- `/lists/:listId` - List detail page with matchers, devices, and comic preview
+- `/devices` - Device list view (scrolls to devices section)
+- `/sync` - Sync history view (scrolls to sync section)
+
+**Routing Features**:
+- Browser back/forward button support (popstate events)
+- URL updates without page reload (pushState)
+- Bookmarkable URLs for direct access
+- Parameterized routes (e.g., `/lists/:listId`)
+- Automatic route handling on page load
+
+**Smart Lists as First-Class Entities**:
+
+- **Lists Browser** (`/lists`):
+  - Grid view of all smart lists
+  - Search by list name (debounced 300ms)
+  - Sort by name (A-Z, Z-A) or book count
+  - Shows book count and matcher count per list
+  - Click card to navigate to detail page
+
+- **List Detail Page** (`/lists/:listId`):
+  - Breadcrumb navigation
+  - Human-readable matcher display
+  - Device assignments section
+  - Paginated comic preview (20 per page, max 100)
+  - "Load More" button for additional previews
+  - Navigate to assigned devices
+
+**Performance Optimizations**:
+- List count caching (15 min TTL) for large libraries (65K+ comics)
+- Paginated comic previews to avoid loading entire lists
+- Debounced search input (300ms delay)
+- Cached list evaluation results
 
 **Features**:
 - **Real-time Dashboard** - Live server statistics (devices, syncs, uptime, WebSocket clients)
+- **Navigation Tabs** - Top-level navigation with active state indicators
+  - Badge counts for lists and devices
+  - Responsive design (icons only on mobile)
 - **Device Sidebar** - Shows all discovered devices with status indicators:
   - Connected (< 2 min since last_seen)
   - Idle (2-30 min)
@@ -759,8 +809,10 @@ See issues #15, #16, #17 for:
 
 **Browser Compatibility**:
 - Modern browsers with WebSocket support
-- ES6+ JavaScript features
+- ES6+ JavaScript features (classes, async/await, template literals)
 - CSS Grid and Flexbox required
+- History API support required
+- Named capture groups in regex (ES2018)
 - Tested: Chrome, Firefox, Safari (latest versions)
 
 **Static File Serving**:
