@@ -18,26 +18,53 @@ class Dashboard {
         setInterval(() => this.updateStats(), this.statsUpdateInterval);
     }
 
+    show() {
+        // Show dashboard content
+        const dashboardContent = document.getElementById('dashboard-content');
+        if (dashboardContent) {
+            dashboardContent.style.display = 'block';
+        }
+    }
+
+    hide() {
+        // Hide dashboard content
+        const dashboardContent = document.getElementById('dashboard-content');
+        if (dashboardContent) {
+            dashboardContent.style.display = 'none';
+        }
+    }
+
     async updateStats() {
         try {
             // Update total devices count
             const devicesCount = deviceManager.devices.size;
-            document.getElementById('stat-total-devices').textContent = devicesCount;
+            const statElement = document.getElementById('stat-total-devices');
+            if (statElement) {
+                statElement.textContent = devicesCount;
+            }
 
             // Update active syncs count
             const activeSyncsCount = syncManager.activeSyncs.size;
-            document.getElementById('stat-active-syncs').textContent = activeSyncsCount;
+            const syncElement = document.getElementById('stat-active-syncs');
+            if (syncElement) {
+                syncElement.textContent = activeSyncsCount;
+            }
 
             // Update uptime
             const uptime = this.calculateUptime();
-            document.getElementById('stat-uptime').textContent = uptime;
+            const uptimeElement = document.getElementById('stat-uptime');
+            if (uptimeElement) {
+                uptimeElement.textContent = uptime;
+            }
 
             // Update WebSocket clients count (if available from server)
             const wsClientsElement = document.getElementById('stat-ws-clients');
-            if (wsClient.connected) {
-                wsClientsElement.textContent = '1'; // This client is connected
-            } else {
-                wsClientsElement.textContent = '0';
+            if (wsClientsElement) {
+                if (wsClient.connected) {
+                    wsClientsElement.textContent = '1'; // This client is connected
+                } else {
+                    wsClientsElement.textContent = '0';
+                }
             }
         } catch (error) {
             console.error('Failed to update stats:', error);
@@ -68,9 +95,69 @@ class Dashboard {
 // Global dashboard instance
 const dashboard = new Dashboard();
 
+// Global list browser instance (created on demand)
+let listsBrowser = null;
+
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
     console.log('Comic Server Dashboard initializing...');
+
+    // Initialize navigation
+    navigation.init();
+
+    // Initialize dashboard
     dashboard.init();
-    console.log('Dashboard initialized');
+
+    // Register routes
+    router.register('/', () => {
+        navigation.setActive('dashboard');
+        dashboard.show();
+        // Hide lists browser if it's visible
+        if (listsBrowser) {
+            const app = document.getElementById('app');
+            const dashboardContent = document.getElementById('dashboard-content');
+            if (app && dashboardContent) {
+                app.innerHTML = '';
+                app.appendChild(dashboardContent);
+            }
+        }
+    });
+
+    router.register('/lists', async () => {
+        navigation.setActive('lists');
+        dashboard.hide();
+        if (!listsBrowser) {
+            listsBrowser = new ListsBrowser();
+        }
+        await listsBrowser.init();
+    });
+
+    router.register('/lists/:listId', async (params) => {
+        navigation.setActive('lists');
+        dashboard.hide();
+        const listDetail = new ListDetail(params.listId);
+        await listDetail.init();
+    });
+
+    router.register('/devices', () => {
+        navigation.setActive('devices');
+        dashboard.show();
+        // Scroll to devices section
+        const devicesSection = document.getElementById('devices-sidebar');
+        if (devicesSection) {
+            devicesSection.scrollIntoView({ behavior: 'smooth' });
+        }
+    });
+
+    router.register('/sync', () => {
+        navigation.setActive('sync');
+        dashboard.show();
+        // Scroll to sync section
+        const syncSection = document.querySelector('.sync-history');
+        if (syncSection) {
+            syncSection.scrollIntoView({ behavior: 'smooth' });
+        }
+    });
+
+    console.log('Dashboard initialized with routing');
 });
