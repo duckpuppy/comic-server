@@ -5,20 +5,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Comic Server Dashboard</title>
     <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/navigation.css">
+    <link rel="stylesheet" href="/css/lists.css">
 </head>
 <body>
     <div class="container">
         <!-- Header -->
         <header class="header">
-            <h1>Comic Server Dashboard</h1>
+            <h1>Comic Server</h1>
             <div class="server-status">
                 <span class="status-indicator" id="ws-status"></span>
                 <span id="ws-status-text">Connecting...</span>
             </div>
         </header>
 
-        <!-- Main Content -->
-        <div class="main-content">
+        <!-- Navigation -->
+        <nav id="main-nav"></nav>
+
+        <!-- App Container (route content goes here) -->
+        <div id="app">
+            <!-- Dashboard content (default view) -->
+            <div class="main-content" id="dashboard-content">
             <!-- Dashboard Stats -->
             <section class="stats-section">
                 <div class="stat-card">
@@ -68,6 +75,8 @@
                     </div>
                 </aside>
             </div>
+        </div>
+        <!-- End Dashboard content -->
         </div>
     </div>
 
@@ -143,10 +152,14 @@
     </template>
 
     <!-- Scripts -->
+    <script src="/js/router.js"></script>
+    <script src="/js/navigation.js"></script>
     <script src="/js/websocket.js"></script>
     <script src="/js/devices.js"></script>
     <script src="/js/sync.js"></script>
     <script src="/js/lists.js"></script>
+    <script src="/js/listsBrowser.js"></script>
+    <script src="/js/listDetail.js"></script>
     <script src="/js/app.js"></script>
 </body>
 </html>
