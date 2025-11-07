@@ -201,8 +201,8 @@ func TestHandleDevicesRouter(t *testing.T) {
 		{
 			name:           "Sync history route",
 			path:           "/api/devices/device-123/sync-history",
-			expectedStatus: http.StatusNotImplemented, // Not implemented yet
-			description:    "Should return not implemented for sync-history",
+			expectedStatus: http.StatusOK, // Now implemented
+			description:    "Should route to handleGetDeviceSyncHistory",
 		},
 		{
 			name:           "Empty device ID",
@@ -246,5 +246,113 @@ func TestHandleGetDeviceDetail_EmptyDeviceID(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("Expected status 400 for empty device ID, got %d", w.Code)
+	}
+}
+
+func TestHandleGetDeviceSyncHistory(t *testing.T) {
+	manager := syncstate.NewManager(100)
+
+	// Add sync history by starting and completing syncs
+	manager.StartSync("device-123", "192.168.1.100", "Test Tablet")
+	manager.CompleteSync("device-123", 10, 0, 0, 0)
+
+	manager.StartSync("device-123", "192.168.1.100", "Test Tablet")
+	manager.CompleteSync("device-123", 5, 0, 0, 0)
+
+	server := &Server{
+		syncManager: manager,
+	}
+
+	req := httptest.NewRequest("GET", "/api/devices/device-123/sync-history?limit=10&offset=0", nil)
+	w := httptest.NewRecorder()
+
+	server.handleGetDeviceSyncHistory(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	var response struct {
+		History []struct {
+			DeviceID string `json:"device_id"`
+			Status   string `json:"status"`
+		} `json:"history"`
+		Total   int  `json:"total"`
+		HasMore bool `json:"has_more"`
+	}
+
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if len(response.History) != 2 {
+		t.Errorf("Expected 2 history entries, got %d", len(response.History))
+	}
+
+	if response.Total != 2 {
+		t.Errorf("Expected total 2, got %d", response.Total)
+	}
+
+	if response.HasMore {
+		t.Error("Expected HasMore false")
+	}
+}
+
+func TestHandleGetDeviceSyncHistory_Pagination(t *testing.T) {
+	manager := syncstate.NewManager(100)
+
+	// Add 15 sessions by starting and completing syncs
+	for i := 0; i < 15; i++ {
+		manager.StartSync("device-123", "192.168.1.100", "Test Tablet")
+		manager.CompleteSync("device-123", 1, 0, 0, 0)
+	}
+
+	server := &Server{
+		syncManager: manager,
+	}
+
+	req := httptest.NewRequest("GET", "/api/devices/device-123/sync-history?limit=10&offset=0", nil)
+	w := httptest.NewRecorder()
+
+	server.handleGetDeviceSyncHistory(w, req)
+
+	var response struct {
+		History    []interface{} `json:"history"`
+		Total      int           `json:"total"`
+		HasMore    bool          `json:"has_more"`
+		NextOffset *int          `json:"next_offset,omitempty"`
+	}
+
+	json.NewDecoder(w.Body).Decode(&response)
+
+	if len(response.History) != 10 {
+		t.Errorf("Expected 10 history entries, got %d", len(response.History))
+	}
+
+	if response.Total != 15 {
+		t.Errorf("Expected total 15, got %d", response.Total)
+	}
+
+	if !response.HasMore {
+		t.Error("Expected HasMore true")
+	}
+
+	if response.NextOffset == nil || *response.NextOffset != 10 {
+		t.Errorf("Expected NextOffset 10, got %v", response.NextOffset)
+	}
+}
+
+func TestHandleGetDeviceSyncHistory_InvalidLimit(t *testing.T) {
+	server := &Server{
+		syncManager: syncstate.NewManager(100),
+	}
+
+	req := httptest.NewRequest("GET", "/api/devices/device-123/sync-history?limit=100", nil)
+	w := httptest.NewRecorder()
+
+	server.handleGetDeviceSyncHistory(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status 400, got %d", w.Code)
 	}
 }

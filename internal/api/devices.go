@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/duckpuppy/comic-server/internal/log"
@@ -171,12 +172,61 @@ func (s *Server) handleDevicesRouter(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// If we have a sub-path but it's not recognized, check for sync-history
-	// URL: /api/devices/:deviceId/sync-history (to be implemented in Task 3)
+	// URL: /api/devices/:deviceId/sync-history
 	if strings.HasSuffix(path, "/sync-history") {
-		// TODO: Task 3 will implement this
-		http.Error(w, "Not implemented yet", http.StatusNotImplemented)
+		s.handleGetDeviceSyncHistory(w, r)
 		return
 	}
 
 	http.NotFound(w, r)
+}
+
+// handleGetDeviceSyncHistory returns paginated sync history for a device
+func (s *Server) handleGetDeviceSyncHistory(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract device ID from URL
+	path := r.URL.Path
+	deviceID := path[len("/api/devices/"):]
+	if idx := strings.Index(deviceID, "/"); idx != -1 {
+		deviceID = deviceID[:idx]
+	}
+
+	// Parse query parameters
+	query := r.URL.Query()
+	limit := 10 // Default
+	if l := query.Get("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
+			limit = parsed
+			if limit > 50 {
+				http.Error(w, "Limit cannot exceed 50", http.StatusBadRequest)
+				return
+			}
+		}
+	}
+
+	offset := 0
+	if o := query.Get("offset"); o != "" {
+		if parsed, err := strconv.Atoi(o); err == nil && parsed >= 0 {
+			offset = parsed
+		}
+	}
+
+	// Get filtered history
+	history, metadata := s.syncManager.GetHistoryForDevice(deviceID, limit, offset)
+
+	response := map[string]interface{}{
+		"history":     history,
+		"total":       metadata.Total,
+		"limit":       metadata.Limit,
+		"offset":      metadata.Offset,
+		"has_more":    metadata.HasMore,
+		"next_offset": metadata.NextOffset,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
