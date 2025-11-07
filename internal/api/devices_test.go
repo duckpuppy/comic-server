@@ -170,3 +170,81 @@ func TestHandleGetDeviceDetail_OfflineDevice(t *testing.T) {
 		t.Errorf("Expected friendly name 'Offline Tablet', got %s", response.FriendlyName)
 	}
 }
+
+func TestHandleDevicesRouter(t *testing.T) {
+	// Setup server with minimal config
+	registry := device.NewRegistry()
+	cfg := &config.Config{
+		Devices: map[string]*config.DeviceConfig{},
+	}
+
+	server := &Server{
+		registry:    registry,
+		config:      cfg,
+		library:     &library.ComicLibrary{},
+		listCache:   library.NewListCache(5 * time.Minute),
+		syncManager: syncstate.NewManager(100),
+	}
+
+	tests := []struct {
+		name           string
+		path           string
+		expectedStatus int
+		description    string
+	}{
+		{
+			name:           "Device detail route",
+			path:           "/api/devices/device-123",
+			expectedStatus: http.StatusNotFound, // Device doesn't exist
+			description:    "Should route to handleGetDeviceDetail",
+		},
+		{
+			name:           "Sync history route",
+			path:           "/api/devices/device-123/sync-history",
+			expectedStatus: http.StatusNotImplemented, // Not implemented yet
+			description:    "Should return not implemented for sync-history",
+		},
+		{
+			name:           "Empty device ID",
+			path:           "/api/devices/",
+			expectedStatus: http.StatusOK, // Routes to handleDevices (list all)
+			description:    "Should route to handleDevices for empty ID",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", tt.path, nil)
+			w := httptest.NewRecorder()
+
+			server.handleDevicesRouter(w, req)
+
+			if w.Code != tt.expectedStatus {
+				t.Errorf("%s: Expected status %d, got %d", tt.description, tt.expectedStatus, w.Code)
+			}
+		})
+	}
+}
+
+func TestHandleGetDeviceDetail_EmptyDeviceID(t *testing.T) {
+	registry := device.NewRegistry()
+	cfg := &config.Config{
+		Devices: map[string]*config.DeviceConfig{},
+	}
+
+	server := &Server{
+		registry:    registry,
+		config:      cfg,
+		syncManager: syncstate.NewManager(100),
+	}
+
+	// Test with empty device ID (just the trailing slash)
+	req := httptest.NewRequest("GET", "/api/devices/", nil)
+	w := httptest.NewRecorder()
+
+	server.handleGetDeviceDetail(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("Expected status 400 for empty device ID, got %d", w.Code)
+	}
+}

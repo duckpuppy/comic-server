@@ -91,18 +91,15 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/version", s.handleVersion)
 	s.mux.HandleFunc("/api/sync/status", s.handleSyncStatus)
 	s.mux.HandleFunc("/api/sync/history", s.handleSyncHistory)
-	s.mux.HandleFunc("/api/devices", s.handleDevices)
-	s.mux.HandleFunc("/api/devices/register", s.handleDeviceRegister)
-	s.mux.HandleFunc("/api/devices/unregister", s.handleDeviceUnregister)
 	s.mux.HandleFunc("/api/stats", s.handleStats)
 
 	// Library endpoints
 	s.mux.HandleFunc("/api/library/lists", s.handleGetLists)
 	s.mux.HandleFunc("/api/library/lists/", s.handleListsRouter)
 
-	// Device configuration endpoints
-	s.mux.HandleFunc("/api/devices/config/", s.handleDeviceConfig)
-	s.mux.HandleFunc("/api/devices/lists/", s.handleDeviceLists)
+	// Device endpoints (all routes go through router)
+	s.mux.HandleFunc("/api/devices", s.handleDevicesRouter)
+	s.mux.HandleFunc("/api/devices/", s.handleDevicesRouter)
 
 	// WebSocket endpoint
 	s.mux.HandleFunc("/ws", s.handleWebSocket)

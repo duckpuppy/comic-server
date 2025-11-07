@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+
+	"github.com/duckpuppy/comic-server/internal/log"
 )
 
 // DeviceDetail represents full device information
@@ -47,18 +49,23 @@ func (s *Server) handleGetDeviceDetail(w http.ResponseWriter, r *http.Request) {
 		deviceID = deviceID[:idx]
 	}
 
-	// Look up device in registry
+	// Validate device ID is not empty
+	if deviceID == "" {
+		http.Error(w, "Device ID is required", http.StatusBadRequest)
+		return
+	}
+
+	// Look up device in registry (online devices)
 	var detail DeviceDetail
 	device, exists := s.registry.Get(deviceID)
 
-	// Also check config
-	s.mu.RLock()
+	// Look up device in config (may include offline devices)
+	// Note: s.config is not protected by mutex - config access is read-only after server start
 	deviceConfig, inConfig := s.config.Devices[deviceID]
-	s.mu.RUnlock()
 
 	// Device must be in registry OR config
 	if !exists && !inConfig {
-		http.Error(w, "Device not found", http.StatusNotFound)
+		http.Error(w, "Device not found in registry or configuration", http.StatusNotFound)
 		return
 	}
 
@@ -94,6 +101,13 @@ func (s *Server) handleGetDeviceDetail(w http.ResponseWriter, r *http.Request) {
 						if err == nil {
 							count = len(matches)
 							s.listCache.SetCount(listConfig.ListID, count)
+						} else {
+							log.Error().
+								Err(err).
+								Str("list_id", listConfig.ListID).
+								Str("list_name", listConfig.ListName).
+								Str("device_id", deviceID).
+								Msg("Failed to evaluate smart list for book count")
 						}
 						break
 					}
@@ -114,4 +128,55 @@ func (s *Server) handleGetDeviceDetail(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(detail)
+}
+
+// handleDevicesRouter routes /api/devices/* requests to appropriate handlers
+func (s *Server) handleDevicesRouter(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Path
+
+	// Exact match for base endpoint: /api/devices or /api/devices/
+	if path == "/api/devices" || path == "/api/devices/" {
+		s.handleDevices(w, r)
+		return
+	}
+
+	// Handle exact matches for specific endpoints
+	if path == "/api/devices/register" {
+		s.handleDeviceRegister(w, r)
+		return
+	}
+
+	if path == "/api/devices/unregister" {
+		s.handleDeviceUnregister(w, r)
+		return
+	}
+
+	// Handle sub-routes with trailing slash
+	if strings.HasPrefix(path, "/api/devices/config/") {
+		s.handleDeviceConfig(w, r)
+		return
+	}
+
+	if strings.HasPrefix(path, "/api/devices/lists/") {
+		s.handleDeviceLists(w, r)
+		return
+	}
+
+	// If no sub-path (no slash after device ID), treat as device detail
+	// URL: /api/devices/:deviceId
+	remainder := path[len("/api/devices/"):]
+	if !strings.Contains(remainder, "/") {
+		s.handleGetDeviceDetail(w, r)
+		return
+	}
+
+	// If we have a sub-path but it's not recognized, check for sync-history
+	// URL: /api/devices/:deviceId/sync-history (to be implemented in Task 3)
+	if strings.HasSuffix(path, "/sync-history") {
+		// TODO: Task 3 will implement this
+		http.Error(w, "Not implemented yet", http.StatusNotImplemented)
+		return
+	}
+
+	http.NotFound(w, r)
 }
