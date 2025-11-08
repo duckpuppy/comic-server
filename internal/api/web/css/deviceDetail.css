@@ -1,0 +1,303 @@
+/* Device Detail Page */
+.device-detail-page {
+    padding: 2rem;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+/* Device Header */
+.device-detail-header {
+    margin-bottom: 2rem;
+}
+
+.device-header-main {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.device-detail-header h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    margin: 0;
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 0.375rem 0.75rem;
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+}
+
+.status-badge.online {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.status-badge.idle {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.status-badge.offline {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.status-badge.syncing {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+/* Device Info Cards */
+.device-info-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.info-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    padding: 1.25rem;
+}
+
+.info-card-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+}
+
+.info-card-value {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    word-break: break-all;
+}
+
+.info-card-value.device-id {
+    font-family: 'Monaco', 'Menlo', monospace;
+    font-size: 0.875rem;
+}
+
+/* Assigned Lists Panel */
+.assigned-lists-panel {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.assigned-lists-panel h2 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin-bottom: 1.5rem;
+}
+
+.assigned-lists-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.assigned-lists-table thead {
+    background: var(--bg-primary);
+    border-bottom: 2px solid var(--border-color);
+}
+
+.assigned-lists-table th {
+    text-align: left;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+}
+
+.assigned-lists-table td {
+    padding: 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.assigned-lists-table tbody tr:hover {
+    background: var(--bg-primary);
+}
+
+.list-link {
+    color: var(--primary-color);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.list-link:hover {
+    text-decoration: underline;
+}
+
+.status-indicator {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 0.25rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.status-indicator.enabled {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.status-indicator.disabled {
+    background: #f3f4f6;
+    color: #6b7280;
+}
+
+/* Sync History Panel */
+.sync-history-panel {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    padding: 1.5rem;
+}
+
+.sync-history-panel h2 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin-bottom: 1.5rem;
+}
+
+.sync-history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.history-item {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.375rem;
+    padding: 1rem;
+}
+
+.history-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+.history-timestamp {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.history-status {
+    padding: 0.25rem 0.75rem;
+    border-radius: 0.25rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.history-status.status-success {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.history-status.status-error {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.history-status.status-warning {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.history-item-stats {
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.history-stat {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+.stat-icon {
+    font-size: 1rem;
+}
+
+.loading-spinner {
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-secondary);
+}
+
+.empty-state {
+    text-align: center;
+    padding: 3rem 2rem;
+}
+
+.empty-state p {
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+}
+
+.empty-state .help-text {
+    font-size: 0.875rem;
+    color: var(--text-tertiary);
+}
+
+.error-message {
+    text-align: center;
+    padding: 2rem;
+}
+
+.error-message p {
+    color: var(--text-secondary);
+    margin-bottom: 1rem;
+}
+
+.load-more-container {
+    display: flex;
+    justify-content: center;
+    margin-top: 1.5rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .device-detail-page {
+        padding: 1rem;
+    }
+
+    .device-info-cards {
+        grid-template-columns: 1fr;
+    }
+
+    .assigned-lists-table {
+        font-size: 0.875rem;
+    }
+
+    .assigned-lists-table th,
+    .assigned-lists-table td {
+        padding: 0.5rem;
+    }
+
+    .history-item-stats {
+        gap: 1rem;
+    }
+}
