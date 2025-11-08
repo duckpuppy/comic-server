@@ -4,6 +4,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"strings"
@@ -36,6 +37,7 @@ type Server struct {
 	syncManager       *syncstate.Manager
 	registry          *device.Registry
 	library           *library.ComicLibrary // Comic library for smart list management
+	listCache         *library.ListCache    // Cache for smart list book counts
 	config            *config.Config
 	configPath        string          // Path to config file for saving
 	version           VersionInfo
@@ -53,6 +55,7 @@ func NewServer(syncManager *syncstate.Manager, registry *device.Registry, lib *l
 		syncManager:       syncManager,
 		registry:          registry,
 		library:           lib,
+		listCache:         library.NewListCache(15 * time.Minute), // 15 min TTL
 		config:            cfg,
 		configPath:        configPath,
 		version:           version,
@@ -89,17 +92,15 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/version", s.handleVersion)
 	s.mux.HandleFunc("/api/sync/status", s.handleSyncStatus)
 	s.mux.HandleFunc("/api/sync/history", s.handleSyncHistory)
-	s.mux.HandleFunc("/api/devices", s.handleDevices)
-	s.mux.HandleFunc("/api/devices/register", s.handleDeviceRegister)
-	s.mux.HandleFunc("/api/devices/unregister", s.handleDeviceUnregister)
 	s.mux.HandleFunc("/api/stats", s.handleStats)
 
 	// Library endpoints
-	s.mux.HandleFunc("/api/library/lists", s.handleLibraryLists)
+	s.mux.HandleFunc("/api/library/lists", s.handleGetLists)
+	s.mux.HandleFunc("/api/library/lists/", s.handleListsRouter)
 
-	// Device configuration endpoints
-	s.mux.HandleFunc("/api/devices/config/", s.handleDeviceConfig)
-	s.mux.HandleFunc("/api/devices/lists/", s.handleDeviceLists)
+	// Device endpoints (all routes go through router)
+	s.mux.HandleFunc("/api/devices", s.handleDevicesRouter)
+	s.mux.HandleFunc("/api/devices/", s.handleDevicesRouter)
 
 	// WebSocket endpoint
 	s.mux.HandleFunc("/ws", s.handleWebSocket)
@@ -107,12 +108,12 @@ func (s *Server) registerRoutes() {
 	// Metrics endpoint
 	s.mux.Handle("/metrics", promhttp.Handler())
 
-	// Static files (web UI)
+	// Static files (web UI) with SPA fallback
 	webRoot, err := fs.Sub(webFS, "web")
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to create web filesystem")
 	}
-	s.mux.Handle("/", http.FileServer(http.FS(webRoot)))
+	s.mux.HandleFunc("/", s.spaHandler(webRoot))
 }
 
 // Health check response
@@ -526,47 +527,6 @@ func (s *Server) GetHub() *ws.Hub {
 	return s.wsHub
 }
 
-// SmartListInfo provides basic info about a smart list for API responses
-type SmartListInfo struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	MatcherCount int    `json:"matcher_count"`
-	MatcherMode  string `json:"matcher_mode"`
-}
-
-// LibraryListsResponse provides list of all smart lists in the library
-type LibraryListsResponse struct {
-	Lists []SmartListInfo `json:"lists"`
-	Count int             `json:"count"`
-}
-
-// handleLibraryLists returns all smart lists from the library
-func (s *Server) handleLibraryLists(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var smartLists []SmartListInfo
-	for _, list := range s.library.ComicLists {
-		// Filter for smart lists only (Type contains "SmartList")
-		if strings.Contains(list.Type, "SmartList") {
-			smartLists = append(smartLists, SmartListInfo{
-				ID:           list.ID,
-				Name:         list.Name,
-				MatcherCount: len(list.Matchers),
-				MatcherMode:  list.MatcherMode,
-			})
-		}
-	}
-
-	response := LibraryListsResponse{
-		Lists: smartLists,
-		Count: len(smartLists),
-	}
-
-	s.writeJSON(w, http.StatusOK, response)
-}
 
 // DeviceConfigResponse provides device configuration including assigned lists
 type DeviceConfigResponse struct {
@@ -786,4 +746,53 @@ func (s *Server) handleDeviceListRemove(w http.ResponseWriter, r *http.Request) 
 		"status":  "success",
 		"message": "List removed from device successfully",
 	})
+}
+
+// spaHandler serves static files and falls back to index.html for client-side routing
+func (s *Server) spaHandler(webRoot fs.FS) http.HandlerFunc {
+	fileServer := http.FileServer(http.FS(webRoot))
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+
+		// Normalize path for file checking
+		filePath := strings.TrimPrefix(path, "/")
+		if filePath == "" {
+			filePath = "index.html"
+		}
+
+		// Check if file exists
+		f, err := webRoot.Open(filePath)
+		if err == nil {
+			// File exists - serve it normally
+			f.Close()
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+
+		// File doesn't exist - check if it's an API route or WebSocket
+		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/ws") || strings.HasPrefix(path, "/metrics") {
+			// Let it 404 (API route doesn't exist)
+			http.NotFound(w, r)
+			return
+		}
+
+		// Not a file and not an API route - serve index.html for SPA routing
+		// Read and serve index.html directly
+		indexFile, err := webRoot.Open("index.html")
+		if err != nil {
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		defer indexFile.Close()
+
+		stat, err := indexFile.Stat()
+		if err != nil {
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		http.ServeContent(w, r, "index.html", stat.ModTime(), indexFile.(io.ReadSeeker))
+	}
 }

@@ -207,6 +207,15 @@ class DeviceManager {
             configureBtn.disabled = true;
         }
 
+        // Add click handler to navigate to device detail page
+        cardEl.addEventListener('click', (e) => {
+            // Don't navigate if clicking buttons
+            if (e.target.tagName === 'BUTTON') {
+                return;
+            }
+            router.navigate(`/devices/${device.id}`);
+        });
+
         return card;
     }
 

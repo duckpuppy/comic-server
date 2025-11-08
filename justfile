@@ -10,6 +10,12 @@ build:
 build-testclient:
     go build -o testclient ./cmd/testclient
 
+# Build for Windows (useful when developing in WSL2)
+build-windows:
+    GOOS=windows GOARCH=amd64 go build -o comic-server.exe
+    @echo "Windows binary created: comic-server.exe"
+    @echo "Run on Windows: .\\comic-server.exe server --library path\\to\\ComicDb.xml"
+
 # Build for multiple platforms
 build-all:
     GOOS=linux GOARCH=amd64 go build -o comic-server-linux-amd64
@@ -19,7 +25,7 @@ build-all:
 
 # Clean build artifacts
 clean:
-    rm -f comic-server comic-server-* testclient testclient-*
+    rm -f comic-server comic-server-* comic-server.exe testclient testclient-*
 
 # Run all tests
 test:

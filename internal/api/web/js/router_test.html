@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Router Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        nav {
+            background: #f3f4f6;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 2rem;
+        }
+        nav a {
+            margin-right: 1rem;
+            color: #2563eb;
+            text-decoration: none;
+        }
+        nav a:hover {
+            text-decoration: underline;
+        }
+        #app {
+            padding: 2rem;
+            background: #fff;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.5rem;
+            min-height: 200px;
+        }
+        .error-page {
+            text-align: center;
+            padding: 2rem;
+        }
+        .error-page h1 {
+            color: #dc2626;
+        }
+        .test-section {
+            margin-top: 2rem;
+            padding: 1rem;
+            background: #fef3c7;
+            border-radius: 0.5rem;
+        }
+        .test-section h3 {
+            margin-top: 0;
+        }
+        .test-list {
+            list-style: none;
+            padding: 0;
+        }
+        .test-list li {
+            margin: 0.5rem 0;
+            padding: 0.5rem;
+            background: white;
+            border-radius: 0.25rem;
+        }
+        .test-list li::before {
+            content: '✓ ';
+            color: #10b981;
+            font-weight: bold;
+        }
+    </style>
+    <script src="router.js"></script>
+</head>
+<body>
+    <h1>Router Test Page</h1>
+
+    <nav>
+        <a href="#" onclick="router.navigate('/'); return false;">Home</a>
+        <a href="#" onclick="router.navigate('/lists'); return false;">Lists</a>
+        <a href="#" onclick="router.navigate('/lists/123'); return false;">List 123</a>
+        <a href="#" onclick="router.navigate('/devices'); return false;">Devices</a>
+        <a href="#" onclick="router.navigate('/devices/abc'); return false;">Device ABC</a>
+        <a href="#" onclick="router.navigate('/nonexistent'); return false;">404 Test</a>
+    </nav>
+
+    <div id="app"></div>
+
+    <div class="test-section">
+        <h3>Manual Test Checklist</h3>
+        <ul class="test-list">
+            <li>Click each navigation link and verify content changes</li>
+            <li>Verify browser URL updates correctly</li>
+            <li>Test back button - should navigate to previous page</li>
+            <li>Test forward button - should navigate to next page</li>
+            <li>Test 404 page - click "404 Test" link</li>
+            <li>Refresh page - should maintain current route</li>
+            <li>Verify route params are extracted correctly (check console)</li>
+        </ul>
+    </div>
+
+    <script>
+        router.register('/', (params) => {
+            console.log('Route: /', params);
+            document.getElementById('app').innerHTML = '<h1>Dashboard</h1><p>Welcome to the dashboard page.</p>';
+        });
+
+        router.register('/lists', (params) => {
+            console.log('Route: /lists', params);
+            document.getElementById('app').innerHTML = '<h1>Lists Browser</h1><p>Browse all smart lists here.</p>';
+        });
+
+        router.register('/lists/:listId', (params) => {
+            console.log('Route: /lists/:listId', params);
+            document.getElementById('app').innerHTML = `
+                <h1>List Detail: ${params.listId}</h1>
+                <p>Viewing details for list ID: <strong>${params.listId}</strong></p>
+                <p>Check console to verify params object contains: { listId: "${params.listId}" }</p>
+            `;
+        });
+
+        router.register('/devices', (params) => {
+            console.log('Route: /devices', params);
+            document.getElementById('app').innerHTML = '<h1>Devices</h1><p>Browse all devices here.</p>';
+        });
+
+        router.register('/devices/:deviceId', (params) => {
+            console.log('Route: /devices/:deviceId', params);
+            document.getElementById('app').innerHTML = `
+                <h1>Device Detail: ${params.deviceId}</h1>
+                <p>Viewing details for device ID: <strong>${params.deviceId}</strong></p>
+                <p>Check console to verify params object contains: { deviceId: "${params.deviceId}" }</p>
+            `;
+        });
+
+        // Handle initial route
+        router.handleRoute();
+    </script>
+</body>
+</html>

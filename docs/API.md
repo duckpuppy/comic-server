@@ -330,6 +330,330 @@ curl http://localhost:7620/api/devices | jq '.devices[] | {name, ip, edition, is
 
 ---
 
+### GET /api/devices/:deviceId
+
+Get detailed information about a specific device.
+
+**Path Parameters:**
+- `deviceId` (string, required) - Device identifier
+
+**Response:**
+```json
+{
+  "id": "SM-T970",
+  "ip": "192.168.0.100",
+  "name": "Samsung Galaxy Tab",
+  "model": "SM-T970",
+  "manufacturer": "Samsung",
+  "edition": "Android Full",
+  "last_seen": "2025-01-15T14:30:00Z",
+  "friendly_name": "My Tablet",
+  "lists": [
+    {
+      "list_id": "list-guid-123",
+      "list_name": "Currently Reading",
+      "enabled": true,
+      "book_count": 45
+    }
+  ],
+  "is_syncing": false
+}
+```
+
+**Fields:**
+- `id` (string) - Device identifier
+- `ip` (string) - Device IP address (if online)
+- `name` (string) - Device name
+- `model` (string) - Device model
+- `manufacturer` (string) - Device manufacturer
+- `edition` (string) - ComicRack edition
+- `last_seen` (string) - Last discovery time (RFC3339)
+- `friendly_name` (string) - User-configured friendly name
+- `lists` (array) - Assigned smart lists
+  - `list_id` (string) - Smart list identifier
+  - `list_name` (string) - List display name
+  - `enabled` (boolean) - Whether syncing is enabled
+  - `book_count` (integer) - Number of comics in list
+- `is_syncing` (boolean) - Whether device is currently syncing
+
+**Status Codes:**
+- `200 OK` - Success
+- `404 Not Found` - Device not found
+
+**Example:**
+```bash
+curl http://localhost:7620/api/devices/SM-T970
+```
+
+**Notes:**
+- Returns data for offline devices if they exist in config
+- Book counts are cached for 15 minutes
+
+---
+
+### GET /api/devices/:deviceId/sync-history
+
+Get paginated sync history for a specific device.
+
+**Path Parameters:**
+- `deviceId` (string, required) - Device identifier
+
+**Query Parameters:**
+- `limit` (integer, optional) - Number of entries to return (default: 10, max: 50)
+- `offset` (integer, optional) - Pagination offset (default: 0)
+
+**Response:**
+```json
+{
+  "history": [
+    {
+      "device_id": "SM-T970",
+      "device_name": "Samsung Galaxy Tab",
+      "start_time": "2025-01-15T14:30:00Z",
+      "end_time": "2025-01-15T14:35:00Z",
+      "status": "completed",
+      "files_added": 10,
+      "files_updated": 5,
+      "files_deleted": 2
+    }
+  ],
+  "total": 25,
+  "limit": 10,
+  "offset": 0,
+  "has_more": true,
+  "next_offset": 10
+}
+```
+
+**Fields:**
+- `history` (array) - Array of sync sessions
+  - `device_id` (string) - Device identifier
+  - `device_name` (string) - Device name at time of sync
+  - `start_time` (string) - Sync start time (RFC3339)
+  - `end_time` (string) - Sync end time (RFC3339)
+  - `status` (string) - Sync status: "completed", "failed", "aborted"
+  - `files_added` (integer) - Number of files added
+  - `files_updated` (integer) - Number of files updated
+  - `files_deleted` (integer) - Number of files deleted
+- `total` (integer) - Total number of history entries for this device
+- `limit` (integer) - Number of entries returned
+- `offset` (integer) - Pagination offset
+- `has_more` (boolean) - Whether more entries exist
+- `next_offset` (integer, optional) - Offset for next page
+
+**Status Codes:**
+- `200 OK` - Success (empty array if no history)
+- `400 Bad Request` - Invalid pagination parameters
+
+**Example:**
+```bash
+# Get first page
+curl http://localhost:7620/api/devices/SM-T970/sync-history?limit=10&offset=0
+
+# Get second page
+curl http://localhost:7620/api/devices/SM-T970/sync-history?limit=10&offset=10
+```
+
+**Notes:**
+- Maximum limit is 50 entries per request
+- Most recent syncs returned first
+- Returns empty array for devices with no sync history
+
+---
+
+### GET /api/library/lists
+
+Get all smart lists from the ComicRack library with cached book counts.
+
+**Response:**
+```json
+{
+  "lists": [
+    {
+      "id": "list-guid-123",
+      "name": "Currently Reading",
+      "type": "ComicSmartListItem",
+      "matcher_mode": "And",
+      "book_count": 2847,
+      "matcher_count": 3
+    }
+  ],
+  "total": 47
+}
+```
+
+**Fields:**
+- `lists` (array) - Array of smart list summaries
+  - `id` (string) - Unique list identifier (GUID)
+  - `name` (string) - Display name of the list
+  - `type` (string) - List type (always "ComicSmartListItem" for smart lists)
+  - `matcher_mode` (string) - Matching logic ("And" or "Or")
+  - `book_count` (integer) - Number of comics matching this list (cached)
+  - `matcher_count` (integer) - Number of filter rules in this list
+- `total` (integer) - Total number of smart lists
+
+**Status Codes:**
+- `200 OK` - Success
+- `503 Service Unavailable` - Library not loaded
+
+**Example:**
+```bash
+curl http://localhost:7620/api/library/lists
+```
+
+**Notes:**
+- Book counts are cached for 15 minutes for performance
+- Only smart lists are returned (regular lists are excluded)
+
+---
+
+### GET /api/library/lists/:listId
+
+Get detailed information about a specific smart list.
+
+**Path Parameters:**
+- `listId` (string, required) - List identifier (GUID)
+
+**Response:**
+```json
+{
+  "id": "list-guid-123",
+  "name": "Currently Reading",
+  "type": "ComicSmartListItem",
+  "matcher_mode": "And",
+  "matcher_mode_formatted": "Match ALL (AND)",
+  "book_count": 2847,
+  "matchers": [
+    "Series contains 'Batman'",
+    "Year is after 2020",
+    "NOT Publisher equals 'DC'"
+  ]
+}
+```
+
+**Fields:**
+- `id` (string) - List identifier
+- `name` (string) - Display name
+- `type` (string) - List type
+- `matcher_mode` (string) - Raw matching logic
+- `matcher_mode_formatted` (string) - Human-readable matching logic
+- `book_count` (integer) - Number of matching comics (cached)
+- `matchers` (array) - Array of human-readable filter rules
+
+**Status Codes:**
+- `200 OK` - Success
+- `404 Not Found` - List does not exist
+- `503 Service Unavailable` - Library not loaded
+
+**Example:**
+```bash
+curl http://localhost:7620/api/library/lists/list-guid-123
+```
+
+---
+
+### GET /api/library/lists/:listId/preview
+
+Get a paginated preview of comics matching a specific smart list.
+
+**Path Parameters:**
+- `listId` (string, required) - List identifier (GUID)
+
+**Query Parameters:**
+- `limit` (integer, optional) - Number of comics to return (default: 20, max: 100)
+- `offset` (integer, optional) - Pagination offset (default: 0)
+
+**Response:**
+```json
+{
+  "comics": [
+    {
+      "guid": "comic-guid-1",
+      "series": "Batman",
+      "number": "45",
+      "title": "The Dark Knight Returns",
+      "volume": 1,
+      "publisher": "DC",
+      "year": 2021
+    }
+  ],
+  "total": 2847,
+  "limit": 20,
+  "offset": 0
+}
+```
+
+**Fields:**
+- `comics` (array) - Array of comic previews
+  - `guid` (string) - Comic identifier
+  - `series` (string) - Series name
+  - `number` (string) - Issue number
+  - `title` (string) - Issue title
+  - `volume` (integer) - Volume number
+  - `publisher` (string) - Publisher name
+  - `year` (integer) - Publication year
+- `total` (integer) - Total number of comics matching the list
+- `limit` (integer) - Number of comics returned in this response
+- `offset` (integer) - Pagination offset used
+
+**Status Codes:**
+- `200 OK` - Success
+- `404 Not Found` - List does not exist
+- `503 Service Unavailable` - Library not loaded
+
+**Example:**
+```bash
+# Get first 20 comics
+curl http://localhost:7620/api/library/lists/list-guid-123/preview?limit=20&offset=0
+
+# Get next 20 comics
+curl http://localhost:7620/api/library/lists/list-guid-123/preview?limit=20&offset=20
+```
+
+**Notes:**
+- Maximum limit is 100 comics per request
+- Use pagination for large lists to avoid performance issues
+
+---
+
+### GET /api/library/lists/:listId/devices
+
+Get devices that are assigned to a specific smart list.
+
+**Path Parameters:**
+- `listId` (string, required) - List identifier (GUID)
+
+**Response:**
+```json
+{
+  "devices": [
+    {
+      "device_id": "device-guid-1",
+      "friendly_name": "Samsung Galaxy Tab",
+      "enabled": true
+    }
+  ],
+  "total": 2
+}
+```
+
+**Fields:**
+- `devices` (array) - Array of device assignments
+  - `device_id` (string) - Device identifier
+  - `friendly_name` (string) - Device display name
+  - `enabled` (boolean) - Whether syncing is enabled for this list on this device
+- `total` (integer) - Total number of assigned devices
+
+**Status Codes:**
+- `200 OK` - Success (empty array if no devices assigned)
+
+**Example:**
+```bash
+curl http://localhost:7620/api/library/lists/list-guid-123/devices
+```
+
+---
+
 ### GET /api/stats
 
 Get server statistics and configuration.

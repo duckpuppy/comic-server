@@ -1,0 +1,384 @@
+/* Devices Browser Page */
+.devices-browser-page {
+    padding: 1rem;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.devices-header {
+    margin-bottom: 2rem;
+}
+
+.devices-header h1 {
+    margin: 0 0 1rem 0;
+    color: var(--text-primary);
+}
+
+.devices-search input {
+    width: 100%;
+    max-width: 400px;
+    padding: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 1rem;
+}
+
+.devices-content {
+    display: grid;
+    grid-template-columns: 250px 1fr;
+    gap: 2rem;
+}
+
+.devices-filters {
+    background: var(--card-bg);
+    padding: 1.5rem;
+    border-radius: 8px;
+    height: fit-content;
+    position: sticky;
+    top: 1rem;
+}
+
+.devices-filters h3 {
+    margin: 0 0 1rem 0;
+    color: var(--text-primary);
+}
+
+.filter-group {
+    margin-bottom: 1.5rem;
+}
+
+.filter-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.filter-group select {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: white;
+}
+
+.devices-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.5rem;
+}
+
+.device-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1.5rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.device-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    border-color: var(--primary-color);
+}
+
+.device-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.device-card-header h3 {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: 1.1rem;
+}
+
+.device-status-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.device-status-badge.status-syncing {
+    background: var(--status-progress);
+    color: white;
+}
+
+.device-status-badge.status-online {
+    background: var(--status-success);
+    color: white;
+}
+
+.device-status-badge.status-idle {
+    background: var(--status-warning);
+    color: white;
+}
+
+.device-status-badge.status-offline {
+    background: var(--status-error);
+    color: white;
+}
+
+.device-card-body {
+    margin-bottom: 1rem;
+}
+
+.device-info-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+    font-size: 0.9rem;
+}
+
+.device-label {
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.device-value {
+    color: var(--text-primary);
+}
+
+.device-card-footer {
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.view-device-btn {
+    width: 100%;
+    padding: 0.75rem;
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background-color 0.2s;
+}
+
+.view-device-btn:hover {
+    background: var(--primary-hover);
+}
+
+/* Sync History Browser Page */
+.sync-history-page {
+    padding: 1rem;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.sync-history-header {
+    margin-bottom: 2rem;
+}
+
+.sync-history-header h1 {
+    margin: 0 0 0.5rem 0;
+    color: var(--text-primary);
+}
+
+.sync-history-subtitle {
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+}
+
+.sync-history-content {
+    display: grid;
+    grid-template-columns: 250px 1fr;
+    gap: 2rem;
+}
+
+.sync-history-filters {
+    background: var(--card-bg);
+    padding: 1.5rem;
+    border-radius: 8px;
+    height: fit-content;
+    position: sticky;
+    top: 1rem;
+}
+
+.sync-history-filters h3 {
+    margin: 0 0 1rem 0;
+    color: var(--text-primary);
+}
+
+.sync-history-list {
+    min-height: 400px;
+}
+
+.sync-items {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.sync-item {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1.5rem;
+}
+
+.sync-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.sync-device-name strong {
+    color: var(--text-primary);
+    margin-right: 0.75rem;
+}
+
+.sync-status-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.sync-status-completed {
+    border-left: 4px solid var(--status-success);
+}
+
+.sync-status-failed {
+    border-left: 4px solid var(--status-error);
+}
+
+.sync-status-aborted {
+    border-left: 4px solid var(--status-warning);
+}
+
+.sync-status-badge {
+    background: var(--status-success);
+    color: white;
+}
+
+.sync-status-failed .sync-status-badge {
+    background: var(--status-error);
+}
+
+.sync-status-aborted .sync-status-badge {
+    background: var(--status-warning);
+}
+
+.sync-timestamp {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.sync-item-body {
+}
+
+.sync-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.sync-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.sync-stat-label {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+.sync-stat-value {
+    color: var(--text-primary);
+    font-weight: 600;
+    font-size: 1.1rem;
+}
+
+.sync-error {
+    background: var(--status-error-bg, #fee);
+    border: 1px solid var(--status-error);
+    border-radius: 4px;
+    padding: 0.75rem;
+    color: var(--status-error);
+    font-size: 0.9rem;
+}
+
+.pagination {
+    display: flex;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-top: 2rem;
+    padding: 1rem 0;
+}
+
+.pagination-btn {
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--border-color);
+    background: white;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.pagination-btn:hover:not(:disabled) {
+    background: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+}
+
+.pagination-btn.active {
+    background: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+}
+
+.pagination-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: var(--text-secondary);
+}
+
+.empty-state p {
+    margin: 0.5rem 0;
+}
+
+.empty-hint {
+    font-size: 0.9rem;
+    color: var(--text-tertiary, #999);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .devices-content,
+    .sync-history-content {
+        grid-template-columns: 1fr;
+    }
+
+    .devices-filters,
+    .sync-history-filters {
+        position: static;
+    }
+
+    .devices-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .sync-stats {
+        grid-template-columns: 1fr 1fr;
+    }
+}
