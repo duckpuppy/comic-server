@@ -6,9 +6,6 @@ class Router {
 
         // Handle back/forward navigation
         window.addEventListener('popstate', () => this.handleRoute());
-
-        // Handle initial load
-        document.addEventListener('DOMContentLoaded', () => this.handleRoute());
     }
 
     /**

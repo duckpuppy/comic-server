@@ -167,4 +167,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     console.log('Dashboard initialized with routing');
+
+    // Handle initial route after all routes are registered
+    router.handleRoute();
 });
