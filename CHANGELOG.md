@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.8.0](https://github.com/duckpuppy/comic-server/compare/v0.7.1...v0.8.0) (2025-11-08)
+
+
+### Features
+
+* add automated release process with GoReleaser and Release Please ([a3a0a5a](https://github.com/duckpuppy/comic-server/commit/a3a0a5a33091d66f95f313eea8421c83a7209285))
+* add device registration persistence to config files ([fa5990f](https://github.com/duckpuppy/comic-server/commit/fa5990fb1ba2dbc1e9e28f7a4350e1bb76dbc45c))
+* add smart list management API endpoints ([60bc978](https://github.com/duckpuppy/comic-server/commit/60bc978393f41e65a1e7c7c128248eb887b469d9))
+* add smart list selection UI to Web dashboard ([15fdd7f](https://github.com/duckpuppy/comic-server/commit/15fdd7fd30fe45a4f5428b8ef48fddb0d0aeed13))
+* implement device registration/unregistration in Web UI ([90c465d](https://github.com/duckpuppy/comic-server/commit/90c465ddd452d6f6312f4aa0237f9f82b8441539))
+* Web UI redesign with dedicated pages (v0.8) ([#31](https://github.com/duckpuppy/comic-server/issues/31)) ([19284fe](https://github.com/duckpuppy/comic-server/commit/19284fe5745ca636a23f7fd2764487911f0e97e4))
+
+
+### Documentation
+
+* add comprehensive ARCHITECTURE.md documentation ([5265375](https://github.com/duckpuppy/comic-server/commit/5265375fae8ac47213d8b69d1e3eefa3c7a9fc81))
+
 ## [0.7.1](https://github.com/duckpuppy/comic-server/compare/comic-server-v0.7.0...comic-server-v0.7.1) (2025-10-31)
 
 
