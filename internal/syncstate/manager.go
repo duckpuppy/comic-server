@@ -266,6 +266,15 @@ type HistoryPage struct {
 	NextOffset *int         `json:"next_offset"` // Offset for next page (nil if no more)
 }
 
+// PaginationMetadata contains pagination information
+type PaginationMetadata struct {
+	Total      int  `json:"total"`
+	Offset     int  `json:"offset"`
+	Limit      int  `json:"limit"`
+	HasMore    bool `json:"has_more"`
+	NextOffset *int `json:"next_offset,omitempty"`
+}
+
 // GetHistoryPaginated returns a page of sync history with pagination support.
 // History is returned in chronological order (oldest first) within each page.
 // offset=0 returns the most recent entries.
@@ -332,6 +341,59 @@ func (m *Manager) GetHistoryPaginated(limit, offset int) *HistoryPage {
 		HasMore:    hasMore,
 		NextOffset: nextOffset,
 	}
+}
+
+// GetHistoryForDevice returns sync history filtered by device ID with pagination
+func (m *Manager) GetHistoryForDevice(deviceID string, limit, offset int) ([]*SyncState, PaginationMetadata) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	// Filter history by device ID
+	var filtered []*SyncState
+	for _, state := range m.history {
+		if state.DeviceID == deviceID {
+			filtered = append(filtered, state)
+		}
+	}
+
+	total := len(filtered)
+
+	// Apply pagination
+	start := offset
+	if start > total {
+		start = total
+	}
+
+	end := start + limit
+	if end > total {
+		end = total
+	}
+
+	// Extract page and create copies
+	pageSize := end - start
+	result := make([]*SyncState, pageSize)
+	for i := 0; i < pageSize; i++ {
+		stateCopy := *filtered[start+i]
+		result[i] = &stateCopy
+	}
+
+	// Build metadata
+	hasMore := end < total
+	var nextOffset *int
+	if hasMore {
+		next := end
+		nextOffset = &next
+	}
+
+	metadata := PaginationMetadata{
+		Total:      total,
+		Offset:     offset,
+		Limit:      limit,
+		HasMore:    hasMore,
+		NextOffset: nextOffset,
+	}
+
+	return result, metadata
 }
 
 // IsDeviceSyncing returns true if the device is currently syncing

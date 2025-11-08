@@ -463,3 +463,115 @@ func TestGetHistoryPaginatedLimitValidation(t *testing.T) {
 		t.Errorf("expected offset 0, got %d", page.Offset)
 	}
 }
+
+func TestGetHistoryForDevice(t *testing.T) {
+	m := NewManager(100)
+
+	// Add history for multiple devices
+	m.StartSync("device-1", "192.168.1.100", "Tablet 1")
+	m.CompleteSync("device-1", 10, 5, 2, 0)
+
+	time.Sleep(1 * time.Millisecond) // Ensure different timestamps
+
+	m.StartSync("device-2", "192.168.1.101", "Tablet 2")
+	m.CompleteSync("device-2", 8, 3, 1, 0)
+
+	time.Sleep(1 * time.Millisecond)
+
+	m.StartSync("device-1", "192.168.1.100", "Tablet 1")
+	m.CompleteSync("device-1", 5, 2, 1, 0)
+
+	// Get history for device-1
+	history, metadata := m.GetHistoryForDevice("device-1", 10, 0)
+
+	if len(history) != 2 {
+		t.Errorf("Expected 2 sessions for device-1, got %d", len(history))
+	}
+
+	if metadata.Total != 2 {
+		t.Errorf("Expected total 2, got %d", metadata.Total)
+	}
+
+	if metadata.HasMore {
+		t.Errorf("Expected HasMore false, got true")
+	}
+
+	// Verify most recent first
+	if history[0].BooksAdded < history[1].BooksAdded {
+		t.Error("Expected most recent session first")
+	}
+}
+
+func TestGetHistoryForDevice_Pagination(t *testing.T) {
+	m := NewManager(100)
+
+	// Add 5 sessions for same device
+	for i := 0; i < 5; i++ {
+		m.StartSync("device-1", "192.168.1.100", "Tablet")
+		m.CompleteSync("device-1", i+1, i+1, i+1, 0)
+		time.Sleep(1 * time.Millisecond) // Ensure different timestamps
+	}
+
+	// Get first page (limit 2)
+	history, metadata := m.GetHistoryForDevice("device-1", 2, 0)
+
+	if len(history) != 2 {
+		t.Errorf("Expected 2 sessions, got %d", len(history))
+	}
+
+	if metadata.Total != 5 {
+		t.Errorf("Expected total 5, got %d", metadata.Total)
+	}
+
+	if !metadata.HasMore {
+		t.Error("Expected HasMore true")
+	}
+
+	if metadata.NextOffset == nil || *metadata.NextOffset != 2 {
+		t.Errorf("Expected NextOffset 2, got %v", metadata.NextOffset)
+	}
+
+	// Get second page
+	history2, metadata2 := m.GetHistoryForDevice("device-1", 2, 2)
+
+	if len(history2) != 2 {
+		t.Errorf("Expected 2 sessions on page 2, got %d", len(history2))
+	}
+
+	if !metadata2.HasMore {
+		t.Error("Expected HasMore true on page 2")
+	}
+
+	// Get last page
+	history3, metadata3 := m.GetHistoryForDevice("device-1", 2, 4)
+
+	if len(history3) != 1 {
+		t.Errorf("Expected 1 session on last page, got %d", len(history3))
+	}
+
+	if metadata3.HasMore {
+		t.Error("Expected HasMore false on last page")
+	}
+
+	if metadata3.NextOffset != nil {
+		t.Error("Expected NextOffset nil on last page")
+	}
+}
+
+func TestGetHistoryForDevice_NoHistory(t *testing.T) {
+	m := NewManager(100)
+
+	history, metadata := m.GetHistoryForDevice("nonexistent", 10, 0)
+
+	if len(history) != 0 {
+		t.Errorf("Expected empty history, got %d sessions", len(history))
+	}
+
+	if metadata.Total != 0 {
+		t.Errorf("Expected total 0, got %d", metadata.Total)
+	}
+
+	if metadata.HasMore {
+		t.Error("Expected HasMore false")
+	}
+}

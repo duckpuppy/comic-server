@@ -64,3 +64,6 @@ temp/
 test-storage/
 server.log
 bin/
+
+# Git worktrees
+.worktrees/
