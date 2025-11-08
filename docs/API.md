@@ -330,6 +330,137 @@ curl http://localhost:7620/api/devices | jq '.devices[] | {name, ip, edition, is
 
 ---
 
+### GET /api/devices/:deviceId
+
+Get detailed information about a specific device.
+
+**Path Parameters:**
+- `deviceId` (string, required) - Device identifier
+
+**Response:**
+```json
+{
+  "id": "SM-T970",
+  "ip": "192.168.0.100",
+  "name": "Samsung Galaxy Tab",
+  "model": "SM-T970",
+  "manufacturer": "Samsung",
+  "edition": "Android Full",
+  "last_seen": "2025-01-15T14:30:00Z",
+  "friendly_name": "My Tablet",
+  "lists": [
+    {
+      "list_id": "list-guid-123",
+      "list_name": "Currently Reading",
+      "enabled": true,
+      "book_count": 45
+    }
+  ],
+  "is_syncing": false
+}
+```
+
+**Fields:**
+- `id` (string) - Device identifier
+- `ip` (string) - Device IP address (if online)
+- `name` (string) - Device name
+- `model` (string) - Device model
+- `manufacturer` (string) - Device manufacturer
+- `edition` (string) - ComicRack edition
+- `last_seen` (string) - Last discovery time (RFC3339)
+- `friendly_name` (string) - User-configured friendly name
+- `lists` (array) - Assigned smart lists
+  - `list_id` (string) - Smart list identifier
+  - `list_name` (string) - List display name
+  - `enabled` (boolean) - Whether syncing is enabled
+  - `book_count` (integer) - Number of comics in list
+- `is_syncing` (boolean) - Whether device is currently syncing
+
+**Status Codes:**
+- `200 OK` - Success
+- `404 Not Found` - Device not found
+
+**Example:**
+```bash
+curl http://localhost:7620/api/devices/SM-T970
+```
+
+**Notes:**
+- Returns data for offline devices if they exist in config
+- Book counts are cached for 15 minutes
+
+---
+
+### GET /api/devices/:deviceId/sync-history
+
+Get paginated sync history for a specific device.
+
+**Path Parameters:**
+- `deviceId` (string, required) - Device identifier
+
+**Query Parameters:**
+- `limit` (integer, optional) - Number of entries to return (default: 10, max: 50)
+- `offset` (integer, optional) - Pagination offset (default: 0)
+
+**Response:**
+```json
+{
+  "history": [
+    {
+      "device_id": "SM-T970",
+      "device_name": "Samsung Galaxy Tab",
+      "start_time": "2025-01-15T14:30:00Z",
+      "end_time": "2025-01-15T14:35:00Z",
+      "status": "completed",
+      "files_added": 10,
+      "files_updated": 5,
+      "files_deleted": 2
+    }
+  ],
+  "total": 25,
+  "limit": 10,
+  "offset": 0,
+  "has_more": true,
+  "next_offset": 10
+}
+```
+
+**Fields:**
+- `history` (array) - Array of sync sessions
+  - `device_id` (string) - Device identifier
+  - `device_name` (string) - Device name at time of sync
+  - `start_time` (string) - Sync start time (RFC3339)
+  - `end_time` (string) - Sync end time (RFC3339)
+  - `status` (string) - Sync status: "completed", "failed", "aborted"
+  - `files_added` (integer) - Number of files added
+  - `files_updated` (integer) - Number of files updated
+  - `files_deleted` (integer) - Number of files deleted
+- `total` (integer) - Total number of history entries for this device
+- `limit` (integer) - Number of entries returned
+- `offset` (integer) - Pagination offset
+- `has_more` (boolean) - Whether more entries exist
+- `next_offset` (integer, optional) - Offset for next page
+
+**Status Codes:**
+- `200 OK` - Success (empty array if no history)
+- `400 Bad Request` - Invalid pagination parameters
+
+**Example:**
+```bash
+# Get first page
+curl http://localhost:7620/api/devices/SM-T970/sync-history?limit=10&offset=0
+
+# Get second page
+curl http://localhost:7620/api/devices/SM-T970/sync-history?limit=10&offset=10
+```
+
+**Notes:**
+- Maximum limit is 50 entries per request
+- Most recent syncs returned first
+- Returns empty array for devices with no sync history
+
+---
+
 ### GET /api/library/lists
 
 Get all smart lists from the ComicRack library with cached book counts.
