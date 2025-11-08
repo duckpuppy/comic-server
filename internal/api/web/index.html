@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="/css/navigation.css">
     <link rel="stylesheet" href="/css/lists.css">
     <link rel="stylesheet" href="/css/deviceDetail.css">
+    <link rel="stylesheet" href="/css/devicesBrowser.css">
 </head>
 <body>
     <div class="container">
@@ -47,35 +48,24 @@
                 </div>
             </section>
 
-            <!-- Content Area with Sidebar -->
-            <div class="content-with-sidebar">
-                <!-- Main Content Area -->
-                <section class="content-area">
-                    <!-- Active Syncs -->
-                    <div class="panel">
-                        <h2>Active Sync Operations</h2>
-                        <div id="active-syncs" class="sync-list">
-                            <p class="empty-message">No active sync operations</p>
-                        </div>
-                    </div>
-
-                    <!-- Recent Sync History -->
-                    <div class="panel">
-                        <h2>Recent Sync History</h2>
-                        <div id="sync-history" class="history-list">
-                            <p class="empty-message">No sync history</p>
-                        </div>
-                    </div>
-                </section>
-
-                <!-- Devices Sidebar -->
-                <aside class="devices-sidebar">
-                    <h2>Connected Devices</h2>
-                    <div id="devices-list" class="devices-list">
-                        <p class="empty-message">No devices discovered</p>
-                    </div>
-                </aside>
-            </div>
+            <!-- Quick Links -->
+            <section class="quick-links">
+                <a href="/lists" class="quick-link-card" data-nav="lists">
+                    <span class="quick-link-icon">📚</span>
+                    <h3>Smart Lists</h3>
+                    <p>Manage reading lists and filters</p>
+                </a>
+                <a href="/devices" class="quick-link-card" data-nav="devices">
+                    <span class="quick-link-icon">📱</span>
+                    <h3>Devices</h3>
+                    <p>View and manage connected devices</p>
+                </a>
+                <a href="/sync" class="quick-link-card" data-nav="sync">
+                    <span class="quick-link-icon">🔄</span>
+                    <h3>Sync History</h3>
+                    <p>View sync operations and status</p>
+                </a>
+            </section>
         </div>
         <!-- End Dashboard content -->
         </div>
@@ -161,7 +151,9 @@
     <script src="/js/lists.js"></script>
     <script src="/js/listsBrowser.js"></script>
     <script src="/js/listDetail.js"></script>
+    <script src="/js/devicesBrowser.js"></script>
     <script src="/js/deviceDetail.js"></script>
+    <script src="/js/syncHistoryBrowser.js"></script>
     <script src="/js/app.js"></script>
 </body>
 </html>

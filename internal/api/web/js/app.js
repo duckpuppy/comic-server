@@ -95,12 +95,23 @@ class Dashboard {
 // Global dashboard instance
 const dashboard = new Dashboard();
 
-// Global list browser instance (created on demand)
+// Global browser instances (created on demand)
 let listsBrowser = null;
+let devicesBrowser = null;
+let syncHistoryBrowser = null;
+
+// Store original dashboard HTML
+let dashboardHTML = null;
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
     console.log('Comic Server Dashboard initializing...');
+
+    // Store original dashboard content before it can be destroyed
+    const app = document.getElementById('app');
+    if (app) {
+        dashboardHTML = app.innerHTML;
+    }
 
     // Initialize navigation
     navigation.init();
@@ -111,16 +122,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // Register routes
     router.register('/', () => {
         navigation.setActive('dashboard');
-        dashboard.show();
-        // Hide lists browser if it's visible
-        if (listsBrowser) {
-            const app = document.getElementById('app');
-            const dashboardContent = document.getElementById('dashboard-content');
-            if (app && dashboardContent) {
-                app.innerHTML = '';
-                app.appendChild(dashboardContent);
-            }
+        // Restore dashboard content if it was replaced
+        const app = document.getElementById('app');
+        const dashboardContent = document.getElementById('dashboard-content');
+        if (app && !dashboardContent && dashboardHTML) {
+            app.innerHTML = dashboardHTML;
         }
+        dashboard.show();
     });
 
     router.register('/lists', async () => {
@@ -139,24 +147,22 @@ document.addEventListener('DOMContentLoaded', () => {
         await listDetail.init();
     });
 
-    router.register('/devices', () => {
+    router.register('/devices', async () => {
         navigation.setActive('devices');
-        dashboard.show();
-        // Scroll to devices section
-        const devicesSection = document.getElementById('devices-sidebar');
-        if (devicesSection) {
-            devicesSection.scrollIntoView({ behavior: 'smooth' });
+        dashboard.hide();
+        if (!devicesBrowser) {
+            devicesBrowser = new DevicesBrowser();
         }
+        await devicesBrowser.init();
     });
 
-    router.register('/sync', () => {
+    router.register('/sync', async () => {
         navigation.setActive('sync');
-        dashboard.show();
-        // Scroll to sync section
-        const syncSection = document.querySelector('.sync-history');
-        if (syncSection) {
-            syncSection.scrollIntoView({ behavior: 'smooth' });
+        dashboard.hide();
+        if (!syncHistoryBrowser) {
+            syncHistoryBrowser = new SyncHistoryBrowser();
         }
+        await syncHistoryBrowser.init();
     });
 
     router.register('/devices/:deviceId', async (params) => {

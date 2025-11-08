@@ -177,6 +177,3 @@ class ListsBrowser {
         return div.innerHTML;
     }
 }
-
-// Global instance
-let listsBrowser = null;
