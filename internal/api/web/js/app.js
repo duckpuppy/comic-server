@@ -159,5 +159,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    router.register('/devices/:deviceId', async (params) => {
+        navigation.setActive('devices');
+        dashboard.hide();
+        const deviceDetail = new DeviceDetail(params.deviceId);
+        await deviceDetail.init();
+    });
+
     console.log('Dashboard initialized with routing');
 });
