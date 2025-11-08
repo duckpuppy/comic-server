@@ -4,6 +4,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"strings"
@@ -752,16 +753,18 @@ func (s *Server) spaHandler(webRoot fs.FS) http.HandlerFunc {
 	fileServer := http.FileServer(http.FS(webRoot))
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Try to open the requested file
 		path := r.URL.Path
-		if path == "/" {
-			path = "/index.html"
+
+		// Normalize path for file checking
+		filePath := strings.TrimPrefix(path, "/")
+		if filePath == "" {
+			filePath = "index.html"
 		}
 
 		// Check if file exists
-		f, err := webRoot.Open(strings.TrimPrefix(path, "/"))
+		f, err := webRoot.Open(filePath)
 		if err == nil {
-			// File exists - serve it
+			// File exists - serve it normally
 			f.Close()
 			fileServer.ServeHTTP(w, r)
 			return
@@ -775,7 +778,21 @@ func (s *Server) spaHandler(webRoot fs.FS) http.HandlerFunc {
 		}
 
 		// Not a file and not an API route - serve index.html for SPA routing
-		r.URL.Path = "/"
-		fileServer.ServeHTTP(w, r)
+		// Read and serve index.html directly
+		indexFile, err := webRoot.Open("index.html")
+		if err != nil {
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		defer indexFile.Close()
+
+		stat, err := indexFile.Stat()
+		if err != nil {
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		http.ServeContent(w, r, "index.html", stat.ModTime(), indexFile.(io.ReadSeeker))
 	}
 }
