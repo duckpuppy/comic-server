@@ -107,12 +107,12 @@ func (s *Server) registerRoutes() {
 	// Metrics endpoint
 	s.mux.Handle("/metrics", promhttp.Handler())
 
-	// Static files (web UI)
+	// Static files (web UI) with SPA fallback
 	webRoot, err := fs.Sub(webFS, "web")
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to create web filesystem")
 	}
-	s.mux.Handle("/", http.FileServer(http.FS(webRoot)))
+	s.mux.HandleFunc("/", s.spaHandler(webRoot))
 }
 
 // Health check response
@@ -745,4 +745,37 @@ func (s *Server) handleDeviceListRemove(w http.ResponseWriter, r *http.Request) 
 		"status":  "success",
 		"message": "List removed from device successfully",
 	})
+}
+
+// spaHandler serves static files and falls back to index.html for client-side routing
+func (s *Server) spaHandler(webRoot fs.FS) http.HandlerFunc {
+	fileServer := http.FileServer(http.FS(webRoot))
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Try to open the requested file
+		path := r.URL.Path
+		if path == "/" {
+			path = "/index.html"
+		}
+
+		// Check if file exists
+		f, err := webRoot.Open(strings.TrimPrefix(path, "/"))
+		if err == nil {
+			// File exists - serve it
+			f.Close()
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+
+		// File doesn't exist - check if it's an API route or WebSocket
+		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/ws") || strings.HasPrefix(path, "/metrics") {
+			// Let it 404 (API route doesn't exist)
+			http.NotFound(w, r)
+			return
+		}
+
+		// Not a file and not an API route - serve index.html for SPA routing
+		r.URL.Path = "/"
+		fileServer.ServeHTTP(w, r)
+	}
 }
