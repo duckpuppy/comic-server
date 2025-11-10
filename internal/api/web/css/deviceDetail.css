@@ -518,3 +518,135 @@
     opacity: 0.5;
     cursor: not-allowed;
 }
+
+/* Sync Progress Panel */
+.sync-progress-panel {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.sync-progress-panel h2 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin-bottom: 1.5rem;
+    color: var(--primary-color);
+}
+
+.sync-progress-content {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.sync-progress-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.sync-current-file {
+    display: flex;
+    gap: 0.5rem;
+    align-items: baseline;
+}
+
+.sync-current-file .label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.sync-current-file .value {
+    font-size: 0.875rem;
+    color: var(--text-primary);
+    font-family: 'Monaco', 'Menlo', monospace;
+    word-break: break-all;
+}
+
+.sync-file-count {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.sync-progress-bar {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.progress-bar-container {
+    flex: 1;
+    height: 24px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    overflow: hidden;
+    position: relative;
+}
+
+.progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #3b82f6, #2563eb);
+    border-radius: 12px;
+    transition: width 0.3s ease;
+    position: relative;
+}
+
+.progress-bar-fill::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    right: 0;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.3),
+        transparent
+    );
+    animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+    0% {
+        transform: translateX(-100%);
+    }
+    100% {
+        transform: translateX(100%);
+    }
+}
+
+.progress-percentage {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    min-width: 3rem;
+    text-align: right;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .sync-progress-panel {
+        padding: 1rem;
+    }
+
+    .sync-current-file {
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .sync-progress-bar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.5rem;
+    }
+
+    .progress-percentage {
+        text-align: left;
+    }
+}

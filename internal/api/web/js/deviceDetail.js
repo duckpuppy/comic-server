@@ -8,6 +8,7 @@ class DeviceDetail {
         this.historyLimit = 10;
         this.historyTotal = 0;
         this.historyLoading = false;
+        this.syncProgress = null; // Track active sync progress
     }
 
     async init() {
@@ -15,6 +16,7 @@ class DeviceDetail {
         if (this.device) {
             this.render();
             this.attachListeners();
+            this.setupWebSocketListeners();
             await this.loadSyncHistory();
         }
     }
@@ -99,6 +101,9 @@ class DeviceDetail {
                     ${this.renderInfoCards()}
                 </div>
 
+                <!-- Current Sync Panel (shown only when syncing) -->
+                ${this.renderSyncProgress()}
+
                 <!-- Assigned Lists Panel -->
                 <div class="panel assigned-lists-panel">
                     <h2>Assigned Smart Lists</h2>
@@ -161,6 +166,42 @@ class DeviceDetail {
             <div class="info-card">
                 <div class="info-card-label">Device ID</div>
                 <div class="info-card-value device-id">${this.escapeHtml(this.device.id)}</div>
+            </div>
+        `;
+    }
+
+    renderSyncProgress() {
+        // Only show if device is currently syncing
+        if (!this.syncProgress) {
+            return '';
+        }
+
+        const progressPercent = this.syncProgress.total_files > 0
+            ? Math.round((this.syncProgress.completed_files / this.syncProgress.total_files) * 100)
+            : 0;
+
+        const currentFile = this.syncProgress.current_file || 'Preparing...';
+
+        return `
+            <div class="panel sync-progress-panel">
+                <h2>Current Sync</h2>
+                <div class="sync-progress-content">
+                    <div class="sync-progress-info">
+                        <div class="sync-current-file">
+                            <span class="label">Current file:</span>
+                            <span class="value">${this.escapeHtml(currentFile)}</span>
+                        </div>
+                        <div class="sync-file-count">
+                            ${this.syncProgress.completed_files} / ${this.syncProgress.total_files} files
+                        </div>
+                    </div>
+                    <div class="sync-progress-bar">
+                        <div class="progress-bar-container">
+                            <div class="progress-bar-fill" style="width: ${progressPercent}%"></div>
+                        </div>
+                        <div class="progress-percentage">${progressPercent}%</div>
+                    </div>
+                </div>
             </div>
         `;
     }
@@ -551,5 +592,83 @@ class DeviceDetail {
             console.error('Failed to remove list:', error);
             alert(`Failed to remove list: ${error.message}`);
         }
+    }
+
+    // WebSocket event listeners for sync progress
+    setupWebSocketListeners() {
+        if (!window.wsClient) {
+            console.warn('WebSocket client not available');
+            return;
+        }
+
+        // Listen for sync events for this device
+        window.wsClient.on('sync_started', (data) => this.handleSyncStarted(data));
+        window.wsClient.on('sync_progress', (data) => this.handleSyncProgress(data));
+        window.wsClient.on('sync_completed', (data) => this.handleSyncCompleted(data));
+        window.wsClient.on('sync_failed', (data) => this.handleSyncFailed(data));
+    }
+
+    handleSyncStarted(data) {
+        // Only update if it's for this device
+        if (data.device_id !== this.deviceId) {
+            return;
+        }
+
+        console.log('Sync started for device:', data);
+        this.syncProgress = {
+            device_id: data.device_id,
+            current_file: data.current_file || 'Preparing...',
+            completed_files: 0,
+            total_files: data.total_files || 0
+        };
+        this.render();
+        this.attachListeners();
+    }
+
+    handleSyncProgress(data) {
+        // Only update if it's for this device
+        if (data.device_id !== this.deviceId) {
+            return;
+        }
+
+        console.log('Sync progress for device:', data);
+        this.syncProgress = {
+            device_id: data.device_id,
+            current_file: data.current_file || 'Syncing...',
+            completed_files: data.completed_files || 0,
+            total_files: data.total_files || 0
+        };
+        this.render();
+        this.attachListeners();
+    }
+
+    handleSyncCompleted(data) {
+        // Only update if it's for this device
+        if (data.device_id !== this.deviceId) {
+            return;
+        }
+
+        console.log('Sync completed for device:', data);
+        this.syncProgress = null; // Clear progress panel
+        this.render();
+        this.attachListeners();
+
+        // Reload sync history to show the completed sync
+        this.loadSyncHistory();
+    }
+
+    handleSyncFailed(data) {
+        // Only update if it's for this device
+        if (data.device_id !== this.deviceId) {
+            return;
+        }
+
+        console.log('Sync failed for device:', data);
+        this.syncProgress = null; // Clear progress panel
+        this.render();
+        this.attachListeners();
+
+        // Reload sync history to show the failed sync
+        this.loadSyncHistory();
     }
 }
