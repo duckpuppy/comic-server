@@ -93,6 +93,9 @@ type ComicBook struct {
 	// Pages Information
 	Pages           []ComicPageInfo `xml:"Pages>Page,omitempty"`
 	ScanInformation string          `xml:"ScanInformation,omitempty"`
+
+	// Custom Values
+	CustomValuesStore string `xml:"CustomValuesStore,omitempty"` // Comma-separated key=value pairs
 }
 
 // Page type constants as defined by ComicRack
@@ -158,6 +161,7 @@ type ComicBookMatcher struct {
 	Not           bool                `xml:"Not,attr,omitempty"`           // Negation flag
 	MatchOperator string              `xml:"MatchOperator,attr,omitempty"` // Operator number (0-7) - only for value matchers
 	MatchValue    string              `xml:"MatchValue,omitempty"`         // Value to match (child element) - only for value matchers
+	MatchValue2   string              `xml:"MatchValue2,omitempty"`        // Second value for multi-value matchers (Tags, CustomValues)
 	MatcherMode   string              `xml:"MatcherMode,attr,omitempty"`   // "And" or "Or" - only for group matchers
 	Matchers      []ComicBookMatcher  `xml:"Matchers>ComicBookMatcher,omitempty"` // Nested matchers - only for group matchers
 }

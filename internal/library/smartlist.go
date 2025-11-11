@@ -112,6 +112,32 @@ func NewMatcherFromXML(xmlMatcher *ComicBookMatcher) (*Matcher, error) {
 	// e.g., "ComicBookDirectoryMatcher" -> "Directory"
 	fieldName := extractFieldName(xmlMatcher.Type)
 
+	// Special handling for Tags and CustomValues matchers
+	// These use MatchValue2 for additional matching logic
+	if fieldName == "Tags" && xmlMatcher.MatchValue2 != "" {
+		// Tags matcher with two values: both must be present
+		return &Matcher{
+			Type:        "TagsMulti",
+			MatchValue:  xmlMatcher.MatchValue,
+			MatchValue2: xmlMatcher.MatchValue2,
+			Not:         xmlMatcher.Not,
+			IgnoreCase:  true,
+			Operator:    OperatorContainsAll, // Must contain both tags
+		}, nil
+	}
+
+	if fieldName == "CustomValues" {
+		// CustomValues matcher: key (MatchValue) must equal value (MatchValue2)
+		return &Matcher{
+			Type:        "CustomValues",
+			MatchValue:  xmlMatcher.MatchValue,  // Key name
+			MatchValue2: xmlMatcher.MatchValue2, // Expected value
+			Not:         xmlMatcher.Not,
+			IgnoreCase:  true,
+			Operator:    OperatorEquals,
+		}, nil
+	}
+
 	m := &Matcher{
 		Type:       MatcherType(fieldName),
 		MatchValue: xmlMatcher.MatchValue,
@@ -207,6 +233,53 @@ func (m *Matcher) Match(book *ComicBook) bool {
 
 // matchInternal performs the actual matching logic
 func (m *Matcher) matchInternal(book *ComicBook) bool {
+	// Special handling for custom matcher types
+	if m.Type == "TagsMulti" {
+		// Tags matcher: both values must be present in tags
+		tags := book.Tags
+		if m.IgnoreCase {
+			tags = strings.ToLower(tags)
+			return strings.Contains(tags, strings.ToLower(m.MatchValue)) &&
+				strings.Contains(tags, strings.ToLower(m.MatchValue2))
+		}
+		return strings.Contains(tags, m.MatchValue) &&
+			strings.Contains(tags, m.MatchValue2)
+	}
+
+	if m.Type == "CustomValues" {
+		// CustomValues matcher: key=value pair must exist
+		// CustomValuesStore format: ",key1=value1,key2=value2"
+		store := book.CustomValuesStore
+		key := m.MatchValue
+		expectedValue := m.MatchValue2
+
+		// Parse the store to find the key
+		pairs := strings.Split(store, ",")
+		for _, pair := range pairs {
+			pair = strings.TrimSpace(pair)
+			if pair == "" {
+				continue
+			}
+			parts := strings.SplitN(pair, "=", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			pairKey := strings.TrimSpace(parts[0])
+			pairValue := strings.TrimSpace(parts[1])
+
+			if m.IgnoreCase {
+				if strings.EqualFold(pairKey, key) && strings.EqualFold(pairValue, expectedValue) {
+					return true
+				}
+			} else {
+				if pairKey == key && pairValue == expectedValue {
+					return true
+				}
+			}
+		}
+		return false
+	}
+
 	// Extract the value from the book based on matcher type
 	value := m.getValue(book)
 
