@@ -21,7 +21,7 @@ func TestHandleGetLists(t *testing.T) {
 				Type:        "ComicSmartListItem",
 				MatcherMode: "And",
 				Matchers: []library.ComicBookMatcher{
-					{Type: "Series", Operator: "Contains", ArgumentValue: "Batman"},
+					{Type: "Series", MatchOperator: "Contains", MatchValue: "Batman"},
 				},
 			},
 			{
@@ -89,8 +89,8 @@ func TestHandleGetListDetail(t *testing.T) {
 				Type:        "ComicSmartListItem",
 				MatcherMode: "And",
 				Matchers: []library.ComicBookMatcher{
-					{Type: "Series", Operator: "1", ArgumentValue: "Batman"},
-					{Type: "Year", Operator: "2", ArgumentValue: "2020"},
+					{Type: "Series", MatchOperator: "1", MatchValue: "Batman"},
+					{Type: "Year", MatchOperator: "2", MatchValue: "2020"},
 				},
 			},
 		},
@@ -173,7 +173,7 @@ func TestHandleGetListPreview(t *testing.T) {
 				Type:        "ComicSmartListItem",
 				MatcherMode: "And",
 				Matchers: []library.ComicBookMatcher{
-					{Type: "Series", Operator: "0", ArgumentValue: "Batman"},
+					{Type: "Series", MatchOperator: "0", MatchValue: "Batman"},
 				},
 			},
 		},

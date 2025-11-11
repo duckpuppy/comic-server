@@ -3,15 +3,32 @@ package library
 import (
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 // FormatMatcher converts a ComicBookMatcher to human-readable string
 func FormatMatcher(m ComicBookMatcher) string {
+	// Check if this is a group matcher
+	if strings.Contains(m.Type, "GroupMatcher") {
+		mode := "ALL"
+		if m.MatcherMode == "Or" {
+			mode = "ANY"
+		}
+
+		negation := ""
+		if m.Not {
+			negation = "NOT "
+		}
+
+		// Format as: "Match ALL of:" or "Match ANY of:"
+		return fmt.Sprintf("%sMatch %s of %d conditions", negation, mode, len(m.Matchers))
+	}
+
 	// Parse operator as integer
-	opInt, err := strconv.Atoi(m.Operator)
+	opInt, err := strconv.Atoi(m.MatchOperator)
 	if err != nil {
 		// If not a number, use as-is
-		return fmt.Sprintf("%s %s '%s'", m.Type, m.Operator, m.ArgumentValue)
+		return fmt.Sprintf("%s %s '%s'", m.Type, m.MatchOperator, m.MatchValue)
 	}
 
 	operator := MatchOperator(opInt)
@@ -76,9 +93,9 @@ func FormatMatcher(m ComicBookMatcher) string {
 
 	// Format the value with or without quotes depending on field type
 	if isNumericField || isDateField {
-		return fmt.Sprintf("%s %s %s", m.Type, operatorText, m.ArgumentValue)
+		return fmt.Sprintf("%s %s %s", m.Type, operatorText, m.MatchValue)
 	}
-	return fmt.Sprintf("%s %s '%s'", m.Type, operatorText, m.ArgumentValue)
+	return fmt.Sprintf("%s %s '%s'", m.Type, operatorText, m.MatchValue)
 }
 
 // FormatMatcherMode converts matcher mode to human-readable string

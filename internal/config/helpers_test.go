@@ -106,7 +106,7 @@ func TestResolveSmartList(t *testing.T) {
 				ID:   "list-guid-1",
 				Name: "Currently Reading",
 				Matchers: []library.ComicBookMatcher{
-					{Type: "PageCount", Operator: "GreaterThan", ArgumentValue: "0"},
+					{Type: "PageCount", MatchOperator: "GreaterThan", MatchValue: "0"},
 				},
 			},
 			{
@@ -114,7 +114,7 @@ func TestResolveSmartList(t *testing.T) {
 				ID:   "list-guid-2",
 				Name: "Favorites",
 				Matchers: []library.ComicBookMatcher{
-					{Type: "Rating", Operator: "GreaterThan", ArgumentValue: "4"},
+					{Type: "Rating", MatchOperator: "GreaterThan", MatchValue: "4"},
 				},
 			},
 			{
@@ -122,7 +122,7 @@ func TestResolveSmartList(t *testing.T) {
 				ID:   "list-guid-3",
 				Name: "Reading List",
 				Matchers: []library.ComicBookMatcher{
-					{Type: "Read", Operator: "Equal", ArgumentValue: "false"},
+					{Type: "Read", MatchOperator: "Equal", MatchValue: "false"},
 				},
 			},
 		},

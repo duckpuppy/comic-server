@@ -7,8 +7,8 @@ import (
 func TestFormatMatcher_SeriesContains(t *testing.T) {
 	matcher := ComicBookMatcher{
 		Type:          "Series",
-		Operator:      "1", // Contains
-		ArgumentValue: "Batman",
+		MatchOperator: "1", // Contains
+		MatchValue:    "Batman",
 	}
 
 	result := FormatMatcher(matcher)
@@ -22,8 +22,8 @@ func TestFormatMatcher_SeriesContains(t *testing.T) {
 func TestFormatMatcher_YearAfter(t *testing.T) {
 	matcher := ComicBookMatcher{
 		Type:          "Year",
-		Operator:      "1", // Greater
-		ArgumentValue: "2020",
+		MatchOperator: "1", // Greater
+		MatchValue:    "2020",
 	}
 
 	result := FormatMatcher(matcher)
@@ -37,8 +37,8 @@ func TestFormatMatcher_YearAfter(t *testing.T) {
 func TestFormatMatcher_PublisherEquals(t *testing.T) {
 	matcher := ComicBookMatcher{
 		Type:          "Publisher",
-		Operator:      "0", // Equals
-		ArgumentValue: "DC",
+		MatchOperator: "0", // Equals
+		MatchValue:    "DC",
 	}
 
 	result := FormatMatcher(matcher)
@@ -70,8 +70,8 @@ func TestFormatMatcherMode_Or(t *testing.T) {
 func TestFormatMatcher_StartsWith(t *testing.T) {
 	matcher := ComicBookMatcher{
 		Type:          "Series",
-		Operator:      "4", // StartsWith
-		ArgumentValue: "Amazing",
+		MatchOperator: "4", // StartsWith
+		MatchValue:    "Amazing",
 	}
 
 	result := FormatMatcher(matcher)
@@ -85,8 +85,8 @@ func TestFormatMatcher_StartsWith(t *testing.T) {
 func TestFormatMatcher_ContainsAll(t *testing.T) {
 	matcher := ComicBookMatcher{
 		Type:          "Tags",
-		Operator:      "3", // ContainsAll
-		ArgumentValue: "superhero,action",
+		MatchOperator: "3", // ContainsAll
+		MatchValue:    "superhero,action",
 	}
 
 	result := FormatMatcher(matcher)
@@ -100,8 +100,8 @@ func TestFormatMatcher_ContainsAll(t *testing.T) {
 func TestFormatMatcher_NumericGreater(t *testing.T) {
 	matcher := ComicBookMatcher{
 		Type:          "PageCount",
-		Operator:      "1", // Greater
-		ArgumentValue: "100",
+		MatchOperator: "1", // Greater
+		MatchValue:    "100",
 	}
 
 	result := FormatMatcher(matcher)
@@ -115,8 +115,8 @@ func TestFormatMatcher_NumericGreater(t *testing.T) {
 func TestFormatMatcher_Regex(t *testing.T) {
 	matcher := ComicBookMatcher{
 		Type:          "Title",
-		Operator:      "7", // Regex
-		ArgumentValue: "^Amazing.*",
+		MatchOperator: "7", // Regex
+		MatchValue:    "^Amazing.*",
 	}
 
 	result := FormatMatcher(matcher)

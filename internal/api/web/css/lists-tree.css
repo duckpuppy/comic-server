@@ -1,0 +1,125 @@
+/* Lists Tree Sidebar */
+.lists-page-with-tree {
+    display: flex;
+    height: calc(100vh - 120px);
+    gap: 0;
+}
+
+#lists-tree-sidebar {
+    width: 300px;
+    min-width: 250px;
+    max-width: 500px;
+    border-right: 1px solid var(--border-color);
+    overflow-y: auto;
+    background: var(--surface);
+    resize: horizontal;
+}
+
+.tree-container {
+    padding: 8px 0;
+}
+
+.tree-node {
+    display: flex;
+    align-items: center;
+    padding: 6px 8px;
+    cursor: pointer;
+    user-select: none;
+    border-radius: 4px;
+    margin: 2px 8px;
+    gap: 6px;
+    font-size: 14px;
+}
+
+.tree-node:hover {
+    background: var(--hover-bg);
+}
+
+.tree-node.selected {
+    background: var(--primary-color);
+    color: white;
+    font-weight: 500;
+}
+
+.tree-node.selected:hover {
+    background: var(--primary-hover);
+}
+
+.tree-node .expand-icon {
+    width: 16px;
+    text-align: center;
+    font-size: 10px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.tree-node .folder-icon,
+.tree-node .list-icon {
+    font-size: 16px;
+    flex-shrink: 0;
+}
+
+.tree-node .node-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tree-node .book-count {
+    background: var(--count-bg, rgba(0, 0, 0, 0.1));
+    color: var(--count-color, inherit);
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+    flex-shrink: 0;
+}
+
+.tree-node.selected .book-count {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+/* Main content area */
+.lists-main-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+}
+
+/* Tree toggle button for mobile */
+.tree-toggle-btn {
+    display: none;
+    padding: 8px 16px;
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-bottom: 16px;
+}
+
+@media (max-width: 768px) {
+    #lists-tree-sidebar {
+        position: fixed;
+        left: 0;
+        top: 60px;
+        height: calc(100vh - 60px);
+        z-index: 100;
+        transform: translateX(-100%);
+        transition: transform 0.3s ease;
+    }
+
+    #lists-tree-sidebar.mobile-open {
+        transform: translateX(0);
+    }
+
+    .tree-toggle-btn {
+        display: block;
+    }
+
+    .lists-page-with-tree {
+        flex-direction: column;
+    }
+}

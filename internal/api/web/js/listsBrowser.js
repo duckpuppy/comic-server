@@ -6,12 +6,28 @@ class ListsBrowser {
         this.searchTerm = '';
         this.sortBy = 'name';
         this.filterAssigned = 'all'; // 'all', 'assigned', 'unassigned'
+        this.tree = null;
+        this.selectedListId = null;
     }
 
     async init() {
-        await this.loadLists();
+        // Initialize tree sidebar
+        this.tree = new ListsTree();
+        this.tree.onListSelected = (listId) => this.onListSelected(listId);
+
+        await Promise.all([
+            this.loadLists(),
+            this.tree.init()
+        ]);
+
         this.render();
         this.attachListeners();
+    }
+
+    onListSelected(listId) {
+        this.selectedListId = listId;
+        // Navigate to list detail
+        router.navigate(`/lists/${listId}`);
     }
 
     async loadLists() {
@@ -60,22 +76,23 @@ class ListsBrowser {
     render() {
         const app = document.getElementById('app');
         app.innerHTML = `
-            <div class="lists-page">
-                <div class="lists-header">
-                    <h1>Smart Lists</h1>
-                    <div class="lists-search">
-                        <input
-                            type="text"
-                            id="lists-search-input"
-                            placeholder="Search lists..."
-                            value="${this.searchTerm}"
-                        >
-                    </div>
-                </div>
+            <div class="lists-page-with-tree">
+                <aside id="lists-tree-sidebar"></aside>
 
-                <div class="lists-content">
-                    <aside class="lists-filters">
-                        <h3>Filters</h3>
+                <main class="lists-main-content">
+                    <div class="lists-header">
+                        <h1>Smart Lists</h1>
+                        <div class="lists-search">
+                            <input
+                                type="text"
+                                id="lists-search-input"
+                                placeholder="Search lists..."
+                                value="${this.searchTerm}"
+                            >
+                        </div>
+                    </div>
+
+                    <div class="lists-controls" style="margin: 16px 0; display: flex; gap: 16px; align-items: center;">
                         <div class="filter-group">
                             <label>Sort by:</label>
                             <select id="lists-sort">
@@ -84,17 +101,22 @@ class ListsBrowser {
                                 <option value="count">Book Count</option>
                             </select>
                         </div>
-                    </aside>
+                    </div>
 
-                    <main class="lists-grid">
+                    <div class="lists-grid">
                         ${this.renderListCards()}
-                    </main>
-                </div>
+                    </div>
+                </main>
             </div>
         `;
 
         // Update navigation badge
         navigation.updateBadge('lists', this.lists.length);
+
+        // Render tree after DOM is ready
+        if (this.tree) {
+            setTimeout(() => this.tree.render(), 0);
+        }
     }
 
     renderListCards() {
