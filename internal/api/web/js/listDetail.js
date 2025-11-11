@@ -1,6 +1,6 @@
 // List Detail Page
 class ListDetail {
-    constructor(listId) {
+    constructor(listId, tree) {
         this.listId = listId;
         this.list = null;
         this.devices = [];
@@ -8,23 +8,22 @@ class ListDetail {
         this.previewOffset = 0;
         this.previewLimit = 20;
         this.previewTotal = 0;
-        this.tree = null;
+        this.tree = tree; // Use provided tree instance
     }
 
     async init() {
-        // Initialize tree sidebar
-        this.tree = new ListsTree();
-        this.tree.onListSelected = (listId) => this.onListSelected(listId);
+        // Set up tree callback and selection
+        if (this.tree) {
+            this.tree.onListSelected = (listId) => this.onListSelected(listId);
+            // Select current list in tree
+            this.tree.selectedListId = this.listId;
+        }
 
         await Promise.all([
             this.loadListDetail(),
             this.loadDevices(),
-            this.loadPreview(),
-            this.tree.init()
+            this.loadPreview()
         ]);
-
-        // Select current list in tree
-        this.tree.selectedListId = this.listId;
 
         this.render();
         this.attachListeners();

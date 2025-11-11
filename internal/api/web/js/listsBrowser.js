@@ -1,24 +1,24 @@
 // Smart Lists Browser
 class ListsBrowser {
-    constructor() {
+    constructor(tree) {
         this.lists = [];
         this.filteredLists = [];
         this.searchTerm = '';
         this.sortBy = 'name';
         this.filterAssigned = 'all'; // 'all', 'assigned', 'unassigned'
-        this.tree = null;
+        this.tree = tree; // Use provided tree instance
         this.selectedListId = null;
     }
 
     async init() {
-        // Initialize tree sidebar
-        this.tree = new ListsTree();
-        this.tree.onListSelected = (listId) => this.onListSelected(listId);
+        // Set up tree callback
+        if (this.tree) {
+            this.tree.onListSelected = (listId) => this.onListSelected(listId);
+            // Clear selection when returning to browser view
+            this.tree.selectedListId = null;
+        }
 
-        await Promise.all([
-            this.loadLists(),
-            this.tree.init()
-        ]);
+        await this.loadLists();
 
         this.render();
         this.attachListeners();
