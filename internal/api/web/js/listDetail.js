@@ -8,16 +8,31 @@ class ListDetail {
         this.previewOffset = 0;
         this.previewLimit = 20;
         this.previewTotal = 0;
+        this.tree = null;
     }
 
     async init() {
+        // Initialize tree sidebar
+        this.tree = new ListsTree();
+        this.tree.onListSelected = (listId) => this.onListSelected(listId);
+
         await Promise.all([
             this.loadListDetail(),
             this.loadDevices(),
-            this.loadPreview()
+            this.loadPreview(),
+            this.tree.init()
         ]);
+
+        // Select current list in tree
+        this.tree.selectedListId = this.listId;
+
         this.render();
         this.attachListeners();
+    }
+
+    onListSelected(listId) {
+        // Navigate to the selected list
+        router.navigate(`/lists/${listId}`);
     }
 
     async loadListDetail() {
@@ -68,67 +83,87 @@ class ListDetail {
 
         if (!this.list) {
             app.innerHTML = `
-                <div class="error-page">
-                    <h1>List Not Found</h1>
-                    <p>The requested list could not be found.</p>
-                    <button onclick="router.navigate('/lists')" class="btn btn-primary">
-                        Back to Lists
-                    </button>
+                <div class="lists-page-with-tree">
+                    <aside id="lists-tree-sidebar"></aside>
+                    <main class="lists-main-content">
+                        <div class="error-page">
+                            <h1>List Not Found</h1>
+                            <p>The requested list could not be found.</p>
+                            <button onclick="router.navigate('/lists')" class="btn btn-primary">
+                                Back to Lists
+                            </button>
+                        </div>
+                    </main>
                 </div>
             `;
+            // Render tree after DOM is ready
+            if (this.tree) {
+                setTimeout(() => this.tree.render(), 0);
+            }
             return;
         }
 
         app.innerHTML = `
-            <div class="list-detail-page">
-                <!-- Breadcrumb -->
-                <nav class="breadcrumb">
-                    <a href="/lists" onclick="router.navigate('/lists'); return false;">Smart Lists</a>
-                    <span class="separator">›</span>
-                    <span class="current">${this.escapeHtml(this.list.name)}</span>
-                </nav>
+            <div class="lists-page-with-tree">
+                <aside id="lists-tree-sidebar"></aside>
 
-                <!-- Header -->
-                <div class="list-detail-header">
-                    <h1>${this.escapeHtml(this.list.name)}</h1>
-                    <p class="list-count">
-                        ${this.list.book_count.toLocaleString()} comics match this list
-                    </p>
-                </div>
+                <main class="lists-main-content">
+                    <div class="list-detail-page">
+                        <!-- Breadcrumb -->
+                        <nav class="breadcrumb">
+                            <a href="/lists" onclick="router.navigate('/lists'); return false;">Smart Lists</a>
+                            <span class="separator">›</span>
+                            <span class="current">${this.escapeHtml(this.list.name)}</span>
+                        </nav>
 
-                <!-- Main Content -->
-                <div class="list-detail-content">
-                    <!-- Matchers Panel -->
-                    <div class="panel matchers-panel">
-                        <h2>Matchers</h2>
-                        <div class="matcher-mode">
-                            ${this.list.matcher_mode_formatted}
+                        <!-- Header -->
+                        <div class="list-detail-header">
+                            <h1>${this.escapeHtml(this.list.name)}</h1>
+                            <p class="list-count">
+                                ${this.list.book_count.toLocaleString()} comics match this list
+                            </p>
                         </div>
-                        <ul class="matchers-list">
-                            ${this.renderMatchers()}
-                        </ul>
-                    </div>
 
-                    <!-- Device Assignments Panel -->
-                    <div class="panel devices-panel">
-                        <h2>Device Assignments</h2>
-                        <div class="device-assignments">
-                            ${this.renderDeviceAssignments()}
+                        <!-- Main Content -->
+                        <div class="list-detail-content">
+                            <!-- Matchers Panel -->
+                            <div class="panel matchers-panel">
+                                <h2>Matchers</h2>
+                                <div class="matcher-mode">
+                                    ${this.list.matcher_mode_formatted}
+                                </div>
+                                <ul class="matchers-list">
+                                    ${this.renderMatchers()}
+                                </ul>
+                            </div>
+
+                            <!-- Device Assignments Panel -->
+                            <div class="panel devices-panel">
+                                <h2>Device Assignments</h2>
+                                <div class="device-assignments">
+                                    ${this.renderDeviceAssignments()}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Comics Preview -->
+                        <div class="panel preview-panel">
+                            <h2>Comics Preview</h2>
+                            <p class="preview-info">Showing ${this.preview.length} of ${this.previewTotal.toLocaleString()}</p>
+                            <div class="comics-grid">
+                                ${this.renderComicsPreview()}
+                            </div>
+                            ${this.renderLoadMore()}
                         </div>
                     </div>
-                </div>
-
-                <!-- Comics Preview -->
-                <div class="panel preview-panel">
-                    <h2>Comics Preview</h2>
-                    <p class="preview-info">Showing ${this.preview.length} of ${this.previewTotal.toLocaleString()}</p>
-                    <div class="comics-grid">
-                        ${this.renderComicsPreview()}
-                    </div>
-                    ${this.renderLoadMore()}
-                </div>
+                </main>
             </div>
         `;
+
+        // Render tree after DOM is ready
+        if (this.tree) {
+            setTimeout(() => this.tree.render(), 0);
+        }
     }
 
     renderMatchers() {
