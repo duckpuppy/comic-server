@@ -264,6 +264,19 @@ func (c *Client) SendProgressUpdate(percent int) error {
 	})
 }
 
+// SendClientPong sends CommandClientPong to notify device that server is available
+// This makes the sync button appear on the device.
+// Request: BYTE(12)
+// Response: (none)
+func (c *Client) SendClientPong() error {
+	return c.execute(func(conn net.Conn) error {
+		if err := WriteByte(conn, CommandClientPong); err != nil {
+			return fmt.Errorf("failed to write command: %w", err)
+		}
+		return nil
+	})
+}
+
 // ListFiles sends CommandListFiles and returns a newline-separated list of files
 // Request: BYTE(0)
 // Response: STRING(filelist)

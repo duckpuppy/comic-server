@@ -393,10 +393,21 @@ func handleDiscoveredDevice(
 	}
 
 	// Check if we already know this device
-	if _, ok := registry.Get(discovered.Key); ok {
-		// Device already registered, just update last seen timestamp
-		logger.Debug().Msg("Device already registered, updating last seen")
+	if dev, ok := registry.Get(discovered.Key); ok {
+		// Device already in registry, update last seen timestamp
+		logger.Debug().Msg("Device already in registry, updating last seen")
 		registry.UpdateLastSeen(discovered.Key)
+
+		// If device is registered and not requesting sync, send pong to make sync button appear
+		if _, isRegistered := cfg.Devices[dev.Info.ID]; isRegistered && !discovered.WantsSync {
+			logger.Debug().Msg("Sending ClientPong to registered device")
+			client := protocol.NewClient(discovered.IPAddress, device.DevicePort)
+			if err := client.SendClientPong(); err != nil {
+				logger.Debug().Err(err).Msg("Failed to send ClientPong (device may be offline)")
+			} else {
+				logger.Debug().Msg("ClientPong sent successfully")
+			}
+		}
 		return
 	}
 
