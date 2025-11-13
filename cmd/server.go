@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -499,9 +500,9 @@ func applyDeviceConfig(syncer *csync.Syncer, deviceConfig *config.DeviceConfig, 
 			continue
 		}
 
-		// Lookup smart list by GUID
-		smartList := config.FindListByGUID(lib, listConfig.ListID)
-		if smartList == nil {
+		// Lookup smart list by GUID (uses recursive search for nested folders)
+		smartList := lib.FindListByID(listConfig.ListID)
+		if smartList == nil || !strings.Contains(smartList.Type, "SmartList") {
 			return fmt.Errorf("smart list %s (ID: %s) not found in library", listConfig.ListName, listConfig.ListID)
 		}
 
