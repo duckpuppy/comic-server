@@ -145,11 +145,6 @@ func (s *Syncer) PerformSync() (*SyncResult, error) {
 		return result, fmt.Errorf("failed to send completion: %w", err)
 	}
 
-	// Step 9: Final progress update
-	if err := s.client.SendProgressUpdate(100); err != nil {
-		log.Printf("Warning: failed to send final progress: %v\n", err)
-	}
-
 	log.Printf("Sync complete: +%d ~%d -%d books, %d errors\n",
 		result.BooksAdded, result.BooksUpdated, result.BooksDeleted, len(result.Errors))
 
