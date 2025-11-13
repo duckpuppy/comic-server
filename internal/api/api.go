@@ -613,33 +613,31 @@ func (s *Server) handleDeviceListAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify list exists in library
-	found := false
-	log.Debug().
-		Str("requested_list_id", req.ListID).
-		Int("total_lists", len(s.library.ComicLists)).
-		Msg("Searching for list in library")
-
-	for _, list := range s.library.ComicLists {
-		if list.ID == req.ListID && strings.Contains(list.Type, "SmartList") {
-			found = true
-			if req.ListName == "" {
-				req.ListName = list.Name
-			}
-			log.Debug().
-				Str("list_id", list.ID).
-				Str("list_name", list.Name).
-				Msg("Found matching smart list")
-			break
-		}
-	}
-
-	if !found {
+	// Verify list exists in library (search recursively through folders)
+	list := s.library.FindListByID(req.ListID)
+	if list == nil || !strings.Contains(list.Type, "SmartList") {
 		log.Warn().
 			Str("requested_list_id", req.ListID).
+			Bool("found", list != nil).
+			Str("type", func() string {
+				if list != nil {
+					return list.Type
+				}
+				return "n/a"
+			}()).
 			Msg("Smart list not found in library")
 		http.Error(w, "Smart list not found in library", http.StatusNotFound)
 		return
+	}
+
+	log.Debug().
+		Str("list_id", list.ID).
+		Str("list_name", list.Name).
+		Msg("Found matching smart list")
+
+	// Use the list name from the library if not provided
+	if req.ListName == "" {
+		req.ListName = list.Name
 	}
 
 	// Get or create device config
