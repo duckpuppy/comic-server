@@ -144,6 +144,11 @@ class SyncManager {
     }
 
     renderSyncHistory() {
+        // Skip rendering if container doesn't exist (e.g., on device detail page)
+        if (!this.syncHistoryContainer) {
+            return;
+        }
+
         if (this.syncHistory.length === 0) {
             this.syncHistoryContainer.innerHTML = '<p class="empty-message">No sync history</p>';
             return;

@@ -112,20 +112,8 @@ func NewMatcherFromXML(xmlMatcher *ComicBookMatcher) (*Matcher, error) {
 	// e.g., "ComicBookDirectoryMatcher" -> "Directory"
 	fieldName := extractFieldName(xmlMatcher.Type)
 
-	// Special handling for Tags and CustomValues matchers
-	// These use MatchValue2 for additional matching logic
-	if fieldName == "Tags" && xmlMatcher.MatchValue2 != "" {
-		// Tags matcher with two values: both must be present
-		return &Matcher{
-			Type:        "TagsMulti",
-			MatchValue:  xmlMatcher.MatchValue,
-			MatchValue2: xmlMatcher.MatchValue2,
-			Not:         xmlMatcher.Not,
-			IgnoreCase:  true,
-			Operator:    OperatorContainsAll, // Must contain both tags
-		}, nil
-	}
-
+	// Special handling for CustomValues matchers
+	// CustomValues uses both MatchValue (key name) and MatchValue2 (expected value)
 	if fieldName == "CustomValues" {
 		// CustomValues matcher: key (MatchValue) must equal value (MatchValue2)
 		return &Matcher{
@@ -233,19 +221,7 @@ func (m *Matcher) Match(book *ComicBook) bool {
 
 // matchInternal performs the actual matching logic
 func (m *Matcher) matchInternal(book *ComicBook) bool {
-	// Special handling for custom matcher types
-	if m.Type == "TagsMulti" {
-		// Tags matcher: both values must be present in tags
-		tags := book.Tags
-		if m.IgnoreCase {
-			tags = strings.ToLower(tags)
-			return strings.Contains(tags, strings.ToLower(m.MatchValue)) &&
-				strings.Contains(tags, strings.ToLower(m.MatchValue2))
-		}
-		return strings.Contains(tags, m.MatchValue) &&
-			strings.Contains(tags, m.MatchValue2)
-	}
-
+	// Special handling for CustomValues matcher
 	if m.Type == "CustomValues" {
 		// CustomValues matcher: key=value pair must exist
 		// CustomValuesStore format: ",key1=value1,key2=value2"
