@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/duckpuppy/comic-server/internal/library"
 )
@@ -172,8 +174,13 @@ func (s *Syncer) executeOperation(op SyncOperation) error {
 
 // addBook adds a new book to the device
 func (s *Syncer) addBook(book *library.ComicBook) error {
-	// 1. Check if file exists (shouldn't, but be safe)
-	filename := fmt.Sprintf("%s.cbp", book.ID)
+	// 1. Determine target filename on device
+	// Use actual filename from library, not GUID
+	baseFilename := filepath.Base(book.FilePath)
+	// Change extension to .cbp for device storage
+	filename := strings.TrimSuffix(baseFilename, filepath.Ext(baseFilename)) + ".cbp"
+
+	// 2. Check if file exists (shouldn't, but be safe)
 	exists, err := s.client.FileExists(filename)
 	if err != nil {
 		return fmt.Errorf("failed to check if file exists: %w", err)
