@@ -238,15 +238,8 @@ func (s *Server) handleGetListDetail(w http.ResponseWriter, r *http.Request) {
 	// URL: /api/library/lists/:listId
 	listID := parsePathParam(r.URL.Path, "/api/library/lists/")
 
-	// Find the list
-	var targetList *library.ComicListItem
-	for i := range s.library.ComicLists {
-		if s.library.ComicLists[i].ID == listID {
-			targetList = &s.library.ComicLists[i]
-			break
-		}
-	}
-
+	// Find the list (searches recursively through folders)
+	targetList := s.library.FindListByID(listID)
 	if targetList == nil {
 		http.Error(w, "List not found", http.StatusNotFound)
 		return
@@ -334,15 +327,8 @@ func (s *Server) handleGetListPreview(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Find the list
-	var targetList *library.ComicListItem
-	for i := range s.library.ComicLists {
-		if s.library.ComicLists[i].ID == listID {
-			targetList = &s.library.ComicLists[i]
-			break
-		}
-	}
-
+	// Find the list (searches recursively through folders)
+	targetList := s.library.FindListByID(listID)
 	if targetList == nil {
 		http.Error(w, "List not found", http.StatusNotFound)
 		return

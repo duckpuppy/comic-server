@@ -235,3 +235,29 @@ func findListRecursive(item *ComicListItem, name string) *ComicListItem {
 	}
 	return nil
 }
+
+// FindListByID finds a list by ID, searching recursively through folders
+func (l *ComicLibrary) FindListByID(id string) *ComicListItem {
+	for i := range l.ComicLists {
+		if l.ComicLists[i].ID == id {
+			return &l.ComicLists[i]
+		}
+		// Recursively search in folders
+		if found := findListByIDRecursive(&l.ComicLists[i], id); found != nil {
+			return found
+		}
+	}
+	return nil
+}
+
+func findListByIDRecursive(item *ComicListItem, id string) *ComicListItem {
+	for i := range item.ChildItems {
+		if item.ChildItems[i].ID == id {
+			return &item.ChildItems[i]
+		}
+		if found := findListByIDRecursive(&item.ChildItems[i], id); found != nil {
+			return found
+		}
+	}
+	return nil
+}
