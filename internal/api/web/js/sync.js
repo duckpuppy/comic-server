@@ -96,6 +96,9 @@ class SyncManager {
     }
 
     renderActiveSyncs() {
+        // Only render if container exists (dashboard page)
+        if (!this.activeSyncsContainer) return;
+
         if (this.activeSyncs.size === 0) {
             this.activeSyncsContainer.innerHTML = '<p class="empty-message">No active sync operations</p>';
             return;
