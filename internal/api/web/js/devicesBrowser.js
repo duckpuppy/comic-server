@@ -13,6 +13,7 @@ class DevicesBrowser {
         await this.loadDevices();
         this.render();
         this.attachListeners();
+        this.setupWebSocketListeners();
     }
 
     async loadDevices() {
@@ -311,5 +312,30 @@ class DevicesBrowser {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    setupWebSocketListeners() {
+        if (!window.wsClient) {
+            console.warn('WebSocket client not available');
+            return;
+        }
+
+        // Listen for device events
+        window.wsClient.on('device_discovered', () => this.handleDeviceUpdate());
+        window.wsClient.on('device_connected', () => this.handleDeviceUpdate());
+        window.wsClient.on('device_disconnected', () => this.handleDeviceUpdate());
+        window.wsClient.on('device_registered', () => this.handleDeviceUpdate());
+        window.wsClient.on('device_unregistered', () => this.handleDeviceUpdate());
+
+        // Listen for sync events (to update device status)
+        window.wsClient.on('sync_started', () => this.handleDeviceUpdate());
+        window.wsClient.on('sync_completed', () => this.handleDeviceUpdate());
+        window.wsClient.on('sync_failed', () => this.handleDeviceUpdate());
+    }
+
+    async handleDeviceUpdate() {
+        console.log('Device update received, reloading devices...');
+        await this.loadDevices();
+        this.updateGrid();
     }
 }
