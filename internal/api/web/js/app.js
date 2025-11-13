@@ -99,6 +99,7 @@ const dashboard = new Dashboard();
 let listsBrowser = null;
 let devicesBrowser = null;
 let syncHistoryBrowser = null;
+let deviceDetail = null; // Current device detail view
 let listsTree = null; // Shared tree instance for lists pages
 
 // Store original dashboard HTML
@@ -179,7 +180,7 @@ document.addEventListener('DOMContentLoaded', () => {
     router.register('/devices/:deviceId', async (params) => {
         navigation.setActive('devices');
         dashboard.hide();
-        const deviceDetail = new DeviceDetail(params.deviceId);
+        deviceDetail = new DeviceDetail(params.deviceId);
         await deviceDetail.init();
     });
 
