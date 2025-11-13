@@ -168,6 +168,13 @@ class DevicesBrowser {
         const lastSeen = this.formatTimestamp(device.last_seen);
         const isRegistered = device.is_registered || false;
 
+        // Debug logging
+        console.log('Rendering device card:', {
+            name: displayName,
+            is_registered: device.is_registered,
+            isRegistered: isRegistered
+        });
+
         return `
             <div class="device-card ${isRegistered ? 'registered' : 'unregistered'}" data-device-id="${device.id}">
                 <div class="device-card-header">
