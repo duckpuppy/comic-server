@@ -615,17 +615,29 @@ func (s *Server) handleDeviceListAdd(w http.ResponseWriter, r *http.Request) {
 
 	// Verify list exists in library
 	found := false
+	log.Debug().
+		Str("requested_list_id", req.ListID).
+		Int("total_lists", len(s.library.ComicLists)).
+		Msg("Searching for list in library")
+
 	for _, list := range s.library.ComicLists {
 		if list.ID == req.ListID && strings.Contains(list.Type, "SmartList") {
 			found = true
 			if req.ListName == "" {
 				req.ListName = list.Name
 			}
+			log.Debug().
+				Str("list_id", list.ID).
+				Str("list_name", list.Name).
+				Msg("Found matching smart list")
 			break
 		}
 	}
 
 	if !found {
+		log.Warn().
+			Str("requested_list_id", req.ListID).
+			Msg("Smart list not found in library")
 		http.Error(w, "Smart list not found in library", http.StatusNotFound)
 		return
 	}

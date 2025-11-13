@@ -64,6 +64,8 @@ temp/
 test-storage/
 server.log
 bin/
+debug_output
+production_data/
 
 # Git worktrees
 .worktrees/
