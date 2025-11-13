@@ -640,6 +640,16 @@ func (s *Server) handleDeviceListAdd(w http.ResponseWriter, r *http.Request) {
 		req.ListName = list.Name
 	}
 
+	// Check if device is registered
+	s.mu.RLock()
+	isRegistered := s.registeredDevices[deviceID]
+	s.mu.RUnlock()
+
+	if !isRegistered {
+		http.Error(w, "Device not registered. Please register the device first.", http.StatusNotFound)
+		return
+	}
+
 	// Get or create device config
 	if s.config.Devices == nil {
 		s.config.Devices = make(map[string]*config.DeviceConfig)
@@ -647,9 +657,24 @@ func (s *Server) handleDeviceListAdd(w http.ResponseWriter, r *http.Request) {
 
 	deviceConfig, exists := s.config.Devices[deviceID]
 	if !exists {
-		// Device not registered
-		http.Error(w, "Device not registered", http.StatusNotFound)
-		return
+		// Device is registered but config entry missing - create it
+		dev, devExists := s.registry.Get(deviceID)
+		if !devExists {
+			http.Error(w, "Device not found in registry", http.StatusNotFound)
+			return
+		}
+
+		deviceConfig = &config.DeviceConfig{
+			DeviceID:     deviceID,
+			FriendlyName: dev.Info.Name,
+			LastSeen:     dev.LastSeen,
+			Lists:        []config.SharedListConfig{},
+		}
+		s.config.Devices[deviceID] = deviceConfig
+
+		log.Info().
+			Str("device_id", deviceID).
+			Msg("Created missing device config entry during list assignment")
 	}
 
 	// Check if list is already added

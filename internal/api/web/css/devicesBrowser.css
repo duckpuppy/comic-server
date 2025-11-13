@@ -92,6 +92,14 @@
     border-color: var(--primary-color);
 }
 
+.device-card.registered:hover {
+    border-left-color: var(--status-success);
+}
+
+.device-card.unregistered:hover {
+    border-left-color: var(--status-warning);
+}
+
 .device-card-header {
     display: flex;
     justify-content: space-between;
