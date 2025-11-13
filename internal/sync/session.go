@@ -242,6 +242,15 @@ func (s *Syncer) updateMetadataOnly(book *library.ComicBook, device *DeviceBook)
 
 // deleteBook removes a book from the device
 func (s *Syncer) deleteBook(device *DeviceBook) error {
+	// Send status message to device
+	// Extract filename without extension for display
+	displayName := strings.TrimSuffix(device.Filename, filepath.Ext(device.Filename))
+	statusMsg := fmt.Sprintf("Removing '%s' from device", displayName)
+	if err := s.client.SendStart(statusMsg); err != nil {
+		// Don't fail delete if status message fails
+		log.Printf("Warning: failed to send delete status: %v\n", err)
+	}
+
 	// Delete comic file
 	if err := s.client.DeleteFile(device.Filename); err != nil {
 		return fmt.Errorf("failed to delete book file: %w", err)

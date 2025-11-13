@@ -19,7 +19,7 @@ type Client interface {
 	ListFiles() (string, error)
 	ReadMultiFile(filenames []string) (map[string][]byte, error)
 	GetDeviceInfo() (*protocol.DeviceInfo, error)
-	SendStart() error
+	SendStart(message ...string) error
 	SendCompleted() error
 	SendProgressUpdate(percent int) error
 	GetFreeSpace() (int64, error)

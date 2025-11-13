@@ -209,16 +209,22 @@ type DeviceInfo struct {
 	Flag        bool
 }
 
-// SendStart sends CommandStart to begin synchronization
-// Request: BYTE(6) + STRING("Start Synchronizing")
+// SendStart sends CommandStart with a status message
+// Request: BYTE(6) + STRING(message)
 // Response: (none)
-func (c *Client) SendStart() error {
+// If message is empty, defaults to "Start Synchronizing"
+func (c *Client) SendStart(messages ...string) error {
+	message := "Start Synchronizing"
+	if len(messages) > 0 && messages[0] != "" {
+		message = messages[0]
+	}
+
 	return c.execute(func(conn net.Conn) error {
 		if err := WriteByte(conn, CommandStart); err != nil {
 			return fmt.Errorf("failed to write command: %w", err)
 		}
 
-		if err := WriteString(conn, "Start Synchronizing"); err != nil {
+		if err := WriteString(conn, message); err != nil {
 			return fmt.Errorf("failed to write message: %w", err)
 		}
 

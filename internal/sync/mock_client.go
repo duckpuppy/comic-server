@@ -201,7 +201,7 @@ func (m *MockClient) GetDeviceInfo() (*protocol.DeviceInfo, error) {
 }
 
 // SendStart simulates sending sync start command
-func (m *MockClient) SendStart() error {
+func (m *MockClient) SendStart(message ...string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
