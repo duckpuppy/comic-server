@@ -213,13 +213,13 @@ func (s *Server) handleListsRouter(w http.ResponseWriter, r *http.Request) {
 
 // ListDetail represents full details of a smart list
 type ListDetail struct {
-	ID                   string   `json:"id"`
-	Name                 string   `json:"name"`
-	Type                 string   `json:"type"`
-	MatcherMode          string   `json:"matcher_mode"`
-	MatcherModeFormatted string   `json:"matcher_mode_formatted"`
-	BookCount            int      `json:"book_count"`
-	Matchers             []string `json:"matchers"`
+	ID                   string                `json:"id"`
+	Name                 string                `json:"name"`
+	Type                 string                `json:"type"`
+	MatcherMode          string                `json:"matcher_mode"`
+	MatcherModeFormatted string                `json:"matcher_mode_formatted"`
+	BookCount            int                   `json:"book_count"`
+	Matchers             []library.MatcherInfo `json:"matchers"`
 }
 
 // handleGetListDetail returns details for a specific list
@@ -259,9 +259,9 @@ func (s *Server) handleGetListDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Format matchers
-	matchers := make([]string, len(targetList.Matchers))
+	matchers := make([]library.MatcherInfo, len(targetList.Matchers))
 	for i, m := range targetList.Matchers {
-		matchers[i] = library.FormatMatcher(m)
+		matchers[i] = library.GetMatcherInfo(m)
 	}
 
 	detail := ListDetail{

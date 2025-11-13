@@ -170,26 +170,50 @@ class ListDetail {
             return '<li class="empty-message">No matchers defined</li>';
         }
 
-        return this.list.matchers.map(matcher => `
-            <li class="matcher-item">
-                <span class="matcher-bullet">•</span>
-                <span class="matcher-text">${this.escapeHtml(matcher)}</span>
-            </li>
-        `).join('');
+        return this.list.matchers.map(matcher => {
+            // Format the matcher display
+            let displayText = '';
+
+            if (matcher.field === 'Group') {
+                // Group matcher: show operator and value
+                displayText = `<strong>${matcher.operator}</strong>: ${matcher.value}`;
+            } else {
+                // Regular matcher: Field operator "value"
+                displayText = `<strong>${this.escapeHtml(matcher.field)}</strong> `;
+                displayText += `${this.escapeHtml(matcher.operator)} `;
+
+                // Format value with quotes for readability
+                if (matcher.value) {
+                    displayText += `<code>"${this.escapeHtml(matcher.value)}"</code>`;
+                }
+
+                // Add second value if present (for ranges)
+                if (matcher.value2) {
+                    displayText += ` and <code>"${this.escapeHtml(matcher.value2)}"</code>`;
+                }
+            }
+
+            return `
+                <li class="matcher-item">
+                    <span class="matcher-bullet">•</span>
+                    <span class="matcher-text">${displayText}</span>
+                </li>
+            `;
+        }).join('');
     }
 
     renderDeviceAssignments() {
         if (this.devices.length === 0) {
             return `
                 <p class="empty-message">This list is not assigned to any devices.</p>
-                <button class="btn btn-primary" onclick="alert('Assign to device - TODO')">
+                <button class="btn btn-primary" id="assign-device-btn">
                     + Assign to Device
                 </button>
             `;
         }
 
         return this.devices.map(device => `
-            <div class="device-assignment-card">
+            <div class="device-assignment-card" data-device-id="${device.device_id}">
                 <div class="device-assignment-info">
                     <h4>${this.escapeHtml(device.friendly_name)}</h4>
                     <span class="device-status ${device.enabled ? 'enabled' : 'disabled'}">
@@ -197,8 +221,11 @@ class ListDetail {
                     </span>
                 </div>
                 <div class="device-assignment-actions">
-                    <button class="btn btn-small" onclick="router.navigate('/devices/${device.device_id}')">
-                        View Device
+                    <button class="btn btn-small btn-toggle" data-device-id="${device.device_id}" data-enabled="${device.enabled}">
+                        ${device.enabled ? 'Disable' : 'Enable'}
+                    </button>
+                    <button class="btn btn-small btn-danger btn-unassign" data-device-id="${device.device_id}">
+                        Remove
                     </button>
                 </div>
             </div>
@@ -247,6 +274,133 @@ class ListDetail {
                 await this.loadPreview();
                 this.render();
             });
+        }
+
+        // Assign device button
+        const assignBtn = document.getElementById('assign-device-btn');
+        if (assignBtn) {
+            assignBtn.addEventListener('click', () => this.showAssignDeviceDialog());
+        }
+
+        // Toggle enable/disable buttons
+        document.querySelectorAll('.btn-toggle').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const deviceId = e.target.dataset.deviceId;
+                const enabled = e.target.dataset.enabled === 'true';
+                this.toggleDeviceList(deviceId, !enabled);
+            });
+        });
+
+        // Unassign buttons
+        document.querySelectorAll('.btn-unassign').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const deviceId = e.target.dataset.deviceId;
+                this.unassignDevice(deviceId);
+            });
+        });
+    }
+
+    async showAssignDeviceDialog() {
+        // Fetch all registered devices
+        try {
+            const response = await fetch('/api/devices');
+            const data = await response.json();
+
+            // Filter out devices that already have this list
+            const availableDevices = data.devices.filter(d =>
+                !this.devices.some(assigned => assigned.device_id === d.id)
+            );
+
+            if (availableDevices.length === 0) {
+                alert('No available devices to assign. All registered devices already have this list.');
+                return;
+            }
+
+            // Simple prompt for now - could be improved with a proper modal
+            const deviceNames = availableDevices.map((d, i) => `${i + 1}. ${d.friendly_name || d.name} (${d.id})`).join('\n');
+            const selection = prompt(`Select a device to assign:\n\n${deviceNames}\n\nEnter device number:`);
+
+            if (selection) {
+                const index = parseInt(selection) - 1;
+                if (index >= 0 && index < availableDevices.length) {
+                    await this.assignDevice(availableDevices[index].id);
+                }
+            }
+        } catch (error) {
+            console.error('Failed to fetch devices:', error);
+            alert('Failed to load available devices');
+        }
+    }
+
+    async assignDevice(deviceId) {
+        try {
+            const response = await fetch(`/api/devices/lists/${deviceId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    list_id: this.listId,
+                    list_name: this.list.name,
+                    enabled: true
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to assign list');
+            }
+
+            // Reload devices
+            await this.loadDevices();
+            this.render();
+            this.attachListeners();
+        } catch (error) {
+            console.error('Failed to assign device:', error);
+            alert('Failed to assign list to device');
+        }
+    }
+
+    async toggleDeviceList(deviceId, enabled) {
+        try {
+            const response = await fetch(`/api/devices/lists/${deviceId}/${this.listId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled })
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to update list settings');
+            }
+
+            // Reload devices
+            await this.loadDevices();
+            this.render();
+            this.attachListeners();
+        } catch (error) {
+            console.error('Failed to toggle list:', error);
+            alert('Failed to update list settings');
+        }
+    }
+
+    async unassignDevice(deviceId) {
+        if (!confirm('Remove this list from the device?')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/devices/lists/${deviceId}/${this.listId}`, {
+                method: 'DELETE'
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to remove list');
+            }
+
+            // Reload devices
+            await this.loadDevices();
+            this.render();
+            this.attachListeners();
+        } catch (error) {
+            console.error('Failed to unassign device:', error);
+            alert('Failed to remove list from device');
         }
     }
 
