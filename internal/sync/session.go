@@ -139,7 +139,12 @@ func (s *Syncer) PerformSync() (*SyncResult, error) {
 		log.Printf("Warning: failed to write reading lists: %v\n", err)
 	}
 
-	// Step 8: CommandCompleted - Signal sync completion
+	// Step 8: Final progress update to 100%
+	if err := s.client.SendProgressUpdate(100); err != nil {
+		log.Printf("Warning: failed to send final progress: %v\n", err)
+	}
+
+	// Step 9: CommandCompleted - Signal sync completion
 	log.Println("Completing synchronization...")
 	if err := s.client.SendCompleted(); err != nil {
 		return result, fmt.Errorf("failed to send completion: %w", err)
