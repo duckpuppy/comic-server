@@ -398,8 +398,17 @@ func handleDiscoveredDevice(
 		logger.Debug().Msg("Device already in registry, updating last seen")
 		registry.UpdateLastSeen(discovered.Key)
 
+		// Handle sync request if device wants sync (manual button press on device)
+		if discovered.WantsSync {
+			logger.Info().Msg("Known device requesting sync (user pressed sync button)")
+			if err := handleSyncRequest(dev.Info, discovered.IPAddress, cfg, lib, syncManager, deviceLimiter, syncSemaphore); err != nil {
+				logger.Error().Err(err).Msg("Sync failed")
+			}
+			return
+		}
+
 		// If device is registered and not requesting sync, send pong to make sync button appear
-		if _, isRegistered := cfg.Devices[dev.Info.ID]; isRegistered && !discovered.WantsSync {
+		if _, isRegistered := cfg.Devices[dev.Info.ID]; isRegistered {
 			logger.Debug().Msg("Sending ClientPong to registered device")
 			client := protocol.NewClient(discovered.IPAddress, device.DevicePort)
 			if err := client.SendClientPong(); err != nil {
