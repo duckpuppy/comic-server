@@ -438,6 +438,25 @@ func (s *Syncer) compareBooks(libraryBook *library.ComicBook, deviceBook *Device
 	}
 
 	if metadataChanged {
+		// Debug: Log which fields changed
+		log.Debug().
+			Str("book_id", libraryBook.ID).
+			Str("title", libraryBook.Title).
+			Bool("title_changed", libraryBook.Title != deviceBook.Metadata.Title).
+			Bool("series_changed", libraryBook.Series != deviceBook.Metadata.Series).
+			Bool("number_changed", libraryBook.Number != deviceBook.Metadata.Number).
+			Bool("volume_changed", libraryBook.Volume != deviceBook.Metadata.Volume).
+			Bool("writer_changed", libraryBook.Writer != deviceBook.Metadata.Writer).
+			Bool("publisher_changed", libraryBook.Publisher != deviceBook.Metadata.Publisher).
+			Bool("year_changed", libraryBook.Year != deviceBook.Metadata.Year).
+			Bool("month_changed", libraryBook.Month != deviceBook.Metadata.Month).
+			Bool("day_changed", libraryBook.Day != deviceBook.Metadata.Day).
+			Bool("rating_changed", libraryBook.Rating != deviceBook.Metadata.Rating).
+			Bool("current_page_changed", libraryBook.CurrentPage != deviceBook.Metadata.CurrentPage).
+			Bool("summary_changed", libraryBook.Summary != deviceBook.Metadata.Summary).
+			Bool("notes_changed", libraryBook.Notes != deviceBook.Metadata.Notes).
+			Msg("Metadata changed - which fields differ")
+
 		// Only metadata changed - just update sidecar
 		return SyncOperation{
 			Type:   OperationUpdateMetadataOnly,
