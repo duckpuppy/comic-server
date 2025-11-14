@@ -3,12 +3,12 @@ package sync
 import (
 	"encoding/xml"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/duckpuppy/comic-server/internal/library"
+	"github.com/duckpuppy/comic-server/internal/log"
 )
 
 // PerformSync executes a full synchronization session with a device
@@ -19,52 +19,62 @@ func (s *Syncer) PerformSync() (*SyncResult, error) {
 	}
 
 	// Step 1: CommandStart - Begin sync session
-	log.Println("Starting synchronization session...")
+	log.Info().Msg("Starting synchronization session")
 	if err := s.client.SendStart(); err != nil {
 		return result, fmt.Errorf("failed to start sync: %w", err)
 	}
 
 	// Step 2: CommandInfo - Validate device
-	log.Println("Validating device...")
+	log.Info().Msg("Validating device")
 	deviceInfo, err := s.client.GetDeviceInfo()
 	if err != nil {
 		return result, fmt.Errorf("failed to get device info: %w", err)
 	}
-	log.Printf("Device validated: Licensed=%v, Version=%d\n", deviceInfo.Licensed, deviceInfo.VersionCode)
+	log.Info().
+		Bool("licensed", deviceInfo.Licensed).
+		Int("version", deviceInfo.VersionCode).
+		Msg("Device validated")
 
 	// Step 3: CommandFreeSpace - Check available storage
-	log.Println("Checking device storage...")
+	log.Info().Msg("Checking device storage")
 	freeSpace, err := s.client.GetFreeSpace()
 	if err != nil {
 		return result, fmt.Errorf("failed to get free space: %w", err)
 	}
-	log.Printf("Device free space: %d bytes (%.2f MB)\n", freeSpace, float64(freeSpace)/(1024*1024))
+	log.Info().
+		Int64("bytes", freeSpace).
+		Float64("mb", float64(freeSpace)/(1024*1024)).
+		Msg("Device free space")
 
 	// Step 4: Get current device state
-	log.Println("Retrieving device book list...")
+	log.Info().Msg("Retrieving device book list")
 	deviceBooks, err := s.GetDeviceBooks()
 	if err != nil {
 		return result, fmt.Errorf("failed to get device books: %w", err)
 	}
-	log.Printf("Found %d books on device\n", len(deviceBooks))
+	log.Info().Int("count", len(deviceBooks)).Msg("Found books on device")
 
 	// DEBUG: Print device book IDs
-	log.Println("DEBUG: Device book IDs:")
+	log.Debug().Msg("Device book IDs:")
 	for bookID, deviceBook := range deviceBooks {
 		title := "(no metadata)"
 		if deviceBook.Metadata != nil {
 			title = deviceBook.Metadata.Title
 		}
-		log.Printf("  ID: %s, File: %s, Title: %s\n", bookID, deviceBook.Filename, title)
+		log.Debug().
+			Str("id", bookID).
+			Str("file", deviceBook.Filename).
+			Str("title", title).
+			Msg("Device book")
 	}
 
 	// Step 5: Compute sync plan
-	log.Println("Computing sync plan...")
+	log.Info().Msg("Computing sync plan")
 	operations, err := s.ComputeSyncPlan(deviceBooks)
 	if err != nil {
 		return result, fmt.Errorf("failed to compute sync plan: %w", err)
 	}
-	log.Printf("Sync plan: %d operations\n", len(operations))
+	log.Info().Int("operations", len(operations)).Msg("Sync plan computed")
 
 	// Count operations by type for logging
 	addCount := 0
@@ -83,15 +93,22 @@ func (s *Syncer) PerformSync() (*SyncResult, error) {
 			metadataOnlyCount++
 		}
 	}
-	log.Printf("  Add: %d, Update: %d, Delete: %d, Metadata-only: %d\n",
-		addCount, updateCount, deleteCount, metadataOnlyCount)
+	log.Info().
+		Int("add", addCount).
+		Int("update", updateCount).
+		Int("delete", deleteCount).
+		Int("metadata_only", metadataOnlyCount).
+		Msg("Operation breakdown")
 
 	// Validate storage space
 	requiredSpace, err := s.calculateRequiredSpace(operations)
 	if err != nil {
 		return result, fmt.Errorf("failed to calculate required space: %w", err)
 	}
-	log.Printf("Required space: %d bytes (%.2f MB)\n", requiredSpace, float64(requiredSpace)/(1024*1024))
+	log.Info().
+		Int64("bytes", requiredSpace).
+		Float64("mb", float64(requiredSpace)/(1024*1024)).
+		Msg("Required space")
 
 	// Add 10% buffer for overhead
 	requiredSpaceWithBuffer := int64(float64(requiredSpace) * 1.1)
@@ -108,7 +125,7 @@ func (s *Syncer) PerformSync() (*SyncResult, error) {
 		if i%10 == 0 {
 			aborted, err := s.client.CheckAbort()
 			if err != nil {
-				log.Printf("Warning: failed to check abort status: %v\n", err)
+				log.Warn().Err(err).Msg("Failed to check abort status")
 			} else if aborted {
 				return result, fmt.Errorf("sync aborted by user")
 			}
@@ -119,7 +136,7 @@ func (s *Syncer) PerformSync() (*SyncResult, error) {
 			errMsg := fmt.Errorf("operation %d/%d failed (%s for %s): %w",
 				i+1, totalOps, op.Type, op.Book.Title, err)
 			result.Errors = append(result.Errors, errMsg)
-			log.Printf("Error: %v\n", errMsg)
+			log.Error().Err(errMsg).Msg("Operation failed")
 			continue
 		}
 
@@ -136,40 +153,49 @@ func (s *Syncer) PerformSync() (*SyncResult, error) {
 		// Update progress
 		percent := ((i + 1) * 100) / totalOps
 		if err := s.client.SendProgressUpdate(percent); err != nil {
-			log.Printf("Warning: failed to send progress update: %v\n", err)
+			log.Warn().Err(err).Msg("Failed to send progress update")
 		}
 
-		log.Printf("  [%d/%d] %s: %s\n", i+1, totalOps, op.Type, getTitleForOp(op))
+		log.Info().
+			Int("current", i+1).
+			Int("total", totalOps).
+			Str("operation", op.Type.String()).
+			Str("title", getTitleForOp(op)).
+			Msg("Operation completed")
 	}
 
 	// Step 7: Write sync_information.xml (reading lists)
-	log.Println("Writing reading lists...")
+	log.Info().Msg("Writing reading lists")
 	if err := s.writeSyncInformation(); err != nil {
 		// Don't fail sync if reading list write fails
-		log.Printf("Warning: failed to write reading lists: %v\n", err)
+		log.Warn().Err(err).Msg("Failed to write reading lists")
 	}
 
 	// Step 8: Final progress update to 100%
 	if err := s.client.SendProgressUpdate(100); err != nil {
-		log.Printf("Warning: failed to send final progress: %v\n", err)
+		log.Warn().Err(err).Msg("Failed to send final progress")
 	}
 
 	// Step 9: Touch marker file (comicrack.ini) to trigger device refresh
 	// This is critical - updating the marker file timestamp triggers the Android
 	// app to detect changes and refresh the library display
-	log.Println("Updating marker file timestamp...")
+	log.Info().Msg("Updating marker file timestamp")
 	if err := s.touchMarkerFile(); err != nil {
-		log.Printf("Warning: failed to touch marker file: %v\n", err)
+		log.Warn().Err(err).Msg("Failed to touch marker file")
 	}
 
 	// Step 10: CommandCompleted - Signal sync completion
-	log.Println("Completing synchronization...")
+	log.Info().Msg("Completing synchronization")
 	if err := s.client.SendCompleted(); err != nil {
 		return result, fmt.Errorf("failed to send completion: %w", err)
 	}
 
-	log.Printf("Sync complete: +%d ~%d -%d books, %d errors\n",
-		result.BooksAdded, result.BooksUpdated, result.BooksDeleted, len(result.Errors))
+	log.Info().
+		Int("added", result.BooksAdded).
+		Int("updated", result.BooksUpdated).
+		Int("deleted", result.BooksDeleted).
+		Int("errors", len(result.Errors)).
+		Msg("Sync complete")
 
 	return result, nil
 }
@@ -266,7 +292,7 @@ func (s *Syncer) deleteBook(device *DeviceBook) error {
 	statusMsg := fmt.Sprintf("Removing '%s' from device", displayName)
 	if err := s.client.SendStart(statusMsg); err != nil {
 		// Don't fail delete if status message fails
-		log.Printf("Warning: failed to send delete status: %v\n", err)
+		log.Warn().Err(err).Str("filename", displayName).Msg("Failed to send delete status")
 	}
 
 	// Delete comic file
@@ -430,7 +456,7 @@ func (s *Syncer) calculateRequiredSpace(operations []SyncOperation) (int64, erro
 				fileInfo, err := os.Stat(op.Book.FilePath)
 				if err != nil {
 					// If we can't stat the file, estimate conservatively
-					log.Printf("Warning: cannot stat %s: %v", op.Book.FilePath, err)
+					log.Warn().Err(err).Str("path", op.Book.FilePath).Msg("Cannot stat file, using estimate")
 					// Assume 50MB per book if we can't get size
 					totalBytes += 50 * 1024 * 1024
 					continue
