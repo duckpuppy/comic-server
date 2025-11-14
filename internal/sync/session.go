@@ -118,6 +118,18 @@ func (s *Syncer) PerformSync() (*SyncResult, error) {
 			float64(freeSpace)/(1024*1024))
 	}
 
+	// Sort operations for safer execution order:
+	// 1. ADD - New books (safest, nothing to lose if sync fails)
+	// 2. UPDATE/UpdateMetadataOnly - Update existing books (delete+add atomically)
+	// 3. DELETE - Remove books not in library (only at end)
+	//
+	// This ordering ensures that if sync fails partway through, the device
+	// retains as much content as possible. UPDATE operations are handled
+	// atomically (delete old, add new immediately), so if an update fails
+	// after deletion, the next sync will detect it's missing and re-add it.
+	operations = sortOperationsByType(operations)
+	log.Debug().Msg("Operations sorted for safe execution order")
+
 	// Step 6: Execute sync operations
 	totalOps := len(operations)
 	for i, op := range operations {
@@ -511,4 +523,39 @@ func (s *Syncer) touchMarkerFile() error {
 	}
 
 	return nil
+}
+
+// sortOperationsByType orders operations for safer sync execution.
+// Order: ADD → UPDATE/UpdateMetadataOnly → DELETE
+//
+// This ensures that if sync fails partway through:
+// - New content is added first (safest)
+// - Updates are applied (old deleted, new added atomically)
+// - Deletions happen last (only removes content user doesn't want)
+//
+// If sync fails during an UPDATE after deletion, the next sync will
+// detect the book is missing and re-add it.
+func sortOperationsByType(operations []SyncOperation) []SyncOperation {
+	var adds []SyncOperation
+	var updates []SyncOperation
+	var deletes []SyncOperation
+
+	for _, op := range operations {
+		switch op.Type {
+		case OperationAdd:
+			adds = append(adds, op)
+		case OperationUpdate, OperationUpdateMetadataOnly:
+			updates = append(updates, op)
+		case OperationDelete:
+			deletes = append(deletes, op)
+		}
+	}
+
+	// Combine in safe order: ADD, UPDATE, DELETE
+	result := make([]SyncOperation, 0, len(operations))
+	result = append(result, adds...)
+	result = append(result, updates...)
+	result = append(result, deletes...)
+
+	return result
 }
