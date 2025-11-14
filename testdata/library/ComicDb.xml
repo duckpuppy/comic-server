@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ComicDatabase xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" Id="test-library">
+  <Books>
+    <Book Id="league-001-id" File="testdata/library/comics/league-001.cbz">
+      <Series>The League of Extraordinary Gentlemen: Century</Series>
+      <Title>The League of Extraordinary Gentlemen: Century #1</Title>
+      <Number>1</Number>
+      <Volume>2009</Volume>
+      <Year>2009</Year>
+      <Month>5</Month>
+      <Writer>Alan Moore</Writer>
+      <Penciller>Kevin O'Neill</Penciller>
+      <Publisher>Top Shelf</Publisher>
+      <PageCount>80</PageCount>
+      <Format>Trade Paperback</Format>
+      <Genre>Superhero</Genre>
+    </Book>
+    <Book Id="league-002-id" File="testdata/library/comics/league-002.cbz">
+      <Series>The League of Extraordinary Gentlemen: Century</Series>
+      <Title>The League of Extraordinary Gentlemen: Century #2</Title>
+      <Number>2</Number>
+      <Volume>2009</Volume>
+      <Year>2011</Year>
+      <Month>7</Month>
+      <Writer>Alan Moore</Writer>
+      <Penciller>Kevin O'Neill</Penciller>
+      <Publisher>Top Shelf</Publisher>
+      <PageCount>80</PageCount>
+      <Format>Trade Paperback</Format>
+      <Genre>Superhero</Genre>
+    </Book>
+    <Book Id="kids-club-002-id" File="testdata/library/comics/kids-club-002.cbz">
+      <Series>Top Shelf Kids Club</Series>
+      <Title>Top Shelf Kids Club #2</Title>
+      <Number>2</Number>
+      <Volume>2011</Volume>
+      <Year>2012</Year>
+      <Month>5</Month>
+      <Publisher>Top Shelf</Publisher>
+      <PageCount>48</PageCount>
+      <Format>Comic</Format>
+      <Genre>Kids</Genre>
+    </Book>
+  </Books>
+  <ComicLists>
+    <!-- Smart List: League Series - Matches books in "League of Extraordinary Gentlemen" series -->
+    <ComicList Name="League Series" Type="comicrack:ComicSmartListItem" Id="{test-list-league}">
+      <Matchers>
+        <Matcher MatchOperator="contains" MatchValue="League">
+          <MatchValueList />
+        </Matcher>
+      </Matchers>
+      <GroupMatchers>
+        <Group MatcherMode="And">
+          <Matchers>
+            <Matcher MatchOperator="contains" MatchValue="League">
+              <MatchValueList />
+            </Matcher>
+          </Matchers>
+        </Group>
+      </GroupMatchers>
+      <MatcherMode>And</MatcherMode>
+      <AndOrNot>And</AndOrNot>
+    </ComicList>
+    <!-- Smart List: Top Shelf Publisher - Matches all Top Shelf books -->
+    <ComicList Name="Top Shelf Publisher" Type="comicrack:ComicSmartListItem" Id="{test-list-topshelf}">
+      <Matchers>
+        <Matcher MatchType="Publisher" MatchOperator="equals" MatchValue="Top Shelf">
+          <MatchValueList />
+        </Matcher>
+      </Matchers>
+      <GroupMatchers>
+        <Group MatcherMode="And">
+          <Matchers>
+            <Matcher MatchType="Publisher" MatchOperator="equals" MatchValue="Top Shelf">
+              <MatchValueList />
+            </Matcher>
+          </Matchers>
+        </Group>
+      </GroupMatchers>
+      <MatcherMode>And</MatcherMode>
+      <AndOrNot>And</AndOrNot>
+    </ComicList>
+    <!-- Smart List: 2009-2011 - Matches books from years 2009-2011 -->
+    <ComicList Name="2009-2011" Type="comicrack:ComicSmartListItem" Id="{test-list-years}">
+      <Matchers>
+        <Matcher MatchType="Year" MatchOperator="inrange" MatchValue="2009" MatchValue2="2011">
+          <MatchValueList />
+        </Matcher>
+      </Matchers>
+      <GroupMatchers>
+        <Group MatcherMode="And">
+          <Matchers>
+            <Matcher MatchType="Year" MatchOperator="inrange" MatchValue="2009" MatchValue2="2011">
+              <MatchValueList />
+            </Matcher>
+          </Matchers>
+        </Group>
+      </GroupMatchers>
+      <MatcherMode>And</MatcherMode>
+      <AndOrNot>And</AndOrNot>
+    </ComicList>
+    <!-- Smart List: All Comics - Matches everything (useful for testing full sync) -->
+    <ComicList Name="All Comics" Type="comicrack:ComicSmartListItem" Id="{test-list-all}">
+      <Matchers>
+        <Matcher MatchType="PageCount" MatchOperator="greater" MatchValue="0">
+          <MatchValueList />
+        </Matcher>
+      </Matchers>
+      <GroupMatchers>
+        <Group MatcherMode="And">
+          <Matchers>
+            <Matcher MatchType="PageCount" MatchOperator="greater" MatchValue="0">
+              <MatchValueList />
+            </Matcher>
+          </Matchers>
+        </Group>
+      </GroupMatchers>
+      <MatcherMode>And</MatcherMode>
+      <AndOrNot>And</AndOrNot>
+    </ComicList>
+  </ComicLists>
+</ComicDatabase>

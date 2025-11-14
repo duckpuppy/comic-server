@@ -37,6 +37,7 @@ var (
 	rateLimitWindowSeconds int
 	logLevel               string
 	logFormat              string
+	pingDevice             string
 
 	// Track which flags were explicitly set by user
 	serverPortSet             bool
@@ -51,6 +52,7 @@ var (
 	rateLimitWindowSecondsSet bool
 	logLevelSet               bool
 	logFormatSet              bool
+	pingDeviceSet             bool
 )
 
 var serverCmd = &cobra.Command{
@@ -216,6 +218,11 @@ func runServer(cmd *cobra.Command, args []string) error {
 
 	// Start listening
 	deviceChan, errorChan := listener.Start()
+
+	// Send direct ping to device if specified (useful for WSL2, VPNs, complex networks)
+	if pingDeviceSet && pingDevice != "" {
+		go sendDirectPing(pingDevice)
+	}
 
 	// Create and start WebSocket hub
 	wsHub := websocket.NewHub()
@@ -654,6 +661,55 @@ func handleSyncRequest(
 	return nil
 }
 
+// sendDirectPing sends a discovery ping directly to a device IP address
+// This is useful for environments where multicast discovery is unreliable
+// (WSL2, VPNs, complex network setups, firewalls blocking multicast, etc.)
+func sendDirectPing(address string) {
+	// Parse IP:PORT, default port is 7614 (device port)
+	deviceIP := address
+	devicePort := 7614
+
+	// Check if port is specified
+	if idx := strings.LastIndex(address, ":"); idx != -1 {
+		portStr := address[idx+1:]
+		deviceIP = address[:idx]
+
+		// Try to parse port
+		var port int
+		if _, err := fmt.Sscanf(portStr, "%d", &port); err == nil {
+			devicePort = port
+		} else {
+			log.Warn().
+				Str("address", address).
+				Err(err).
+				Msg("Failed to parse port, using default 7614")
+		}
+	}
+
+	log.Info().
+		Str("ip", deviceIP).
+		Int("port", devicePort).
+		Msg("Sending direct discovery ping to device")
+
+	// Create protocol client for the device
+	client := protocol.NewClient(deviceIP, devicePort)
+
+	// Send CommandClientPong to make sync button appear on device
+	if err := client.SendClientPong(); err != nil {
+		log.Error().
+			Err(err).
+			Str("ip", deviceIP).
+			Int("port", devicePort).
+			Msg("Failed to send direct ping to device")
+		return
+	}
+
+	log.Info().
+		Str("ip", deviceIP).
+		Int("port", devicePort).
+		Msg("Successfully sent direct ping to device")
+}
+
 func init() {
 	rootCmd.AddCommand(serverCmd)
 
@@ -669,6 +725,7 @@ func init() {
 	serverCmd.Flags().IntVar(&rateLimitWindowSeconds, "rate-limit-window", 0, "Rate limit window in seconds (default: 60)")
 	serverCmd.Flags().StringVar(&logLevel, "log-level", "", "Log level: debug, info, warn, error (default: info)")
 	serverCmd.Flags().StringVar(&logFormat, "log-format", "", "Log format: text, json (default: text)")
+	serverCmd.Flags().StringVar(&pingDevice, "ping-device", "", "Send discovery ping directly to device IP[:PORT] (useful for WSL2, VPNs, complex networks)")
 
 	// Mark which flags to check for being explicitly set
 	serverCmd.PreRunE = func(cmd *cobra.Command, args []string) error {
@@ -684,6 +741,7 @@ func init() {
 		rateLimitWindowSecondsSet = cmd.Flags().Changed("rate-limit-window")
 		logLevelSet = cmd.Flags().Changed("log-level")
 		logFormatSet = cmd.Flags().Changed("log-format")
+		pingDeviceSet = cmd.Flags().Changed("ping-device")
 		return nil
 	}
 }
