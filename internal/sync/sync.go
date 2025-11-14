@@ -178,12 +178,18 @@ func (s *Syncer) GetDeviceBooks() (map[string]*DeviceBook, error) {
 
 	// Fetch all sidecar files at once using ReadMultiFile
 	if len(sidecarFiles) > 0 {
+		log.Debug().Int("sidecar_count", len(sidecarFiles)).Msg("Reading sidecar files")
 		sidecars, err := s.client.ReadMultiFile(sidecarFiles)
 		if err != nil {
 			// Don't fail the entire operation if we can't read sidecars
 			// Just log and continue without metadata
+			log.Error().
+				Err(err).
+				Int("sidecar_count", len(sidecarFiles)).
+				Msg("Failed to read sidecar files - device books will use filenames as IDs")
 			return deviceBooks, nil
 		}
+		log.Debug().Int("sidecars_read", len(sidecars)).Msg("Successfully read sidecar files")
 
 		// Parse each sidecar XML into ComicBook metadata
 		// Build a new map with correct book IDs from sidecars

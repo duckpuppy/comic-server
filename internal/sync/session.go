@@ -251,6 +251,13 @@ func (s *Syncer) addBook(book *library.ComicBook) error {
 		return fmt.Errorf("failed to generate sidecar: %w", err)
 	}
 	sidecarFilename := filename + ".xml"
+	log.Debug().
+		Str("filename", filename).
+		Str("sidecar", sidecarFilename).
+		Str("book_id", book.ID).
+		Str("title", book.Title).
+		Int("sidecar_bytes", len(sidecarData)).
+		Msg("Writing sidecar file")
 	if err := s.client.WriteFile(sidecarFilename, sidecarData); err != nil {
 		return fmt.Errorf("failed to write sidecar: %w", err)
 	}
@@ -319,6 +326,17 @@ func (s *Syncer) generateSidecar(book *library.ComicBook) ([]byte, error) {
 
 	// Add XML declaration
 	xmlData := []byte(xml.Header + string(data))
+
+	// Debug: Log XML preview
+	preview := string(xmlData)
+	if len(preview) > 500 {
+		preview = preview[:500]
+	}
+	log.Debug().
+		Str("book_id", book.ID).
+		Str("xml_preview", preview).
+		Msg("Generated sidecar XML")
+
 	return xmlData, nil
 }
 
