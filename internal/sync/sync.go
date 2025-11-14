@@ -185,21 +185,30 @@ func (s *Syncer) GetDeviceBooks() (map[string]*DeviceBook, error) {
 		}
 
 		// Parse each sidecar XML into ComicBook metadata
-		for bookID, deviceBook := range deviceBooks {
+		// Build a new map with correct book IDs from sidecars
+		correctDeviceBooks := make(map[string]*DeviceBook)
+		for _, deviceBook := range deviceBooks {
 			sidecarData, ok := sidecars[deviceBook.SidecarFilename]
 			if !ok || len(sidecarData) == 0 {
+				// No sidecar - use filename as key (shouldn't happen in normal operation)
+				filenameKey := strings.TrimSuffix(filepath.Base(deviceBook.Filename), ".cbp")
+				correctDeviceBooks[filenameKey] = deviceBook
 				continue
 			}
 
 			var book library.ComicBook
 			if err := xml.Unmarshal(sidecarData, &book); err != nil {
-				// Skip this book if we can't parse metadata
+				// Can't parse sidecar - use filename as key
+				filenameKey := strings.TrimSuffix(filepath.Base(deviceBook.Filename), ".cbp")
+				correctDeviceBooks[filenameKey] = deviceBook
 				continue
 			}
 
+			// Use the actual book ID (GUID) from sidecar as the map key
 			deviceBook.Metadata = &book
-			deviceBooks[bookID] = deviceBook
+			correctDeviceBooks[book.ID] = deviceBook
 		}
+		return correctDeviceBooks, nil
 	}
 
 	return deviceBooks, nil

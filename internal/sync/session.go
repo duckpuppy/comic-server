@@ -367,13 +367,19 @@ func getTitleForOp(op SyncOperation) string {
 		if op.Book.Title != "" {
 			return op.Book.Title
 		}
+		// Use filename if title is empty
+		if op.Book.FilePath != "" {
+			baseFilename := filepath.Base(op.Book.FilePath)
+			return strings.TrimSuffix(baseFilename, filepath.Ext(baseFilename))
+		}
 		return op.Book.ID
 	}
 	if op.Device != nil {
 		if op.Device.Metadata != nil && op.Device.Metadata.Title != "" {
 			return op.Device.Metadata.Title
 		}
-		return op.Device.Filename
+		// Use filename without .cbp extension
+		return strings.TrimSuffix(op.Device.Filename, ".cbp")
 	}
 	return "(unknown)"
 }
