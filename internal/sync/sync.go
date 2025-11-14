@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/duckpuppy/comic-server/internal/library"
 	"github.com/duckpuppy/comic-server/internal/log"
@@ -190,16 +191,50 @@ func (s *Syncer) GetDeviceBooks() (map[string]*DeviceBook, error) {
 			sidecars = make(map[string][]byte)
 			successCount := 0
 			for _, sidecarFile := range sidecarFiles {
-				data, err := s.client.ReadFile(sidecarFile)
+				// Try to read the file with retries
+				var data []byte
+				var err error
+				maxRetries := 3
+				for attempt := 0; attempt < maxRetries; attempt++ {
+					if attempt > 0 {
+						// Add delay between retries (exponential backoff: 100ms, 200ms, 400ms)
+						delay := time.Duration(100<<uint(attempt-1)) * time.Millisecond
+						log.Debug().
+							Str("sidecar", sidecarFile).
+							Int("attempt", attempt+1).
+							Dur("delay", delay).
+							Msg("Retrying sidecar read after delay")
+						time.Sleep(delay)
+					}
+
+					data, err = s.client.ReadFile(sidecarFile)
+					if err == nil {
+						break // Success!
+					}
+
+					if attempt < maxRetries-1 {
+						log.Debug().
+							Err(err).
+							Str("sidecar", sidecarFile).
+							Int("attempt", attempt+1).
+							Int("max_retries", maxRetries).
+							Msg("Sidecar read failed, will retry")
+					}
+				}
+
 				if err != nil {
 					log.Warn().
 						Err(err).
 						Str("sidecar", sidecarFile).
-						Msg("Failed to read individual sidecar file")
+						Int("attempts", maxRetries).
+						Msg("Failed to read individual sidecar file after all retries")
 					continue
 				}
 				sidecars[sidecarFile] = data
 				successCount++
+
+				// Small delay between successful reads to avoid overwhelming device
+				time.Sleep(10 * time.Millisecond)
 			}
 			log.Info().
 				Int("success", successCount).
