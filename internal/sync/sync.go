@@ -181,15 +181,33 @@ func (s *Syncer) GetDeviceBooks() (map[string]*DeviceBook, error) {
 		log.Debug().Int("sidecar_count", len(sidecarFiles)).Msg("Reading sidecar files")
 		sidecars, err := s.client.ReadMultiFile(sidecarFiles)
 		if err != nil {
-			// Don't fail the entire operation if we can't read sidecars
-			// Just log and continue without metadata
-			log.Error().
+			// ReadMultiFile failed - try reading sidecars individually as fallback
+			log.Warn().
 				Err(err).
 				Int("sidecar_count", len(sidecarFiles)).
-				Msg("Failed to read sidecar files - device books will use filenames as IDs")
-			return deviceBooks, nil
+				Msg("Batch read failed, falling back to individual file reads")
+
+			sidecars = make(map[string][]byte)
+			successCount := 0
+			for _, sidecarFile := range sidecarFiles {
+				data, err := s.client.ReadFile(sidecarFile)
+				if err != nil {
+					log.Warn().
+						Err(err).
+						Str("sidecar", sidecarFile).
+						Msg("Failed to read individual sidecar file")
+					continue
+				}
+				sidecars[sidecarFile] = data
+				successCount++
+			}
+			log.Info().
+				Int("success", successCount).
+				Int("total", len(sidecarFiles)).
+				Msg("Individual sidecar reads completed")
+		} else {
+			log.Debug().Int("sidecars_read", len(sidecars)).Msg("Successfully read sidecar files via batch read")
 		}
-		log.Debug().Int("sidecars_read", len(sidecars)).Msg("Successfully read sidecar files")
 
 		// Parse each sidecar XML into ComicBook metadata
 		// Build a new map with correct book IDs from sidecars
