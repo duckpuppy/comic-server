@@ -490,7 +490,10 @@ func (s *Syncer) hasMetadataChanged(library, device *library.ComicBook) bool {
 
 // hasPagesChanged compares page structure between library and device books
 func (s *Syncer) hasPagesChanged(library, device *library.ComicBook) bool {
-	// If page counts differ, pages have changed
+	// PageCount is the authoritative field - compare this, not len(Pages)
+	// Note: ComicRack library XML only stores Page entries for pages with metadata
+	// (cover type, bookmarks, etc.), not all pages. The PageCount field contains
+	// the actual total page count from scanning the comic file.
 	if library.PageCount != device.PageCount {
 		log.Debug().
 			Str("book_id", library.ID).
@@ -501,33 +504,29 @@ func (s *Syncer) hasPagesChanged(library, device *library.ComicBook) bool {
 		return true
 	}
 
-	// If page array lengths differ, pages have changed
-	if len(library.Pages) != len(device.Pages) {
-		log.Debug().
-			Str("book_id", library.ID).
-			Str("title", library.Title).
-			Int("library_pages_len", len(library.Pages)).
-			Int("device_pages_len", len(device.Pages)).
-			Msg("Page array length differs")
-		return true
-	}
-
-	// Compare each page's type and image index
-	for i := range library.Pages {
-		if library.Pages[i].Image != device.Pages[i].Image ||
-			library.Pages[i].Type != device.Pages[i].Type {
-			log.Debug().
-				Str("book_id", library.ID).
-				Str("title", library.Title).
-				Int("page_index", i).
-				Int("library_image", library.Pages[i].Image).
-				Int("device_image", device.Pages[i].Image).
-				Str("library_type", string(library.Pages[i].Type)).
-				Str("device_type", string(device.Pages[i].Type)).
-				Msg("Page content differs")
-			return true
+	// Only compare individual page metadata if BOTH books have the same number
+	// of Page entries. If they differ, it just means one has full page metadata
+	// and the other has sparse metadata - not a real change.
+	if len(library.Pages) == len(device.Pages) && len(library.Pages) > 0 {
+		// Compare each page's type and image index
+		for i := range library.Pages {
+			if library.Pages[i].Image != device.Pages[i].Image ||
+				library.Pages[i].Type != device.Pages[i].Type {
+				log.Debug().
+					Str("book_id", library.ID).
+					Str("title", library.Title).
+					Int("page_index", i).
+					Int("library_image", library.Pages[i].Image).
+					Int("device_image", device.Pages[i].Image).
+					Str("library_type", string(library.Pages[i].Type)).
+					Str("device_type", string(device.Pages[i].Type)).
+					Msg("Page metadata differs")
+				return true
+			}
 		}
 	}
 
+	// Pages are the same (PageCount matches and either page metadata matches
+	// or one/both books have sparse page metadata)
 	return false
 }
