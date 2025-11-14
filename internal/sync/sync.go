@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/duckpuppy/comic-server/internal/library"
+	"github.com/duckpuppy/comic-server/internal/log"
 	"github.com/duckpuppy/comic-server/internal/protocol"
 )
 
@@ -192,7 +193,10 @@ func (s *Syncer) GetDeviceBooks() (map[string]*DeviceBook, error) {
 			if !ok || len(sidecarData) == 0 {
 				// No sidecar - use filename as key (shouldn't happen in normal operation)
 				filenameKey := strings.TrimSuffix(filepath.Base(deviceBook.Filename), ".cbp")
-				fmt.Printf("WARNING: No sidecar found for %s, using filename as key: %s\n", deviceBook.Filename, filenameKey)
+				log.Warn().
+					Str("filename", deviceBook.Filename).
+					Str("filename_key", filenameKey).
+					Msg("No sidecar found for device book, using filename as key")
 				correctDeviceBooks[filenameKey] = deviceBook
 				continue
 			}
@@ -201,14 +205,26 @@ func (s *Syncer) GetDeviceBooks() (map[string]*DeviceBook, error) {
 			if err := xml.Unmarshal(sidecarData, &book); err != nil {
 				// Can't parse sidecar - use filename as key
 				filenameKey := strings.TrimSuffix(filepath.Base(deviceBook.Filename), ".cbp")
-				fmt.Printf("ERROR: Failed to parse sidecar for %s: %v\n", deviceBook.Filename, err)
-				fmt.Printf("  Sidecar content (first 500 chars): %s\n", string(sidecarData[:min(500, len(sidecarData))]))
+				sidecarPreview := string(sidecarData)
+				if len(sidecarPreview) > 500 {
+					sidecarPreview = sidecarPreview[:500]
+				}
+				log.Error().
+					Err(err).
+					Str("filename", deviceBook.Filename).
+					Str("filename_key", filenameKey).
+					Str("sidecar_preview", sidecarPreview).
+					Msg("Failed to parse sidecar XML")
 				correctDeviceBooks[filenameKey] = deviceBook
 				continue
 			}
 
 			// Use the actual book ID (GUID) from sidecar as the map key
-			fmt.Printf("DEBUG: Parsed sidecar for %s, book ID: %s, title: %s\n", deviceBook.Filename, book.ID, book.Title)
+			log.Debug().
+				Str("filename", deviceBook.Filename).
+				Str("book_id", book.ID).
+				Str("title", book.Title).
+				Msg("Successfully parsed sidecar XML")
 			deviceBook.Metadata = &book
 			correctDeviceBooks[book.ID] = deviceBook
 		}
@@ -380,14 +396,6 @@ func (s *Syncer) hasMetadataChanged(library, device *library.ComicBook) bool {
 		library.CurrentPage != device.CurrentPage ||
 		library.Summary != device.Summary ||
 		library.Notes != device.Notes
-}
-
-// min returns the minimum of two integers
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 // hasPagesChanged compares page structure between library and device books
