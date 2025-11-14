@@ -300,6 +300,18 @@ func (s *Syncer) ComputeSyncPlan(deviceBooks map[string]*DeviceBook) ([]SyncOper
 		booksToSync = processedBooks
 	}
 
+	// DEBUG: Print library book IDs
+	log.Debug().Int("count", len(booksToSync)).Msg("DEBUG: Library books to sync:")
+	for i, book := range booksToSync {
+		if i < 5 { // Only print first 5 to avoid spam
+			log.Debug().
+				Str("id", book.ID).
+				Str("title", book.Title).
+				Str("filepath", book.FilePath).
+				Msgf("  Library book %d", i+1)
+		}
+	}
+
 	// Track which library books we've seen
 	libraryBookIDs := make(map[string]bool)
 

@@ -48,6 +48,16 @@ func (s *Syncer) PerformSync() (*SyncResult, error) {
 	}
 	log.Printf("Found %d books on device\n", len(deviceBooks))
 
+	// DEBUG: Print device book IDs
+	log.Println("DEBUG: Device book IDs:")
+	for bookID, deviceBook := range deviceBooks {
+		title := "(no metadata)"
+		if deviceBook.Metadata != nil {
+			title = deviceBook.Metadata.Title
+		}
+		log.Printf("  ID: %s, File: %s, Title: %s\n", bookID, deviceBook.Filename, title)
+	}
+
 	// Step 5: Compute sync plan
 	log.Println("Computing sync plan...")
 	operations, err := s.ComputeSyncPlan(deviceBooks)
