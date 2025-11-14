@@ -384,7 +384,10 @@ func (s *Syncer) writeSyncInformation() error {
 		Version: 1,
 	}
 
-	// Get all reading lists from the library
+	// Get reading lists to include in sync_information.xml
+	// This includes:
+	// 1. Regular reading lists from the library
+	// 2. Smart lists that were used for filtering (converted to regular lists with actual book IDs)
 	readingLists := s.getReadingLists()
 	if len(readingLists) > 0 {
 		syncInfo.Lists = &Lists{
@@ -404,12 +407,15 @@ func (s *Syncer) writeSyncInformation() error {
 }
 
 // getReadingLists extracts reading lists from the library
-// Only includes non-smart lists (regular reading lists)
+// Includes:
+// 1. Regular reading lists from the library
+// 2. Smart lists used for filtering (converted to regular lists with synced book IDs)
 func (s *Syncer) getReadingLists() []ReadingList {
 	var lists []ReadingList
 
+	// Add regular reading lists from the library
 	for _, listItem := range s.library.ComicLists {
-		// Skip smart lists - only sync regular reading lists
+		// Skip smart lists - we'll handle them separately
 		if listItem.Type == "comicrack:ComicSmartListItem" {
 			continue
 		}
@@ -430,6 +436,47 @@ func (s *Syncer) getReadingLists() []ReadingList {
 		}
 
 		lists = append(lists, readingList)
+	}
+
+	// Add smart lists that were used for filtering
+	// Convert them to regular reading lists with the actual book IDs that were synced
+	// Check both filterLists (new) and filterList (old, backward compatibility)
+	var activeFilterLists []*library.ComicListItem
+	if len(s.filterLists) > 0 {
+		activeFilterLists = s.filterLists
+	} else if s.filterList != nil {
+		activeFilterLists = []*library.ComicListItem{s.filterList}
+	}
+
+	if len(activeFilterLists) > 0 {
+		// Get the books that match the filter lists (union of all lists)
+		booksToSync := s.computeUnionOfLists()
+
+		// For each filter list, create a reading list entry
+		// Note: When syncing multiple lists, each list entry in sync_information.xml
+		// will contain the same union of books (this matches ComicRackCE behavior)
+		for _, filterList := range activeFilterLists {
+			readingList := ReadingList{
+				Name:        filterList.Name,
+				Description: "",
+			}
+
+			// Add book IDs from the filtered books
+			if len(booksToSync) > 0 {
+				readingList.Books = &BookIDs{
+					ID: make([]string, 0, len(booksToSync)),
+				}
+				for _, book := range booksToSync {
+					readingList.Books.ID = append(readingList.Books.ID, book.ID)
+				}
+			}
+
+			lists = append(lists, readingList)
+			log.Debug().
+				Str("list_name", filterList.Name).
+				Int("book_count", len(booksToSync)).
+				Msg("Added smart list to sync_information.xml")
+		}
 	}
 
 	return lists
