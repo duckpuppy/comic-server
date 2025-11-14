@@ -44,80 +44,37 @@
   </Books>
   <ComicLists>
     <!-- Smart List: League Series - Matches books in "League of Extraordinary Gentlemen" series -->
-    <ComicList Name="League Series" Type="comicrack:ComicSmartListItem" Id="{test-list-league}">
+    <Item xsi:type="ComicSmartListItem" Id="{test-list-league}" Name="League Series" MatcherMode="And">
       <Matchers>
-        <Matcher MatchOperator="contains" MatchValue="League">
-          <MatchValueList />
-        </Matcher>
+        <ComicBookMatcher xsi:type="ComicBookSeriesMatcher" MatchOperator="1">
+          <MatchValue>League</MatchValue>
+        </ComicBookMatcher>
       </Matchers>
-      <GroupMatchers>
-        <Group MatcherMode="And">
-          <Matchers>
-            <Matcher MatchOperator="contains" MatchValue="League">
-              <MatchValueList />
-            </Matcher>
-          </Matchers>
-        </Group>
-      </GroupMatchers>
-      <MatcherMode>And</MatcherMode>
-      <AndOrNot>And</AndOrNot>
-    </ComicList>
+    </Item>
     <!-- Smart List: Top Shelf Publisher - Matches all Top Shelf books -->
-    <ComicList Name="Top Shelf Publisher" Type="comicrack:ComicSmartListItem" Id="{test-list-topshelf}">
+    <Item xsi:type="ComicSmartListItem" Id="{test-list-topshelf}" Name="Top Shelf Publisher" MatcherMode="And">
       <Matchers>
-        <Matcher MatchType="Publisher" MatchOperator="equals" MatchValue="Top Shelf">
-          <MatchValueList />
-        </Matcher>
+        <ComicBookMatcher xsi:type="ComicBookPublisherMatcher" MatchOperator="0">
+          <MatchValue>Top Shelf</MatchValue>
+        </ComicBookMatcher>
       </Matchers>
-      <GroupMatchers>
-        <Group MatcherMode="And">
-          <Matchers>
-            <Matcher MatchType="Publisher" MatchOperator="equals" MatchValue="Top Shelf">
-              <MatchValueList />
-            </Matcher>
-          </Matchers>
-        </Group>
-      </GroupMatchers>
-      <MatcherMode>And</MatcherMode>
-      <AndOrNot>And</AndOrNot>
-    </ComicList>
+    </Item>
     <!-- Smart List: 2009-2011 - Matches books from years 2009-2011 -->
-    <ComicList Name="2009-2011" Type="comicrack:ComicSmartListItem" Id="{test-list-years}">
+    <Item xsi:type="ComicSmartListItem" Id="{test-list-years}" Name="2009-2011" MatcherMode="And">
       <Matchers>
-        <Matcher MatchType="Year" MatchOperator="inrange" MatchValue="2009" MatchValue2="2011">
-          <MatchValueList />
-        </Matcher>
+        <ComicBookMatcher xsi:type="ComicBookYearMatcher" MatchOperator="3">
+          <MatchValue>2009</MatchValue>
+          <MatchValue2>2011</MatchValue2>
+        </ComicBookMatcher>
       </Matchers>
-      <GroupMatchers>
-        <Group MatcherMode="And">
-          <Matchers>
-            <Matcher MatchType="Year" MatchOperator="inrange" MatchValue="2009" MatchValue2="2011">
-              <MatchValueList />
-            </Matcher>
-          </Matchers>
-        </Group>
-      </GroupMatchers>
-      <MatcherMode>And</MatcherMode>
-      <AndOrNot>And</AndOrNot>
-    </ComicList>
+    </Item>
     <!-- Smart List: All Comics - Matches everything (useful for testing full sync) -->
-    <ComicList Name="All Comics" Type="comicrack:ComicSmartListItem" Id="{test-list-all}">
+    <Item xsi:type="ComicSmartListItem" Id="{test-list-all}" Name="All Comics" MatcherMode="And">
       <Matchers>
-        <Matcher MatchType="PageCount" MatchOperator="greater" MatchValue="0">
-          <MatchValueList />
-        </Matcher>
+        <ComicBookMatcher xsi:type="ComicBookPublisherMatcher" MatchOperator="0">
+          <MatchValue>Top Shelf</MatchValue>
+        </ComicBookMatcher>
       </Matchers>
-      <GroupMatchers>
-        <Group MatcherMode="And">
-          <Matchers>
-            <Matcher MatchType="PageCount" MatchOperator="greater" MatchValue="0">
-              <MatchValueList />
-            </Matcher>
-          </Matchers>
-        </Group>
-      </GroupMatchers>
-      <MatcherMode>And</MatcherMode>
-      <AndOrNot>And</AndOrNot>
-    </ComicList>
+    </Item>
   </ComicLists>
 </ComicDatabase>
