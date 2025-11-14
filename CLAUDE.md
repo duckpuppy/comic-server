@@ -172,6 +172,27 @@ just run-dev
   --ignore-device "SM-T970"
 ```
 
+### Direct IP Ping (Bypass Multicast Discovery)
+
+In environments where multicast discovery is unreliable (WSL2, VPNs, firewalls, complex network setups), you can send a direct discovery ping to a device:
+
+```bash
+# Ping device at specific IP (default port 7614)
+./comic-server server --library /path \
+  --ping-device 192.168.0.24
+
+# Custom port
+./comic-server server --library /path \
+  --ping-device 192.168.0.24:7614
+```
+
+The `--ping-device` flag:
+- Sends `CommandClientPong` directly to device IP:PORT
+- Makes the sync button appear on the device without multicast
+- Runs in background goroutine (doesn't block server startup)
+- Defaults to port 7614 if not specified
+- Useful for WSL2, VPNs, firewalls blocking multicast, or complex network topologies
+
 ## Key Implementation Details
 
 ### Device Discovery (internal/device/discovery.go)
@@ -476,6 +497,95 @@ just ci  # Runs lint + test + build
 
 - `testdata/ComicDB.xml`: Real ComicRack library XML (226MB) with actual comic metadata
 - Used for integration testing library parsing and querying
+- `testdata/library/`: Minimal test library for rapid development (see Test Library section below)
+
+### Test Library
+
+**Location**: `testdata/library/`
+
+A minimal test library for rapid development and testing without requiring a production library (65K+ books).
+
+**Contents**:
+- **3 comic books** - Small files (league-001.cbz, league-002.cbz, kids-club-002.cbz)
+- **4 smart lists** - Pre-configured to match the test comics
+- **ComicDb.xml** - Complete ComicRack-compatible library database
+- **Documentation** - Comprehensive README with usage examples
+
+**Comic Books** (user-provided, not in git):
+
+1. **The League of Extraordinary Gentlemen: Century #1** (2009) - 80 pages, Top Shelf, Superhero
+2. **The League of Extraordinary Gentlemen: Century #2** (2011) - 80 pages, Top Shelf, Superhero
+3. **Top Shelf Kids Club #2** (2012) - 48 pages, Top Shelf, Kids
+
+**Smart Lists**:
+
+1. **League Series** - Matches 2 books (Series contains "League")
+2. **Top Shelf Publisher** - Matches 3 books (Publisher equals "Top Shelf")
+3. **2009-2011** - Matches 2 books (Year in range 2009-2011)
+4. **All Comics** - Matches 3 books (PageCount > 0)
+
+**Usage Examples**:
+
+```bash
+# Run server with test library
+./comic-server server --library testdata/library/ComicDb.xml
+
+# List smart lists
+./comic-server config list-smartlists --library testdata/library/ComicDb.xml
+
+# Add list to device
+./comic-server config add-list "My Tablet" "League Series" \
+  --library testdata/library/ComicDb.xml
+
+# With direct IP ping (bypass multicast)
+./comic-server server --library testdata/library/ComicDb.xml \
+  --ping-device 192.168.0.24
+```
+
+**Advantages**:
+- **Fast**: 3 books vs 65K+ books - sync completes in seconds
+- **Safe**: No risk of corrupting production library during client-to-server sync tests
+- **Portable**: ~6MB total (excluding comic files) - easy to commit to git
+- **Predictable**: Known content makes debugging easier
+- **Complete**: Real comic files with actual pages, not mocks
+
+**Comic Files**:
+- Comic files are **excluded from git** via `.gitignore`
+- Users provide their own comics for testing (see `testdata/library/comics/README.md`)
+- Recommended sources for public domain comics:
+  - [Comic Book Plus](https://comicbookplus.com/) (free registration required)
+  - [Digital Comic Museum](https://digitalcomicmuseum.com/)
+  - [Internet Archive](https://archive.org/details/comics)
+
+**File Structure**:
+
+```
+testdata/library/
+├── README.md           # Comprehensive usage guide
+├── ComicDb.xml         # Library database with books and smart lists
+└── comics/             # Comic book files (user-provided)
+    ├── .gitignore      # Excludes *.cbz, *.cbr, *.cb7, *.cbt
+    ├── README.md       # Comic sources and setup instructions
+    ├── league-001.cbz  # User provides
+    ├── league-002.cbz  # User provides
+    └── kids-club-002.cbz  # User provides
+```
+
+**Testing Scenarios**:
+
+1. **Fresh Device Sync** - Configure "All Comics" smart list → sync 3 books
+2. **Partial Sync** - Configure "League Series" smart list → sync 2 books
+3. **Year Range Filter** - Configure "2009-2011" smart list → sync 2 books (excludes 2012)
+4. **Publisher Filter** - Configure "Top Shelf Publisher" smart list → sync 3 books
+
+**Integration with Tests**:
+
+```go
+func TestSyncWithSmartList(t *testing.T) {
+    lib, err := library.LoadLibrary("testdata/library/ComicDb.xml")
+    // Test sync logic with known data
+}
+```
 
 ## Common Issues
 
