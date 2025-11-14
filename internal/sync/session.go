@@ -144,7 +144,15 @@ func (s *Syncer) PerformSync() (*SyncResult, error) {
 		log.Printf("Warning: failed to send final progress: %v\n", err)
 	}
 
-	// Step 9: CommandCompleted - Signal sync completion
+	// Step 9: Touch marker file (comicrack.ini) to trigger device refresh
+	// This is critical - updating the marker file timestamp triggers the Android
+	// app to detect changes and refresh the library display
+	log.Println("Updating marker file timestamp...")
+	if err := s.touchMarkerFile(); err != nil {
+		log.Printf("Warning: failed to touch marker file: %v\n", err)
+	}
+
+	// Step 10: CommandCompleted - Signal sync completion
 	log.Println("Completing synchronization...")
 	if err := s.client.SendCompleted(); err != nil {
 		return result, fmt.Errorf("failed to send completion: %w", err)
@@ -430,4 +438,23 @@ func (s *Syncer) calculateRequiredSpace(operations []SyncOperation) (int64, erro
 	}
 
 	return totalBytes, nil
+}
+
+// touchMarkerFile updates the marker file (comicrack.ini) timestamp to trigger device refresh
+// This is critical for the Android app to detect changes and refresh the library display
+func (s *Syncer) touchMarkerFile() error {
+	const markerFile = "comicrack.ini"
+
+	// Read the current marker file
+	data, err := s.client.ReadFile(markerFile)
+	if err != nil {
+		return fmt.Errorf("failed to read marker file: %w", err)
+	}
+
+	// Write it back (same contents, updates timestamp)
+	if err := s.client.WriteFile(markerFile, data); err != nil {
+		return fmt.Errorf("failed to write marker file: %w", err)
+	}
+
+	return nil
 }
