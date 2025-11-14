@@ -492,11 +492,23 @@ func (s *Syncer) hasMetadataChanged(library, device *library.ComicBook) bool {
 func (s *Syncer) hasPagesChanged(library, device *library.ComicBook) bool {
 	// If page counts differ, pages have changed
 	if library.PageCount != device.PageCount {
+		log.Debug().
+			Str("book_id", library.ID).
+			Str("title", library.Title).
+			Int("library_page_count", library.PageCount).
+			Int("device_page_count", device.PageCount).
+			Msg("Page count differs")
 		return true
 	}
 
 	// If page array lengths differ, pages have changed
 	if len(library.Pages) != len(device.Pages) {
+		log.Debug().
+			Str("book_id", library.ID).
+			Str("title", library.Title).
+			Int("library_pages_len", len(library.Pages)).
+			Int("device_pages_len", len(device.Pages)).
+			Msg("Page array length differs")
 		return true
 	}
 
@@ -504,6 +516,15 @@ func (s *Syncer) hasPagesChanged(library, device *library.ComicBook) bool {
 	for i := range library.Pages {
 		if library.Pages[i].Image != device.Pages[i].Image ||
 			library.Pages[i].Type != device.Pages[i].Type {
+			log.Debug().
+				Str("book_id", library.ID).
+				Str("title", library.Title).
+				Int("page_index", i).
+				Int("library_image", library.Pages[i].Image).
+				Int("device_image", device.Pages[i].Image).
+				Str("library_type", string(library.Pages[i].Type)).
+				Str("device_type", string(device.Pages[i].Type)).
+				Msg("Page content differs")
 			return true
 		}
 	}
