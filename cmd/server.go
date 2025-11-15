@@ -219,9 +219,13 @@ func runServer(cmd *cobra.Command, args []string) error {
 	// Start listening
 	deviceChan, errorChan := listener.Start()
 
+	// Create context for direct ping loop
+	pingCtx, pingCancel := context.WithCancel(context.Background())
+	defer pingCancel()
+
 	// Send direct ping to device if specified (useful for WSL2, VPNs, complex networks)
 	if pingDeviceSet && pingDevice != "" {
-		go sendDirectPing(pingDevice)
+		go sendDirectPingAndRegister(pingCtx, pingDevice, registry, syncManager, cfg, lib, ipLimiter, deviceLimiter, syncSemaphore)
 	}
 
 	// Create and start WebSocket hub
@@ -661,10 +665,21 @@ func handleSyncRequest(
 	return nil
 }
 
-// sendDirectPing sends a discovery ping directly to a device IP address
-// This is useful for environments where multicast discovery is unreliable
-// (WSL2, VPNs, complex network setups, firewalls blocking multicast, etc.)
-func sendDirectPing(address string) {
+// sendDirectPingAndRegister sends periodic discovery pings directly to a device IP address
+// and registers the device on first contact. This is useful for environments where multicast
+// discovery is unreliable (WSL2, VPNs, complex network setups, firewalls blocking multicast, etc.)
+// Pings are sent every 30 seconds to keep the sync button visible on the device
+func sendDirectPingAndRegister(
+	ctx context.Context,
+	address string,
+	registry *device.Registry,
+	syncManager *syncstate.Manager,
+	cfg *config.Config,
+	lib *library.ComicLibrary,
+	ipLimiter *ratelimit.IPLimiter,
+	deviceLimiter *ratelimit.DeviceLimiter,
+	syncSemaphore chan struct{},
+) {
 	// Parse IP:PORT, default port is 7614 (device port)
 	deviceIP := address
 	devicePort := 7614
@@ -686,28 +701,108 @@ func sendDirectPing(address string) {
 		}
 	}
 
+	// Create protocol client for the device
+	client := protocol.NewClient(deviceIP, devicePort)
+
+	// Send initial ping immediately
 	log.Info().
 		Str("ip", deviceIP).
 		Int("port", devicePort).
 		Msg("Sending direct discovery ping to device")
 
-	// Create protocol client for the device
-	client := protocol.NewClient(deviceIP, devicePort)
-
-	// Send CommandClientPong to make sync button appear on device
 	if err := client.SendClientPong(); err != nil {
 		log.Error().
 			Err(err).
 			Str("ip", deviceIP).
 			Int("port", devicePort).
 			Msg("Failed to send direct ping to device")
-		return
+	} else {
+		log.Info().
+			Str("ip", deviceIP).
+			Int("port", devicePort).
+			Msg("Successfully sent direct ping to device")
+
+		// Try to register the device by reading comicrack.ini
+		iniData, err := client.ReadFile("comicrack.ini")
+		if err != nil {
+			log.Warn().
+				Err(err).
+				Str("ip", deviceIP).
+				Int("port", devicePort).
+				Msg("Failed to read device info for registration, will retry on periodic pings")
+		} else {
+			// Parse device info
+			deviceInfo, err := device.ParseINI(iniData)
+			if err != nil {
+				log.Warn().
+					Err(err).
+					Str("ip", deviceIP).
+					Int("port", devicePort).
+					Msg("Failed to parse device info")
+			} else {
+				// Create a discovered device and register it
+				discovered := device.DiscoveredDevice{
+					Key:       deviceInfo.ID + ":ComicRack",
+					IPAddress: deviceIP,
+				}
+				log.Info().
+					Str("ip", deviceIP).
+					Str("device_id", deviceInfo.ID).
+					Str("device_name", deviceInfo.Name).
+					Msg("Registering device from direct ping")
+
+				handleDiscoveredDevice(discovered, registry, syncManager, cfg, lib, ipLimiter, deviceLimiter, syncSemaphore)
+
+				// In direct-ping mode, automatically trigger sync since device can't signal back via UDP
+				// Check if device is configured for sync (has smart lists assigned)
+				if deviceCfg, exists := cfg.Devices[deviceInfo.ID]; exists && len(deviceCfg.Lists) > 0 {
+					log.Info().
+						Str("device_id", deviceInfo.ID).
+						Int("lists", len(deviceCfg.Lists)).
+						Msg("Device has smart lists configured, triggering automatic sync")
+
+					if err := handleSyncRequest(deviceInfo, deviceIP, cfg, lib, syncManager, deviceLimiter, syncSemaphore); err != nil {
+						log.Error().
+							Err(err).
+							Str("device_id", deviceInfo.ID).
+							Msg("Automatic sync failed")
+					}
+				} else {
+					log.Info().
+						Str("device_id", deviceInfo.ID).
+						Msg("Device registered but no smart lists configured - skipping automatic sync")
+				}
+			}
+		}
 	}
 
-	log.Info().
-		Str("ip", deviceIP).
-		Int("port", devicePort).
-		Msg("Successfully sent direct ping to device")
+	// Send periodic pings every 10 seconds to keep sync button visible
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Info().
+				Str("ip", deviceIP).
+				Int("port", devicePort).
+				Msg("Stopping direct ping loop")
+			return
+		case <-ticker.C:
+			if err := client.SendClientPong(); err != nil {
+				log.Warn().
+					Err(err).
+					Str("ip", deviceIP).
+					Int("port", devicePort).
+					Msg("Failed to send periodic ping to device")
+			} else {
+				log.Debug().
+					Str("ip", deviceIP).
+					Int("port", devicePort).
+					Msg("Sent periodic ping to device")
+			}
+		}
+	}
 }
 
 func init() {
