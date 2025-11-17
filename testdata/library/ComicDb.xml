@@ -1,80 +1,180 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ComicDatabase xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" Id="test-library">
   <Books>
-    <Book Id="league-001-id" File="testdata/library/comics/league-001.cbz">
-      <Series>The League of Extraordinary Gentlemen: Century</Series>
-      <Title>The League of Extraordinary Gentlemen: Century #1</Title>
+    <!-- Ace Magazines: Atomic War! -->
+    <Book Id="atomic-war-001" File="testdata/library/comics/Ace Magazines/Atomic War! (1952)/Atomic War! #001 (1952).cbz">
+      <Series>Atomic War!</Series>
+      <Title>Atomic War! #1</Title>
       <Number>1</Number>
-      <Volume>2009</Volume>
-      <Year>2009</Year>
-      <Month>5</Month>
-      <Writer>Alan Moore</Writer>
-      <Penciller>Kevin O'Neill</Penciller>
-      <Publisher>Top Shelf</Publisher>
-      <PageCount>80</PageCount>
-      <Format>Trade Paperback</Format>
-      <Genre>Superhero</Genre>
-    </Book>
-    <Book Id="league-002-id" File="testdata/library/comics/league-002.cbz">
-      <Series>The League of Extraordinary Gentlemen: Century</Series>
-      <Title>The League of Extraordinary Gentlemen: Century #2</Title>
-      <Number>2</Number>
-      <Volume>2009</Volume>
-      <Year>2011</Year>
-      <Month>7</Month>
-      <Writer>Alan Moore</Writer>
-      <Penciller>Kevin O'Neill</Penciller>
-      <Publisher>Top Shelf</Publisher>
-      <PageCount>80</PageCount>
-      <Format>Trade Paperback</Format>
-      <Genre>Superhero</Genre>
-    </Book>
-    <Book Id="kids-club-002-id" File="testdata/library/comics/kids-club-002.cbz">
-      <Series>Top Shelf Kids Club</Series>
-      <Title>Top Shelf Kids Club #2</Title>
-      <Number>2</Number>
-      <Volume>2011</Volume>
-      <Year>2012</Year>
-      <Month>5</Month>
-      <Publisher>Top Shelf</Publisher>
-      <PageCount>48</PageCount>
+      <Volume>1952</Volume>
+      <Year>1952</Year>
+      <Month>11</Month>
+      <Publisher>Ace Magazines</Publisher>
       <Format>Comic</Format>
-      <Genre>Kids</Genre>
+      <Genre>War</Genre>
+    </Book>
+    <Book Id="atomic-war-002" File="testdata/library/comics/Ace Magazines/Atomic War! (1952)/Atomic War! #002 (1952).cbz">
+      <Series>Atomic War!</Series>
+      <Title>Atomic War! #2</Title>
+      <Number>2</Number>
+      <Volume>1952</Volume>
+      <Year>1952</Year>
+      <Month>12</Month>
+      <Publisher>Ace Magazines</Publisher>
+      <Format>Comic</Format>
+      <Genre>War</Genre>
+    </Book>
+    <Book Id="atomic-war-003" File="testdata/library/comics/Ace Magazines/Atomic War! (1952)/Atomic War! #003 (1953).cbz">
+      <Series>Atomic War!</Series>
+      <Title>Atomic War! #3</Title>
+      <Number>3</Number>
+      <Volume>1952</Volume>
+      <Year>1953</Year>
+      <Month>1</Month>
+      <Publisher>Ace Magazines</Publisher>
+      <Format>Comic</Format>
+      <Genre>War</Genre>
+    </Book>
+    <Book Id="atomic-war-004" File="testdata/library/comics/Ace Magazines/Atomic War! (1952)/Atomic War! #004 (1953).cbz">
+      <Series>Atomic War!</Series>
+      <Title>Atomic War! #4</Title>
+      <Number>4</Number>
+      <Volume>1952</Volume>
+      <Year>1953</Year>
+      <Month>4</Month>
+      <Publisher>Ace Magazines</Publisher>
+      <Format>Comic</Format>
+      <Genre>War</Genre>
+    </Book>
+
+    <!-- Ajax-Farrell: Dark Shadows -->
+    <Book Id="dark-shadows-001" File="testdata/library/comics/Ajax-Farrell/Dark Shadows (1957)/Dark Shadows #001 (1957).cbz">
+      <Series>Dark Shadows</Series>
+      <Title>Dark Shadows #1</Title>
+      <Number>1</Number>
+      <Volume>1957</Volume>
+      <Year>1957</Year>
+      <Month>8</Month>
+      <Publisher>Ajax-Farrell</Publisher>
+      <Format>Comic</Format>
+      <Genre>Horror</Genre>
+    </Book>
+    <Book Id="dark-shadows-002" File="testdata/library/comics/Ajax-Farrell/Dark Shadows (1957)/Dark Shadows #002 (1958).cbz">
+      <Series>Dark Shadows</Series>
+      <Title>Dark Shadows #2</Title>
+      <Number>2</Number>
+      <Volume>1957</Volume>
+      <Year>1958</Year>
+      <Month>2</Month>
+      <Publisher>Ajax-Farrell</Publisher>
+      <Format>Comic</Format>
+      <Genre>Horror</Genre>
+    </Book>
+    <Book Id="dark-shadows-003" File="testdata/library/comics/Ajax-Farrell/Dark Shadows (1957)/Dark Shadows #003 (1958).cbz">
+      <Series>Dark Shadows</Series>
+      <Title>Dark Shadows #3</Title>
+      <Number>3</Number>
+      <Volume>1957</Volume>
+      <Year>1958</Year>
+      <Month>5</Month>
+      <Publisher>Ajax-Farrell</Publisher>
+      <Format>Comic</Format>
+      <Genre>Horror</Genre>
+    </Book>
+
+    <!-- Centaur: Arrow -->
+    <Book Id="arrow-001" File="testdata/library/comics/Centaur/Arrow (1940)/Arrow #001 (1940).cbz">
+      <Series>Arrow</Series>
+      <Title>Arrow #1</Title>
+      <Number>1</Number>
+      <Volume>1940</Volume>
+      <Year>1940</Year>
+      <Month>10</Month>
+      <Publisher>Centaur</Publisher>
+      <Format>Comic</Format>
+      <Genre>Superhero</Genre>
+    </Book>
+    <Book Id="arrow-002" File="testdata/library/comics/Centaur/Arrow (1940)/Arrow #002 (1940).cbz">
+      <Series>Arrow</Series>
+      <Title>Arrow #2</Title>
+      <Number>2</Number>
+      <Volume>1940</Volume>
+      <Year>1940</Year>
+      <Month>12</Month>
+      <Publisher>Centaur</Publisher>
+      <Format>Comic</Format>
+      <Genre>Superhero</Genre>
+    </Book>
+    <Book Id="arrow-003" File="testdata/library/comics/Centaur/Arrow (1940)/Arrow #003 (1941).cbz">
+      <Series>Arrow</Series>
+      <Title>Arrow #3</Title>
+      <Number>3</Number>
+      <Volume>1940</Volume>
+      <Year>1941</Year>
+      <Month>3</Month>
+      <Publisher>Centaur</Publisher>
+      <Format>Comic</Format>
+      <Genre>Superhero</Genre>
     </Book>
   </Books>
+
   <ComicLists>
-    <!-- Smart List: League Series - Matches books in "League of Extraordinary Gentlemen" series -->
-    <Item xsi:type="ComicSmartListItem" Id="{test-list-league}" Name="League Series" MatcherMode="And">
-      <Matchers>
-        <ComicBookMatcher xsi:type="ComicBookSeriesMatcher" MatchOperator="1">
-          <MatchValue>League</MatchValue>
-        </ComicBookMatcher>
-      </Matchers>
-    </Item>
-    <!-- Smart List: Top Shelf Publisher - Matches all Top Shelf books -->
-    <Item xsi:type="ComicSmartListItem" Id="{test-list-topshelf}" Name="Top Shelf Publisher" MatcherMode="And">
-      <Matchers>
-        <ComicBookMatcher xsi:type="ComicBookPublisherMatcher" MatchOperator="0">
-          <MatchValue>Top Shelf</MatchValue>
-        </ComicBookMatcher>
-      </Matchers>
-    </Item>
-    <!-- Smart List: 2009-2011 - Matches books from years 2009-2011 -->
-    <Item xsi:type="ComicSmartListItem" Id="{test-list-years}" Name="2009-2011" MatcherMode="And">
-      <Matchers>
-        <ComicBookMatcher xsi:type="ComicBookYearMatcher" MatchOperator="3">
-          <MatchValue>2009</MatchValue>
-          <MatchValue2>2011</MatchValue2>
-        </ComicBookMatcher>
-      </Matchers>
-    </Item>
-    <!-- Smart List: All Comics - Matches everything (useful for testing full sync) -->
+    <!-- Smart List: All Comics - Matches all books (for testing full sync) -->
     <Item xsi:type="ComicSmartListItem" Id="{test-list-all}" Name="All Comics" MatcherMode="And">
       <Matchers>
+        <ComicBookMatcher xsi:type="ComicBookYearMatcher" MatchOperator="2">
+          <MatchValue>1900</MatchValue>
+        </ComicBookMatcher>
+      </Matchers>
+    </Item>
+
+    <!-- Smart List: Ace Magazines - Publisher filter -->
+    <Item xsi:type="ComicSmartListItem" Id="{test-list-ace}" Name="Ace Magazines" MatcherMode="And">
+      <Matchers>
         <ComicBookMatcher xsi:type="ComicBookPublisherMatcher" MatchOperator="0">
-          <MatchValue>Top Shelf</MatchValue>
+          <MatchValue>Ace Magazines</MatchValue>
+        </ComicBookMatcher>
+      </Matchers>
+    </Item>
+
+    <!-- Smart List: 1950s Comics - Year range filter (1950-1959) -->
+    <Item xsi:type="ComicSmartListItem" Id="{test-list-1950s}" Name="1950s Comics" MatcherMode="And">
+      <Matchers>
+        <ComicBookMatcher xsi:type="ComicBookYearMatcher" MatchOperator="5">
+          <MatchValue>1950</MatchValue>
+          <MatchValue2>1959</MatchValue2>
+        </ComicBookMatcher>
+      </Matchers>
+    </Item>
+
+    <!-- Smart List: Golden Age - Early comics (1940-1949) -->
+    <Item xsi:type="ComicSmartListItem" Id="{test-list-golden-age}" Name="Golden Age" MatcherMode="And">
+      <Matchers>
+        <ComicBookMatcher xsi:type="ComicBookYearMatcher" MatchOperator="5">
+          <MatchValue>1940</MatchValue>
+          <MatchValue2>1949</MatchValue2>
+        </ComicBookMatcher>
+      </Matchers>
+    </Item>
+
+    <!-- Smart List: Atomic War! Series - Series filter -->
+    <Item xsi:type="ComicSmartListItem" Id="{test-list-atomic-war}" Name="Atomic War! Series" MatcherMode="And">
+      <Matchers>
+        <ComicBookMatcher xsi:type="ComicBookSeriesMatcher" MatchOperator="1">
+          <MatchValue>Atomic War</MatchValue>
+        </ComicBookMatcher>
+      </Matchers>
+    </Item>
+
+    <!-- Smart List: Horror Genre - Genre filter -->
+    <Item xsi:type="ComicSmartListItem" Id="{test-list-horror}" Name="Horror Comics" MatcherMode="And">
+      <Matchers>
+        <ComicBookMatcher xsi:type="ComicBookGenreMatcher" MatchOperator="0">
+          <MatchValue>Horror</MatchValue>
         </ComicBookMatcher>
       </Matchers>
     </Item>
   </ComicLists>
+
+  <ReadingLists />
 </ComicDatabase>
