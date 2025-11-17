@@ -32,6 +32,7 @@ type Client interface {
 type Syncer struct {
 	client      Client
 	library     *library.ComicLibrary
+	libraryPath string                   // Path to library XML file for saving updates
 	filterList  *library.ComicListItem   // Optional single smart list to filter books (deprecated, use filterLists)
 	filterLists []*library.ComicListItem // Optional multiple smart lists to filter books (union of all lists)
 	settings    *SharedListSettings      // Sync settings to apply (filtering, sorting, limiting)
@@ -45,6 +46,11 @@ func NewSyncer(client Client, lib *library.ComicLibrary) *Syncer {
 		filterList: nil,
 		settings:   DefaultSettings(), // Use default settings
 	}
+}
+
+// SetLibraryPath sets the path to the library XML file for saving updates
+func (s *Syncer) SetLibraryPath(path string) {
+	s.libraryPath = path
 }
 
 // SetFilterList sets a smart list to filter which books get synced

@@ -612,6 +612,9 @@ func handleSyncRequest(
 	// Create syncer
 	syncer := csync.NewSyncer(client, lib)
 
+	// Set library path for reverse sync (reading state updates)
+	syncer.SetLibraryPath(cfg.Server.LibraryPath)
+
 	// Apply device config if exists
 	if deviceConfig, ok := cfg.Devices[deviceID]; ok {
 		if err := applyDeviceConfig(syncer, deviceConfig, lib); err != nil {

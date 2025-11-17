@@ -185,6 +185,25 @@ func LoadLibrary(path string) (*ComicLibrary, error) {
 	return &library, nil
 }
 
+// SaveLibrary writes the library back to disk in XML format
+func SaveLibrary(path string, library *ComicLibrary) error {
+	// Marshal to XML with indentation
+	data, err := xml.MarshalIndent(library, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	// Add XML declaration
+	xmlData := []byte(xml.Header + string(data))
+
+	// Write to file with proper permissions (0644)
+	if err := os.WriteFile(path, xmlData, 0644); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // GetBook returns a book by ID
 func (l *ComicLibrary) GetBook(id string) *ComicBook {
 	for i := range l.Books {
