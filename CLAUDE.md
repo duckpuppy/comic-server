@@ -772,6 +772,20 @@ See issues #15, #16, #17 for:
   - WebSocket hub for broadcasting events to all connected clients
   - REST API integration for device and sync operations
 
+### v0.8 Milestone - Complete! ✅
+
+- ✅ Reverse sync (device-to-server metadata sync) (COMPLETED)
+  - Syncs reading progress from device to library (CurrentPage, LastPageRead, OpenCount, OpenedTime)
+  - Syncs user metadata from device to library (Rating, Notes, Review, Summary, Tags)
+  - Syncs Checked flag from device to library
+  - Syncs page metadata from device to library (bookmarks, page types)
+  - Automatic library save after metadata updates
+  - Optimization: skips library save when no changes detected
+  - Handles edge cases (missing books, no metadata, no library path)
+  - Comprehensive test suite (10 test functions in `reverse_sync_test.go`)
+  - Manual testing guide (`TESTING_REVERSE_SYNC.md`)
+  - Integrated into sync workflow (runs before forward sync to preserve device changes)
+
 ### v0.6 Milestone - Complete! ✅
 
 - ✅ Graceful device disconnect handling (COMPLETED)

@@ -6,6 +6,13 @@ A headless, standalone wireless sync server for ComicRack Android/iOS clients.
 
 `comic-server` implements the ComicRack wireless synchronization protocol, allowing Android and iOS devices to sync comic books without requiring the full ComicRack desktop application.
 
+**Key Features:**
+- **Bidirectional Sync**: Syncs comics to devices AND syncs reading progress back to library
+- **Smart List Support**: Filter which comics sync to each device
+- **Per-Device Configuration**: Different smart lists and settings per device
+- **Web UI**: Real-time monitoring dashboard with WebSocket updates
+- **REST API & Prometheus Metrics**: For monitoring and integration
+
 This is a standalone project with its own git repository, located alongside the [ComicRackCE](https://github.com/maforget/ComicRackCE) project.
 
 ## Status
@@ -416,11 +423,29 @@ scrape_configs:
   - Filter by last seen timestamp
   - Combined filters with AND logic
 
+### v0.7 - Complete! ✅
+
+- [x] Web UI for server monitoring
+  - Real-time dashboard with WebSocket updates
+  - Device management (registration/unregistration)
+  - Sync progress monitoring with progress bars
+  - Sync history with file statistics
+  - Responsive design with vanilla JavaScript
+
+### v0.8 - Complete! ✅
+
+- [x] Reverse sync (device-to-server metadata sync)
+  - Reading progress sync (current page, open count, etc.)
+  - User metadata sync (ratings, notes, reviews, tags)
+  - Page bookmarks and metadata sync
+  - Automatic library updates after each sync
+  - Performance optimized (skips save when no changes)
+
 ### v1.0 - Planned (Enhanced Features)
 
-- [ ] Concurrent device sync support
-- [ ] Performance optimization
-- [ ] Web UI for configuration and monitoring
+- [ ] Performance optimization for large libraries
+- [ ] Release automation (GoReleaser + Release Please)
+- [ ] Enhanced monitoring and alerting
 
 ## License
 
