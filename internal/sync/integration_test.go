@@ -142,9 +142,9 @@ func TestPerformSync_DeleteBooks(t *testing.T) {
 
 	// Setup device with existing books
 	mockClient.AddFile("book1.cbp", []byte("data"))
-	mockClient.AddFile("book1.cbp.xml", []byte(`<?xml version="1.0"?><Book><ID>book1</ID><Title>Book 1</Title></Book>`))
+	mockClient.AddFile("book1.cbp.xml", []byte(`<?xml version="1.0"?><Book Id="book1"><Title>Book 1</Title></Book>`))
 	mockClient.AddFile("book2.cbp", []byte("data"))
-	mockClient.AddFile("book2.cbp.xml", []byte(`<?xml version="1.0"?><Book><ID>book2</ID><Title>Book 2</Title></Book>`))
+	mockClient.AddFile("book2.cbp.xml", []byte(`<?xml version="1.0"?><Book Id="book2"><Title>Book 2</Title></Book>`))
 	mockClient.ListFilesResult = "book1.cbp\nbook1.cbp.xml\nbook2.cbp\nbook2.cbp.xml"
 
 	// Library is empty, so all books should be deleted
@@ -179,7 +179,7 @@ func TestPerformSync_UpdateMetadataOnly(t *testing.T) {
 
 	// Setup device with existing book
 	mockClient.AddFile("book1.cbp", []byte("data"))
-	mockClient.AddFile("book1.cbp.xml", []byte(`<?xml version="1.0"?><Book><ID>book1</ID><Title>Old Title</Title><PageCount>10</PageCount></Book>`))
+	mockClient.AddFile("book1.cbp.xml", []byte(`<?xml version="1.0"?><Book Id="book1"><Title>Old Title</Title><PageCount>10</PageCount></Book>`))
 	mockClient.ListFilesResult = "book1.cbp\nbook1.cbp.xml"
 
 	// Library has same book with updated title
@@ -239,11 +239,11 @@ func TestPerformSync_MixedOperations(t *testing.T) {
 
 	// Setup device with existing books
 	mockClient.AddFile("book1.cbp", []byte("data"))
-	mockClient.AddFile("book1.cbp.xml", []byte(`<?xml version="1.0"?><Book><ID>book1</ID><Title>Unchanged</Title><PageCount>10</PageCount></Book>`))
+	mockClient.AddFile("book1.cbp.xml", []byte(`<?xml version="1.0"?><Book Id="book1"><Title>Unchanged</Title><PageCount>10</PageCount></Book>`))
 	mockClient.AddFile("book2.cbp", []byte("data"))
-	mockClient.AddFile("book2.cbp.xml", []byte(`<?xml version="1.0"?><Book><ID>book2</ID><Title>Old Title</Title><PageCount>10</PageCount></Book>`))
+	mockClient.AddFile("book2.cbp.xml", []byte(`<?xml version="1.0"?><Book Id="book2"><Title>Old Title</Title><PageCount>10</PageCount></Book>`))
 	mockClient.AddFile("book3.cbp", []byte("data"))
-	mockClient.AddFile("book3.cbp.xml", []byte(`<?xml version="1.0"?><Book><ID>book3</ID><Title>To Delete</Title></Book>`))
+	mockClient.AddFile("book3.cbp.xml", []byte(`<?xml version="1.0"?><Book Id="book3"><Title>To Delete</Title></Book>`))
 	mockClient.ListFilesResult = "book1.cbp\nbook1.cbp.xml\nbook2.cbp\nbook2.cbp.xml\nbook3.cbp\nbook3.cbp.xml"
 
 	lib := &library.ComicLibrary{
@@ -528,7 +528,7 @@ func TestGetTitleForOp(t *testing.T) {
 					Filename: "book1.cbp",
 				},
 			},
-			expected: "book1.cbp",
+			expected: "book1", // .cbp extension is stripped for display
 		},
 		{
 			name:     "empty operation",

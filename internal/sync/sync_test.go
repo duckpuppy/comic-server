@@ -27,7 +27,7 @@ func TestGetDeviceBooks(t *testing.T) {
 			name: "single book with sidecar",
 			deviceFiles: map[string][]byte{
 				"book1.cbp":     []byte("comic data"),
-				"book1.cbp.xml": []byte(`<?xml version="1.0"?><Book><Title>Test Book</Title><ID>book1</ID></Book>`),
+				"book1.cbp.xml": []byte(`<?xml version="1.0"?><Book Id="book1"><Title>Test Book</Title></Book>`),
 			},
 			listResult:    "book1.cbp\nbook1.cbp.xml",
 			expectedBooks: 1,
@@ -37,9 +37,9 @@ func TestGetDeviceBooks(t *testing.T) {
 			name: "multiple books with sidecars",
 			deviceFiles: map[string][]byte{
 				"book1.cbp":     []byte("comic data 1"),
-				"book1.cbp.xml": []byte(`<?xml version="1.0"?><Book><Title>Book 1</Title><ID>book1</ID></Book>`),
+				"book1.cbp.xml": []byte(`<?xml version="1.0"?><Book Id="book1"><Title>Book 1</Title></Book>`),
 				"book2.cbp":     []byte("comic data 2"),
-				"book2.cbp.xml": []byte(`<?xml version="1.0"?><Book><Title>Book 2</Title><ID>book2</ID></Book>`),
+				"book2.cbp.xml": []byte(`<?xml version="1.0"?><Book Id="book2"><Title>Book 2</Title></Book>`),
 			},
 			listResult:    "book1.cbp\nbook1.cbp.xml\nbook2.cbp\nbook2.cbp.xml",
 			expectedBooks: 2,
@@ -567,7 +567,7 @@ func TestHasPagesChanged(t *testing.T) {
 					{Image: 0},
 				},
 			},
-			expected: true,
+			expected: false, // Sparse vs full page metadata - not a real change when PageCount matches
 		},
 		{
 			name: "page type changed",

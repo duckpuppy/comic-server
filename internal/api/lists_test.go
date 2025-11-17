@@ -114,12 +114,12 @@ func TestHandleGetListDetail(t *testing.T) {
 	}
 
 	var response struct {
-		ID                   string   `json:"id"`
-		Name                 string   `json:"name"`
-		MatcherMode          string   `json:"matcher_mode"`
-		MatcherModeFormatted string   `json:"matcher_mode_formatted"`
-		BookCount            int      `json:"book_count"`
-		Matchers             []string `json:"matchers"`
+		ID                   string                   `json:"id"`
+		Name                 string                   `json:"name"`
+		MatcherMode          string                   `json:"matcher_mode"`
+		MatcherModeFormatted string                   `json:"matcher_mode_formatted"`
+		BookCount            int                      `json:"book_count"`
+		Matchers             []library.MatcherInfo `json:"matchers"`
 	}
 
 	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
