@@ -1,6 +1,7 @@
 [tools]
 go = "1.25.4"
 just = "latest"
+goreleaser = "latest"
 
 [env]
 # Go environment variables
