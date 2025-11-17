@@ -5,6 +5,7 @@ import (
 	"net"
 	"strings"
 
+	"github.com/duckpuppy/comic-server/internal/log"
 	"golang.org/x/net/ipv4"
 )
 
@@ -135,9 +136,19 @@ func (d *DiscoveryListener) listen() {
 
 			// Parse the broadcast message
 			message := string(buf[:n])
+			log.Debug().
+				Str("from", remoteAddr.IP.String()).
+				Str("message", message).
+				Msg("Received UDP packet on discovery port")
+
 			device, err := parseDiscoveryMessage(message, remoteAddr.IP.String())
 			if err != nil {
 				// Not a valid ComicRack broadcast, ignore
+				log.Debug().
+					Str("from", remoteAddr.IP.String()).
+					Str("message", message).
+					Err(err).
+					Msg("Ignoring invalid discovery message")
 				continue
 			}
 

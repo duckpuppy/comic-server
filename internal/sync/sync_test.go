@@ -686,7 +686,7 @@ func TestSetFilterLists_MultipleSmartLists(t *testing.T) {
 				Type:        "ComicSmartListItem",
 				MatcherMode: "And",
 				Matchers: []library.ComicBookMatcher{
-					{Type: "Series", Operator: "0", ArgumentValue: "Series A"},
+					{Type: "Series", MatchOperator: "0", MatchValue: "Series A"},
 				},
 			},
 			{
@@ -695,7 +695,7 @@ func TestSetFilterLists_MultipleSmartLists(t *testing.T) {
 				Type:        "ComicSmartListItem",
 				MatcherMode: "And",
 				Matchers: []library.ComicBookMatcher{
-					{Type: "Series", Operator: "0", ArgumentValue: "Series B"},
+					{Type: "Series", MatchOperator: "0", MatchValue: "Series B"},
 				},
 			},
 			{
@@ -746,7 +746,7 @@ func TestSetFilterLists_BackwardCompatibility(t *testing.T) {
 				Type:        "ComicSmartListItem",
 				MatcherMode: "And",
 				Matchers: []library.ComicBookMatcher{
-					{Type: "Title", Operator: "2", ArgumentValue: "Book"}, // Contains "Book"
+					{Type: "Title", MatchOperator: "2", MatchValue: "Book"}, // Contains "Book"
 				},
 			},
 		},
@@ -802,8 +802,8 @@ func TestComputeUnionOfLists(t *testing.T) {
 				Type:        "ComicSmartListItem",
 				MatcherMode: "Or",
 				Matchers: []library.ComicBookMatcher{
-					{Type: "Series", Operator: "0", ArgumentValue: "Series A"},
-					{Type: "Series", Operator: "0", ArgumentValue: "Series B"},
+					{Type: "Series", MatchOperator: "0", MatchValue: "Series A"},
+					{Type: "Series", MatchOperator: "0", MatchValue: "Series B"},
 				},
 			},
 			{
@@ -812,7 +812,7 @@ func TestComputeUnionOfLists(t *testing.T) {
 				Type:        "ComicSmartListItem",
 				MatcherMode: "And",
 				Matchers: []library.ComicBookMatcher{
-					{Type: "Series", Operator: "0", ArgumentValue: "Series B"}, // book2 overlaps with list1
+					{Type: "Series", MatchOperator: "0", MatchValue: "Series B"}, // book2 overlaps with list1
 				},
 			},
 		},
@@ -873,7 +873,7 @@ func TestComputeSyncPlan_MultipleFilterLists(t *testing.T) {
 				Type:        "ComicSmartListItem",
 				MatcherMode: "And",
 				Matchers: []library.ComicBookMatcher{
-					{Type: "Series", Operator: "0", ArgumentValue: "Series A"},
+					{Type: "Series", MatchOperator: "0", MatchValue: "Series A"},
 				},
 			},
 			{
@@ -882,7 +882,7 @@ func TestComputeSyncPlan_MultipleFilterLists(t *testing.T) {
 				Type:        "ComicSmartListItem",
 				MatcherMode: "And",
 				Matchers: []library.ComicBookMatcher{
-					{Type: "Series", Operator: "0", ArgumentValue: "Series B"},
+					{Type: "Series", MatchOperator: "0", MatchValue: "Series B"},
 				},
 			},
 		},
@@ -955,7 +955,7 @@ func TestComputeSyncPlan_SingleFilterList_BackwardCompatibility(t *testing.T) {
 				Type:        "ComicSmartListItem",
 				MatcherMode: "And",
 				Matchers: []library.ComicBookMatcher{
-					{Type: "Title", Operator: "2", ArgumentValue: "Book 1"}, // Contains "Book 1"
+					{Type: "Title", MatchOperator: "2", MatchValue: "Book 1"}, // Contains "Book 1"
 				},
 			},
 		},

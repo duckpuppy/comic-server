@@ -20,6 +20,86 @@ type ListSummary struct {
 	MatcherCount int    `json:"matcher_count"`
 }
 
+// ListTreeNode represents a node in the list tree (folder or smart list)
+type ListTreeNode struct {
+	ID           string         `json:"id"`
+	Name         string         `json:"name"`
+	Type         string         `json:"type"`
+	IsFolder     bool           `json:"is_folder"`
+	BookCount    int            `json:"book_count,omitempty"`
+	MatcherCount int            `json:"matcher_count,omitempty"`
+	MatcherMode  string         `json:"matcher_mode,omitempty"`
+	Children     []ListTreeNode `json:"children,omitempty"`
+}
+
+// buildListTree recursively builds a tree structure from ComicListItems
+func (s *Server) buildListTree(items []library.ComicListItem) []ListTreeNode {
+	nodes := make([]ListTreeNode, 0)
+
+	for i := range items {
+		item := &items[i]
+
+		// Check if this is a folder
+		isFolder := strings.Contains(item.Type, "Folder")
+
+		node := ListTreeNode{
+			ID:       item.ID,
+			Name:     item.Name,
+			Type:     item.Type,
+			IsFolder: isFolder,
+		}
+
+		if isFolder {
+			// Recursively build children for folders
+			node.Children = s.buildListTree(item.ChildItems)
+		} else if strings.Contains(item.Type, "SmartList") {
+			// For smart lists, get book count and matcher info
+			count, found := s.listCache.GetCount(item.ID)
+			if !found {
+				// Evaluate list to get count
+				matches, err := s.library.MatchBooks(item)
+				if err != nil {
+					count = 0
+				} else {
+					count = len(matches)
+				}
+				s.listCache.SetCount(item.ID, count)
+			}
+
+			node.BookCount = count
+			node.MatcherCount = len(item.Matchers)
+			node.MatcherMode = item.MatcherMode
+		}
+
+		nodes = append(nodes, node)
+	}
+
+	return nodes
+}
+
+// handleGetListTree returns the nested tree structure of lists
+func (s *Server) handleGetListTree(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if s.library == nil {
+		log.Error().Msg("Library not loaded")
+		http.Error(w, "Library not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	tree := s.buildListTree(s.library.ComicLists)
+
+	response := map[string]interface{}{
+		"tree": tree,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
 // handleGetLists returns all smart lists with cached counts
 func (s *Server) handleGetLists(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -33,37 +113,68 @@ func (s *Server) handleGetLists(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lists := make([]ListSummary, 0, len(s.library.ComicLists))
+	lists := make([]ListSummary, 0)
 
-	for _, list := range s.library.ComicLists {
-		// Only include smart lists
-		if list.Type != "ComicSmartListItem" {
-			continue
-		}
+	// Recursively collect smart lists from all folders
+	var collectSmartLists func(items []library.ComicListItem)
+	collectSmartLists = func(items []library.ComicListItem) {
+		for _, list := range items {
+			// Debug: Log all list types to help diagnose issue
+			log.Debug().
+				Str("list_name", list.Name).
+				Str("list_type", list.Type).
+				Int("matcher_count", len(list.Matchers)).
+				Int("child_count", len(list.ChildItems)).
+				Msg("Checking list")
 
-		// Get cached count, or calculate if not cached
-		count, found := s.listCache.GetCount(list.ID)
-		if !found {
-			// Evaluate list to get count
-			matches, err := s.library.MatchBooks(&list)
-			if err != nil {
-				log.Warn().Err(err).Str("list_id", list.ID).Msg("Failed to match books for list")
-				count = 0
-			} else {
-				count = len(matches)
+			// Only include smart lists (use Contains to match sync code behavior)
+			if strings.Contains(list.Type, "SmartList") {
+				// Get cached count, or calculate if not cached
+				count, found := s.listCache.GetCount(list.ID)
+				if !found {
+					// Evaluate list to get count
+					log.Debug().
+						Str("list_name", list.Name).
+						Int("total_books", len(s.library.Books)).
+						Int("matcher_count", len(list.Matchers)).
+						Msg("Evaluating smart list")
+
+					matches, err := s.library.MatchBooks(&list)
+					if err != nil {
+						log.Warn().Err(err).
+							Str("list_id", list.ID).
+							Str("list_name", list.Name).
+							Msg("Failed to match books for list")
+						count = 0
+					} else {
+						count = len(matches)
+						log.Debug().
+							Str("list_name", list.Name).
+							Int("matched_books", count).
+							Msg("Smart list evaluation complete")
+					}
+					s.listCache.SetCount(list.ID, count)
+				}
+
+				lists = append(lists, ListSummary{
+					ID:           list.ID,
+					Name:         list.Name,
+					Type:         list.Type,
+					MatcherMode:  list.MatcherMode,
+					BookCount:    count,
+					MatcherCount: len(list.Matchers),
+				})
 			}
-			s.listCache.SetCount(list.ID, count)
-		}
 
-		lists = append(lists, ListSummary{
-			ID:           list.ID,
-			Name:         list.Name,
-			Type:         list.Type,
-			MatcherMode:  list.MatcherMode,
-			BookCount:    count,
-			MatcherCount: len(list.Matchers),
-		})
+			// Recursively process child items (folders)
+			if len(list.ChildItems) > 0 {
+				collectSmartLists(list.ChildItems)
+			}
+		}
 	}
+
+	// Start recursion from top-level lists
+	collectSmartLists(s.library.ComicLists)
 
 	response := map[string]interface{}{
 		"lists": lists,
@@ -102,13 +213,13 @@ func (s *Server) handleListsRouter(w http.ResponseWriter, r *http.Request) {
 
 // ListDetail represents full details of a smart list
 type ListDetail struct {
-	ID                   string   `json:"id"`
-	Name                 string   `json:"name"`
-	Type                 string   `json:"type"`
-	MatcherMode          string   `json:"matcher_mode"`
-	MatcherModeFormatted string   `json:"matcher_mode_formatted"`
-	BookCount            int      `json:"book_count"`
-	Matchers             []string `json:"matchers"`
+	ID                   string                `json:"id"`
+	Name                 string                `json:"name"`
+	Type                 string                `json:"type"`
+	MatcherMode          string                `json:"matcher_mode"`
+	MatcherModeFormatted string                `json:"matcher_mode_formatted"`
+	BookCount            int                   `json:"book_count"`
+	Matchers             []library.MatcherInfo `json:"matchers"`
 }
 
 // handleGetListDetail returns details for a specific list
@@ -127,15 +238,8 @@ func (s *Server) handleGetListDetail(w http.ResponseWriter, r *http.Request) {
 	// URL: /api/library/lists/:listId
 	listID := parsePathParam(r.URL.Path, "/api/library/lists/")
 
-	// Find the list
-	var targetList *library.ComicListItem
-	for i := range s.library.ComicLists {
-		if s.library.ComicLists[i].ID == listID {
-			targetList = &s.library.ComicLists[i]
-			break
-		}
-	}
-
+	// Find the list (searches recursively through folders)
+	targetList := s.library.FindListByID(listID)
 	if targetList == nil {
 		http.Error(w, "List not found", http.StatusNotFound)
 		return
@@ -155,9 +259,9 @@ func (s *Server) handleGetListDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Format matchers
-	matchers := make([]string, len(targetList.Matchers))
+	matchers := make([]library.MatcherInfo, len(targetList.Matchers))
 	for i, m := range targetList.Matchers {
-		matchers[i] = library.FormatMatcher(m)
+		matchers[i] = library.GetMatcherInfo(m)
 	}
 
 	detail := ListDetail{
@@ -223,15 +327,8 @@ func (s *Server) handleGetListPreview(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Find the list
-	var targetList *library.ComicListItem
-	for i := range s.library.ComicLists {
-		if s.library.ComicLists[i].ID == listID {
-			targetList = &s.library.ComicLists[i]
-			break
-		}
-	}
-
+	// Find the list (searches recursively through folders)
+	targetList := s.library.FindListByID(listID)
 	if targetList == nil {
 		http.Error(w, "List not found", http.StatusNotFound)
 		return

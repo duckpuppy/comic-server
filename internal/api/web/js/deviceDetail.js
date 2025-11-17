@@ -8,6 +8,7 @@ class DeviceDetail {
         this.historyLimit = 10;
         this.historyTotal = 0;
         this.historyLoading = false;
+        this.syncProgress = null; // Track active sync progress
     }
 
     async init() {
@@ -15,6 +16,7 @@ class DeviceDetail {
         if (this.device) {
             this.render();
             this.attachListeners();
+            this.setupWebSocketListeners();
             await this.loadSyncHistory();
         }
     }
@@ -99,6 +101,9 @@ class DeviceDetail {
                     ${this.renderInfoCards()}
                 </div>
 
+                <!-- Current Sync Panel (shown only when syncing) -->
+                ${this.renderSyncProgress()}
+
                 <!-- Assigned Lists Panel -->
                 <div class="panel assigned-lists-panel">
                     <h2>Assigned Smart Lists</h2>
@@ -165,52 +170,102 @@ class DeviceDetail {
         `;
     }
 
-    renderAssignedLists() {
-        if (!this.device.lists || this.device.lists.length === 0) {
-            return `
-                <div class="empty-state">
-                    <p>No smart lists assigned to this device.</p>
-                    <p class="help-text">Use the config command to assign lists.</p>
-                </div>
-            `;
+    renderSyncProgress() {
+        // Only show if device is currently syncing
+        if (!this.syncProgress) {
+            return '';
         }
 
+        const progressPercent = this.syncProgress.total_files > 0
+            ? Math.round((this.syncProgress.completed_files / this.syncProgress.total_files) * 100)
+            : 0;
+
+        const currentFile = this.syncProgress.current_file || 'Preparing...';
+
         return `
-            <table class="assigned-lists-table">
-                <thead>
-                    <tr>
-                        <th>List Name</th>
-                        <th>Books</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${this.device.lists.map(list => `
+            <div class="panel sync-progress-panel">
+                <h2>Current Sync</h2>
+                <div class="sync-progress-content">
+                    <div class="sync-progress-info">
+                        <div class="sync-current-file">
+                            <span class="label">Current file:</span>
+                            <span class="value">${this.escapeHtml(currentFile)}</span>
+                        </div>
+                        <div class="sync-file-count">
+                            ${this.syncProgress.completed_files} / ${this.syncProgress.total_files} files
+                        </div>
+                    </div>
+                    <div class="sync-progress-bar">
+                        <div class="progress-bar-container">
+                            <div class="progress-bar-fill" style="width: ${progressPercent}%"></div>
+                        </div>
+                        <div class="progress-percentage">${progressPercent}%</div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    renderAssignedLists() {
+        const hasLists = this.device.lists && this.device.lists.length > 0;
+
+        return `
+            <div class="assigned-lists-header">
+                <button class="btn btn-primary" onclick="deviceDetail.showAssignListModal()">
+                    + Assign List
+                </button>
+            </div>
+
+            ${hasLists ? `
+                <table class="assigned-lists-table">
+                    <thead>
                         <tr>
-                            <td>
-                                <a href="/lists/${list.list_id}"
-                                   onclick="router.navigate('/lists/${list.list_id}'); return false;"
-                                   class="list-link">
-                                    ${this.escapeHtml(list.list_name)}
-                                </a>
-                            </td>
-                            <td>${list.book_count.toLocaleString()}</td>
-                            <td>
-                                <span class="status-indicator ${list.enabled ? 'enabled' : 'disabled'}">
-                                    ${list.enabled ? 'Enabled' : 'Disabled'}
-                                </span>
-                            </td>
-                            <td>
-                                <button class="btn btn-small"
-                                        onclick="router.navigate('/lists/${list.list_id}'); return false;">
-                                    View List
-                                </button>
-                            </td>
+                            <th>List Name</th>
+                            <th>Books</th>
+                            <th>Status</th>
+                            <th>Actions</th>
                         </tr>
-                    `).join('')}
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        ${this.device.lists.map(list => `
+                            <tr>
+                                <td>
+                                    <a href="/lists/${list.list_id}"
+                                       onclick="router.navigate('/lists/${list.list_id}'); return false;"
+                                       class="list-link">
+                                        ${this.escapeHtml(list.list_name)}
+                                    </a>
+                                </td>
+                                <td>${list.book_count.toLocaleString()}</td>
+                                <td>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox"
+                                               ${list.enabled ? 'checked' : ''}
+                                               onchange="deviceDetail.toggleListEnabled('${list.list_id}', this.checked)">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                    <span class="status-text">${list.enabled ? 'Enabled' : 'Disabled'}</span>
+                                </td>
+                                <td>
+                                    <button class="btn btn-small btn-secondary"
+                                            onclick="router.navigate('/lists/${list.list_id}'); return false;">
+                                        View
+                                    </button>
+                                    <button class="btn btn-small btn-danger"
+                                            onclick="deviceDetail.removeList('${list.list_id}', '${this.escapeHtml(list.list_name)}')">
+                                        Remove
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            ` : `
+                <div class="empty-state">
+                    <p>No smart lists assigned to this device.</p>
+                    <p class="help-text">Click "Assign List" to add smart lists for syncing.</p>
+                </div>
+            `}
         `;
     }
 
@@ -370,5 +425,250 @@ class DeviceDetail {
         const div = document.createElement('div');
         div.textContent = text || '';
         return div.innerHTML;
+    }
+
+    // List assignment methods
+    async showAssignListModal() {
+        // Load available lists
+        const lists = await this.loadAvailableLists();
+        if (!lists || lists.length === 0) {
+            alert('No smart lists available in the library.');
+            return;
+        }
+
+        // Filter out already assigned lists
+        const assignedListIds = (this.device.lists || []).map(l => l.list_id);
+        const availableLists = lists.filter(l => !assignedListIds.includes(l.id));
+
+        if (availableLists.length === 0) {
+            alert('All available smart lists are already assigned to this device.');
+            return;
+        }
+
+        // Create modal
+        const modalHTML = `
+            <div class="modal-overlay" id="assign-list-modal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h2>Assign Smart List</h2>
+                        <button class="modal-close" onclick="deviceDetail.closeAssignListModal()">×</button>
+                    </div>
+                    <div class="modal-body">
+                        <p>Select a smart list to assign to this device:</p>
+                        <div class="list-selection">
+                            ${availableLists.map(list => `
+                                <div class="list-option" onclick="deviceDetail.assignList('${list.id}', '${this.escapeHtml(list.name)}')">
+                                    <div class="list-option-name">${this.escapeHtml(list.name)}</div>
+                                    <div class="list-option-count">${list.book_count || 0} books</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
+    }
+
+    closeAssignListModal() {
+        const modal = document.getElementById('assign-list-modal');
+        if (modal) {
+            modal.remove();
+        }
+    }
+
+    async loadAvailableLists() {
+        try {
+            const response = await fetch('/api/library/lists');
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            const data = await response.json();
+            return data.lists || [];
+        } catch (error) {
+            console.error('Failed to load smart lists:', error);
+            alert('Failed to load smart lists. Please try again.');
+            return [];
+        }
+    }
+
+    async assignList(listId, listName) {
+        this.closeAssignListModal();
+
+        try {
+            const response = await fetch(`/api/devices/lists/${this.deviceId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    list_id: listId,
+                    list_name: listName,
+                    enabled: true
+                })
+            });
+
+            if (!response.ok) {
+                const error = await response.text();
+                throw new Error(error || `HTTP ${response.status}`);
+            }
+
+            // Reload device info to show the new list
+            await this.loadDeviceInfo();
+            if (this.device) {
+                this.render();
+                this.attachListeners();
+            }
+
+            alert(`Successfully assigned "${listName}" to this device.`);
+        } catch (error) {
+            console.error('Failed to assign list:', error);
+            alert(`Failed to assign list: ${error.message}`);
+        }
+    }
+
+    async toggleListEnabled(listId, enabled) {
+        try {
+            const response = await fetch(`/api/devices/lists/${this.deviceId}/${listId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    enabled: enabled
+                })
+            });
+
+            if (!response.ok) {
+                const error = await response.text();
+                throw new Error(error || `HTTP ${response.status}`);
+            }
+
+            // Update local state
+            const list = this.device.lists.find(l => l.list_id === listId);
+            if (list) {
+                list.enabled = enabled;
+            }
+
+            console.log(`List ${enabled ? 'enabled' : 'disabled'} successfully`);
+        } catch (error) {
+            console.error('Failed to toggle list:', error);
+            alert(`Failed to update list: ${error.message}`);
+
+            // Revert the checkbox
+            await this.loadDeviceInfo();
+            if (this.device) {
+                this.render();
+                this.attachListeners();
+            }
+        }
+    }
+
+    async removeList(listId, listName) {
+        if (!confirm(`Remove "${listName}" from this device?\n\nThis will stop syncing this list to the device.`)) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/devices/lists/${this.deviceId}/${listId}`, {
+                method: 'DELETE'
+            });
+
+            if (!response.ok) {
+                const error = await response.text();
+                throw new Error(error || `HTTP ${response.status}`);
+            }
+
+            // Reload device info to show updated lists
+            await this.loadDeviceInfo();
+            if (this.device) {
+                this.render();
+                this.attachListeners();
+            }
+
+            alert(`Successfully removed "${listName}" from this device.`);
+        } catch (error) {
+            console.error('Failed to remove list:', error);
+            alert(`Failed to remove list: ${error.message}`);
+        }
+    }
+
+    // WebSocket event listeners for sync progress
+    setupWebSocketListeners() {
+        if (!window.wsClient) {
+            console.warn('WebSocket client not available');
+            return;
+        }
+
+        // Listen for sync events for this device
+        window.wsClient.on('sync_started', (data) => this.handleSyncStarted(data));
+        window.wsClient.on('sync_progress', (data) => this.handleSyncProgress(data));
+        window.wsClient.on('sync_completed', (data) => this.handleSyncCompleted(data));
+        window.wsClient.on('sync_failed', (data) => this.handleSyncFailed(data));
+    }
+
+    handleSyncStarted(data) {
+        // Only update if it's for this device
+        if (data.device_id !== this.deviceId) {
+            return;
+        }
+
+        console.log('Sync started for device:', data);
+        this.syncProgress = {
+            device_id: data.device_id,
+            current_file: data.current_file || 'Preparing...',
+            completed_files: 0,
+            total_files: data.total_files || 0
+        };
+        this.render();
+        this.attachListeners();
+    }
+
+    handleSyncProgress(data) {
+        // Only update if it's for this device
+        if (data.device_id !== this.deviceId) {
+            return;
+        }
+
+        console.log('Sync progress for device:', data);
+        this.syncProgress = {
+            device_id: data.device_id,
+            current_file: data.current_file || 'Syncing...',
+            completed_files: data.completed_files || 0,
+            total_files: data.total_files || 0
+        };
+        this.render();
+        this.attachListeners();
+    }
+
+    handleSyncCompleted(data) {
+        // Only update if it's for this device
+        if (data.device_id !== this.deviceId) {
+            return;
+        }
+
+        console.log('Sync completed for device:', data);
+        this.syncProgress = null; // Clear progress panel
+        this.render();
+        this.attachListeners();
+
+        // Reload sync history to show the completed sync
+        this.loadSyncHistory();
+    }
+
+    handleSyncFailed(data) {
+        // Only update if it's for this device
+        if (data.device_id !== this.deviceId) {
+            return;
+        }
+
+        console.log('Sync failed for device:', data);
+        this.syncProgress = null; // Clear progress panel
+        this.render();
+        this.attachListeners();
+
+        // Reload sync history to show the failed sync
+        this.loadSyncHistory();
     }
 }

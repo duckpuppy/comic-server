@@ -93,6 +93,9 @@ type ComicBook struct {
 	// Pages Information
 	Pages           []ComicPageInfo `xml:"Pages>Page,omitempty"`
 	ScanInformation string          `xml:"ScanInformation,omitempty"`
+
+	// Custom Values
+	CustomValuesStore string `xml:"CustomValuesStore,omitempty"` // Comma-separated key=value pairs
 }
 
 // Page type constants as defined by ComicRack
@@ -152,10 +155,15 @@ type ComicReadingListItem struct {
 }
 
 // ComicBookMatcher represents a filter rule for smart lists
+// This can be either a value matcher (has MatchOperator/MatchValue) or a group matcher (has nested Matchers)
 type ComicBookMatcher struct {
-	Type          string `xml:"Type,attr"`          // Property name to match
-	Operator      string `xml:"Operator,attr"`      // "Equal", "Contains", etc.
-	ArgumentValue string `xml:"ArgumentValue,attr"` // Value to match
+	Type          string              `xml:"type,attr"`                    // xsi:type attribute (e.g., "ComicBookDirectoryMatcher" or "ComicBookGroupMatcher")
+	Not           bool                `xml:"Not,attr,omitempty"`           // Negation flag
+	MatchOperator string              `xml:"MatchOperator,attr,omitempty"` // Operator number (0-7) - only for value matchers
+	MatchValue    string              `xml:"MatchValue,omitempty"`         // Value to match (child element) - only for value matchers
+	MatchValue2   string              `xml:"MatchValue2,omitempty"`        // Second value for multi-value matchers (Tags, CustomValues)
+	MatcherMode   string              `xml:"MatcherMode,attr,omitempty"`   // "And" or "Or" - only for group matchers
+	Matchers      []ComicBookMatcher  `xml:"Matchers>ComicBookMatcher,omitempty"` // Nested matchers - only for group matchers
 }
 
 // LoadLibrary loads and parses a ComicRack library XML file
@@ -222,6 +230,32 @@ func findListRecursive(item *ComicListItem, name string) *ComicListItem {
 			return &item.ChildItems[i]
 		}
 		if found := findListRecursive(&item.ChildItems[i], name); found != nil {
+			return found
+		}
+	}
+	return nil
+}
+
+// FindListByID finds a list by ID, searching recursively through folders
+func (l *ComicLibrary) FindListByID(id string) *ComicListItem {
+	for i := range l.ComicLists {
+		if l.ComicLists[i].ID == id {
+			return &l.ComicLists[i]
+		}
+		// Recursively search in folders
+		if found := findListByIDRecursive(&l.ComicLists[i], id); found != nil {
+			return found
+		}
+	}
+	return nil
+}
+
+func findListByIDRecursive(item *ComicListItem, id string) *ComicListItem {
+	for i := range item.ChildItems {
+		if item.ChildItems[i].ID == id {
+			return &item.ChildItems[i]
+		}
+		if found := findListByIDRecursive(&item.ChildItems[i], id); found != nil {
 			return found
 		}
 	}

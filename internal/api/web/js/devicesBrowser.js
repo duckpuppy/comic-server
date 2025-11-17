@@ -13,6 +13,7 @@ class DevicesBrowser {
         await this.loadDevices();
         this.render();
         this.attachListeners();
+        this.setupWebSocketListeners();
     }
 
     async loadDevices() {
@@ -165,12 +166,18 @@ class DevicesBrowser {
         const statusClass = `status-${status}`;
         const displayName = device.friendly_name || device.name;
         const lastSeen = this.formatTimestamp(device.last_seen);
+        const isRegistered = device.is_registered || false;
 
         return `
-            <div class="device-card" data-device-id="${device.id}">
+            <div class="device-card ${isRegistered ? 'registered' : 'unregistered'}" data-device-id="${device.id}">
                 <div class="device-card-header">
                     <h3>${this.escapeHtml(displayName)}</h3>
-                    <span class="device-status-badge ${statusClass}">${status}</span>
+                    <div class="device-badges">
+                        <span class="device-status-badge ${statusClass}">${status}</span>
+                        ${isRegistered
+                            ? '<span class="registration-badge registered">Registered</span>'
+                            : '<span class="registration-badge unregistered">Not Registered</span>'}
+                    </div>
                 </div>
                 <div class="device-card-body">
                     <div class="device-info-row">
@@ -191,9 +198,18 @@ class DevicesBrowser {
                     </div>
                 </div>
                 <div class="device-card-footer">
-                    <button class="btn-primary view-device-btn" data-device-id="${device.id}">
-                        View Details
-                    </button>
+                    ${isRegistered ? `
+                        <button class="btn btn-secondary view-device-btn" data-device-id="${device.id}">
+                            View Details
+                        </button>
+                        <button class="btn btn-danger btn-unregister" data-device-id="${device.id}">
+                            Unregister
+                        </button>
+                    ` : `
+                        <button class="btn btn-primary btn-register" data-device-id="${device.id}">
+                            Register
+                        </button>
+                    `}
                 </div>
             </div>
         `;
@@ -244,7 +260,41 @@ class DevicesBrowser {
             });
         }
 
-        // Device card clicks
+        // Attach button listeners
+        this.attachButtonListeners();
+    }
+
+    updateGrid() {
+        const grid = document.querySelector('.devices-grid');
+        if (grid) {
+            grid.innerHTML = this.renderDevicesGrid();
+            // Reattach all listeners
+            this.attachButtonListeners();
+        }
+    }
+
+    attachButtonListeners() {
+        // Register buttons
+        const registerButtons = document.querySelectorAll('.btn-register');
+        registerButtons.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const deviceId = btn.dataset.deviceId;
+                this.registerDevice(deviceId);
+            });
+        });
+
+        // Unregister buttons
+        const unregisterButtons = document.querySelectorAll('.btn-unregister');
+        unregisterButtons.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const deviceId = btn.dataset.deviceId;
+                this.unregisterDevice(deviceId);
+            });
+        });
+
+        // View Details buttons
         const viewButtons = document.querySelectorAll('.view-device-btn');
         viewButtons.forEach(btn => {
             btn.addEventListener('click', (e) => {
@@ -254,38 +304,29 @@ class DevicesBrowser {
             });
         });
 
-        // Make entire card clickable
-        const deviceCards = document.querySelectorAll('.device-card');
-        deviceCards.forEach(card => {
-            card.addEventListener('click', () => {
-                const deviceId = card.dataset.deviceId;
-                router.navigate(`/devices/${deviceId}`);
+        // Make entire unregistered card clickable to register
+        const unregisteredCards = document.querySelectorAll('.device-card.unregistered');
+        unregisteredCards.forEach(card => {
+            card.style.cursor = 'pointer';
+            card.addEventListener('click', (e) => {
+                if (e.target.tagName !== 'BUTTON') {
+                    const deviceId = card.dataset.deviceId;
+                    this.registerDevice(deviceId);
+                }
             });
         });
-    }
 
-    updateGrid() {
-        const grid = document.querySelector('.devices-grid');
-        if (grid) {
-            grid.innerHTML = this.renderDevicesGrid();
-            // Reattach listeners for the new cards
-            const viewButtons = document.querySelectorAll('.view-device-btn');
-            viewButtons.forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const deviceId = btn.dataset.deviceId;
-                    router.navigate(`/devices/${deviceId}`);
-                });
-            });
-
-            const deviceCards = document.querySelectorAll('.device-card');
-            deviceCards.forEach(card => {
-                card.addEventListener('click', () => {
+        // Make registered cards clickable to view details
+        const registeredCards = document.querySelectorAll('.device-card.registered');
+        registeredCards.forEach(card => {
+            card.style.cursor = 'pointer';
+            card.addEventListener('click', (e) => {
+                if (e.target.tagName !== 'BUTTON') {
                     const deviceId = card.dataset.deviceId;
                     router.navigate(`/devices/${deviceId}`);
-                });
+                }
             });
-        }
+        });
     }
 
     formatTimestamp(timestamp) {
@@ -311,5 +352,83 @@ class DevicesBrowser {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    async registerDevice(deviceId) {
+        try {
+            const response = await fetch('/api/devices/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ device_id: deviceId })
+            });
+
+            if (response.ok) {
+                console.log('Device registered successfully');
+                await this.loadDevices();
+                this.updateGrid();
+            } else {
+                const error = await response.text();
+                console.error('Failed to register device:', error);
+                alert(`Failed to register device: ${error}`);
+            }
+        } catch (error) {
+            console.error('Error registering device:', error);
+            alert(`Error registering device: ${error.message}`);
+        }
+    }
+
+    async unregisterDevice(deviceId) {
+        const device = this.devices.find(d => d.id === deviceId);
+        const deviceName = device ? (device.friendly_name || device.name) : deviceId;
+
+        if (!confirm(`Unregister device "${deviceName}"?\n\nThis will remove all list assignments and sync settings.`)) {
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/devices/unregister', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ device_id: deviceId })
+            });
+
+            if (response.ok) {
+                console.log('Device unregistered successfully');
+                await this.loadDevices();
+                this.updateGrid();
+            } else {
+                const error = await response.text();
+                console.error('Failed to unregister device:', error);
+                alert(`Failed to unregister device: ${error}`);
+            }
+        } catch (error) {
+            console.error('Error unregistering device:', error);
+            alert(`Error unregistering device: ${error.message}`);
+        }
+    }
+
+    setupWebSocketListeners() {
+        if (!window.wsClient) {
+            console.warn('WebSocket client not available');
+            return;
+        }
+
+        // Listen for device events
+        window.wsClient.on('device_discovered', () => this.handleDeviceUpdate());
+        window.wsClient.on('device_connected', () => this.handleDeviceUpdate());
+        window.wsClient.on('device_disconnected', () => this.handleDeviceUpdate());
+        window.wsClient.on('device_registered', () => this.handleDeviceUpdate());
+        window.wsClient.on('device_unregistered', () => this.handleDeviceUpdate());
+
+        // Listen for sync events (to update device status)
+        window.wsClient.on('sync_started', () => this.handleDeviceUpdate());
+        window.wsClient.on('sync_completed', () => this.handleDeviceUpdate());
+        window.wsClient.on('sync_failed', () => this.handleDeviceUpdate());
+    }
+
+    async handleDeviceUpdate() {
+        console.log('Device update received, reloading devices...');
+        await this.loadDevices();
+        this.updateGrid();
     }
 }

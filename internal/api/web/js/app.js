@@ -99,6 +99,8 @@ const dashboard = new Dashboard();
 let listsBrowser = null;
 let devicesBrowser = null;
 let syncHistoryBrowser = null;
+let deviceDetail = null; // Current device detail view
+let listsTree = null; // Shared tree instance for lists pages
 
 // Store original dashboard HTML
 let dashboardHTML = null;
@@ -134,8 +136,13 @@ document.addEventListener('DOMContentLoaded', () => {
     router.register('/lists', async () => {
         navigation.setActive('lists');
         dashboard.hide();
+        // Initialize shared tree if needed
+        if (!listsTree) {
+            listsTree = new ListsTree();
+            await listsTree.init();
+        }
         if (!listsBrowser) {
-            listsBrowser = new ListsBrowser();
+            listsBrowser = new ListsBrowser(listsTree);
         }
         await listsBrowser.init();
     });
@@ -143,7 +150,12 @@ document.addEventListener('DOMContentLoaded', () => {
     router.register('/lists/:listId', async (params) => {
         navigation.setActive('lists');
         dashboard.hide();
-        const listDetail = new ListDetail(params.listId);
+        // Initialize shared tree if needed
+        if (!listsTree) {
+            listsTree = new ListsTree();
+            await listsTree.init();
+        }
+        const listDetail = new ListDetail(params.listId, listsTree);
         await listDetail.init();
     });
 
@@ -168,7 +180,7 @@ document.addEventListener('DOMContentLoaded', () => {
     router.register('/devices/:deviceId', async (params) => {
         navigation.setActive('devices');
         dashboard.hide();
-        const deviceDetail = new DeviceDetail(params.deviceId);
+        deviceDetail = new DeviceDetail(params.deviceId);
         await deviceDetail.init();
     });
 

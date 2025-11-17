@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -36,6 +37,7 @@ var (
 	rateLimitWindowSeconds int
 	logLevel               string
 	logFormat              string
+	pingDevice             string
 
 	// Track which flags were explicitly set by user
 	serverPortSet             bool
@@ -50,6 +52,7 @@ var (
 	rateLimitWindowSecondsSet bool
 	logLevelSet               bool
 	logFormatSet              bool
+	pingDeviceSet             bool
 )
 
 var serverCmd = &cobra.Command{
@@ -215,6 +218,15 @@ func runServer(cmd *cobra.Command, args []string) error {
 
 	// Start listening
 	deviceChan, errorChan := listener.Start()
+
+	// Create context for direct ping loop
+	pingCtx, pingCancel := context.WithCancel(context.Background())
+	defer pingCancel()
+
+	// Send direct ping to device if specified (useful for WSL2, VPNs, complex networks)
+	if pingDeviceSet && pingDevice != "" {
+		go sendDirectPingAndRegister(pingCtx, pingDevice, registry, syncManager, cfg, lib, ipLimiter, deviceLimiter, syncSemaphore)
+	}
 
 	// Create and start WebSocket hub
 	wsHub := websocket.NewHub()
@@ -393,10 +405,30 @@ func handleDiscoveredDevice(
 	}
 
 	// Check if we already know this device
-	if _, ok := registry.Get(discovered.Key); ok {
-		// Device already registered, just update last seen timestamp
-		logger.Debug().Msg("Device already registered, updating last seen")
+	if dev, ok := registry.Get(discovered.Key); ok {
+		// Device already in registry, update last seen timestamp
+		logger.Debug().Msg("Device already in registry, updating last seen")
 		registry.UpdateLastSeen(discovered.Key)
+
+		// Handle sync request if device wants sync (manual button press on device)
+		if discovered.WantsSync {
+			logger.Info().Msg("Known device requesting sync (user pressed sync button)")
+			if err := handleSyncRequest(dev.Info, discovered.IPAddress, cfg, lib, syncManager, deviceLimiter, syncSemaphore); err != nil {
+				logger.Error().Err(err).Msg("Sync failed")
+			}
+			return
+		}
+
+		// If device is registered and not requesting sync, send pong to make sync button appear
+		if _, isRegistered := cfg.Devices[dev.Info.ID]; isRegistered {
+			logger.Debug().Msg("Sending ClientPong to registered device")
+			client := protocol.NewClient(discovered.IPAddress, device.DevicePort)
+			if err := client.SendClientPong(); err != nil {
+				logger.Debug().Err(err).Msg("Failed to send ClientPong (device may be offline)")
+			} else {
+				logger.Debug().Msg("ClientPong sent successfully")
+			}
+		}
 		return
 	}
 
@@ -479,9 +511,9 @@ func applyDeviceConfig(syncer *csync.Syncer, deviceConfig *config.DeviceConfig, 
 			continue
 		}
 
-		// Lookup smart list by GUID
-		smartList := config.FindListByGUID(lib, listConfig.ListID)
-		if smartList == nil {
+		// Lookup smart list by GUID (uses recursive search for nested folders)
+		smartList := lib.FindListByID(listConfig.ListID)
+		if smartList == nil || !strings.Contains(smartList.Type, "SmartList") {
 			return fmt.Errorf("smart list %s (ID: %s) not found in library", listConfig.ListName, listConfig.ListID)
 		}
 
@@ -633,6 +665,146 @@ func handleSyncRequest(
 	return nil
 }
 
+// sendDirectPingAndRegister sends periodic discovery pings directly to a device IP address
+// and registers the device on first contact. This is useful for environments where multicast
+// discovery is unreliable (WSL2, VPNs, complex network setups, firewalls blocking multicast, etc.)
+// Pings are sent every 30 seconds to keep the sync button visible on the device
+func sendDirectPingAndRegister(
+	ctx context.Context,
+	address string,
+	registry *device.Registry,
+	syncManager *syncstate.Manager,
+	cfg *config.Config,
+	lib *library.ComicLibrary,
+	ipLimiter *ratelimit.IPLimiter,
+	deviceLimiter *ratelimit.DeviceLimiter,
+	syncSemaphore chan struct{},
+) {
+	// Parse IP:PORT, default port is 7614 (device port)
+	deviceIP := address
+	devicePort := 7614
+
+	// Check if port is specified
+	if idx := strings.LastIndex(address, ":"); idx != -1 {
+		portStr := address[idx+1:]
+		deviceIP = address[:idx]
+
+		// Try to parse port
+		var port int
+		if _, err := fmt.Sscanf(portStr, "%d", &port); err == nil {
+			devicePort = port
+		} else {
+			log.Warn().
+				Str("address", address).
+				Err(err).
+				Msg("Failed to parse port, using default 7614")
+		}
+	}
+
+	// Create protocol client for the device
+	client := protocol.NewClient(deviceIP, devicePort)
+
+	// Send initial ping immediately
+	log.Info().
+		Str("ip", deviceIP).
+		Int("port", devicePort).
+		Msg("Sending direct discovery ping to device")
+
+	if err := client.SendClientPong(); err != nil {
+		log.Error().
+			Err(err).
+			Str("ip", deviceIP).
+			Int("port", devicePort).
+			Msg("Failed to send direct ping to device")
+	} else {
+		log.Info().
+			Str("ip", deviceIP).
+			Int("port", devicePort).
+			Msg("Successfully sent direct ping to device")
+
+		// Try to register the device by reading comicrack.ini
+		iniData, err := client.ReadFile("comicrack.ini")
+		if err != nil {
+			log.Warn().
+				Err(err).
+				Str("ip", deviceIP).
+				Int("port", devicePort).
+				Msg("Failed to read device info for registration, will retry on periodic pings")
+		} else {
+			// Parse device info
+			deviceInfo, err := device.ParseINI(iniData)
+			if err != nil {
+				log.Warn().
+					Err(err).
+					Str("ip", deviceIP).
+					Int("port", devicePort).
+					Msg("Failed to parse device info")
+			} else {
+				// Create a discovered device and register it
+				discovered := device.DiscoveredDevice{
+					Key:       deviceInfo.ID + ":ComicRack",
+					IPAddress: deviceIP,
+				}
+				log.Info().
+					Str("ip", deviceIP).
+					Str("device_id", deviceInfo.ID).
+					Str("device_name", deviceInfo.Name).
+					Msg("Registering device from direct ping")
+
+				handleDiscoveredDevice(discovered, registry, syncManager, cfg, lib, ipLimiter, deviceLimiter, syncSemaphore)
+
+				// In direct-ping mode, automatically trigger sync since device can't signal back via UDP
+				// Check if device is configured for sync (has smart lists assigned)
+				if deviceCfg, exists := cfg.Devices[deviceInfo.ID]; exists && len(deviceCfg.Lists) > 0 {
+					log.Info().
+						Str("device_id", deviceInfo.ID).
+						Int("lists", len(deviceCfg.Lists)).
+						Msg("Device has smart lists configured, triggering automatic sync")
+
+					if err := handleSyncRequest(deviceInfo, deviceIP, cfg, lib, syncManager, deviceLimiter, syncSemaphore); err != nil {
+						log.Error().
+							Err(err).
+							Str("device_id", deviceInfo.ID).
+							Msg("Automatic sync failed")
+					}
+				} else {
+					log.Info().
+						Str("device_id", deviceInfo.ID).
+						Msg("Device registered but no smart lists configured - skipping automatic sync")
+				}
+			}
+		}
+	}
+
+	// Send periodic pings every 10 seconds to keep sync button visible
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Info().
+				Str("ip", deviceIP).
+				Int("port", devicePort).
+				Msg("Stopping direct ping loop")
+			return
+		case <-ticker.C:
+			if err := client.SendClientPong(); err != nil {
+				log.Warn().
+					Err(err).
+					Str("ip", deviceIP).
+					Int("port", devicePort).
+					Msg("Failed to send periodic ping to device")
+			} else {
+				log.Debug().
+					Str("ip", deviceIP).
+					Int("port", devicePort).
+					Msg("Sent periodic ping to device")
+			}
+		}
+	}
+}
+
 func init() {
 	rootCmd.AddCommand(serverCmd)
 
@@ -648,6 +820,7 @@ func init() {
 	serverCmd.Flags().IntVar(&rateLimitWindowSeconds, "rate-limit-window", 0, "Rate limit window in seconds (default: 60)")
 	serverCmd.Flags().StringVar(&logLevel, "log-level", "", "Log level: debug, info, warn, error (default: info)")
 	serverCmd.Flags().StringVar(&logFormat, "log-format", "", "Log format: text, json (default: text)")
+	serverCmd.Flags().StringVar(&pingDevice, "ping-device", "", "Send discovery ping directly to device IP[:PORT] (useful for WSL2, VPNs, complex networks)")
 
 	// Mark which flags to check for being explicitly set
 	serverCmd.PreRunE = func(cmd *cobra.Command, args []string) error {
@@ -663,6 +836,7 @@ func init() {
 		rateLimitWindowSecondsSet = cmd.Flags().Changed("rate-limit-window")
 		logLevelSet = cmd.Flags().Changed("log-level")
 		logFormatSet = cmd.Flags().Changed("log-format")
+		pingDeviceSet = cmd.Flags().Changed("ping-device")
 		return nil
 	}
 }

@@ -2,6 +2,7 @@ package library
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -46,26 +47,35 @@ type MatcherType string
 
 const (
 	// Common matcher types
-	MatcherTypeSeries         MatcherType = "Series"
-	MatcherTypeTitle          MatcherType = "Title"
-	MatcherTypePublisher      MatcherType = "Publisher"
-	MatcherTypeWriter         MatcherType = "Writer"
-	MatcherTypeYear           MatcherType = "Year"
-	MatcherTypeMonth          MatcherType = "Month"
-	MatcherTypeGenre          MatcherType = "Genre"
-	MatcherTypeFormat         MatcherType = "Format"
-	MatcherTypeCharacters     MatcherType = "Characters"
-	MatcherTypeVolume         MatcherType = "Volume"
-	MatcherTypeNumber         MatcherType = "Number"
-	MatcherTypePageCount      MatcherType = "PageCount"
-	MatcherTypeRating         MatcherType = "Rating"
-	MatcherTypeTags           MatcherType = "Tags"
-	MatcherTypeNotes          MatcherType = "Notes"
-	MatcherTypeAddedTime      MatcherType = "Added"
-	MatcherTypeOpenedTime     MatcherType = "Opened"
-	MatcherTypeSeriesComplete MatcherType = "SeriesComplete"
-	MatcherTypeLanguage       MatcherType = "LanguageISO"
-	MatcherTypeImprint        MatcherType = "Imprint"
+	MatcherTypeSeries          MatcherType = "Series"
+	MatcherTypeAlternateSeries MatcherType = "AlternateSeries"
+	MatcherTypeSeriesGroup     MatcherType = "SeriesGroup"
+	MatcherTypeTitle           MatcherType = "Title"
+	MatcherTypePublisher       MatcherType = "Publisher"
+	MatcherTypeImprint         MatcherType = "Imprint"
+	MatcherTypeWriter          MatcherType = "Writer"
+	MatcherTypeYear            MatcherType = "Year"
+	MatcherTypeMonth           MatcherType = "Month"
+	MatcherTypeGenre           MatcherType = "Genre"
+	MatcherTypeFormat          MatcherType = "Format"
+	MatcherTypeCharacters      MatcherType = "Characters"
+	MatcherTypeTeams           MatcherType = "Teams"
+	MatcherTypeVolume          MatcherType = "Volume"
+	MatcherTypeNumber          MatcherType = "Number"
+	MatcherTypePageCount       MatcherType = "PageCount"
+	MatcherTypeRating          MatcherType = "Rating"
+	MatcherTypeTags            MatcherType = "Tags"
+	MatcherTypeNotes           MatcherType = "Notes"
+	MatcherTypeAddedTime       MatcherType = "Added"
+	MatcherTypeOpenedTime      MatcherType = "Opened"
+	MatcherTypeSeriesComplete  MatcherType = "SeriesComplete"
+	MatcherTypeLanguage        MatcherType = "LanguageISO"
+	MatcherTypeDirectory       MatcherType = "Directory"
+	MatcherTypeFile            MatcherType = "File"
+	MatcherTypeFullPath        MatcherType = "FullPath"
+	MatcherTypeFileFormat      MatcherType = "FileFormat"
+	MatcherTypeScanInfo        MatcherType = "ScanInformation"
+	MatcherTypeCount           MatcherType = "Count"
 )
 
 // Matcher represents a smart list filter rule
@@ -79,17 +89,53 @@ type Matcher struct {
 	compiledRegex *regexp.Regexp
 }
 
+// extractFieldName extracts the field name from a ComicRack matcher type
+// e.g., "ComicBookDirectoryMatcher" -> "Directory"
+//       "ComicBookSeriesMatcher" -> "Series"
+func extractFieldName(matcherType string) string {
+	// Remove "ComicBook" prefix and "Matcher" suffix
+	name := strings.TrimPrefix(matcherType, "ComicBook")
+	name = strings.TrimSuffix(name, "Matcher")
+	return name
+}
+
 // NewMatcherFromXML creates a Matcher from XML ComicBookMatcher data
 func NewMatcherFromXML(xmlMatcher *ComicBookMatcher) (*Matcher, error) {
+	// Check if this is a group matcher (has nested matchers)
+	if strings.Contains(xmlMatcher.Type, "GroupMatcher") {
+		// Group matchers don't have MatchOperator/MatchValue, skip them
+		// The nested matchers will be processed separately
+		return nil, fmt.Errorf("group matcher not supported as individual matcher")
+	}
+
+	// Extract field name from matcher type
+	// e.g., "ComicBookDirectoryMatcher" -> "Directory"
+	fieldName := extractFieldName(xmlMatcher.Type)
+
+	// Special handling for CustomValues matchers
+	// CustomValues uses both MatchValue (key name) and MatchValue2 (expected value)
+	if fieldName == "CustomValues" {
+		// CustomValues matcher: key (MatchValue) must equal value (MatchValue2)
+		return &Matcher{
+			Type:        "CustomValues",
+			MatchValue:  xmlMatcher.MatchValue,  // Key name
+			MatchValue2: xmlMatcher.MatchValue2, // Expected value
+			Not:         xmlMatcher.Not,
+			IgnoreCase:  true,
+			Operator:    OperatorEquals,
+		}, nil
+	}
+
 	m := &Matcher{
-		Type:       MatcherType(xmlMatcher.Type),
-		MatchValue: xmlMatcher.ArgumentValue,
+		Type:       MatcherType(fieldName),
+		MatchValue: xmlMatcher.MatchValue,
+		Not:        xmlMatcher.Not,
 		IgnoreCase: true, // Default to case-insensitive
 	}
 
-	// Parse operator from XML Operator attribute
-	if err := m.parseOperator(xmlMatcher.Operator); err != nil {
-		return nil, fmt.Errorf("invalid operator %q: %w", xmlMatcher.Operator, err)
+	// Parse operator from XML MatchOperator attribute
+	if err := m.parseOperator(xmlMatcher.MatchOperator); err != nil {
+		return nil, fmt.Errorf("invalid operator %q: %w", xmlMatcher.MatchOperator, err)
 	}
 
 	return m, nil
@@ -97,11 +143,17 @@ func NewMatcherFromXML(xmlMatcher *ComicBookMatcher) (*Matcher, error) {
 
 // parseOperator converts the XML operator string/number to MatchOperator
 func (m *Matcher) parseOperator(op string) error {
+	// If operator is empty or missing, default to Equals (0)
+	if op == "" {
+		m.Operator = OperatorEquals
+		return nil
+	}
+
 	// Try parsing as integer first (common in XML)
 	if opNum, err := strconv.Atoi(op); err == nil {
 		m.Operator = MatchOperator(opNum)
 
-		// Compile regex if operator is OperatorRegex (6)
+		// Compile regex if operator is OperatorRegex (7)
 		if m.Operator == OperatorRegex {
 			rx, err := regexp.Compile(m.MatchValue)
 			if err != nil {
@@ -169,6 +221,41 @@ func (m *Matcher) Match(book *ComicBook) bool {
 
 // matchInternal performs the actual matching logic
 func (m *Matcher) matchInternal(book *ComicBook) bool {
+	// Special handling for CustomValues matcher
+	if m.Type == "CustomValues" {
+		// CustomValues matcher: key=value pair must exist
+		// CustomValuesStore format: ",key1=value1,key2=value2"
+		store := book.CustomValuesStore
+		key := m.MatchValue
+		expectedValue := m.MatchValue2
+
+		// Parse the store to find the key
+		pairs := strings.Split(store, ",")
+		for _, pair := range pairs {
+			pair = strings.TrimSpace(pair)
+			if pair == "" {
+				continue
+			}
+			parts := strings.SplitN(pair, "=", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			pairKey := strings.TrimSpace(parts[0])
+			pairValue := strings.TrimSpace(parts[1])
+
+			if m.IgnoreCase {
+				if strings.EqualFold(pairKey, key) && strings.EqualFold(pairValue, expectedValue) {
+					return true
+				}
+			} else {
+				if pairKey == key && pairValue == expectedValue {
+					return true
+				}
+			}
+		}
+		return false
+	}
+
 	// Extract the value from the book based on matcher type
 	value := m.getValue(book)
 
@@ -192,10 +279,16 @@ func (m *Matcher) getValue(book *ComicBook) string {
 	switch m.Type {
 	case MatcherTypeSeries:
 		return book.Series
+	case MatcherTypeAlternateSeries:
+		return book.AlternateSeries
+	case MatcherTypeSeriesGroup:
+		return book.SeriesGroup
 	case MatcherTypeTitle:
 		return book.Title
 	case MatcherTypePublisher:
 		return book.Publisher
+	case MatcherTypeImprint:
+		return book.Imprint
 	case MatcherTypeWriter:
 		return book.Writer
 	case MatcherTypeYear:
@@ -208,6 +301,8 @@ func (m *Matcher) getValue(book *ComicBook) string {
 		return book.Format
 	case MatcherTypeCharacters:
 		return book.Characters
+	case MatcherTypeTeams:
+		return book.Teams
 	case MatcherTypeVolume:
 		return strconv.Itoa(book.Volume)
 	case MatcherTypeNumber:
@@ -224,12 +319,48 @@ func (m *Matcher) getValue(book *ComicBook) string {
 		return book.SeriesComplete
 	case MatcherTypeLanguage:
 		return book.LanguageISO
-	case MatcherTypeImprint:
-		return book.Imprint
 	case MatcherTypeAddedTime:
 		return book.AddedTime.Time.Format(time.RFC3339)
 	case MatcherTypeOpenedTime:
 		return book.OpenedTime.Time.Format(time.RFC3339)
+	case MatcherTypeDirectory:
+		// Extract directory from file path
+		if book.FilePath != "" {
+			return filepath.Dir(book.FilePath)
+		}
+		return ""
+	case MatcherTypeFile:
+		// Extract filename from file path
+		if book.FilePath != "" {
+			return filepath.Base(book.FilePath)
+		}
+		return ""
+	case MatcherTypeFullPath:
+		return book.FilePath
+	case MatcherTypeFileFormat:
+		// Extract file format from extension
+		// e.g., ".cbz" -> "ZIP", ".cbr" -> "RAR"
+		if book.FilePath != "" {
+			ext := strings.ToUpper(strings.TrimPrefix(filepath.Ext(book.FilePath), "."))
+			// Map common extensions to format names
+			switch ext {
+			case "CBZ", "ZIP":
+				return "ZIP"
+			case "CBR", "RAR":
+				return "RAR"
+			case "CB7", "7Z":
+				return "7Z"
+			case "CBT", "TAR":
+				return "TAR"
+			default:
+				return ext
+			}
+		}
+		return ""
+	case MatcherTypeScanInfo:
+		return book.ScanInformation
+	case MatcherTypeCount:
+		return strconv.Itoa(book.Count)
 	default:
 		return ""
 	}
@@ -400,6 +531,65 @@ func (m *Matcher) matchYesNo(value string) bool {
 	}
 }
 
+// evaluateMatcher recursively evaluates a matcher (value or group) against a book
+func evaluateMatcher(xmlMatcher *ComicBookMatcher, book *ComicBook) bool {
+	// Check if this is a group matcher
+	if strings.Contains(xmlMatcher.Type, "GroupMatcher") {
+		// Evaluate nested matchers according to group mode
+		groupMode := xmlMatcher.MatcherMode
+		if groupMode == "" {
+			groupMode = "And" // Default
+		}
+
+		if len(xmlMatcher.Matchers) == 0 {
+			// Empty group matcher - no conditions to evaluate
+			// This should NOT match anything (return false for AND, true for OR to maintain neutral element)
+			// But in practice, lists with empty group matchers in ComicRack use CacheStorage
+			// For safety, treat as no match
+			return false
+		}
+
+		var result bool
+		if groupMode == "Or" {
+			// OR mode: true if ANY nested matcher matches
+			result = false
+			for i := range xmlMatcher.Matchers {
+				if evaluateMatcher(&xmlMatcher.Matchers[i], book) {
+					result = true
+					break
+				}
+			}
+		} else {
+			// AND mode: true if ALL nested matchers match
+			result = true
+			for i := range xmlMatcher.Matchers {
+				if !evaluateMatcher(&xmlMatcher.Matchers[i], book) {
+					result = false
+					break
+				}
+			}
+		}
+
+		// Apply negation if set
+		if xmlMatcher.Not {
+			return !result
+		}
+		return result
+	}
+
+	// Regular value matcher
+	matcher, err := NewMatcherFromXML(xmlMatcher)
+	if err != nil {
+		// Unsupported matcher type - log and return false (don't match)
+		// Common unsupported types: CustomValues, Plugin, Expression, ReadPercentage, etc.
+		// These require additional implementation
+		// Silently return false to avoid flooding logs
+		return false
+	}
+
+	return matcher.Match(book)
+}
+
 // MatchBooks evaluates a smart list against a collection of books
 // Returns books that match the smart list criteria
 func (l *ComicLibrary) MatchBooks(list *ComicListItem) ([]*ComicBook, error) {
@@ -412,19 +602,8 @@ func (l *ComicLibrary) MatchBooks(list *ComicListItem) ([]*ComicBook, error) {
 		return nil, fmt.Errorf("list %q is not a smart list (type: %s)", list.Name, list.Type)
 	}
 
-	// Convert XML matchers to our Matcher type
-	matchers := make([]*Matcher, 0, len(list.Matchers))
-	for i := range list.Matchers {
-		matcher, err := NewMatcherFromXML(&list.Matchers[i])
-		if err != nil {
-			// Log warning but continue with other matchers
-			continue
-		}
-		matchers = append(matchers, matcher)
-	}
-
-	if len(matchers) == 0 {
-		return nil, fmt.Errorf("no valid matchers in list %q", list.Name)
+	if len(list.Matchers) == 0 {
+		return nil, fmt.Errorf("no matchers in list %q", list.Name)
 	}
 
 	// Determine matcher mode (AND vs OR)
@@ -438,26 +617,29 @@ func (l *ComicLibrary) MatchBooks(list *ComicListItem) ([]*ComicBook, error) {
 	for i := range l.Books {
 		book := &l.Books[i]
 
+		var matches bool
 		if matcherMode == "Or" {
 			// OR mode: book matches if ANY matcher matches
-			for _, matcher := range matchers {
-				if matcher.Match(book) {
-					matchedBooks = append(matchedBooks, book)
+			matches = false
+			for j := range list.Matchers {
+				if evaluateMatcher(&list.Matchers[j], book) {
+					matches = true
 					break
 				}
 			}
 		} else {
 			// AND mode: book matches if ALL matchers match
-			allMatch := true
-			for _, matcher := range matchers {
-				if !matcher.Match(book) {
-					allMatch = false
+			matches = true
+			for j := range list.Matchers {
+				if !evaluateMatcher(&list.Matchers[j], book) {
+					matches = false
 					break
 				}
 			}
-			if allMatch {
-				matchedBooks = append(matchedBooks, book)
-			}
+		}
+
+		if matches {
+			matchedBooks = append(matchedBooks, book)
 		}
 	}
 

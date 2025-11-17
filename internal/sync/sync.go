@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/duckpuppy/comic-server/internal/library"
+	"github.com/duckpuppy/comic-server/internal/log"
 	"github.com/duckpuppy/comic-server/internal/protocol"
 )
 
@@ -19,7 +21,7 @@ type Client interface {
 	ListFiles() (string, error)
 	ReadMultiFile(filenames []string) (map[string][]byte, error)
 	GetDeviceInfo() (*protocol.DeviceInfo, error)
-	SendStart() error
+	SendStart(message ...string) error
 	SendCompleted() error
 	SendProgressUpdate(percent int) error
 	GetFreeSpace() (int64, error)
@@ -177,29 +179,115 @@ func (s *Syncer) GetDeviceBooks() (map[string]*DeviceBook, error) {
 
 	// Fetch all sidecar files at once using ReadMultiFile
 	if len(sidecarFiles) > 0 {
+		log.Debug().Int("sidecar_count", len(sidecarFiles)).Msg("Reading sidecar files")
 		sidecars, err := s.client.ReadMultiFile(sidecarFiles)
 		if err != nil {
-			// Don't fail the entire operation if we can't read sidecars
-			// Just log and continue without metadata
-			return deviceBooks, nil
+			// ReadMultiFile failed - try reading sidecars individually as fallback
+			log.Warn().
+				Err(err).
+				Int("sidecar_count", len(sidecarFiles)).
+				Msg("Batch read failed, falling back to individual file reads")
+
+			sidecars = make(map[string][]byte)
+			successCount := 0
+			for _, sidecarFile := range sidecarFiles {
+				// Try to read the file with retries
+				var data []byte
+				var err error
+				maxRetries := 3
+				for attempt := 0; attempt < maxRetries; attempt++ {
+					if attempt > 0 {
+						// Add delay between retries (exponential backoff: 100ms, 200ms, 400ms)
+						delay := time.Duration(100<<uint(attempt-1)) * time.Millisecond
+						log.Debug().
+							Str("sidecar", sidecarFile).
+							Int("attempt", attempt+1).
+							Dur("delay", delay).
+							Msg("Retrying sidecar read after delay")
+						time.Sleep(delay)
+					}
+
+					data, err = s.client.ReadFile(sidecarFile)
+					if err == nil {
+						break // Success!
+					}
+
+					if attempt < maxRetries-1 {
+						log.Debug().
+							Err(err).
+							Str("sidecar", sidecarFile).
+							Int("attempt", attempt+1).
+							Int("max_retries", maxRetries).
+							Msg("Sidecar read failed, will retry")
+					}
+				}
+
+				if err != nil {
+					log.Warn().
+						Err(err).
+						Str("sidecar", sidecarFile).
+						Int("attempts", maxRetries).
+						Msg("Failed to read individual sidecar file after all retries")
+					continue
+				}
+				sidecars[sidecarFile] = data
+				successCount++
+
+				// Small delay between successful reads to avoid overwhelming device
+				time.Sleep(10 * time.Millisecond)
+			}
+			log.Info().
+				Int("success", successCount).
+				Int("total", len(sidecarFiles)).
+				Msg("Individual sidecar reads completed")
+		} else {
+			log.Debug().Int("sidecars_read", len(sidecars)).Msg("Successfully read sidecar files via batch read")
 		}
 
 		// Parse each sidecar XML into ComicBook metadata
-		for bookID, deviceBook := range deviceBooks {
+		// Build a new map with correct book IDs from sidecars
+		correctDeviceBooks := make(map[string]*DeviceBook)
+		for _, deviceBook := range deviceBooks {
 			sidecarData, ok := sidecars[deviceBook.SidecarFilename]
 			if !ok || len(sidecarData) == 0 {
+				// No sidecar - use filename as key (shouldn't happen in normal operation)
+				filenameKey := strings.TrimSuffix(filepath.Base(deviceBook.Filename), ".cbp")
+				log.Warn().
+					Str("filename", deviceBook.Filename).
+					Str("filename_key", filenameKey).
+					Msg("No sidecar found for device book, using filename as key")
+				correctDeviceBooks[filenameKey] = deviceBook
 				continue
 			}
 
 			var book library.ComicBook
 			if err := xml.Unmarshal(sidecarData, &book); err != nil {
-				// Skip this book if we can't parse metadata
+				// Can't parse sidecar - use filename as key
+				filenameKey := strings.TrimSuffix(filepath.Base(deviceBook.Filename), ".cbp")
+				sidecarPreview := string(sidecarData)
+				if len(sidecarPreview) > 500 {
+					sidecarPreview = sidecarPreview[:500]
+				}
+				log.Error().
+					Err(err).
+					Str("filename", deviceBook.Filename).
+					Str("filename_key", filenameKey).
+					Str("sidecar_preview", sidecarPreview).
+					Msg("Failed to parse sidecar XML")
+				correctDeviceBooks[filenameKey] = deviceBook
 				continue
 			}
 
+			// Use the actual book ID (GUID) from sidecar as the map key
+			log.Debug().
+				Str("filename", deviceBook.Filename).
+				Str("book_id", book.ID).
+				Str("title", book.Title).
+				Msg("Successfully parsed sidecar XML")
 			deviceBook.Metadata = &book
-			deviceBooks[bookID] = deviceBook
+			correctDeviceBooks[book.ID] = deviceBook
 		}
+		return correctDeviceBooks, nil
 	}
 
 	return deviceBooks, nil
@@ -271,6 +359,18 @@ func (s *Syncer) ComputeSyncPlan(deviceBooks map[string]*DeviceBook) ([]SyncOper
 		booksToSync = processedBooks
 	}
 
+	// DEBUG: Print library book IDs
+	log.Debug().Int("count", len(booksToSync)).Msg("DEBUG: Library books to sync:")
+	for i, book := range booksToSync {
+		if i < 5 { // Only print first 5 to avoid spam
+			log.Debug().
+				Str("id", book.ID).
+				Str("title", book.Title).
+				Str("filepath", book.FilePath).
+				Msgf("  Library book %d", i+1)
+		}
+	}
+
 	// Track which library books we've seen
 	libraryBookIDs := make(map[string]bool)
 
@@ -338,6 +438,25 @@ func (s *Syncer) compareBooks(libraryBook *library.ComicBook, deviceBook *Device
 	}
 
 	if metadataChanged {
+		// Debug: Log which fields changed
+		log.Debug().
+			Str("book_id", libraryBook.ID).
+			Str("title", libraryBook.Title).
+			Bool("title_changed", libraryBook.Title != deviceBook.Metadata.Title).
+			Bool("series_changed", libraryBook.Series != deviceBook.Metadata.Series).
+			Bool("number_changed", libraryBook.Number != deviceBook.Metadata.Number).
+			Bool("volume_changed", libraryBook.Volume != deviceBook.Metadata.Volume).
+			Bool("writer_changed", libraryBook.Writer != deviceBook.Metadata.Writer).
+			Bool("publisher_changed", libraryBook.Publisher != deviceBook.Metadata.Publisher).
+			Bool("year_changed", libraryBook.Year != deviceBook.Metadata.Year).
+			Bool("month_changed", libraryBook.Month != deviceBook.Metadata.Month).
+			Bool("day_changed", libraryBook.Day != deviceBook.Metadata.Day).
+			Bool("rating_changed", libraryBook.Rating != deviceBook.Metadata.Rating).
+			Bool("current_page_changed", libraryBook.CurrentPage != deviceBook.Metadata.CurrentPage).
+			Bool("summary_changed", libraryBook.Summary != deviceBook.Metadata.Summary).
+			Bool("notes_changed", libraryBook.Notes != deviceBook.Metadata.Notes).
+			Msg("Metadata changed - which fields differ")
+
 		// Only metadata changed - just update sidecar
 		return SyncOperation{
 			Type:   OperationUpdateMetadataOnly,
@@ -371,23 +490,43 @@ func (s *Syncer) hasMetadataChanged(library, device *library.ComicBook) bool {
 
 // hasPagesChanged compares page structure between library and device books
 func (s *Syncer) hasPagesChanged(library, device *library.ComicBook) bool {
-	// If page counts differ, pages have changed
+	// PageCount is the authoritative field - compare this, not len(Pages)
+	// Note: ComicRack library XML only stores Page entries for pages with metadata
+	// (cover type, bookmarks, etc.), not all pages. The PageCount field contains
+	// the actual total page count from scanning the comic file.
 	if library.PageCount != device.PageCount {
+		log.Debug().
+			Str("book_id", library.ID).
+			Str("title", library.Title).
+			Int("library_page_count", library.PageCount).
+			Int("device_page_count", device.PageCount).
+			Msg("Page count differs")
 		return true
 	}
 
-	// If page array lengths differ, pages have changed
-	if len(library.Pages) != len(device.Pages) {
-		return true
-	}
-
-	// Compare each page's type and image index
-	for i := range library.Pages {
-		if library.Pages[i].Image != device.Pages[i].Image ||
-			library.Pages[i].Type != device.Pages[i].Type {
-			return true
+	// Only compare individual page metadata if BOTH books have the same number
+	// of Page entries. If they differ, it just means one has full page metadata
+	// and the other has sparse metadata - not a real change.
+	if len(library.Pages) == len(device.Pages) && len(library.Pages) > 0 {
+		// Compare each page's type and image index
+		for i := range library.Pages {
+			if library.Pages[i].Image != device.Pages[i].Image ||
+				library.Pages[i].Type != device.Pages[i].Type {
+				log.Debug().
+					Str("book_id", library.ID).
+					Str("title", library.Title).
+					Int("page_index", i).
+					Int("library_image", library.Pages[i].Image).
+					Int("device_image", device.Pages[i].Image).
+					Str("library_type", string(library.Pages[i].Type)).
+					Str("device_type", string(device.Pages[i].Type)).
+					Msg("Page metadata differs")
+				return true
+			}
 		}
 	}
 
+	// Pages are the same (PageCount matches and either page metadata matches
+	// or one/both books have sparse page metadata)
 	return false
 }

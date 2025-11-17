@@ -95,6 +95,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/stats", s.handleStats)
 
 	// Library endpoints
+	s.mux.HandleFunc("/api/library/lists/tree", s.handleGetListTree)
 	s.mux.HandleFunc("/api/library/lists", s.handleGetLists)
 	s.mux.HandleFunc("/api/library/lists/", s.handleListsRouter)
 
@@ -576,13 +577,16 @@ type AddListRequest struct {
 	Settings *csync.SharedListSettings `json:"settings,omitempty"`
 }
 
-// handleDeviceLists handles adding/removing lists from devices
+// handleDeviceLists handles adding/removing/updating lists from devices
 // POST /api/devices/lists/{deviceId} - Add list to device
+// PUT /api/devices/lists/{deviceId}/{listId} - Update list settings
 // DELETE /api/devices/lists/{deviceId}/{listId} - Remove list from device
 func (s *Server) handleDeviceLists(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
 		s.handleDeviceListAdd(w, r)
+	case http.MethodPut:
+		s.handleDeviceListUpdate(w, r)
 	case http.MethodDelete:
 		s.handleDeviceListRemove(w, r)
 	default:
@@ -609,20 +613,40 @@ func (s *Server) handleDeviceListAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify list exists in library
-	found := false
-	for _, list := range s.library.ComicLists {
-		if list.ID == req.ListID && strings.Contains(list.Type, "SmartList") {
-			found = true
-			if req.ListName == "" {
-				req.ListName = list.Name
-			}
-			break
-		}
+	// Verify list exists in library (search recursively through folders)
+	list := s.library.FindListByID(req.ListID)
+	if list == nil || !strings.Contains(list.Type, "SmartList") {
+		log.Warn().
+			Str("requested_list_id", req.ListID).
+			Bool("found", list != nil).
+			Str("type", func() string {
+				if list != nil {
+					return list.Type
+				}
+				return "n/a"
+			}()).
+			Msg("Smart list not found in library")
+		http.Error(w, "Smart list not found in library", http.StatusNotFound)
+		return
 	}
 
-	if !found {
-		http.Error(w, "Smart list not found in library", http.StatusNotFound)
+	log.Debug().
+		Str("list_id", list.ID).
+		Str("list_name", list.Name).
+		Msg("Found matching smart list")
+
+	// Use the list name from the library if not provided
+	if req.ListName == "" {
+		req.ListName = list.Name
+	}
+
+	// Check if device is registered
+	s.mu.RLock()
+	isRegistered := s.registeredDevices[deviceID]
+	s.mu.RUnlock()
+
+	if !isRegistered {
+		http.Error(w, "Device not registered. Please register the device first.", http.StatusNotFound)
 		return
 	}
 
@@ -633,9 +657,24 @@ func (s *Server) handleDeviceListAdd(w http.ResponseWriter, r *http.Request) {
 
 	deviceConfig, exists := s.config.Devices[deviceID]
 	if !exists {
-		// Device not registered
-		http.Error(w, "Device not registered", http.StatusNotFound)
-		return
+		// Device is registered but config entry missing - create it
+		dev, devExists := s.registry.Get(deviceID)
+		if !devExists {
+			http.Error(w, "Device not found in registry", http.StatusNotFound)
+			return
+		}
+
+		deviceConfig = &config.DeviceConfig{
+			DeviceID:     deviceID,
+			FriendlyName: dev.Info.Name,
+			LastSeen:     dev.LastSeen,
+			Lists:        []config.SharedListConfig{},
+		}
+		s.config.Devices[deviceID] = deviceConfig
+
+		log.Info().
+			Str("device_id", deviceID).
+			Msg("Created missing device config entry during list assignment")
 	}
 
 	// Check if list is already added
@@ -745,6 +784,87 @@ func (s *Server) handleDeviceListRemove(w http.ResponseWriter, r *http.Request) 
 	s.writeJSON(w, http.StatusOK, map[string]string{
 		"status":  "success",
 		"message": "List removed from device successfully",
+	})
+}
+
+// UpdateListRequest is the request body for updating list settings
+type UpdateListRequest struct {
+	Enabled  *bool                     `json:"enabled,omitempty"`
+	Settings *csync.SharedListSettings `json:"settings,omitempty"`
+}
+
+// handleDeviceListUpdate updates settings for a smart list assigned to a device
+func (s *Server) handleDeviceListUpdate(w http.ResponseWriter, r *http.Request) {
+	// Parse path: /api/devices/lists/{deviceId}/{listId}
+	path := strings.TrimPrefix(r.URL.Path, "/api/devices/lists/")
+	parts := strings.SplitN(path, "/", 2)
+
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		http.Error(w, "device_id and list_id are required", http.StatusBadRequest)
+		return
+	}
+
+	deviceID := parts[0]
+	listID := parts[1]
+
+	var req UpdateListRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Get device config
+	deviceConfig, exists := s.config.Devices[deviceID]
+	if !exists {
+		http.Error(w, "Device configuration not found", http.StatusNotFound)
+		return
+	}
+
+	// Find the list
+	listIndex := -1
+	for i, listConfig := range deviceConfig.Lists {
+		if listConfig.ListID == listID {
+			listIndex = i
+			break
+		}
+	}
+
+	if listIndex == -1 {
+		http.Error(w, "List not found in device configuration", http.StatusNotFound)
+		return
+	}
+
+	// Update fields
+	if req.Enabled != nil {
+		deviceConfig.Lists[listIndex].Enabled = *req.Enabled
+	}
+	if req.Settings != nil {
+		deviceConfig.Lists[listIndex].Settings = req.Settings
+	}
+
+	// Save config to disk
+	if err := config.Save(s.config, s.configPath); err != nil {
+		log.Error().Err(err).Msg("Failed to save config after updating list settings")
+		// Don't fail the request - settings are still updated in memory
+	}
+
+	log.Info().
+		Str("device_id", deviceID).
+		Str("list_id", listID).
+		Str("list_name", deviceConfig.Lists[listIndex].ListName).
+		Msg("Smart list settings updated for device")
+
+	// Broadcast list updated event
+	s.wsHub.Broadcast(ws.EventDeviceUpdated, map[string]interface{}{
+		"device_id": deviceID,
+		"list_id":   listID,
+		"list_name": deviceConfig.Lists[listIndex].ListName,
+		"action":    "list_updated",
+	})
+
+	s.writeJSON(w, http.StatusOK, map[string]string{
+		"status":  "success",
+		"message": "List settings updated successfully",
 	})
 }
 

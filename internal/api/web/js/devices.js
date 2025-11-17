@@ -121,6 +121,9 @@ class DeviceManager {
     }
 
     render() {
+        // Only render if container exists (dashboard page)
+        if (!this.container) return;
+
         if (this.devices.size === 0) {
             this.container.innerHTML = '<p class="empty-message">No devices discovered</p>';
             return;

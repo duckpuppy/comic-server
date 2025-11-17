@@ -1,0 +1,11 @@
+# Exclude all comic files from git
+*.cbz
+*.cbr
+*.cb7
+*.cbt
+
+# Keep this .gitignore file
+!.gitignore
+
+# Keep a README explaining what goes here
+!README.md

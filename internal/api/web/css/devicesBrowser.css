@@ -77,10 +77,29 @@
     transition: all 0.2s;
 }
 
+.device-card.registered {
+    border-left: 4px solid var(--status-success);
+}
+
+.device-card.unregistered {
+    border-left: 4px solid var(--status-warning);
+    opacity: 0.9;
+}
+
 .device-card:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    border-color: var(--primary-color);
+    border-top-color: var(--primary-color);
+    border-right-color: var(--primary-color);
+    border-bottom-color: var(--primary-color);
+}
+
+.device-card.registered:hover {
+    border-left-color: var(--status-success);
+}
+
+.device-card.unregistered:hover {
+    border-left-color: var(--status-warning);
 }
 
 .device-card-header {
@@ -96,14 +115,34 @@
     margin: 0;
     color: var(--text-primary);
     font-size: 1.1rem;
+    flex: 1;
 }
 
-.device-status-badge {
+.device-badges {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: flex-end;
+}
+
+.device-status-badge,
+.registration-badge {
     padding: 0.25rem 0.75rem;
     border-radius: 12px;
     font-size: 0.75rem;
     font-weight: 600;
     text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.registration-badge.registered {
+    background: var(--status-success);
+    color: white;
+}
+
+.registration-badge.unregistered {
+    background: var(--status-warning);
+    color: white;
 }
 
 .device-status-badge.status-syncing {
@@ -149,6 +188,52 @@
 .device-card-footer {
     padding-top: 1rem;
     border-top: 1px solid var(--border-color);
+    display: flex;
+    gap: 0.5rem;
+}
+
+.device-card-footer .btn {
+    flex: 1;
+    padding: 0.75rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+.device-card-footer .btn-primary {
+    background: var(--primary-color);
+    color: white;
+    width: 100%;
+}
+
+.device-card-footer .btn-primary:hover {
+    background: var(--primary-hover);
+}
+
+.device-card-footer .btn-secondary {
+    background: #6b7280;
+    color: white;
+}
+
+.device-card-footer .btn-secondary:hover {
+    background: #4b5563;
+}
+
+.device-card-footer .btn-danger {
+    background: #dc2626;
+    color: white;
+}
+
+.device-card-footer .btn-danger:hover {
+    background: #b91c1c;
+}
+
+.device-card-footer .btn-register,
+.device-card-footer .btn-unregister {
+    flex: 0 0 auto;
+    min-width: 100px;
 }
 
 .view-device-btn {

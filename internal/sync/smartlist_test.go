@@ -65,8 +65,8 @@ func TestComputeSyncPlanWithFilter(t *testing.T) {
 				Name:        "Recent Batman",
 				MatcherMode: "And",
 				Matchers: []library.ComicBookMatcher{
-					{Type: "Series", Operator: "0", ArgumentValue: "Batman"},
-					{Type: "Year", Operator: "1", ArgumentValue: "2019"}, // Greater than 2019
+					{Type: "Series", MatchOperator: "0", MatchValue: "Batman"},
+					{Type: "Year", MatchOperator: "1", MatchValue: "2019"}, // Greater than 2019
 				},
 			},
 		},
@@ -260,7 +260,7 @@ func TestComputeSyncPlanWithSettings(t *testing.T) {
 				Name:        "Batman Only",
 				MatcherMode: "And",
 				Matchers: []library.ComicBookMatcher{
-					{Type: "Series", Operator: "0", ArgumentValue: "Batman"},
+					{Type: "Series", MatchOperator: "0", MatchValue: "Batman"},
 				},
 			},
 		}

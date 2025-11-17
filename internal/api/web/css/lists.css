@@ -323,6 +323,24 @@
     color: #991b1b;
 }
 
+.device-assignment-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.btn-danger {
+    background: #dc2626;
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #b91c1c;
+}
+
+.btn-toggle {
+    min-width: 70px;
+}
+
 /* Comics Preview */
 .preview-panel {
     margin-bottom: 2rem;

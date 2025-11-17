@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -84,7 +85,9 @@ const sampleLibraryXML = `<?xml version="1.0" encoding="utf-8"?>
     <Item xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="ComicSmartListItem" Id="eeeeeeee-ffff-0000-1111-555555555555" Name="Favorites" MatcherMode="And">
       <Description>Highly rated comics</Description>
       <Matchers>
-        <ComicBookMatcher Type="Rating" Operator="GreaterOrEqual" ArgumentValue="4" />
+        <ComicBookMatcher xsi:type="ComicBookRatingMatcher" MatchOperator="1">
+          <MatchValue>4</MatchValue>
+        </ComicBookMatcher>
       </Matchers>
     </Item>
     <Item xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="ComicListItemFolder" Id="ffffffff-0000-1111-2222-666666666666" Name="Publishers">
@@ -92,7 +95,9 @@ const sampleLibraryXML = `<?xml version="1.0" encoding="utf-8"?>
       <Items>
         <Item xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:type="ComicSmartListItem" Id="00000000-1111-2222-3333-777777777777" Name="DC Comics" MatcherMode="And">
           <Matchers>
-            <ComicBookMatcher Type="Publisher" Operator="Equal" ArgumentValue="DC Comics" />
+            <ComicBookMatcher xsi:type="ComicBookPublisherMatcher" MatchOperator="0">
+              <MatchValue>DC Comics</MatchValue>
+            </ComicBookMatcher>
           </Matchers>
         </Item>
       </Items>
@@ -364,14 +369,14 @@ func TestSmartListParsing(t *testing.T) {
 	}
 
 	matcher := favorites.Matchers[0]
-	if matcher.Type != "Rating" {
-		t.Errorf("Matcher Type = %v, want Rating", matcher.Type)
+	if !strings.Contains(matcher.Type, "Rating") {
+		t.Errorf("Matcher Type = %v, want to contain 'Rating'", matcher.Type)
 	}
-	if matcher.Operator != "GreaterOrEqual" {
-		t.Errorf("Matcher Operator = %v, want GreaterOrEqual", matcher.Operator)
+	if matcher.MatchOperator != "1" {
+		t.Errorf("Matcher Operator = %v, want 1", matcher.MatchOperator)
 	}
-	if matcher.ArgumentValue != "4" {
-		t.Errorf("Matcher ArgumentValue = %v, want 4", matcher.ArgumentValue)
+	if matcher.MatchValue != "4" {
+		t.Errorf("Matcher MatchValue = %v, want 4", matcher.MatchValue)
 	}
 }
 

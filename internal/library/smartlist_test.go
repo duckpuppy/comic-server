@@ -342,8 +342,8 @@ func TestMatcherRegex(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			xmlMatcher := &ComicBookMatcher{
 				Type:          "Series",
-				Operator:      "7", // Regex operator
-				ArgumentValue: tt.regex,
+				MatchOperator: "7", // Regex operator
+				MatchValue: tt.regex,
 			}
 
 			matcher, err := NewMatcherFromXML(xmlMatcher)
@@ -404,8 +404,8 @@ func TestMatchBooksAndMode(t *testing.T) {
 				Name:        "Recent Batman",
 				MatcherMode: "And",
 				Matchers: []ComicBookMatcher{
-					{Type: "Series", Operator: "0", ArgumentValue: "Batman"},
-					{Type: "Year", Operator: "1", ArgumentValue: "2019"}, // Greater than 2019
+					{Type: "Series", MatchOperator: "0", MatchValue: "Batman"},
+					{Type: "Year", MatchOperator: "1", MatchValue: "2019"}, // Greater than 2019
 				},
 			},
 		},
@@ -441,8 +441,8 @@ func TestMatchBooksOrMode(t *testing.T) {
 				Name:        "Batman or Marvel",
 				MatcherMode: "Or",
 				Matchers: []ComicBookMatcher{
-					{Type: "Series", Operator: "0", ArgumentValue: "Batman"},
-					{Type: "Publisher", Operator: "0", ArgumentValue: "Marvel Comics"},
+					{Type: "Series", MatchOperator: "0", MatchValue: "Batman"},
+					{Type: "Publisher", MatchOperator: "0", MatchValue: "Marvel Comics"},
 				},
 			},
 		},
@@ -678,8 +678,8 @@ func TestNewMatcherFromXML(t *testing.T) {
 			name: "string matcher with numeric operator",
 			xmlMatcher: &ComicBookMatcher{
 				Type:          "Series",
-				Operator:      "0", // Equals
-				ArgumentValue: "Batman",
+				MatchOperator: "0", // Equals
+				MatchValue: "Batman",
 			},
 			wantErr: false,
 			checkResult: func(t *testing.T, m *Matcher) {
@@ -698,8 +698,8 @@ func TestNewMatcherFromXML(t *testing.T) {
 			name: "string matcher with text operator",
 			xmlMatcher: &ComicBookMatcher{
 				Type:          "Publisher",
-				Operator:      "contains",
-				ArgumentValue: "Comics",
+				MatchOperator: "contains",
+				MatchValue: "Comics",
 			},
 			wantErr: false,
 			checkResult: func(t *testing.T, m *Matcher) {
@@ -712,8 +712,8 @@ func TestNewMatcherFromXML(t *testing.T) {
 			name: "invalid operator",
 			xmlMatcher: &ComicBookMatcher{
 				Type:          "Series",
-				Operator:      "invalid_operator",
-				ArgumentValue: "test",
+				MatchOperator: "invalid_operator",
+				MatchValue: "test",
 			},
 			wantErr: true,
 		},

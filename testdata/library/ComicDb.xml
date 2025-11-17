@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ComicDatabase xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" Id="test-library">
+  <Books>
+    <Book Id="league-001-id" File="testdata/library/comics/league-001.cbz">
+      <Series>The League of Extraordinary Gentlemen: Century</Series>
+      <Title>The League of Extraordinary Gentlemen: Century #1</Title>
+      <Number>1</Number>
+      <Volume>2009</Volume>
+      <Year>2009</Year>
+      <Month>5</Month>
+      <Writer>Alan Moore</Writer>
+      <Penciller>Kevin O'Neill</Penciller>
+      <Publisher>Top Shelf</Publisher>
+      <PageCount>80</PageCount>
+      <Format>Trade Paperback</Format>
+      <Genre>Superhero</Genre>
+    </Book>
+    <Book Id="league-002-id" File="testdata/library/comics/league-002.cbz">
+      <Series>The League of Extraordinary Gentlemen: Century</Series>
+      <Title>The League of Extraordinary Gentlemen: Century #2</Title>
+      <Number>2</Number>
+      <Volume>2009</Volume>
+      <Year>2011</Year>
+      <Month>7</Month>
+      <Writer>Alan Moore</Writer>
+      <Penciller>Kevin O'Neill</Penciller>
+      <Publisher>Top Shelf</Publisher>
+      <PageCount>80</PageCount>
+      <Format>Trade Paperback</Format>
+      <Genre>Superhero</Genre>
+    </Book>
+    <Book Id="kids-club-002-id" File="testdata/library/comics/kids-club-002.cbz">
+      <Series>Top Shelf Kids Club</Series>
+      <Title>Top Shelf Kids Club #2</Title>
+      <Number>2</Number>
+      <Volume>2011</Volume>
+      <Year>2012</Year>
+      <Month>5</Month>
+      <Publisher>Top Shelf</Publisher>
+      <PageCount>48</PageCount>
+      <Format>Comic</Format>
+      <Genre>Kids</Genre>
+    </Book>
+  </Books>
+  <ComicLists>
+    <!-- Smart List: League Series - Matches books in "League of Extraordinary Gentlemen" series -->
+    <Item xsi:type="ComicSmartListItem" Id="{test-list-league}" Name="League Series" MatcherMode="And">
+      <Matchers>
+        <ComicBookMatcher xsi:type="ComicBookSeriesMatcher" MatchOperator="1">
+          <MatchValue>League</MatchValue>
+        </ComicBookMatcher>
+      </Matchers>
+    </Item>
+    <!-- Smart List: Top Shelf Publisher - Matches all Top Shelf books -->
+    <Item xsi:type="ComicSmartListItem" Id="{test-list-topshelf}" Name="Top Shelf Publisher" MatcherMode="And">
+      <Matchers>
+        <ComicBookMatcher xsi:type="ComicBookPublisherMatcher" MatchOperator="0">
+          <MatchValue>Top Shelf</MatchValue>
+        </ComicBookMatcher>
+      </Matchers>
+    </Item>
+    <!-- Smart List: 2009-2011 - Matches books from years 2009-2011 -->
+    <Item xsi:type="ComicSmartListItem" Id="{test-list-years}" Name="2009-2011" MatcherMode="And">
+      <Matchers>
+        <ComicBookMatcher xsi:type="ComicBookYearMatcher" MatchOperator="3">
+          <MatchValue>2009</MatchValue>
+          <MatchValue2>2011</MatchValue2>
+        </ComicBookMatcher>
+      </Matchers>
+    </Item>
+    <!-- Smart List: All Comics - Matches everything (useful for testing full sync) -->
+    <Item xsi:type="ComicSmartListItem" Id="{test-list-all}" Name="All Comics" MatcherMode="And">
+      <Matchers>
+        <ComicBookMatcher xsi:type="ComicBookPublisherMatcher" MatchOperator="0">
+          <MatchValue>Top Shelf</MatchValue>
+        </ComicBookMatcher>
+      </Matchers>
+    </Item>
+  </ComicLists>
+</ComicDatabase>
