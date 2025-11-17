@@ -832,13 +832,20 @@ See issues #15, #16, #17 for:
 - `css/style.css` - Modern, responsive styling with CSS custom properties
 - `css/navigation.css` - Navigation tab styling
 - `css/lists.css` - Smart lists browser and detail page styling
+- `css/lists-tree.css` - Tree sidebar navigation styling
+- `css/deviceDetail.css` - Device detail page styling
+- `css/devicesBrowser.css` - Devices browser page styling
 - `js/router.js` - Client-side router (History API, no framework)
 - `js/navigation.js` - Navigation component with tabs
 - `js/websocket.js` - WebSocket client with automatic reconnection
 - `js/devices.js` - Device management and registration controls
+- `js/deviceDetail.js` - Device detail page with sync history
+- `js/devicesBrowser.js` - Devices browser page with filtering
 - `js/sync.js` - Sync progress monitoring with progress bars
+- `js/syncHistoryBrowser.js` - Sync history browser with pagination
 - `js/listsBrowser.js` - Smart lists browser with search/filter
 - `js/listDetail.js` - List detail page with preview
+- `js/listsTree.js` - Tree sidebar navigation for smart lists
 - `js/app.js` - Application initialization and route registration
 
 **Client-Side Routing**:
@@ -847,16 +854,27 @@ The UI now features multi-page navigation with the following routes:
 
 - `/` - Dashboard (overview with stats, devices, sync history)
 - `/lists` - Smart lists browser with search and filtering
-- `/lists/:listId` - List detail page with matchers, devices, and comic preview
-- `/devices` - Device list view (scrolls to devices section)
-- `/sync` - Sync history view (scrolls to sync section)
+- `/lists/:listId` - List detail page with matchers, devices, and comic preview (with tree sidebar)
+- `/devices` - Devices browser page with filtering and search
+- `/devices/:deviceId` - Device detail page with sync history
+- `/sync` - Sync history browser with pagination
 
 **Routing Features**:
 - Browser back/forward button support (popstate events)
 - URL updates without page reload (pushState)
 - Bookmarkable URLs for direct access
-- Parameterized routes (e.g., `/lists/:listId`)
+- Parameterized routes (e.g., `/lists/:listId`, `/devices/:deviceId`)
 - Automatic route handling on page load
+
+**Tree Sidebar Navigation**:
+
+- **Persistent sidebar** on list detail pages showing library structure
+- **Hierarchical display** of smart lists organized in folders
+- **Collapsible folders** to navigate nested list structures
+- **Active list highlighting** shows current list in the tree
+- **State persistence** maintains expanded/collapsed folders across navigation
+- **Click to navigate** instantly switch between lists without leaving detail view
+- **Responsive design** toggles with hamburger menu on mobile
 
 **Smart Lists as First-Class Entities**:
 
