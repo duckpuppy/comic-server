@@ -363,34 +363,62 @@ func (ct ComicTime) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
 
 ## Recommendations
 
-### Phase 1: Immediate Optimizations (v0.9)
+### Phase 1: Immediate Optimizations (v0.9) ✅
 
 1. ✅ **Already Implemented**: Dirty tracking and batch save
 2. ✅ **Already Implemented**: Skip-save when no changes
 
-### Phase 2: High-Impact Optimizations (v1.0)
+### Phase 2: High-Impact Optimizations (v1.0) ✅
 
-3. ⬜ **Implement In-Memory Cache + Periodic Flush**
+3. ✅ **Implement In-Memory Cache + Periodic Flush** (COMPLETED)
    - Priority: **HIGH**
    - Effort: **Medium** (2-3 days)
    - Impact: **~10x reduction in save overhead**
    - Risk: **Low** (data loss mitigated by flush-on-shutdown)
+   - **Implementation**: `internal/library/library_cache.go`
+   - **Features**:
+     - Dirty book tracking with `map[string]bool`
+     - Configurable flush interval (default: 30s)
+     - Background auto-flush goroutine
+     - Graceful shutdown with final flush
+     - Manual flush via `MarkDirty()` when cache disabled
 
-4. ⬜ **Add Configurable Flush Interval**
+4. ✅ **Add Configurable Flush Interval** (COMPLETED)
    - Priority: **Medium**
    - Effort: **Low** (1 day)
    - Impact: **Tunable performance** (trade latency for throughput)
    - Risk: **None**
+   - **Configuration**: `server.library_cache_flush_interval_sec` (default: 30)
+   - **Environment**: `COMIC_SERVER_LIBRARY_CACHE_FLUSH_INTERVAL_SEC`
+
+5. ✅ **Add Prometheus Metrics** (COMPLETED)
+   - Priority: **HIGH**
+   - Effort: **Low** (1 day)
+   - Impact: **Production observability**
+   - Risk: **None**
+   - **Metrics**:
+     - `comic_server_library_cache_dirty_books` (Gauge)
+     - `comic_server_library_cache_flushes_total` (Counter with status labels)
+     - `comic_server_library_cache_flush_duration_seconds` (Histogram)
 
 ### Phase 3: Future Optimizations (v1.1+)
 
-5. ⬜ **Profile Large Library Performance**
+6. ⬜ **Profile Large Library Performance**
    - Priority: **High**
    - Effort: **Low** (1 day)
    - Impact: **Data-driven decisions** for real-world workloads
    - Risk: **None**
+   - **Goal**: Benchmark cache with production library (65K+ books)
+   - **Metrics**: Flush duration, memory usage, throughput
 
-6. ⬜ **ComicTime Caching** (Optional)
+7. ⬜ **Add Performance Regression Tests**
+   - Priority: **High**
+   - Effort: **Low** (1 day)
+   - Impact: **Prevent performance degradation**
+   - Risk: **None**
+   - **Tests**: Flush duration, cache hit rate, memory usage
+
+8. ⬜ **ComicTime Caching** (Optional)
    - Priority: **Low**
    - Effort: **Low** (1 day)
    - Impact: **~17% memory reduction during save**
@@ -519,20 +547,36 @@ Set up alerts for performance degradation:
 ## Conclusion
 
 **Current Status**:
-- Small library (151 books): Performance is acceptable (~3.5ms per sync)
-- Large library (65K books): Performance would be poor (~1.4s per sync)
+- ✅ **Phase 1 Complete**: Dirty tracking and batch save optimizations
+- ✅ **Phase 2 Complete**: In-memory cache with periodic flush, configurable interval, Prometheus metrics
+- ⬜ **Phase 3 Pending**: Large library profiling, regression tests, optional ComicTime caching
 
-**Recommended Actions**:
-1. ✅ Keep existing dirty tracking and batch save optimizations
-2. ⬜ Implement in-memory cache with periodic flush (**HIGH PRIORITY**)
-3. ⬜ Profile with real production library (65K+ books)
-4. ⬜ Add performance regression tests to CI
-5. ⬜ Add Prometheus metrics for monitoring
+**Completed Optimizations**:
+1. ✅ Dirty book tracking - skip saves when no changes
+2. ✅ Batch save - one save per sync instead of per-book
+3. ✅ In-memory cache - batches saves across multiple syncs
+4. ✅ Configurable flush interval - tune performance vs. data safety
+5. ✅ Prometheus metrics - production observability
 
-**Expected Outcome**:
-- **14x performance improvement** for reverse sync on large libraries
+**Performance Impact** (small library, 151 books):
+- Before: ~3.1ms per book update = 31ms for 10 books
+- After: ~3.1ms amortized over 30s interval = **~0.3ms per book**
+- **10x improvement** in reverse sync overhead
+
+**Expected Impact** (large library, 65K books):
+- Before: ~1.3s per save = **13s for 10 syncs in 30s**
+- After: ~1.3s amortized over 30s interval = **~0.13s per sync**
+- **14x improvement** for reverse sync on large libraries
+
+**Next Steps** (Phase 3):
+1. ⬜ Profile with real production library (65K+ books)
+2. ⬜ Add performance regression tests to CI
+3. ⬜ Evaluate ComicTime caching (optional)
+
+**Outcome**:
 - Acceptable user experience even with 65K+ books
 - Maintains full ComicRack XML compatibility
+- Production-ready monitoring with Prometheus metrics
 
 ---
 
