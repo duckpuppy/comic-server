@@ -19,7 +19,7 @@ This is a standalone project with its own git repository, located alongside the 
 
 ✅ **Production Ready** - Core functionality is complete and tested. The server successfully syncs comic libraries with Android/iOS devices.
 
-See [WIRELESS_SYNC_PROTOCOL.md](./WIRELESS_SYNC_PROTOCOL.md) for the complete protocol specification.
+See [WIRELESS_SYNC_PROTOCOL.md](./docs/WIRELESS_SYNC_PROTOCOL.md) for the complete protocol specification.
 
 ## Development Setup
 
