@@ -69,3 +69,4 @@ production_data/
 
 # Git worktrees
 .worktrees/
+test.db
