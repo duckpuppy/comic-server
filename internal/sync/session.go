@@ -650,12 +650,14 @@ func sortOperationsByType(operations []SyncOperation) []SyncOperation {
 // - Page metadata (page types, bookmarks)
 // - Other user tracking (Checked flag)
 func (s *Syncer) updateLibraryReadingState(deviceBooks map[string]*DeviceBook) error {
-	if s.libraryPath == "" {
-		log.Debug().Msg("Library path not set, skipping metadata update")
+	// Check if we have cache or library path for saving
+	if s.libraryCache == nil && s.libraryPath == "" {
+		log.Debug().Msg("Library cache and path not set, skipping metadata update")
 		return nil
 	}
 
 	updatedCount := 0
+	changedBookIDs := []string{} // Track which books changed for cache marking
 	for bookID, deviceBook := range deviceBooks {
 		// Skip if device book has no metadata
 		if deviceBook.Metadata == nil {
@@ -811,6 +813,7 @@ func (s *Syncer) updateLibraryReadingState(deviceBooks map[string]*DeviceBook) e
 
 		if hasChanges {
 			updatedCount++
+			changedBookIDs = append(changedBookIDs, bookID)
 			log.Info().
 				Str("book_id", bookID).
 				Str("title", libraryBook.Title).
@@ -822,14 +825,24 @@ func (s *Syncer) updateLibraryReadingState(deviceBooks map[string]*DeviceBook) e
 	if updatedCount > 0 {
 		log.Info().
 			Int("updated_count", updatedCount).
-			Msg("Updated library metadata from device, saving library")
+			Msg("Updated library metadata from device")
 
-		// Save updated library to disk
-		if err := library.SaveLibrary(s.libraryPath, s.library); err != nil {
-			return fmt.Errorf("failed to save library: %w", err)
+		// Mark books as dirty in cache, or save immediately if no cache
+		if s.libraryCache != nil {
+			// Use cache for batched saves (performance optimization)
+			log.Debug().
+				Int("dirty_books", len(changedBookIDs)).
+				Msg("Marking books dirty in library cache")
+			s.libraryCache.MarkManyDirty(changedBookIDs)
+			log.Debug().Msg("Books marked dirty, will be flushed by cache")
+		} else {
+			// Fall back to immediate save (backward compatibility)
+			log.Debug().Msg("No cache available, saving library immediately")
+			if err := library.SaveLibrary(s.libraryPath, s.library); err != nil {
+				return fmt.Errorf("failed to save library: %w", err)
+			}
+			log.Info().Msg("Library saved successfully")
 		}
-
-		log.Info().Msg("Library saved successfully")
 	} else {
 		log.Debug().Msg("No metadata changes detected")
 	}

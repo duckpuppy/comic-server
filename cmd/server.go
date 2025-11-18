@@ -162,6 +162,19 @@ func runServer(cmd *cobra.Command, args []string) error {
 		Int("lists", len(lib.ComicLists)).
 		Msg("Library loaded successfully")
 
+	// Create library cache with configured flush interval
+	flushInterval := time.Duration(cfg.Server.LibraryCacheFlushIntervalSec) * time.Second
+	libCache := library.NewLibraryCache(lib, cfg.Server.LibraryPath, flushInterval)
+	defer libCache.Stop()
+
+	if flushInterval > 0 {
+		log.Info().
+			Dur("flush_interval", flushInterval).
+			Msg("Library cache enabled with automatic flushing")
+	} else {
+		log.Info().Msg("Library cache enabled with manual flushing only")
+	}
+
 	// Create device registry
 	registry := device.NewRegistry()
 
@@ -225,7 +238,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 
 	// Send direct ping to device if specified (useful for WSL2, VPNs, complex networks)
 	if pingDeviceSet && pingDevice != "" {
-		go sendDirectPingAndRegister(pingCtx, pingDevice, registry, syncManager, cfg, lib, ipLimiter, deviceLimiter, syncSemaphore)
+		go sendDirectPingAndRegister(pingCtx, pingDevice, registry, syncManager, cfg, lib, libCache, ipLimiter, deviceLimiter, syncSemaphore)
 	}
 
 	// Create and start WebSocket hub
@@ -361,7 +374,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 			log.Error().Err(err).Msg("Discovery listener error")
 
 		case discovered := <-deviceChan:
-			handleDiscoveredDevice(discovered, registry, syncManager, cfg, lib, ipLimiter, deviceLimiter, syncSemaphore)
+			handleDiscoveredDevice(discovered, registry, syncManager, cfg, lib, libCache, ipLimiter, deviceLimiter, syncSemaphore)
 		}
 	}
 }
@@ -381,6 +394,7 @@ func handleDiscoveredDevice(
 	syncManager *syncstate.Manager,
 	cfg *config.Config,
 	lib *library.ComicLibrary,
+	libCache *library.LibraryCache,
 	ipLimiter *ratelimit.IPLimiter,
 	deviceLimiter *ratelimit.DeviceLimiter,
 	syncSemaphore chan struct{},
@@ -413,7 +427,7 @@ func handleDiscoveredDevice(
 		// Handle sync request if device wants sync (manual button press on device)
 		if discovered.WantsSync {
 			logger.Info().Msg("Known device requesting sync (user pressed sync button)")
-			if err := handleSyncRequest(dev.Info, discovered.IPAddress, cfg, lib, syncManager, deviceLimiter, syncSemaphore); err != nil {
+			if err := handleSyncRequest(dev.Info, discovered.IPAddress, cfg, lib, libCache, syncManager, deviceLimiter, syncSemaphore); err != nil {
 				logger.Error().Err(err).Msg("Sync failed")
 			}
 			return
@@ -489,7 +503,7 @@ func handleDiscoveredDevice(
 	// Handle sync request if device wants sync and auto-sync is enabled
 	if discovered.WantsSync && cfg.Server.AutoSync {
 		logger.Info().Msg("Device requested sync, starting automatic sync")
-		if err := handleSyncRequest(info, discovered.IPAddress, cfg, lib, syncManager, deviceLimiter, syncSemaphore); err != nil {
+		if err := handleSyncRequest(info, discovered.IPAddress, cfg, lib, libCache, syncManager, deviceLimiter, syncSemaphore); err != nil {
 			logger.Error().Err(err).Msg("Sync failed")
 		}
 	} else if discovered.WantsSync && !cfg.Server.AutoSync {
@@ -551,6 +565,7 @@ func handleSyncRequest(
 	deviceIP string,
 	cfg *config.Config,
 	lib *library.ComicLibrary,
+	libCache *library.LibraryCache,
 	syncManager *syncstate.Manager,
 	deviceLimiter *ratelimit.DeviceLimiter,
 	syncSemaphore chan struct{},
@@ -612,8 +627,9 @@ func handleSyncRequest(
 	// Create syncer
 	syncer := csync.NewSyncer(client, lib)
 
-	// Set library path for reverse sync (reading state updates)
-	syncer.SetLibraryPath(cfg.Server.LibraryPath)
+	// Set library cache for reverse sync (reading state updates)
+	// This enables batched saves for better performance
+	syncer.SetLibraryCache(libCache)
 
 	// Apply device config if exists
 	if deviceConfig, ok := cfg.Devices[deviceID]; ok {
@@ -679,6 +695,7 @@ func sendDirectPingAndRegister(
 	syncManager *syncstate.Manager,
 	cfg *config.Config,
 	lib *library.ComicLibrary,
+	libCache *library.LibraryCache,
 	ipLimiter *ratelimit.IPLimiter,
 	deviceLimiter *ratelimit.DeviceLimiter,
 	syncSemaphore chan struct{},
@@ -754,7 +771,7 @@ func sendDirectPingAndRegister(
 					Str("device_name", deviceInfo.Name).
 					Msg("Registering device from direct ping")
 
-				handleDiscoveredDevice(discovered, registry, syncManager, cfg, lib, ipLimiter, deviceLimiter, syncSemaphore)
+				handleDiscoveredDevice(discovered, registry, syncManager, cfg, lib, libCache, ipLimiter, deviceLimiter, syncSemaphore)
 
 				// In direct-ping mode, automatically trigger sync since device can't signal back via UDP
 				// Check if device is configured for sync (has smart lists assigned)
@@ -764,7 +781,7 @@ func sendDirectPingAndRegister(
 						Int("lists", len(deviceCfg.Lists)).
 						Msg("Device has smart lists configured, triggering automatic sync")
 
-					if err := handleSyncRequest(deviceInfo, deviceIP, cfg, lib, syncManager, deviceLimiter, syncSemaphore); err != nil {
+					if err := handleSyncRequest(deviceInfo, deviceIP, cfg, lib, libCache, syncManager, deviceLimiter, syncSemaphore); err != nil {
 						log.Error().
 							Err(err).
 							Str("device_id", deviceInfo.ID).
