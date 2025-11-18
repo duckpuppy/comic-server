@@ -95,6 +95,11 @@ comic-server/
 │   ├── syncstate/        # Sync state tracking
 │   │   ├── manager.go    # Thread-safe sync state manager
 │   │   └── manager_test.go  # State manager tests (12 tests)
+│   ├── storage/          # SQLite database storage
+│   │   ├── db.go         # Database connection management
+│   │   ├── schema.go     # Table definitions and migrations
+│   │   ├── import.go     # Idempotent XML import logic
+│   │   └── import_test.go  # Import tests (10 tests)
 │   └── api/              # REST API for monitoring
 │       ├── api.go        # HTTP handlers and server
 │       └── api_test.go   # API endpoint tests (9 tests)
@@ -222,6 +227,49 @@ The `--ping-device` flag:
 - Supports reading lists and smart lists
 - Custom time format handling for .NET DateTime compatibility
 - Library path typically: `~/.local/share/ComicRack/ComicDb.xml` (Linux) or `%APPDATA%/ComicRack/ComicDb.xml` (Windows)
+
+### SQLite Storage (internal/storage/)
+
+**Experimental feature** for importing ComicRack libraries into SQLite for improved query performance.
+
+**Import Command**:
+
+```bash
+# Import library into SQLite database
+comic-server import --xml /path/to/ComicDb.xml --db /path/to/library.db
+
+# Preview changes without modifying database
+comic-server import --xml /path/to/ComicDb.xml --db /path/to/library.db --dry-run
+
+# Verbose output
+comic-server import --xml /path/to/ComicDb.xml --db /path/to/library.db --verbose
+```
+
+**Database Info Command**:
+
+```bash
+# Show database statistics
+comic-server db info --db /path/to/library.db
+```
+
+**Key Features**:
+
+- **Idempotent import**: Importing the same XML twice results in no changes
+- **Change detection**: Uses SHA256 hashing to detect modified records
+- **Automatic updates**: Adds new books, updates changed books, deletes removed books
+- **Normalized storage**: Custom values and tags stored in separate tables for fast queries
+- **Pure Go**: Uses `modernc.org/sqlite` (no CGO required)
+
+**Schema Highlights**:
+
+- `books` table with 40+ columns matching ComicBook struct
+- `book_custom_values` table (book_id, key, value) with index on (key, value)
+- `book_tags` table (book_id, tag) with index on tag
+- `lists` table with JSON matchers for smart list definitions
+- `reading_list_items` junction table for reading list references
+- `library_metadata` table for library ID, name, import timestamp
+
+**Note**: This feature is experimental. The server currently still uses the in-memory XML library for sync operations. Future versions will add the option to read directly from SQLite.
 
 ### Configuration Management (internal/config/)
 

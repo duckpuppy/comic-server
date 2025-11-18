@@ -114,11 +114,11 @@ func TestHandleGetListDetail(t *testing.T) {
 	}
 
 	var response struct {
-		ID                   string                   `json:"id"`
-		Name                 string                   `json:"name"`
-		MatcherMode          string                   `json:"matcher_mode"`
-		MatcherModeFormatted string                   `json:"matcher_mode_formatted"`
-		BookCount            int                      `json:"book_count"`
+		ID                   string                `json:"id"`
+		Name                 string                `json:"name"`
+		MatcherMode          string                `json:"matcher_mode"`
+		MatcherModeFormatted string                `json:"matcher_mode_formatted"`
+		BookCount            int                   `json:"book_count"`
 		Matchers             []library.MatcherInfo `json:"matchers"`
 	}
 

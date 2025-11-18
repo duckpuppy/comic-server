@@ -23,11 +23,11 @@ import (
 )
 
 const (
-	defaultPages   = 3
-	comicsDir      = "testdata/real-comics"
-	libraryPath    = "testdata/ComicDB.xml"
-	backupSuffix   = ".backup"
-	maxFileSizeMB  = 5 // Target max size per file
+	defaultPages  = 3
+	comicsDir     = "testdata/real-comics"
+	libraryPath   = "testdata/ComicDB.xml"
+	backupSuffix  = ".backup"
+	maxFileSizeMB = 5 // Target max size per file
 )
 
 // Library XML structures (minimal - only what we need to update)

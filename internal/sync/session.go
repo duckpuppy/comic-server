@@ -402,8 +402,8 @@ type Lists struct {
 
 // ReadingList represents a single reading list
 type ReadingList struct {
-	Name        string  `xml:"Name,attr"`
-	Description string  `xml:"Description,omitempty"`
+	Name        string   `xml:"Name,attr"`
+	Description string   `xml:"Description,omitempty"`
 	Books       *BookIDs `xml:"Books,omitempty"`
 }
 
@@ -581,7 +581,7 @@ func (s *Syncer) calculateRequiredSpace(operations []SyncOperation) (int64, erro
 		case OperationUpdateMetadataOnly:
 			// Only need space for sidecar update
 			totalBytes += 10 * 1024
-		// OperationDelete frees space, so we don't count it
+			// OperationDelete frees space, so we don't count it
 		}
 	}
 

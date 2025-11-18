@@ -39,7 +39,7 @@ type Server struct {
 	library           *library.ComicLibrary // Comic library for smart list management
 	listCache         *library.ListCache    // Cache for smart list book counts
 	config            *config.Config
-	configPath        string          // Path to config file for saving
+	configPath        string // Path to config file for saving
 	version           VersionInfo
 	mux               *http.ServeMux
 	startTime         time.Time
@@ -527,7 +527,6 @@ func (s *Server) handleDeviceUnregister(w http.ResponseWriter, r *http.Request) 
 func (s *Server) GetHub() *ws.Hub {
 	return s.wsHub
 }
-
 
 // DeviceConfigResponse provides device configuration including assigned lists
 type DeviceConfigResponse struct {

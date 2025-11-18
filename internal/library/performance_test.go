@@ -105,7 +105,7 @@ func BenchmarkSmartListEvaluation(b *testing.B) {
 	var smartList *library.ComicListItem
 	for i := range lib.ComicLists {
 		if lib.ComicLists[i].Type == "ComicSmartListItem" ||
-		   lib.ComicLists[i].Type == "comicrack:ComicSmartListItem" {
+			lib.ComicLists[i].Type == "comicrack:ComicSmartListItem" {
 			smartList = &lib.ComicLists[i]
 			break
 		}

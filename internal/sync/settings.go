@@ -119,18 +119,18 @@ func (st *SortType) UnmarshalText(text []byte) error {
 // These control how books are filtered, sorted, and limited when syncing
 type SharedListSettings struct {
 	// Filtering options
-	OnlyUnread   bool `yaml:"only_unread" toml:"only_unread"`     // Only sync unread books (CurrentPage < PageCount)
+	OnlyUnread   bool `yaml:"only_unread" toml:"only_unread"`       // Only sync unread books (CurrentPage < PageCount)
 	KeepLastRead bool `yaml:"keep_last_read" toml:"keep_last_read"` // When OnlyUnread=true, include N recently read books for context
-	OnlyChecked  bool `yaml:"only_checked" toml:"only_checked"`   // Only sync books marked as "checked"
+	OnlyChecked  bool `yaml:"only_checked" toml:"only_checked"`     // Only sync books marked as "checked"
 
 	// Limiting options
-	Limit          bool      `yaml:"limit" toml:"limit"`                           // Enable limiting
-	LimitValue     int       `yaml:"limit_value" toml:"limit_value"`               // Limit amount (default 50)
-	LimitValueType LimitType `yaml:"limit_value_type" toml:"limit_value_type"`     // Limit unit: Books, MB, or GB
+	Limit          bool      `yaml:"limit" toml:"limit"`                       // Enable limiting
+	LimitValue     int       `yaml:"limit_value" toml:"limit_value"`           // Limit amount (default 50)
+	LimitValueType LimitType `yaml:"limit_value_type" toml:"limit_value_type"` // Limit unit: Books, MB, or GB
 
 	// Sorting options
-	Sort         bool     `yaml:"sort" toml:"sort"`                         // Enable sorting
-	ListSortType SortType `yaml:"list_sort_type" toml:"list_sort_type"`     // How to sort (default: Series)
+	Sort         bool     `yaml:"sort" toml:"sort"`                     // Enable sorting
+	ListSortType SortType `yaml:"list_sort_type" toml:"list_sort_type"` // How to sort (default: Series)
 }
 
 // DefaultSettings returns the default SharedListSettings

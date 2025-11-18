@@ -343,7 +343,7 @@ func TestMatcherRegex(t *testing.T) {
 			xmlMatcher := &ComicBookMatcher{
 				Type:          "Series",
 				MatchOperator: "7", // Regex operator
-				MatchValue: tt.regex,
+				MatchValue:    tt.regex,
 			}
 
 			matcher, err := NewMatcherFromXML(xmlMatcher)
@@ -679,7 +679,7 @@ func TestNewMatcherFromXML(t *testing.T) {
 			xmlMatcher: &ComicBookMatcher{
 				Type:          "Series",
 				MatchOperator: "0", // Equals
-				MatchValue: "Batman",
+				MatchValue:    "Batman",
 			},
 			wantErr: false,
 			checkResult: func(t *testing.T, m *Matcher) {
@@ -699,7 +699,7 @@ func TestNewMatcherFromXML(t *testing.T) {
 			xmlMatcher: &ComicBookMatcher{
 				Type:          "Publisher",
 				MatchOperator: "contains",
-				MatchValue: "Comics",
+				MatchValue:    "Comics",
 			},
 			wantErr: false,
 			checkResult: func(t *testing.T, m *Matcher) {
@@ -713,7 +713,7 @@ func TestNewMatcherFromXML(t *testing.T) {
 			xmlMatcher: &ComicBookMatcher{
 				Type:          "Series",
 				MatchOperator: "invalid_operator",
-				MatchValue: "test",
+				MatchValue:    "test",
 			},
 			wantErr: true,
 		},

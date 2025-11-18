@@ -11,8 +11,8 @@ type IPLimiter struct {
 	attempts       map[string][]time.Time // IP -> list of attempt timestamps
 	maxAttempts    int                    // Maximum attempts allowed per window
 	windowDuration time.Duration          // Time window for rate limiting
-	cleanupTicker  *time.Ticker          // Periodic cleanup of expired entries
-	stopCleanup    chan struct{}         // Signal to stop cleanup goroutine
+	cleanupTicker  *time.Ticker           // Periodic cleanup of expired entries
+	stopCleanup    chan struct{}          // Signal to stop cleanup goroutine
 }
 
 // NewIPLimiter creates a new IP rate limiter

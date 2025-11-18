@@ -248,8 +248,8 @@ func TestPerformSync_MixedOperations(t *testing.T) {
 
 	lib := &library.ComicLibrary{
 		Books: []library.ComicBook{
-			{ID: "book1", Title: "Unchanged", PageCount: 10},       // No change
-			{ID: "book2", Title: "New Title", PageCount: 10},       // Metadata update
+			{ID: "book1", Title: "Unchanged", PageCount: 10},                    // No change
+			{ID: "book2", Title: "New Title", PageCount: 10},                    // Metadata update
 			{ID: "book4", Title: "New Book", PageCount: 5, FilePath: book4Path}, // Add
 		},
 		// book3 is not in library -> Delete

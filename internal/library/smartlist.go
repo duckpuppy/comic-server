@@ -91,7 +91,8 @@ type Matcher struct {
 
 // extractFieldName extracts the field name from a ComicRack matcher type
 // e.g., "ComicBookDirectoryMatcher" -> "Directory"
-//       "ComicBookSeriesMatcher" -> "Series"
+//
+//	"ComicBookSeriesMatcher" -> "Series"
 func extractFieldName(matcherType string) string {
 	// Remove "ComicBook" prefix and "Matcher" suffix
 	name := strings.TrimPrefix(matcherType, "ComicBook")

@@ -19,11 +19,11 @@ type DeviceLimiter struct {
 
 // tokenBucket represents a token bucket for a single device
 type tokenBucket struct {
-	tokens       float64   // Current number of tokens
-	maxTokens    int       // Maximum capacity
-	refillRate   time.Duration // Time to refill one token
-	lastRefill   time.Time // Last time tokens were refilled
-	lastAccess   time.Time // Last time this bucket was accessed (for cleanup)
+	tokens     float64       // Current number of tokens
+	maxTokens  int           // Maximum capacity
+	refillRate time.Duration // Time to refill one token
+	lastRefill time.Time     // Last time tokens were refilled
+	lastAccess time.Time     // Last time this bucket was accessed (for cleanup)
 }
 
 // NewDeviceLimiter creates a new device rate limiter using token bucket algorithm

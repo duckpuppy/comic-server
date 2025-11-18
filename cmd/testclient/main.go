@@ -18,13 +18,13 @@ import (
 )
 
 var (
-	deviceID     string
-	deviceName   string
-	storageDir   string
-	requestSync  bool
-	multicastIP  string
+	deviceID      string
+	deviceName    string
+	storageDir    string
+	requestSync   bool
+	multicastIP   string
 	multicastPort int
-	devicePort   int
+	devicePort    int
 )
 
 var rootCmd = &cobra.Command{
