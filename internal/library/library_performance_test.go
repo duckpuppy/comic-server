@@ -214,3 +214,136 @@ func TestSmartListEvaluationPerformance(t *testing.T) {
 	t.Logf("Smart list evaluation performance: %v for %d books, %d matchers, %d matches",
 		duration, len(lib.Books), len(smartList.Matchers), len(matchedBooks))
 }
+
+// --- Large Library Benchmarks ---
+// These benchmarks use the production library (65K+ books) to measure real-world performance
+
+const largeLibraryPath = "../../production_data/ComicDB.xml"
+
+// BenchmarkSaveLibraryLarge benchmarks SaveLibrary with production library
+func BenchmarkSaveLibraryLarge(b *testing.B) {
+	// Load production library
+	lib, err := LoadLibrary(largeLibraryPath)
+	if err != nil {
+		b.Skipf("Skipping large library benchmark: %v", err)
+	}
+
+	tempDir := b.TempDir()
+	libraryPath := filepath.Join(tempDir, "test.xml")
+
+	b.Logf("Benchmarking SaveLibrary with %d books", len(lib.Books))
+
+	// Warm up
+	if err := SaveLibrary(libraryPath, lib); err != nil {
+		b.Fatalf("Warmup save failed: %v", err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := SaveLibrary(libraryPath, lib); err != nil {
+			b.Fatalf("SaveLibrary failed: %v", err)
+		}
+	}
+}
+
+// BenchmarkLoadLibraryLarge benchmarks LoadLibrary with production library
+func BenchmarkLoadLibraryLarge(b *testing.B) {
+	// Check if library exists
+	if _, err := LoadLibrary(largeLibraryPath); err != nil {
+		b.Skipf("Skipping large library benchmark: %v", err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		lib, err := LoadLibrary(largeLibraryPath)
+		if err != nil {
+			b.Fatalf("LoadLibrary failed: %v", err)
+		}
+		b.Logf("Loaded %d books", len(lib.Books))
+		_ = lib // Use lib to avoid optimization
+	}
+}
+
+// BenchmarkCacheFlushLarge benchmarks cache flush with production library
+func BenchmarkCacheFlushLarge(b *testing.B) {
+	// Load production library
+	lib, err := LoadLibrary(largeLibraryPath)
+	if err != nil {
+		b.Skipf("Skipping large library benchmark: %v", err)
+	}
+
+	tempDir := b.TempDir()
+	libraryPath := filepath.Join(tempDir, "test.xml")
+
+	b.Logf("Benchmarking cache flush with %d books", len(lib.Books))
+
+	// Create cache with no auto-flush
+	cache := NewLibraryCache(lib, libraryPath, 0)
+	defer cache.Stop()
+
+	// Warm up - save once to create file
+	for i := range lib.Books {
+		cache.MarkDirty(lib.Books[i].ID)
+	}
+	if _, err := cache.Flush(); err != nil {
+		b.Fatalf("Warmup flush failed: %v", err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// Mark all books dirty
+		for j := range lib.Books {
+			cache.MarkDirty(lib.Books[j].ID)
+		}
+
+		// Flush
+		b.StartTimer()
+		if _, err := cache.Flush(); err != nil {
+			b.Fatalf("Flush failed: %v", err)
+		}
+		b.StopTimer()
+	}
+}
+
+// BenchmarkCacheBatchEfficiencyLarge benchmarks batch efficiency with production library
+func BenchmarkCacheBatchEfficiencyLarge(b *testing.B) {
+	// Load production library
+	lib, err := LoadLibrary(largeLibraryPath)
+	if err != nil {
+		b.Skipf("Skipping large library benchmark: %v", err)
+	}
+
+	tempDir := b.TempDir()
+	libraryPath := filepath.Join(tempDir, "test.xml")
+
+	b.Logf("Benchmarking batch efficiency with %d books", len(lib.Books))
+
+	b.Run("IndividualSaves", func(b *testing.B) {
+		// Benchmark 10 individual saves
+		for i := 0; i < b.N; i++ {
+			for j := 0; j < 10; j++ {
+				if err := SaveLibrary(libraryPath, lib); err != nil {
+					b.Fatalf("Individual save failed: %v", err)
+				}
+			}
+		}
+	})
+
+	b.Run("BatchedSaves", func(b *testing.B) {
+		// Benchmark 10 saves batched into 1
+		cache := NewLibraryCache(lib, libraryPath, 0)
+		defer cache.Stop()
+
+		for i := 0; i < b.N; i++ {
+			for j := 0; j < 10; j++ {
+				// Simulate marking different books dirty
+				bookIdx := j % len(lib.Books)
+				cache.MarkDirty(lib.Books[bookIdx].ID)
+			}
+			// Flush once (batches all 10 marks into 1 save)
+			if _, err := cache.Flush(); err != nil {
+				b.Fatalf("Batch flush failed: %v", err)
+			}
+		}
+	})
+}
