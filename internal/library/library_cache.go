@@ -4,7 +4,34 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+
 	"github.com/duckpuppy/comic-server/internal/log"
+)
+
+// Prometheus metrics for library cache
+var (
+	cacheDirtyBooksGauge = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "comic_server_library_cache_dirty_books",
+			Help: "Current number of dirty books in library cache waiting to be flushed",
+		},
+	)
+	cacheFlushesTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "comic_server_library_cache_flushes_total",
+			Help: "Total number of library cache flush operations by status",
+		},
+		[]string{"status"}, // "success" or "error"
+	)
+	cacheFlushDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "comic_server_library_cache_flush_duration_seconds",
+			Help:    "Duration of library cache flush operations in seconds",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0}, // 1ms to 5s
+		},
+	)
 )
 
 // LibraryCache provides an in-memory cache for library with periodic flushing to disk
@@ -57,6 +84,9 @@ func (c *LibraryCache) MarkDirty(bookID string) {
 	defer c.mu.Unlock()
 	c.dirtyBooks[bookID] = true
 
+	// Update metrics
+	cacheDirtyBooksGauge.Set(float64(len(c.dirtyBooks)))
+
 	// Auto-flush if enough time has passed and auto-flush is disabled
 	// (when auto-flush is enabled, backgroundFlusher handles it)
 	if !c.autoFlush && c.shouldFlush() {
@@ -72,6 +102,9 @@ func (c *LibraryCache) MarkManyDirty(bookIDs []string) {
 	for _, bookID := range bookIDs {
 		c.dirtyBooks[bookID] = true
 	}
+
+	// Update metrics
+	cacheDirtyBooksGauge.Set(float64(len(c.dirtyBooks)))
 
 	// Auto-flush if enough time has passed and auto-flush is disabled
 	if !c.autoFlush && c.shouldFlush() {
@@ -98,16 +131,29 @@ func (c *LibraryCache) flushLocked() (bool, error) {
 		Str("library_path", c.libraryPath).
 		Msg("Flushing library cache to disk")
 
+	// Record flush start time for metrics
+	startTime := time.Now()
+
 	// Save entire library
 	err := SaveLibrary(c.libraryPath, c.library)
+
+	// Record flush duration
+	duration := time.Since(startTime)
+	cacheFlushDurationSeconds.Observe(duration.Seconds())
+
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to flush library cache")
+		cacheFlushesTotal.WithLabelValues("error").Inc()
 		return false, err
 	}
 
 	// Clear dirty tracking
 	c.dirtyBooks = make(map[string]bool)
 	c.lastSave = time.Now()
+
+	// Update metrics
+	cacheDirtyBooksGauge.Set(0) // All books flushed
+	cacheFlushesTotal.WithLabelValues("success").Inc()
 
 	log.Info().Msg("Library cache flushed successfully")
 	return true, nil
