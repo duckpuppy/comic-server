@@ -30,35 +30,21 @@ type Client interface {
 
 // Syncer orchestrates synchronization between the library and a device
 type Syncer struct {
-	client       Client
-	library      *library.ComicLibrary
-	libraryCache *library.LibraryCache    // Library cache for batched saves (optional)
-	libraryPath  string                   // Path to library XML file for saving updates (deprecated when using cache)
-	filterList   *library.ComicListItem   // Optional single smart list to filter books (deprecated, use filterLists)
-	filterLists  []*library.ComicListItem // Optional multiple smart lists to filter books (union of all lists)
-	settings     *SharedListSettings      // Sync settings to apply (filtering, sorting, limiting)
+	client      Client
+	backend     library.Backend          // Backend for library operations (replaces library + libraryCache)
+	filterList  *library.ComicListItem   // Optional single smart list to filter books (deprecated, use filterLists)
+	filterLists []*library.ComicListItem // Optional multiple smart lists to filter books (union of all lists)
+	settings    *SharedListSettings      // Sync settings to apply (filtering, sorting, limiting)
 }
 
 // NewSyncer creates a new sync orchestrator
-func NewSyncer(client Client, lib *library.ComicLibrary) *Syncer {
+func NewSyncer(client Client, backend library.Backend) *Syncer {
 	return &Syncer{
 		client:     client,
-		library:    lib,
+		backend:    backend,
 		filterList: nil,
 		settings:   DefaultSettings(), // Use default settings
 	}
-}
-
-// SetLibraryPath sets the path to the library XML file for saving updates
-// Deprecated: Use SetLibraryCache for better performance
-func (s *Syncer) SetLibraryPath(path string) {
-	s.libraryPath = path
-}
-
-// SetLibraryCache sets the library cache for batched saves
-// This should be used instead of SetLibraryPath for better performance
-func (s *Syncer) SetLibraryCache(cache *library.LibraryCache) {
-	s.libraryCache = cache
 }
 
 // SetFilterList sets a smart list to filter which books get synced
@@ -318,7 +304,7 @@ func (s *Syncer) computeUnionOfLists() []*library.ComicBook {
 		}
 
 		// Get books matching this list
-		matchedBooks, err := s.library.MatchBooks(list)
+		matchedBooks, err := s.backend.MatchBooks(list)
 		if err != nil {
 			// Log error but continue with other lists
 			continue
@@ -351,16 +337,20 @@ func (s *Syncer) ComputeSyncPlan(deviceBooks map[string]*DeviceBook) ([]SyncOper
 		booksToSync = s.computeUnionOfLists()
 	} else if s.filterList != nil {
 		// Apply single smart list filter (backward compatibility)
-		filteredBooks, err := s.library.MatchBooks(s.filterList)
+		filteredBooks, err := s.backend.MatchBooks(s.filterList)
 		if err != nil {
 			return nil, fmt.Errorf("failed to apply filter list: %w", err)
 		}
 		booksToSync = filteredBooks
 	} else {
 		// No filter - sync all books
-		booksToSync = make([]*library.ComicBook, len(s.library.Books))
-		for i := range s.library.Books {
-			booksToSync[i] = &s.library.Books[i]
+		allBooks, err := s.backend.GetAllBooks()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get all books: %w", err)
+		}
+		booksToSync = make([]*library.ComicBook, len(allBooks))
+		for i := range allBooks {
+			booksToSync[i] = &allBooks[i]
 		}
 	}
 

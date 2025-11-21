@@ -22,8 +22,9 @@ func createTestServer(syncManager *syncstate.Manager, registry *device.Registry,
 		Books:      []library.ComicBook{},
 		ComicLists: []library.ComicListItem{},
 	}
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
 	wsHub := websocket.NewHub()
-	return NewServer(syncManager, registry, lib, cfg, "", version, wsHub) // Empty config path for tests
+	return NewServer(syncManager, registry, backend, cfg, "", version, wsHub) // Empty config path for tests
 }
 
 func TestNewServer(t *testing.T) {

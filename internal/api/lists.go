@@ -57,7 +57,7 @@ func (s *Server) buildListTree(items []library.ComicListItem) []ListTreeNode {
 			count, found := s.listCache.GetCount(item.ID)
 			if !found {
 				// Evaluate list to get count
-				matches, err := s.library.MatchBooks(item)
+				matches, err := s.backend.MatchBooks(item)
 				if err != nil {
 					count = 0
 				} else {
@@ -84,13 +84,19 @@ func (s *Server) handleGetListTree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.library == nil {
-		log.Error().Msg("Library not loaded")
+	if s.backend == nil {
+		log.Error().Msg("Library backend not loaded")
 		http.Error(w, "Library not available", http.StatusServiceUnavailable)
 		return
 	}
 
-	tree := s.buildListTree(s.library.ComicLists)
+	allLists, err := s.backend.GetAllLists()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to get lists from backend")
+		http.Error(w, "Failed to get lists", http.StatusInternalServerError)
+		return
+	}
+	tree := s.buildListTree(allLists)
 
 	response := map[string]interface{}{
 		"tree": tree,
@@ -107,9 +113,16 @@ func (s *Server) handleGetLists(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.library == nil {
-		log.Error().Msg("Library not loaded")
+	if s.backend == nil {
+		log.Error().Msg("Library backend not loaded")
 		http.Error(w, "Library not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	allLists, err := s.backend.GetAllLists()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to get lists from backend")
+		http.Error(w, "Failed to get lists", http.StatusInternalServerError)
 		return
 	}
 
@@ -135,11 +148,11 @@ func (s *Server) handleGetLists(w http.ResponseWriter, r *http.Request) {
 					// Evaluate list to get count
 					log.Debug().
 						Str("list_name", list.Name).
-						Int("total_books", len(s.library.Books)).
+						Int("total_books", s.backend.BookCount()).
 						Int("matcher_count", len(list.Matchers)).
 						Msg("Evaluating smart list")
 
-					matches, err := s.library.MatchBooks(&list)
+					matches, err := s.backend.MatchBooks(&list)
 					if err != nil {
 						log.Warn().Err(err).
 							Str("list_id", list.ID).
@@ -174,7 +187,7 @@ func (s *Server) handleGetLists(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Start recursion from top-level lists
-	collectSmartLists(s.library.ComicLists)
+	collectSmartLists(allLists)
 
 	response := map[string]interface{}{
 		"lists": lists,
@@ -229,7 +242,7 @@ func (s *Server) handleGetListDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.library == nil {
+	if s.backend == nil {
 		http.Error(w, "Library not available", http.StatusServiceUnavailable)
 		return
 	}
@@ -239,7 +252,12 @@ func (s *Server) handleGetListDetail(w http.ResponseWriter, r *http.Request) {
 	listID := parsePathParam(r.URL.Path, "/api/library/lists/")
 
 	// Find the list (searches recursively through folders)
-	targetList := s.library.FindListByID(listID)
+	targetList, err := s.backend.FindListByID(listID)
+	if err != nil {
+		log.Error().Err(err).Str("list_id", listID).Msg("Error looking up list")
+		http.Error(w, "Error looking up list", http.StatusInternalServerError)
+		return
+	}
 	if targetList == nil {
 		http.Error(w, "List not found", http.StatusNotFound)
 		return
@@ -248,7 +266,7 @@ func (s *Server) handleGetListDetail(w http.ResponseWriter, r *http.Request) {
 	// Get cached count
 	count, found := s.listCache.GetCount(listID)
 	if !found {
-		matches, err := s.library.MatchBooks(targetList)
+		matches, err := s.backend.MatchBooks(targetList)
 		if err != nil {
 			log.Warn().Err(err).Str("list_id", listID).Msg("Failed to match books for list")
 			count = 0
@@ -296,7 +314,7 @@ func (s *Server) handleGetListPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.library == nil {
+	if s.backend == nil {
 		http.Error(w, "Library not available", http.StatusServiceUnavailable)
 		return
 	}
@@ -328,14 +346,19 @@ func (s *Server) handleGetListPreview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Find the list (searches recursively through folders)
-	targetList := s.library.FindListByID(listID)
+	targetList, err := s.backend.FindListByID(listID)
+	if err != nil {
+		log.Error().Err(err).Str("list_id", listID).Msg("Error looking up list")
+		http.Error(w, "Error looking up list", http.StatusInternalServerError)
+		return
+	}
 	if targetList == nil {
 		http.Error(w, "List not found", http.StatusNotFound)
 		return
 	}
 
 	// Evaluate list
-	matches, err := s.library.MatchBooks(targetList)
+	matches, err := s.backend.MatchBooks(targetList)
 	if err != nil {
 		log.Error().Err(err).Str("list_id", listID).Msg("Failed to match books for list")
 		http.Error(w, "Failed to evaluate list", http.StatusInternalServerError)

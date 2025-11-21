@@ -36,7 +36,7 @@ type VersionInfo struct {
 type Server struct {
 	syncManager       *syncstate.Manager
 	registry          *device.Registry
-	library           *library.ComicLibrary // Comic library for smart list management
+	backend           library.Backend       // Backend for library operations
 	listCache         *library.ListCache    // Cache for smart list book counts
 	config            *config.Config
 	configPath        string // Path to config file for saving
@@ -50,11 +50,11 @@ type Server struct {
 }
 
 // NewServer creates a new API server with version information
-func NewServer(syncManager *syncstate.Manager, registry *device.Registry, lib *library.ComicLibrary, cfg *config.Config, configPath string, version VersionInfo, wsHub *ws.Hub) *Server {
+func NewServer(syncManager *syncstate.Manager, registry *device.Registry, backend library.Backend, cfg *config.Config, configPath string, version VersionInfo, wsHub *ws.Hub) *Server {
 	s := &Server{
 		syncManager:       syncManager,
 		registry:          registry,
-		library:           lib,
+		backend:           backend,
 		listCache:         library.NewListCache(15 * time.Minute), // 15 min TTL
 		config:            cfg,
 		configPath:        configPath,
@@ -613,7 +613,12 @@ func (s *Server) handleDeviceListAdd(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify list exists in library (search recursively through folders)
-	list := s.library.FindListByID(req.ListID)
+	list, err := s.backend.FindListByID(req.ListID)
+	if err != nil {
+		log.Error().Err(err).Str("list_id", req.ListID).Msg("Error looking up smart list")
+		http.Error(w, "Error looking up smart list", http.StatusInternalServerError)
+		return
+	}
 	if list == nil || !strings.Contains(list.Type, "SmartList") {
 		log.Warn().
 			Str("requested_list_id", req.ListID).

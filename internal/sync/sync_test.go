@@ -77,7 +77,8 @@ func TestGetDeviceBooks(t *testing.T) {
 
 			// Create syncer
 			lib := &library.ComicLibrary{}
-			syncer := NewSyncer(mockClient, lib)
+			backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+			syncer := NewSyncer(mockClient, backend)
 
 			// Execute
 			books, err := syncer.GetDeviceBooks()
@@ -249,7 +250,8 @@ func TestComputeSyncPlan(t *testing.T) {
 			// Setup
 			lib := &library.ComicLibrary{Books: tt.libraryBooks}
 			mockClient := NewMockClient()
-			syncer := NewSyncer(mockClient, lib)
+			backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+			syncer := NewSyncer(mockClient, backend)
 
 			// Execute
 			operations, err := syncer.ComputeSyncPlan(tt.deviceBooks)
@@ -640,7 +642,8 @@ func TestOperationTypeString(t *testing.T) {
 func TestGenerateSidecar(t *testing.T) {
 	mockClient := NewMockClient()
 	lib := &library.ComicLibrary{}
-	syncer := NewSyncer(mockClient, lib)
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	syncer := NewSyncer(mockClient, backend)
 
 	book := &library.ComicBook{
 		ID:        "test-book",
@@ -707,7 +710,8 @@ func TestSetFilterLists_MultipleSmartLists(t *testing.T) {
 	}
 
 	client := NewMockClient()
-	syncer := NewSyncer(client, lib)
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	syncer := NewSyncer(client, backend)
 
 	// Test setting multiple smart lists
 	smartList1 := &lib.ComicLists[0]
@@ -753,7 +757,8 @@ func TestSetFilterLists_BackwardCompatibility(t *testing.T) {
 	}
 
 	client := NewMockClient()
-	syncer := NewSyncer(client, lib)
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	syncer := NewSyncer(client, backend)
 
 	smartList := &lib.ComicLists[0]
 
@@ -819,7 +824,8 @@ func TestComputeUnionOfLists(t *testing.T) {
 	}
 
 	client := NewMockClient()
-	syncer := NewSyncer(client, lib)
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	syncer := NewSyncer(client, backend)
 
 	// Set multiple filter lists
 	err := syncer.SetFilterLists([]*library.ComicListItem{
@@ -889,7 +895,8 @@ func TestComputeSyncPlan_MultipleFilterLists(t *testing.T) {
 	}
 
 	client := NewMockClient()
-	syncer := NewSyncer(client, lib)
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	syncer := NewSyncer(client, backend)
 
 	// Set multiple filter lists
 	err := syncer.SetFilterLists([]*library.ComicListItem{
@@ -962,7 +969,8 @@ func TestComputeSyncPlan_SingleFilterList_BackwardCompatibility(t *testing.T) {
 	}
 
 	client := NewMockClient()
-	syncer := NewSyncer(client, lib)
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	syncer := NewSyncer(client, backend)
 
 	// Use deprecated SetFilterList (backward compatibility)
 	err := syncer.SetFilterList(&lib.ComicLists[0])

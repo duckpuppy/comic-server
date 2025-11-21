@@ -13,7 +13,8 @@ import (
 func TestPerformSync_EmptyLibraryAndDevice(t *testing.T) {
 	mockClient := NewMockClient()
 	lib := &library.ComicLibrary{Books: []library.ComicBook{}}
-	syncer := NewSyncer(mockClient, lib)
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	syncer := NewSyncer(mockClient, backend)
 
 	result, err := syncer.PerformSync()
 	if err != nil {
@@ -80,7 +81,8 @@ func TestPerformSync_AddBooks(t *testing.T) {
 			{ID: "book2", Title: "Book 2", PageCount: 15, FilePath: book2Path},
 		},
 	}
-	syncer := NewSyncer(mockClient, lib)
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	syncer := NewSyncer(mockClient, backend)
 
 	result, err := syncer.PerformSync()
 	if err != nil {
@@ -149,7 +151,8 @@ func TestPerformSync_DeleteBooks(t *testing.T) {
 
 	// Library is empty, so all books should be deleted
 	lib := &library.ComicLibrary{Books: []library.ComicBook{}}
-	syncer := NewSyncer(mockClient, lib)
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	syncer := NewSyncer(mockClient, backend)
 
 	result, err := syncer.PerformSync()
 	if err != nil {
@@ -188,7 +191,8 @@ func TestPerformSync_UpdateMetadataOnly(t *testing.T) {
 			{ID: "book1", Title: "New Title", PageCount: 10},
 		},
 	}
-	syncer := NewSyncer(mockClient, lib)
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	syncer := NewSyncer(mockClient, backend)
 
 	result, err := syncer.PerformSync()
 	if err != nil {
@@ -254,7 +258,8 @@ func TestPerformSync_MixedOperations(t *testing.T) {
 		},
 		// book3 is not in library -> Delete
 	}
-	syncer := NewSyncer(mockClient, lib)
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	syncer := NewSyncer(mockClient, backend)
 
 	result, err := syncer.PerformSync()
 	if err != nil {
@@ -332,7 +337,8 @@ func TestPerformSync_ErrorHandling(t *testing.T) {
 			tt.setupError(mockClient)
 
 			lib := &library.ComicLibrary{Books: []library.ComicBook{}}
-			syncer := NewSyncer(mockClient, lib)
+			backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	syncer := NewSyncer(mockClient, backend)
 
 			_, err := syncer.PerformSync()
 
@@ -382,7 +388,8 @@ func TestPerformSync_AbortHandling(t *testing.T) {
 		return false, nil
 	}
 
-	syncer := NewSyncer(mockClient, lib)
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	syncer := NewSyncer(mockClient, backend)
 
 	_, err := syncer.PerformSync()
 
@@ -425,7 +432,8 @@ func TestPerformSync_ProgressUpdates(t *testing.T) {
 			{ID: "book3", Title: "Book 3", FilePath: book3Path},
 		},
 	}
-	syncer := NewSyncer(mockClient, lib)
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	syncer := NewSyncer(mockClient, backend)
 
 	_, err := syncer.PerformSync()
 	if err != nil {
@@ -457,7 +465,8 @@ func TestPerformSync_ProgressUpdates(t *testing.T) {
 func TestPerformSync_SyncInformationWritten(t *testing.T) {
 	mockClient := NewMockClient()
 	lib := &library.ComicLibrary{Books: []library.ComicBook{}}
-	syncer := NewSyncer(mockClient, lib)
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	syncer := NewSyncer(mockClient, backend)
 
 	_, err := syncer.PerformSync()
 	if err != nil {

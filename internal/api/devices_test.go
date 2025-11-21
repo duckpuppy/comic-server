@@ -52,6 +52,7 @@ func TestHandleGetDeviceDetail(t *testing.T) {
 			},
 		},
 	}
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
 
 	// Create cache
 	cache := library.NewListCache(5 * time.Minute)
@@ -60,7 +61,7 @@ func TestHandleGetDeviceDetail(t *testing.T) {
 	server := &Server{
 		registry:    registry,
 		config:      cfg,
-		library:     lib,
+		backend:     backend,
 		listCache:   cache,
 		syncManager: syncstate.NewManager(100),
 	}
@@ -145,7 +146,7 @@ func TestHandleGetDeviceDetail_OfflineDevice(t *testing.T) {
 	server := &Server{
 		registry:    registry,
 		config:      cfg,
-		library:     &library.ComicLibrary{},
+		backend:     library.NewXMLBackendFromLibrary(&library.ComicLibrary{}, "", nil),
 		listCache:   library.NewListCache(5 * time.Minute),
 		syncManager: syncstate.NewManager(100),
 	}
@@ -181,7 +182,7 @@ func TestHandleDevicesRouter(t *testing.T) {
 	server := &Server{
 		registry:    registry,
 		config:      cfg,
-		library:     &library.ComicLibrary{},
+		backend:     library.NewXMLBackendFromLibrary(&library.ComicLibrary{}, "", nil),
 		listCache:   library.NewListCache(5 * time.Minute),
 		syncManager: syncstate.NewManager(100),
 	}

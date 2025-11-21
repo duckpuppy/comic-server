@@ -94,23 +94,26 @@ func (s *Server) handleGetDeviceDetail(w http.ResponseWriter, r *http.Request) {
 		for _, listConfig := range deviceConfig.Lists {
 			// Get book count from cache
 			count, found := s.listCache.GetCount(listConfig.ListID)
-			if !found && s.library != nil {
+			if !found && s.backend != nil {
 				// Not in cache - evaluate and cache
-				for i := range s.library.ComicLists {
-					if s.library.ComicLists[i].ID == listConfig.ListID {
-						matches, err := s.library.MatchBooks(&s.library.ComicLists[i])
-						if err == nil {
-							count = len(matches)
-							s.listCache.SetCount(listConfig.ListID, count)
-						} else {
-							log.Error().
-								Err(err).
-								Str("list_id", listConfig.ListID).
-								Str("list_name", listConfig.ListName).
-								Str("device_id", deviceID).
-								Msg("Failed to evaluate smart list for book count")
-						}
-						break
+				targetList, err := s.backend.FindListByID(listConfig.ListID)
+				if err != nil {
+					log.Error().
+						Err(err).
+						Str("list_id", listConfig.ListID).
+						Msg("Failed to find smart list")
+				} else if targetList != nil {
+					matches, err := s.backend.MatchBooks(targetList)
+					if err == nil {
+						count = len(matches)
+						s.listCache.SetCount(listConfig.ListID, count)
+					} else {
+						log.Error().
+							Err(err).
+							Str("list_id", listConfig.ListID).
+							Str("list_name", listConfig.ListName).
+							Str("device_id", deviceID).
+							Msg("Failed to evaluate smart list for book count")
 					}
 				}
 			}

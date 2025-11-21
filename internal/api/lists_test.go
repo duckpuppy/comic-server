@@ -39,8 +39,9 @@ func TestHandleGetLists(t *testing.T) {
 	cache.SetCount("list-1", 2847)
 	cache.SetCount("list-2", 156)
 
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
 	server := &Server{
-		library:   lib,
+		backend:   backend,
 		listCache: cache,
 	}
 
@@ -99,8 +100,9 @@ func TestHandleGetListDetail(t *testing.T) {
 	cache := library.NewListCache(5 * time.Minute)
 	cache.SetCount("list-123", 2847)
 
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
 	server := &Server{
-		library:   lib,
+		backend:   backend,
 		listCache: cache,
 	}
 
@@ -144,9 +146,11 @@ func TestHandleGetListDetail_NotFound(t *testing.T) {
 		ComicLists: []library.ComicListItem{},
 	}
 
+	cache := library.NewListCache(5 * time.Minute)
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
 	server := &Server{
-		library:   lib,
-		listCache: library.NewListCache(5 * time.Minute),
+		backend:   backend,
+		listCache: cache,
 	}
 
 	req := httptest.NewRequest("GET", "/api/library/lists/nonexistent", nil)
@@ -179,9 +183,11 @@ func TestHandleGetListPreview(t *testing.T) {
 		},
 	}
 
+	cache := library.NewListCache(5 * time.Minute)
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
 	server := &Server{
-		library:   lib,
-		listCache: library.NewListCache(5 * time.Minute),
+		backend:   backend,
+		listCache: cache,
 	}
 
 	req := httptest.NewRequest("GET", "/api/library/lists/list-123/preview?limit=2", nil)

@@ -449,28 +449,34 @@ func (s *Syncer) getReadingLists() []ReadingList {
 	var lists []ReadingList
 
 	// Add regular reading lists from the library
-	for _, listItem := range s.library.ComicLists {
-		// Skip smart lists - we'll handle them separately
-		if listItem.Type == "comicrack:ComicSmartListItem" {
-			continue
-		}
-
-		readingList := ReadingList{
-			Name:        listItem.Name,
-			Description: "", // ComicListItem doesn't have description in current implementation
-		}
-
-		// Add book IDs from the list
-		if len(listItem.Items) > 0 {
-			readingList.Books = &BookIDs{
-				ID: make([]string, 0, len(listItem.Items)),
+	allLists, err := s.backend.GetAllLists()
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to get reading lists from backend")
+		// Continue without library lists - we may still have filter lists
+	} else {
+		for _, listItem := range allLists {
+			// Skip smart lists - we'll handle them separately
+			if listItem.Type == "comicrack:ComicSmartListItem" {
+				continue
 			}
-			for _, item := range listItem.Items {
-				readingList.Books.ID = append(readingList.Books.ID, item.ID)
-			}
-		}
 
-		lists = append(lists, readingList)
+			readingList := ReadingList{
+				Name:        listItem.Name,
+				Description: "", // ComicListItem doesn't have description in current implementation
+			}
+
+			// Add book IDs from the list
+			if len(listItem.Items) > 0 {
+				readingList.Books = &BookIDs{
+					ID: make([]string, 0, len(listItem.Items)),
+				}
+				for _, item := range listItem.Items {
+					readingList.Books.ID = append(readingList.Books.ID, item.ID)
+				}
+			}
+
+			lists = append(lists, readingList)
+		}
 	}
 
 	// Add smart lists that were used for filtering
@@ -650,14 +656,16 @@ func sortOperationsByType(operations []SyncOperation) []SyncOperation {
 // - Page metadata (page types, bookmarks)
 // - Other user tracking (Checked flag)
 func (s *Syncer) updateLibraryReadingState(deviceBooks map[string]*DeviceBook) error {
-	// Check if we have cache or library path for saving
-	if s.libraryCache == nil && s.libraryPath == "" {
-		log.Debug().Msg("Library cache and path not set, skipping metadata update")
+	// Skip if backend can't persist changes (e.g., no library path configured)
+	if !s.backend.CanPersist() {
+		log.Debug().Msg("Backend cannot persist changes, skipping library update")
 		return nil
 	}
 
 	updatedCount := 0
 	changedBookIDs := []string{} // Track which books changed for cache marking
+	var updatedBooks []*library.ComicBook
+
 	for bookID, deviceBook := range deviceBooks {
 		// Skip if device book has no metadata
 		if deviceBook.Metadata == nil {
@@ -665,7 +673,14 @@ func (s *Syncer) updateLibraryReadingState(deviceBooks map[string]*DeviceBook) e
 		}
 
 		// Find corresponding library book
-		libraryBook := s.library.GetBook(bookID)
+		libraryBook, err := s.backend.GetBook(bookID)
+		if err != nil {
+			log.Warn().
+				Err(err).
+				Str("book_id", bookID).
+				Msg("Error getting library book, skipping metadata update")
+			continue
+		}
 		if libraryBook == nil {
 			// Device has a book that's not in library (might have been deleted)
 			log.Debug().
@@ -814,6 +829,7 @@ func (s *Syncer) updateLibraryReadingState(deviceBooks map[string]*DeviceBook) e
 		if hasChanges {
 			updatedCount++
 			changedBookIDs = append(changedBookIDs, bookID)
+			updatedBooks = append(updatedBooks, libraryBook)
 			log.Info().
 				Str("book_id", bookID).
 				Str("title", libraryBook.Title).
@@ -827,22 +843,20 @@ func (s *Syncer) updateLibraryReadingState(deviceBooks map[string]*DeviceBook) e
 			Int("updated_count", updatedCount).
 			Msg("Updated library metadata from device")
 
-		// Mark books as dirty in cache, or save immediately if no cache
-		if s.libraryCache != nil {
-			// Use cache for batched saves (performance optimization)
-			log.Debug().
-				Int("dirty_books", len(changedBookIDs)).
-				Msg("Marking books dirty in library cache")
-			s.libraryCache.MarkManyDirty(changedBookIDs)
-			log.Debug().Msg("Books marked dirty, will be flushed by cache")
-		} else {
-			// Fall back to immediate save (backward compatibility)
-			log.Debug().Msg("No cache available, saving library immediately")
-			if err := library.SaveLibrary(s.libraryPath, s.library); err != nil {
-				return fmt.Errorf("failed to save library: %w", err)
-			}
-			log.Info().Msg("Library saved successfully")
+		// Update books in backend
+		if err := s.backend.UpdateBooks(updatedBooks); err != nil {
+			return fmt.Errorf("failed to update books: %w", err)
 		}
+
+		// Mark books as dirty for cache flushing (if backend supports it)
+		s.backend.MarkManyDirty(changedBookIDs)
+
+		// Flush changes to persistent storage
+		if err := s.backend.Flush(); err != nil {
+			return fmt.Errorf("failed to flush changes: %w", err)
+		}
+
+		log.Info().Msg("Library changes saved successfully")
 	} else {
 		log.Debug().Msg("No metadata changes detected")
 	}

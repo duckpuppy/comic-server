@@ -17,6 +17,7 @@ import (
 	"github.com/duckpuppy/comic-server/internal/log"
 	"github.com/duckpuppy/comic-server/internal/protocol"
 	"github.com/duckpuppy/comic-server/internal/ratelimit"
+	"github.com/duckpuppy/comic-server/internal/storage"
 	csync "github.com/duckpuppy/comic-server/internal/sync"
 	"github.com/duckpuppy/comic-server/internal/syncstate"
 	"github.com/duckpuppy/comic-server/internal/websocket"
@@ -28,6 +29,7 @@ var (
 	serverPort             int
 	discoveryPort          int
 	libraryPath            string
+	dbPath                 string
 	ignoreDevices          []string
 	bindAddress            string
 	autoSync               bool
@@ -150,29 +152,45 @@ func runServer(cmd *cobra.Command, args []string) error {
 		Int("configured_devices", len(cfg.Devices)).
 		Msg("Server configuration loaded")
 
-	// Load library
-	log.Debug().Str("path", cfg.Server.LibraryPath).Msg("Loading comic library")
-	lib, err := library.LoadLibrary(cfg.Server.LibraryPath)
-	if err != nil {
-		return fmt.Errorf("failed to load library: %w", err)
-	}
+	// Load library using appropriate backend
+	var backend library.Backend
+	if dbPath != "" {
+		// Use SQLite backend (experimental)
+		log.Info().Str("path", dbPath).Msg("Loading library from SQLite database (experimental)")
+		sqliteBackend, err := storage.NewSQLiteBackend(dbPath)
+		if err != nil {
+			return fmt.Errorf("failed to open SQLite database: %w", err)
+		}
+		backend = sqliteBackend
+		defer backend.Close()
 
-	log.Info().
-		Int("books", len(lib.Books)).
-		Int("lists", len(lib.ComicLists)).
-		Msg("Library loaded successfully")
-
-	// Create library cache with configured flush interval
-	flushInterval := time.Duration(cfg.Server.LibraryCacheFlushIntervalSec) * time.Second
-	libCache := library.NewLibraryCache(lib, cfg.Server.LibraryPath, flushInterval)
-	defer libCache.Stop()
-
-	if flushInterval > 0 {
 		log.Info().
-			Dur("flush_interval", flushInterval).
-			Msg("Library cache enabled with automatic flushing")
+			Int("books", backend.BookCount()).
+			Str("library_id", backend.LibraryID()).
+			Msg("SQLite library loaded successfully")
 	} else {
-		log.Info().Msg("Library cache enabled with manual flushing only")
+		// Use XML backend (default)
+		log.Debug().Str("path", cfg.Server.LibraryPath).Msg("Loading comic library")
+		flushInterval := time.Duration(cfg.Server.LibraryCacheFlushIntervalSec) * time.Second
+		xmlBackend, err := library.NewXMLBackend(cfg.Server.LibraryPath, flushInterval)
+		if err != nil {
+			return fmt.Errorf("failed to load library: %w", err)
+		}
+		backend = xmlBackend
+		defer backend.Close()
+
+		log.Info().
+			Int("books", backend.BookCount()).
+			Str("library_id", backend.LibraryID()).
+			Msg("Library loaded successfully")
+
+		if flushInterval > 0 {
+			log.Info().
+				Dur("flush_interval", flushInterval).
+				Msg("Library cache enabled with automatic flushing")
+		} else {
+			log.Info().Msg("Library cache enabled with manual flushing only")
+		}
 	}
 
 	// Create device registry
@@ -238,7 +256,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 
 	// Send direct ping to device if specified (useful for WSL2, VPNs, complex networks)
 	if pingDeviceSet && pingDevice != "" {
-		go sendDirectPingAndRegister(pingCtx, pingDevice, registry, syncManager, cfg, lib, libCache, ipLimiter, deviceLimiter, syncSemaphore)
+		go sendDirectPingAndRegister(pingCtx, pingDevice, registry, syncManager, cfg, backend, ipLimiter, deviceLimiter, syncSemaphore)
 	}
 
 	// Create and start WebSocket hub
@@ -252,7 +270,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 		GitCommit: GitCommit,
 		BuildDate: BuildDate,
 	}
-	apiServer := api.NewServer(syncManager, registry, lib, cfg, configPath, apiVersion, wsHub)
+	apiServer := api.NewServer(syncManager, registry, backend, cfg, configPath, apiVersion, wsHub)
 
 	httpServer := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.Server.ServerPort),
@@ -338,19 +356,13 @@ func runServer(cmd *cobra.Command, args []string) error {
 					log.Error().Err(err).Msg("Failed to reinitialize logging")
 				}
 
-				// Reload library if path changed
+				// Note: Library reload on SIGHUP is not currently supported with the backend interface.
+				// To change the library path, restart the server.
 				if newCfg.Server.LibraryPath != cfg.Server.LibraryPath {
-					log.Info().Str("path", newCfg.Server.LibraryPath).Msg("Library path changed, reloading library")
-					newLib, err := library.LoadLibrary(newCfg.Server.LibraryPath)
-					if err != nil {
-						log.Error().Err(err).Msg("Failed to reload library, keeping current library")
-					} else {
-						lib = newLib
-						log.Info().
-							Int("books", len(lib.Books)).
-							Int("lists", len(lib.ComicLists)).
-							Msg("Library reloaded successfully")
-					}
+					log.Warn().
+						Str("old_path", cfg.Server.LibraryPath).
+						Str("new_path", newCfg.Server.LibraryPath).
+						Msg("Library path changed in config - server restart required to apply")
 				}
 
 				// Update configuration
@@ -374,7 +386,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 			log.Error().Err(err).Msg("Discovery listener error")
 
 		case discovered := <-deviceChan:
-			handleDiscoveredDevice(discovered, registry, syncManager, cfg, lib, libCache, ipLimiter, deviceLimiter, syncSemaphore)
+			handleDiscoveredDevice(discovered, registry, syncManager, cfg, backend, ipLimiter, deviceLimiter, syncSemaphore)
 		}
 	}
 }
@@ -393,8 +405,7 @@ func handleDiscoveredDevice(
 	registry *device.Registry,
 	syncManager *syncstate.Manager,
 	cfg *config.Config,
-	lib *library.ComicLibrary,
-	libCache *library.LibraryCache,
+	backend library.Backend,
 	ipLimiter *ratelimit.IPLimiter,
 	deviceLimiter *ratelimit.DeviceLimiter,
 	syncSemaphore chan struct{},
@@ -427,7 +438,7 @@ func handleDiscoveredDevice(
 		// Handle sync request if device wants sync (manual button press on device)
 		if discovered.WantsSync {
 			logger.Info().Msg("Known device requesting sync (user pressed sync button)")
-			if err := handleSyncRequest(dev.Info, discovered.IPAddress, cfg, lib, libCache, syncManager, deviceLimiter, syncSemaphore); err != nil {
+			if err := handleSyncRequest(dev.Info, discovered.IPAddress, cfg, backend, syncManager, deviceLimiter, syncSemaphore); err != nil {
 				logger.Error().Err(err).Msg("Sync failed")
 			}
 			return
@@ -503,7 +514,7 @@ func handleDiscoveredDevice(
 	// Handle sync request if device wants sync and auto-sync is enabled
 	if discovered.WantsSync && cfg.Server.AutoSync {
 		logger.Info().Msg("Device requested sync, starting automatic sync")
-		if err := handleSyncRequest(info, discovered.IPAddress, cfg, lib, libCache, syncManager, deviceLimiter, syncSemaphore); err != nil {
+		if err := handleSyncRequest(info, discovered.IPAddress, cfg, backend, syncManager, deviceLimiter, syncSemaphore); err != nil {
 			logger.Error().Err(err).Msg("Sync failed")
 		}
 	} else if discovered.WantsSync && !cfg.Server.AutoSync {
@@ -513,7 +524,7 @@ func handleDiscoveredDevice(
 
 // applyDeviceConfig applies a device's sync configuration to a syncer
 // This configures which smart lists to sync and their settings
-func applyDeviceConfig(syncer *csync.Syncer, deviceConfig *config.DeviceConfig, lib *library.ComicLibrary) error {
+func applyDeviceConfig(syncer *csync.Syncer, deviceConfig *config.DeviceConfig, backend library.Backend) error {
 	logger := log.With().Str("device_id", deviceConfig.DeviceID).Logger()
 
 	// Collect all enabled smart lists
@@ -526,7 +537,10 @@ func applyDeviceConfig(syncer *csync.Syncer, deviceConfig *config.DeviceConfig, 
 		}
 
 		// Lookup smart list by GUID (uses recursive search for nested folders)
-		smartList := lib.FindListByID(listConfig.ListID)
+		smartList, err := backend.FindListByID(listConfig.ListID)
+		if err != nil {
+			return fmt.Errorf("error looking up smart list %s: %w", listConfig.ListName, err)
+		}
 		if smartList == nil || !strings.Contains(smartList.Type, "SmartList") {
 			return fmt.Errorf("smart list %s (ID: %s) not found in library", listConfig.ListName, listConfig.ListID)
 		}
@@ -564,8 +578,7 @@ func handleSyncRequest(
 	deviceInfo *device.Info,
 	deviceIP string,
 	cfg *config.Config,
-	lib *library.ComicLibrary,
-	libCache *library.LibraryCache,
+	backend library.Backend,
 	syncManager *syncstate.Manager,
 	deviceLimiter *ratelimit.DeviceLimiter,
 	syncSemaphore chan struct{},
@@ -624,16 +637,12 @@ func handleSyncRequest(
 	// Create protocol client
 	client := protocol.NewClient(deviceIP, device.DevicePort)
 
-	// Create syncer
-	syncer := csync.NewSyncer(client, lib)
-
-	// Set library cache for reverse sync (reading state updates)
-	// This enables batched saves for better performance
-	syncer.SetLibraryCache(libCache)
+	// Create syncer with backend
+	syncer := csync.NewSyncer(client, backend)
 
 	// Apply device config if exists
 	if deviceConfig, ok := cfg.Devices[deviceID]; ok {
-		if err := applyDeviceConfig(syncer, deviceConfig, lib); err != nil {
+		if err := applyDeviceConfig(syncer, deviceConfig, backend); err != nil {
 			return fmt.Errorf("failed to apply device config: %w", err)
 		}
 	} else {
@@ -694,8 +703,7 @@ func sendDirectPingAndRegister(
 	registry *device.Registry,
 	syncManager *syncstate.Manager,
 	cfg *config.Config,
-	lib *library.ComicLibrary,
-	libCache *library.LibraryCache,
+	backend library.Backend,
 	ipLimiter *ratelimit.IPLimiter,
 	deviceLimiter *ratelimit.DeviceLimiter,
 	syncSemaphore chan struct{},
@@ -771,7 +779,7 @@ func sendDirectPingAndRegister(
 					Str("device_name", deviceInfo.Name).
 					Msg("Registering device from direct ping")
 
-				handleDiscoveredDevice(discovered, registry, syncManager, cfg, lib, libCache, ipLimiter, deviceLimiter, syncSemaphore)
+				handleDiscoveredDevice(discovered, registry, syncManager, cfg, backend, ipLimiter, deviceLimiter, syncSemaphore)
 
 				// In direct-ping mode, automatically trigger sync since device can't signal back via UDP
 				// Check if device is configured for sync (has smart lists assigned)
@@ -781,7 +789,7 @@ func sendDirectPingAndRegister(
 						Int("lists", len(deviceCfg.Lists)).
 						Msg("Device has smart lists configured, triggering automatic sync")
 
-					if err := handleSyncRequest(deviceInfo, deviceIP, cfg, lib, libCache, syncManager, deviceLimiter, syncSemaphore); err != nil {
+					if err := handleSyncRequest(deviceInfo, deviceIP, cfg, backend, syncManager, deviceLimiter, syncSemaphore); err != nil {
 						log.Error().
 							Err(err).
 							Str("device_id", deviceInfo.ID).
@@ -831,6 +839,7 @@ func init() {
 	serverCmd.Flags().IntVarP(&serverPort, "port", "p", 0, "Server control port (TCP, default: 7620)")
 	serverCmd.Flags().IntVarP(&discoveryPort, "discovery-port", "d", 0, "Device discovery port (UDP multicast, default: 7615)")
 	serverCmd.Flags().StringVarP(&libraryPath, "library", "l", "", "Path to ComicDB.xml file")
+	serverCmd.Flags().StringVar(&dbPath, "db", "", "Path to SQLite database file (experimental, alternative to --library)")
 	serverCmd.Flags().StringSliceVarP(&ignoreDevices, "ignore-device", "i", nil, "Devices to ignore (can be IP address, device ID, or device name)")
 	serverCmd.Flags().StringVarP(&bindAddress, "bind", "b", "", "Network interface to bind to (default: all interfaces)")
 	serverCmd.Flags().BoolVar(&autoSync, "auto-sync", false, "Automatically sync devices when they connect")

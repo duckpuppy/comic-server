@@ -410,3 +410,112 @@ func joinStrings(parts []string, sep string) string {
 	}
 	return result
 }
+
+// UpdateBookFields updates the mutable fields of a book (for reverse sync).
+// This only updates reading state, user metadata, and ratings - not content metadata.
+func (db *DB) UpdateBookFields(book *library.ComicBook) error {
+	pagesJSON, err := json.Marshal(book.Pages)
+	if err != nil {
+		return fmt.Errorf("marshal pages: %w", err)
+	}
+
+	_, err = db.Exec(`
+		UPDATE books SET
+			current_page = ?,
+			last_page = ?,
+			last_page_read = ?,
+			open_count = ?,
+			opened_time = ?,
+			rating = ?,
+			notes = ?,
+			review = ?,
+			summary = ?,
+			checked = ?,
+			pages = ?,
+			updated_at = datetime('now')
+		WHERE id = ?
+	`,
+		book.CurrentPage,
+		book.LastPage,
+		book.LastPageRead,
+		book.OpenCount,
+		formatComicTime(book.OpenedTime),
+		book.Rating,
+		book.Notes,
+		book.Review,
+		book.Summary,
+		boolToInt(book.Checked),
+		string(pagesJSON),
+		book.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("update book %s: %w", book.ID, err)
+	}
+
+	// Update tags if changed
+	if book.Tags != "" {
+		// Delete existing tags
+		if _, err := db.Exec("DELETE FROM book_tags WHERE book_id = ?", book.ID); err != nil {
+			return fmt.Errorf("delete tags: %w", err)
+		}
+		// Insert new tags
+		tags := splitTags(book.Tags)
+		for _, tag := range tags {
+			if tag == "" {
+				continue
+			}
+			if _, err := db.Exec("INSERT INTO book_tags (book_id, tag) VALUES (?, ?)", book.ID, tag); err != nil {
+				return fmt.Errorf("insert tag: %w", err)
+			}
+		}
+	}
+
+	return nil
+}
+
+func formatComicTime(t library.ComicTime) string {
+	if t.Time.IsZero() {
+		return ""
+	}
+	return t.Time.UTC().Format("2006-01-02T15:04:05Z")
+}
+
+func splitTags(tags string) []string {
+	var result []string
+	for _, tag := range splitString(tags, ",") {
+		tag = trimSpace(tag)
+		if tag != "" {
+			result = append(result, tag)
+		}
+	}
+	return result
+}
+
+func splitString(s, sep string) []string {
+	if s == "" {
+		return nil
+	}
+	var result []string
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if i+len(sep) <= len(s) && s[i:i+len(sep)] == sep {
+			result = append(result, s[start:i])
+			start = i + len(sep)
+			i += len(sep) - 1
+		}
+	}
+	result = append(result, s[start:])
+	return result
+}
+
+func trimSpace(s string) string {
+	start := 0
+	end := len(s)
+	for start < end && (s[start] == ' ' || s[start] == '\t') {
+		start++
+	}
+	for end > start && (s[end-1] == ' ' || s[end-1] == '\t') {
+		end--
+	}
+	return s[start:end]
+}

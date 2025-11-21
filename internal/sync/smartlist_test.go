@@ -9,7 +9,8 @@ import (
 // TestSetFilterList tests setting a smart list filter
 func TestSetFilterList(t *testing.T) {
 	lib := &library.ComicLibrary{}
-	syncer := NewSyncer(nil, lib)
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	syncer := NewSyncer(nil, backend)
 
 	tests := []struct {
 		name    string
@@ -73,7 +74,8 @@ func TestComputeSyncPlanWithFilter(t *testing.T) {
 	}
 
 	mockClient := &MockClient{}
-	syncer := NewSyncer(mockClient, lib)
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	syncer := NewSyncer(mockClient, backend)
 
 	t.Run("no filter - all books planned", func(t *testing.T) {
 		// No filter set
@@ -193,7 +195,8 @@ func TestComputeSyncPlanWithSettings(t *testing.T) {
 	}
 
 	mockClient := &MockClient{}
-	syncer := NewSyncer(mockClient, lib)
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	syncer := NewSyncer(mockClient, backend)
 
 	t.Run("limit books by count", func(t *testing.T) {
 		// Set settings to limit to 2 books, sorted by series

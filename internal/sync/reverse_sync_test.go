@@ -54,10 +54,10 @@ func TestUpdateLibraryReadingState_ReadingProgress(t *testing.T) {
 		},
 	}
 
-	// Create syncer and set library path
+	// Create syncer with XML backend (file-based for reverse sync test)
 	mockClient := NewMockClient()
-	syncer := NewSyncer(mockClient, lib)
-	syncer.SetLibraryPath(libraryPath)
+	backend := library.NewXMLBackendFromLibrary(lib, libraryPath, nil)
+	syncer := NewSyncer(mockClient, backend)
 
 	// Update library from device
 	err := syncer.updateLibraryReadingState(deviceBooks)
@@ -136,8 +136,8 @@ func TestUpdateLibraryReadingState_UserMetadata(t *testing.T) {
 	}
 
 	mockClient := NewMockClient()
-	syncer := NewSyncer(mockClient, lib)
-	syncer.SetLibraryPath(libraryPath)
+	backend := library.NewXMLBackendFromLibrary(lib, libraryPath, nil)
+	syncer := NewSyncer(mockClient, backend)
 
 	err := syncer.updateLibraryReadingState(deviceBooks)
 	if err != nil {
@@ -208,8 +208,8 @@ func TestUpdateLibraryReadingState_CheckedFlag(t *testing.T) {
 	}
 
 	mockClient := NewMockClient()
-	syncer := NewSyncer(mockClient, lib)
-	syncer.SetLibraryPath(libraryPath)
+	backend := library.NewXMLBackendFromLibrary(lib, libraryPath, nil)
+	syncer := NewSyncer(mockClient, backend)
 
 	err := syncer.updateLibraryReadingState(deviceBooks)
 	if err != nil {
@@ -275,8 +275,8 @@ func TestUpdateLibraryReadingState_PageMetadata(t *testing.T) {
 	}
 
 	mockClient := NewMockClient()
-	syncer := NewSyncer(mockClient, lib)
-	syncer.SetLibraryPath(libraryPath)
+	backend := library.NewXMLBackendFromLibrary(lib, libraryPath, nil)
+	syncer := NewSyncer(mockClient, backend)
 
 	err := syncer.updateLibraryReadingState(deviceBooks)
 	if err != nil {
@@ -365,8 +365,8 @@ func TestUpdateLibraryReadingState_DeviceBookNotInLibrary(t *testing.T) {
 	}
 
 	mockClient := NewMockClient()
-	syncer := NewSyncer(mockClient, lib)
-	syncer.SetLibraryPath(libraryPath)
+	backend := library.NewXMLBackendFromLibrary(lib, libraryPath, nil)
+	syncer := NewSyncer(mockClient, backend)
 
 	// Should not error, just skip book2
 	err := syncer.updateLibraryReadingState(deviceBooks)
@@ -444,8 +444,8 @@ func TestUpdateLibraryReadingState_NoChanges(t *testing.T) {
 	}
 
 	mockClient := NewMockClient()
-	syncer := NewSyncer(mockClient, lib)
-	syncer.SetLibraryPath(libraryPath)
+	backend := library.NewXMLBackendFromLibrary(lib, libraryPath, nil)
+	syncer := NewSyncer(mockClient, backend)
 
 	err = syncer.updateLibraryReadingState(deviceBooks)
 	if err != nil {
@@ -496,8 +496,8 @@ func TestUpdateLibraryReadingState_NoMetadata(t *testing.T) {
 	}
 
 	mockClient := NewMockClient()
-	syncer := NewSyncer(mockClient, lib)
-	syncer.SetLibraryPath(libraryPath)
+	backend := library.NewXMLBackendFromLibrary(lib, libraryPath, nil)
+	syncer := NewSyncer(mockClient, backend)
 
 	// Should not error, just skip the book
 	err := syncer.updateLibraryReadingState(deviceBooks)
@@ -548,8 +548,8 @@ func TestUpdateLibraryReadingState_NoLibraryPath(t *testing.T) {
 	}
 
 	mockClient := NewMockClient()
-	syncer := NewSyncer(mockClient, lib)
-	// Don't set library path
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil) // No library path
+	syncer := NewSyncer(mockClient, backend)
 
 	// Should not error, just skip the update
 	err := syncer.updateLibraryReadingState(deviceBooks)
@@ -631,8 +631,8 @@ func TestUpdateLibraryReadingState_AllFieldsUpdated(t *testing.T) {
 	}
 
 	mockClient := NewMockClient()
-	syncer := NewSyncer(mockClient, lib)
-	syncer.SetLibraryPath(libraryPath)
+	backend := library.NewXMLBackendFromLibrary(lib, libraryPath, nil)
+	syncer := NewSyncer(mockClient, backend)
 
 	err := syncer.updateLibraryReadingState(deviceBooks)
 	if err != nil {
