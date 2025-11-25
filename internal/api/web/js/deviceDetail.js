@@ -94,6 +94,11 @@ class DeviceDetail {
                         <h1>${this.escapeHtml(this.device.friendly_name || this.device.name)}</h1>
                         ${this.renderStatusBadge()}
                     </div>
+                    <div class="device-header-actions">
+                        <button class="btn btn-secondary" onclick="router.navigate('/devices/${this.deviceId}/settings'); return false;">
+                            ⚙️ Settings
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Device Info Cards -->

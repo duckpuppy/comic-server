@@ -184,6 +184,13 @@ document.addEventListener('DOMContentLoaded', () => {
         await deviceDetail.init();
     });
 
+    router.register('/devices/:deviceId/settings', async (params) => {
+        navigation.setActive('devices');
+        dashboard.hide();
+        const deviceSettings = new DeviceSettings(params.deviceId);
+        await deviceSettings.init();
+    });
+
     console.log('Dashboard initialized with routing');
 
     // Handle initial route after all routes are registered

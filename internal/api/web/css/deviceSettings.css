@@ -1,0 +1,459 @@
+/* Device Settings Page */
+.device-settings-page {
+    padding: 2rem;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+/* Page Header */
+.page-header {
+    margin-bottom: 2rem;
+}
+
+.page-header h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    margin: 0 0 0.5rem 0;
+}
+
+.page-header .subtitle {
+    font-size: 1rem;
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+/* Device Info Panel */
+.device-info-panel {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.device-info-panel h2 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin-bottom: 1.5rem;
+}
+
+.device-info-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.form-group label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.form-control {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.375rem;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 1rem;
+}
+
+.form-control:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.form-control:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: var(--bg-secondary);
+}
+
+.form-control-small {
+    width: 80px;
+}
+
+.form-row {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+}
+
+.form-row .form-control {
+    flex: 1;
+}
+
+.form-row .btn {
+    flex-shrink: 0;
+}
+
+.form-help {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+.form-label-inline {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.device-info-readonly {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.info-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.info-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+}
+
+.info-value {
+    font-size: 0.875rem;
+    color: var(--text-primary);
+}
+
+/* List Management Panel */
+.list-management-panel {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+.panel-header h2 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin: 0;
+}
+
+/* Lists Table */
+.lists-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.lists-table thead {
+    background: var(--bg-primary);
+    border-bottom: 2px solid var(--border-color);
+}
+
+.lists-table th {
+    text-align: left;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+}
+
+.lists-table td {
+    padding: 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.lists-table tbody tr:hover {
+    background: var(--bg-primary);
+}
+
+.list-row.disabled {
+    opacity: 0.6;
+}
+
+.settings-summary {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+.settings-none {
+    color: var(--text-tertiary);
+    font-style: italic;
+}
+
+.list-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+/* Settings Editor Overlay */
+.settings-editor-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 1rem;
+}
+
+.settings-editor-panel {
+    background: var(--bg-primary);
+    border-radius: 0.75rem;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    max-width: 600px;
+    width: 100%;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.settings-editor-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.settings-editor-header h2 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin: 0;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0;
+    width: 2rem;
+    height: 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.25rem;
+    transition: all 0.2s;
+}
+
+.close-btn:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+.settings-editor-body {
+    padding: 1.5rem;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.settings-editor-body h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0 0 1.5rem 0;
+    color: var(--text-primary);
+}
+
+.settings-editor-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    padding: 1.5rem;
+    border-top: 1px solid var(--border-color);
+}
+
+/* Settings Sections */
+.settings-section {
+    margin-bottom: 2rem;
+    padding-bottom: 2rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.settings-section:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+.settings-section h4 {
+    font-size: 0.875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    margin: 0 0 1rem 0;
+}
+
+/* Checkbox Labels */
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    padding: 0.5rem 0;
+}
+
+.checkbox-label input[type="checkbox"] {
+    width: 1rem;
+    height: 1rem;
+    cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"]:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.form-group-nested {
+    margin-left: 1.5rem;
+    padding-left: 1rem;
+    border-left: 2px solid var(--border-color);
+}
+
+.form-group-nested.disabled {
+    opacity: 0.5;
+}
+
+.form-group.disabled {
+    opacity: 0.5;
+}
+
+.form-row.hidden {
+    display: none;
+}
+
+/* Settings Preview */
+.settings-preview {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    padding: 1rem;
+}
+
+.preview-placeholder {
+    text-align: center;
+    padding: 2rem;
+}
+
+.preview-results {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.preview-stat {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem;
+    background: var(--bg-primary);
+    border-radius: 0.375rem;
+}
+
+.preview-label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.preview-value {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.preview-sample {
+    padding: 0.75rem;
+    background: var(--bg-primary);
+    border-radius: 0.375rem;
+}
+
+.preview-sample .preview-label {
+    display: block;
+    margin-bottom: 0.5rem;
+}
+
+.preview-sample ul {
+    margin: 0;
+    padding-left: 1.5rem;
+}
+
+.preview-sample li {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.25rem;
+}
+
+.preview-error {
+    text-align: center;
+    padding: 1.5rem;
+}
+
+.preview-error p {
+    color: var(--text-secondary);
+    margin-bottom: 1rem;
+}
+
+/* Device Header Actions */
+.device-header-actions {
+    margin-top: 1rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .device-settings-page {
+        padding: 1rem;
+    }
+
+    .settings-editor-panel {
+        max-height: 100vh;
+        border-radius: 0;
+    }
+
+    .lists-table {
+        font-size: 0.875rem;
+    }
+
+    .lists-table th,
+    .lists-table td {
+        padding: 0.5rem;
+    }
+
+    .list-actions {
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .device-info-readonly {
+        grid-template-columns: 1fr;
+    }
+
+    .settings-section {
+        margin-bottom: 1.5rem;
+        padding-bottom: 1.5rem;
+    }
+}
