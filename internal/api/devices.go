@@ -166,11 +166,17 @@ func (s *Server) handleDevicesRouter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If no sub-path (no slash after device ID), treat as device detail
+	// If no sub-path (no slash after device ID), handle device detail/update
 	// URL: /api/devices/:deviceId
 	remainder := path[len("/api/devices/"):]
 	if !strings.Contains(remainder, "/") {
-		s.handleGetDeviceDetail(w, r)
+		if r.Method == http.MethodGet {
+			s.handleGetDeviceDetail(w, r)
+		} else if r.Method == http.MethodPatch {
+			s.handleUpdateDevice(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
 		return
 	}
 
@@ -179,6 +185,44 @@ func (s *Server) handleDevicesRouter(w http.ResponseWriter, r *http.Request) {
 	if strings.HasSuffix(path, "/sync-history") {
 		s.handleGetDeviceSyncHistory(w, r)
 		return
+	}
+
+	// Handle list management endpoints
+	// URL: /api/devices/:deviceId/lists
+	// URL: /api/devices/:deviceId/lists/:listId
+	// URL: /api/devices/:deviceId/lists/:listId/preview
+	if strings.Contains(remainder, "/lists") {
+		// Check if this is a preview request
+		if strings.HasSuffix(path, "/preview") {
+			s.handlePreviewListBooks(w, r)
+			return
+		}
+
+		// Extract device ID and check if list ID is present
+		parts := strings.Split(remainder, "/")
+		// parts[0] = deviceID, parts[1] = "lists", parts[2] = listID (if present)
+
+		if len(parts) == 2 {
+			// /api/devices/:deviceId/lists - add list to device
+			if r.Method == http.MethodPost {
+				s.handleAddListToDevice(w, r)
+			} else {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			}
+			return
+		}
+
+		if len(parts) >= 3 {
+			// /api/devices/:deviceId/lists/:listId
+			if r.Method == http.MethodDelete {
+				s.handleRemoveListFromDevice(w, r)
+			} else if r.Method == http.MethodPatch {
+				s.handleUpdateListSettings(w, r)
+			} else {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			}
+			return
+		}
 	}
 
 	http.NotFound(w, r)

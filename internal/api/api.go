@@ -40,6 +40,7 @@ type Server struct {
 	listCache         *library.ListCache    // Cache for smart list book counts
 	config            *config.Config
 	configPath        string // Path to config file for saving
+	configMu          sync.RWMutex    // Protects config modifications
 	version           VersionInfo
 	mux               *http.ServeMux
 	startTime         time.Time
