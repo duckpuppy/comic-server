@@ -1,6 +1,6 @@
 # Multi-stage build for minimal image size
 # Stage 1: Builder
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates tzdata
