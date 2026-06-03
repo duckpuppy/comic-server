@@ -304,10 +304,14 @@
 
 .matcher-group details > summary::-webkit-details-marker { display: none; }
 
-.matcher-group details[open] > summary .matcher-bullet { content: '▼'; }
-.matcher-group details[open] > summary .matcher-bullet::before { content: '▼'; }
-.matcher-group details:not([open]) > summary .matcher-bullet::before { content: '▶'; }
-.matcher-group .matcher-bullet { font-size: 0.6rem; line-height: 2; }
+.matcher-group details > summary .matcher-bullet::before {
+    content: '▶';
+    font-size: 0.65rem;
+    line-height: 2;
+}
+.matcher-group details[open] > summary .matcher-bullet::before {
+    content: '▼';
+}
 
 .matcher-group details > summary:hover {
     color: var(--primary-color);

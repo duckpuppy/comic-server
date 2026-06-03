@@ -353,7 +353,10 @@ func (m *Matcher) getValue(book *ComicBook) string {
 	case MatcherTypeFile:
 		if book.FilePath != "" {
 			normalized := strings.ReplaceAll(book.FilePath, "\\", "/")
-			return filepath.Base(normalized)
+			base := filepath.Base(normalized)
+			// ComicRack's FileMatcher uses Path.GetFileNameWithoutExtension
+			ext := filepath.Ext(base)
+			return strings.TrimSuffix(base, ext)
 		}
 		return ""
 	case MatcherTypeFullPath:

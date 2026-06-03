@@ -177,7 +177,7 @@ class ListDetail {
                     <li class="matcher-item matcher-group" style="--depth:${depth}">
                         <details${depth === 0 ? ' open' : ''}>
                             <summary>
-                                <span class="matcher-bullet">▶</span>
+                                <span class="matcher-bullet"></span>
                                 <span class="matcher-text">
                                     <strong>${this.escapeHtml(matcher.operator)}</strong>:
                                     ${this.escapeHtml(matcher.value)}
