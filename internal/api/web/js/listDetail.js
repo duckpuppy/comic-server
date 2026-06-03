@@ -12,11 +12,19 @@ class ListDetail {
     }
 
     async init() {
-        // Set up tree callback and selection
         if (this.tree) {
-            this.tree.onListSelected = (listId) => this.onListSelected(listId);
-            // Select current list in tree
+            this.tree.onListSelected = (listId) => router.navigate(`/lists/${listId}`);
+            this.tree.onFolderSelected = (folderId) => this.navigateToFolder(folderId);
             this.tree.selectedListId = this.listId;
+            this.tree.selectedFolderId = null;
+
+            // Compute ancestors for breadcrumb and auto-expand in tree
+            this.ancestors = this.tree.findAncestors(this.listId) || [];
+            for (const folder of this.ancestors) {
+                this.tree.expandedFolders.add(folder.id);
+            }
+        } else {
+            this.ancestors = [];
         }
 
         await Promise.all([
@@ -29,9 +37,13 @@ class ListDetail {
         this.attachListeners();
     }
 
-    onListSelected(listId) {
-        // Navigate to the selected list
-        router.navigate(`/lists/${listId}`);
+    // Navigate to the file browser focused on a specific folder
+    navigateToFolder(folderId) {
+        if (typeof listsBrowser !== 'undefined' && listsBrowser) {
+            const path = listsBrowser.findPathToFolder(folderId);
+            if (path) listsBrowser.pathStack = path;
+        }
+        router.navigate('/lists');
     }
 
     async loadListDetail() {
@@ -77,6 +89,17 @@ class ListDetail {
         }
     }
 
+    renderBreadcrumb() {
+        let html = `<a href="/lists" onclick="router.navigate('/lists'); return false;">Smart Lists</a>`;
+        (this.ancestors || []).forEach(folder => {
+            html += `<span class="separator">›</span>`;
+            html += `<a href="/lists" class="breadcrumb-folder-link" data-folder-id="${folder.id}">${this.escapeHtml(folder.name)}</a>`;
+        });
+        html += `<span class="separator">›</span>`;
+        html += `<span class="current">${this.escapeHtml(this.list ? this.list.name : '')}</span>`;
+        return `<nav class="breadcrumb">${html}</nav>`;
+    }
+
     render() {
         const app = document.getElementById('app');
 
@@ -95,7 +118,6 @@ class ListDetail {
                     </main>
                 </div>
             `;
-            // Render tree after DOM is ready
             if (this.tree) {
                 setTimeout(() => this.tree.render(), 0);
             }
@@ -108,12 +130,7 @@ class ListDetail {
 
                 <main class="lists-main-content">
                     <div class="list-detail-page">
-                        <!-- Breadcrumb -->
-                        <nav class="breadcrumb">
-                            <a href="/lists" onclick="router.navigate('/lists'); return false;">Smart Lists</a>
-                            <span class="separator">›</span>
-                            <span class="current">${this.escapeHtml(this.list.name)}</span>
-                        </nav>
+                        ${this.renderBreadcrumb()}
 
                         <!-- Header -->
                         <div class="list-detail-header">
@@ -272,6 +289,14 @@ class ListDetail {
     }
 
     attachListeners() {
+        // Breadcrumb folder links — navigate to that folder in the file browser
+        document.querySelectorAll('.breadcrumb-folder-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.navigateToFolder(link.dataset.folderId);
+            });
+        });
+
         const loadMoreBtn = document.getElementById('load-more-btn');
         if (loadMoreBtn) {
             loadMoreBtn.addEventListener('click', async () => {

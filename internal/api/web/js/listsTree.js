@@ -37,6 +37,21 @@ class ListsTree {
         this.render();
     }
 
+    // Returns the array of ancestor folder nodes (root → immediate parent) for any node ID,
+    // or null if the target is not found.
+    findAncestors(targetId, items, ancestors) {
+        if (!items) items = this.tree || [];
+        if (!ancestors) ancestors = [];
+        for (const node of items) {
+            if (node.id === targetId) return ancestors;
+            if (node.is_folder && node.children) {
+                const found = this.findAncestors(targetId, node.children, [...ancestors, node]);
+                if (found) return found;
+            }
+        }
+        return null;
+    }
+
     toggleFolder(folderId) {
         if (this.expandedFolders.has(folderId)) {
             this.expandedFolders.delete(folderId);
