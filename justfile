@@ -65,6 +65,15 @@ run: build
 run-dev: build
     ./comic-server server --library /tmp/test-library --ignore-device 192.168.0.24
 
+# Run against real ComicRack library (WSL2, no device sync needed)
+run-real: build
+    ./comic-server server --library "/mnt/c/Users/paike/AppData/Roaming/cYo/ComicRack Community Edition/ComicDb.xml" --ignore-device 192.168.0.24
+
+# Build Windows binary and copy to user profile (stop the running server first)
+deploy-windows: build-windows
+    cp -f comic-server.exe /mnt/c/Users/paike/comic-server.exe
+    @echo "Deployed to C:\\Users\\paike\\comic-server.exe"
+
 # Run the server with custom library path
 run-with-library LIBRARY: build
     ./comic-server server --library {{LIBRARY}}
