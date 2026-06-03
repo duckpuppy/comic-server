@@ -90,7 +90,7 @@ class ListDetail {
     }
 
     renderBreadcrumb() {
-        let html = `<a href="/lists" onclick="router.navigate('/lists'); return false;">Smart Lists</a>`;
+        let html = `<a href="/lists" onclick="router.navigate('/lists'); return false;">Lists</a>`;
         (this.ancestors || []).forEach(folder => {
             html += `<span class="separator">›</span>`;
             html += `<a href="/lists" class="breadcrumb-folder-link" data-folder-id="${folder.id}">${this.escapeHtml(folder.name)}</a>`;

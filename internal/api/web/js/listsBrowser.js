@@ -145,7 +145,7 @@ class ListsBrowser {
     renderBreadcrumb() {
         const isAtRoot = this.pathStack.length === 0;
         let html = '<nav class="fb-breadcrumb">';
-        html += `<span class="fb-crumb${isAtRoot ? ' fb-crumb-current' : ' fb-crumb-link'}" data-nav-index="0">Smart Lists</span>`;
+        html += `<span class="fb-crumb${isAtRoot ? ' fb-crumb-current' : ' fb-crumb-link'}" data-nav-index="0">Lists</span>`;
         this.pathStack.forEach((seg, i) => {
             const isLast = i === this.pathStack.length - 1;
             html += '<span class="fb-sep">›</span>';
