@@ -33,41 +33,42 @@
             <!-- Dashboard Stats -->
             <section class="stats-section">
                 <div class="stat-card">
-                    <h3>Total Devices</h3>
-                    <div class="stat-value" id="stat-total-devices">0</div>
+                    <h3>Registered Devices</h3>
+                    <div class="stat-value" id="stat-registered-devices">--</div>
                 </div>
                 <div class="stat-card">
                     <h3>Active Syncs</h3>
-                    <div class="stat-value" id="stat-active-syncs">0</div>
+                    <div class="stat-value" id="stat-active-syncs">--</div>
                 </div>
                 <div class="stat-card">
                     <h3>Server Uptime</h3>
                     <div class="stat-value" id="stat-uptime">--</div>
                 </div>
                 <div class="stat-card">
-                    <h3>WebSocket Clients</h3>
-                    <div class="stat-value" id="stat-ws-clients">0</div>
+                    <h3>Smart Lists</h3>
+                    <div class="stat-value" id="stat-smart-lists">--</div>
                 </div>
             </section>
 
-            <!-- Quick Links -->
-            <section class="quick-links">
-                <a href="/lists" class="quick-link-card" data-nav="lists">
-                    <span class="quick-link-icon">📚</span>
-                    <h3>Smart Lists</h3>
-                    <p>Manage reading lists and filters</p>
-                </a>
-                <a href="/devices" class="quick-link-card" data-nav="devices">
-                    <span class="quick-link-icon">📱</span>
-                    <h3>Devices</h3>
-                    <p>View and manage connected devices</p>
-                </a>
-                <a href="/sync" class="quick-link-card" data-nav="sync">
-                    <span class="quick-link-icon">🔄</span>
-                    <h3>Sync History</h3>
-                    <p>View sync operations and status</p>
-                </a>
-            </section>
+            <!-- Dashboard Panels -->
+            <div class="dashboard-panels">
+                <div class="dashboard-panels-main">
+                    <section class="dashboard-panel">
+                        <h2>Active Syncs</h2>
+                        <div id="active-syncs" class="sync-list"></div>
+                    </section>
+                    <section class="dashboard-panel">
+                        <h2>Recent Sync History</h2>
+                        <div id="sync-history" class="history-list"></div>
+                    </section>
+                </div>
+                <div class="dashboard-panels-side">
+                    <section class="dashboard-panel">
+                        <h2>Devices</h2>
+                        <div id="dashboard-devices-list" class="device-status-list"></div>
+                    </section>
+                </div>
+            </div>
         </div>
         <!-- End Dashboard content -->
         </div>

@@ -36,59 +36,35 @@ class Dashboard {
 
     async updateStats() {
         try {
-            // Update total devices count
-            const devicesCount = deviceManager.devices.size;
-            const statElement = document.getElementById('stat-total-devices');
-            if (statElement) {
-                statElement.textContent = devicesCount;
-            }
+            const [statsRes, listsRes] = await Promise.all([
+                fetch('/api/stats'),
+                fetch('/api/library/lists')
+            ]);
+            const stats = await statsRes.json();
+            const lists = await listsRes.json();
 
-            // Update active syncs count
-            const activeSyncsCount = syncManager.activeSyncs.size;
-            const syncElement = document.getElementById('stat-active-syncs');
-            if (syncElement) {
-                syncElement.textContent = activeSyncsCount;
-            }
+            const set = (id, val) => {
+                const el = document.getElementById(id);
+                if (el) el.textContent = val;
+            };
 
-            // Update uptime
-            const uptime = this.calculateUptime();
-            const uptimeElement = document.getElementById('stat-uptime');
-            if (uptimeElement) {
-                uptimeElement.textContent = uptime;
-            }
-
-            // Update WebSocket clients count (if available from server)
-            const wsClientsElement = document.getElementById('stat-ws-clients');
-            if (wsClientsElement) {
-                if (wsClient.connected) {
-                    wsClientsElement.textContent = '1'; // This client is connected
-                } else {
-                    wsClientsElement.textContent = '0';
-                }
-            }
+            set('stat-registered-devices', stats.registered_devices ?? '--');
+            set('stat-active-syncs', stats.active_syncs ?? '--');
+            set('stat-uptime', this.formatUptime(stats.uptime_seconds ?? 0));
+            set('stat-smart-lists', (lists.lists ?? []).length);
         } catch (error) {
             console.error('Failed to update stats:', error);
         }
     }
 
-    calculateUptime() {
-        const now = new Date();
-        const diff = now - this.startTime;
-
-        const seconds = Math.floor(diff / 1000);
-        const minutes = Math.floor(seconds / 60);
-        const hours = Math.floor(minutes / 60);
-        const days = Math.floor(hours / 24);
-
-        if (days > 0) {
-            return `${days}d ${hours % 24}h`;
-        } else if (hours > 0) {
-            return `${hours}h ${minutes % 60}m`;
-        } else if (minutes > 0) {
-            return `${minutes}m ${seconds % 60}s`;
-        } else {
-            return `${seconds}s`;
-        }
+    formatUptime(seconds) {
+        if (seconds < 60) return `${seconds}s`;
+        const m = Math.floor(seconds / 60);
+        if (m < 60) return `${m}m ${seconds % 60}s`;
+        const h = Math.floor(m / 60);
+        if (h < 24) return `${h}h ${m % 60}m`;
+        const d = Math.floor(h / 24);
+        return `${d}d ${h % 24}h`;
     }
 }
 

@@ -121,7 +121,8 @@ class DeviceManager {
     }
 
     render() {
-        // Only render if container exists (dashboard page)
+        this.renderDashboardDevices();
+        // Only render full cards if sidebar container exists
         if (!this.container) return;
 
         if (this.devices.size === 0) {
@@ -220,6 +221,47 @@ class DeviceManager {
         });
 
         return card;
+    }
+
+    renderDashboardDevices() {
+        const container = document.getElementById('dashboard-devices-list');
+        if (!container) return;
+
+        if (this.devices.size === 0) {
+            container.innerHTML = '<p class="empty-message">No devices discovered</p>';
+            return;
+        }
+
+        container.innerHTML = '';
+        const sorted = Array.from(this.devices.values()).sort((a, b) => {
+            if (a.is_syncing !== b.is_syncing) return b.is_syncing ? 1 : -1;
+            return a.name.localeCompare(b.name);
+        });
+        sorted.forEach(device => container.appendChild(this.createDeviceStatusRow(device)));
+    }
+
+    createDeviceStatusRow(device) {
+        const row = document.createElement('div');
+        row.className = 'device-status-row';
+        const { label, cls } = this.getDeviceStatus(device);
+        const lastSeen = this.formatTimestamp(new Date(device.last_seen));
+        row.innerHTML = `
+            <span class="device-status ${cls}">${label}</span>
+            <div class="device-status-info">
+                <span class="device-status-name">${device.name}</span>
+                <span class="device-status-meta">${device.manufacturer} ${device.model} · ${lastSeen}</span>
+            </div>
+        `;
+        row.addEventListener('click', () => router.navigate(`/devices/${device.id}`));
+        return row;
+    }
+
+    getDeviceStatus(device) {
+        if (device.is_syncing) return { label: 'Syncing', cls: 'syncing' };
+        const minutesAgo = (new Date() - new Date(device.last_seen)) / 60000;
+        if (minutesAgo < 2) return { label: 'Online', cls: 'connected' };
+        if (minutesAgo < 30) return { label: 'Idle', cls: 'idle' };
+        return { label: 'Offline', cls: 'offline' };
     }
 
     formatTimestamp(date) {

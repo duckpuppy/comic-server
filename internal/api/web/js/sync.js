@@ -3,8 +3,6 @@ class SyncManager {
     constructor() {
         this.activeSyncs = new Map();
         this.syncHistory = [];
-        this.activeSyncsContainer = document.getElementById('active-syncs');
-        this.syncHistoryContainer = document.getElementById('sync-history');
         this.syncProgressTemplate = document.getElementById('sync-progress-template');
         this.historyItemTemplate = document.getElementById('history-item-template');
     }
@@ -96,19 +94,17 @@ class SyncManager {
     }
 
     renderActiveSyncs() {
-        // Only render if container exists (dashboard page)
-        if (!this.activeSyncsContainer) return;
+        const container = document.getElementById('active-syncs');
+        if (!container) return;
 
         if (this.activeSyncs.size === 0) {
-            this.activeSyncsContainer.innerHTML = '<p class="empty-message">No active sync operations</p>';
+            container.innerHTML = '<p class="empty-message">No active sync operations</p>';
             return;
         }
 
-        this.activeSyncsContainer.innerHTML = '';
-
+        container.innerHTML = '';
         for (const sync of this.activeSyncs.values()) {
-            const progressEl = this.createSyncProgress(sync);
-            this.activeSyncsContainer.appendChild(progressEl);
+            container.appendChild(this.createSyncProgress(sync));
         }
     }
 
@@ -147,21 +143,17 @@ class SyncManager {
     }
 
     renderSyncHistory() {
-        // Skip rendering if container doesn't exist (e.g., on device detail page)
-        if (!this.syncHistoryContainer) {
-            return;
-        }
+        const container = document.getElementById('sync-history');
+        if (!container) return;
 
         if (this.syncHistory.length === 0) {
-            this.syncHistoryContainer.innerHTML = '<p class="empty-message">No sync history</p>';
+            container.innerHTML = '<p class="empty-message">No sync history</p>';
             return;
         }
 
-        this.syncHistoryContainer.innerHTML = '';
-
-        this.syncHistory.slice(0, 10).forEach(sync => {
-            const item = this.createHistoryItem(sync);
-            this.syncHistoryContainer.appendChild(item);
+        container.innerHTML = '';
+        this.syncHistory.slice(0, 5).forEach(sync => {
+            container.appendChild(this.createHistoryItem(sync));
         });
     }
 

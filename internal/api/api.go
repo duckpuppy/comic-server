@@ -328,6 +328,7 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 // Stats response
 type StatsResponse struct {
 	Uptime               string `json:"uptime"`
+	UptimeSeconds        int64  `json:"uptime_seconds"`
 	ActiveSyncs          int    `json:"active_syncs"`
 	RegisteredDevices    int    `json:"registered_devices"`
 	MaxConcurrent        int    `json:"max_concurrent_connections"`
@@ -347,6 +348,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 
 	response := StatsResponse{
 		Uptime:               uptime.String(),
+		UptimeSeconds:        int64(uptime.Seconds()),
 		ActiveSyncs:          s.syncManager.GetActiveCount(),
 		RegisteredDevices:    len(devices),
 		MaxConcurrent:        s.config.Server.MaxConcurrentConnections,
