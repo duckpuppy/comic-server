@@ -81,11 +81,17 @@
     color: white;
 }
 
-/* Main content area */
+/* Main content area (default: normal scrolling with padding) */
 .lists-main-content {
     flex: 1;
     overflow-y: auto;
     padding: 20px;
+}
+
+/* File browser variant — manages its own scroll areas */
+.lists-main-content.filebrowser-main {
+    overflow: hidden;
+    padding: 0;
 }
 
 /* Tree toggle button for mobile */

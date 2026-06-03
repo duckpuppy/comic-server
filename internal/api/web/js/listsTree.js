@@ -4,7 +4,9 @@ class ListsTree {
         this.tree = [];
         this.expandedFolders = new Set();
         this.selectedListId = null;
-        this.onListSelected = null; // Callback for when a list is selected
+        this.selectedFolderId = null;
+        this.onListSelected = null;
+        this.onFolderSelected = null; // called with (folderId) when a folder is clicked
     }
 
     async init() {
@@ -23,6 +25,18 @@ class ListsTree {
         }
     }
 
+    // Called from file browser when navigating; expands ancestors and highlights folder
+    setCurrentPath(pathStack) {
+        for (const seg of pathStack) {
+            this.expandedFolders.add(seg.id);
+        }
+        this.selectedFolderId = pathStack.length > 0
+            ? pathStack[pathStack.length - 1].id
+            : null;
+        this.selectedListId = null;
+        this.render();
+    }
+
     toggleFolder(folderId) {
         if (this.expandedFolders.has(folderId)) {
             this.expandedFolders.delete(folderId);
@@ -34,23 +48,34 @@ class ListsTree {
 
     selectList(listId) {
         this.selectedListId = listId;
+        this.selectedFolderId = null;
         this.render();
         if (this.onListSelected) {
             this.onListSelected(listId);
         }
     }
 
+    navigateFolder(folderId) {
+        this.expandedFolders.add(folderId);
+        this.selectedFolderId = folderId;
+        this.selectedListId = null;
+        this.render();
+        if (this.onFolderSelected) {
+            this.onFolderSelected(folderId);
+        }
+    }
+
     renderNode(node, level = 0) {
-        const indent = level * 16; // 16px per level
+        const indent = level * 16;
         const isExpanded = this.expandedFolders.has(node.id);
-        const isSelected = this.selectedListId === node.id;
 
         if (node.is_folder) {
+            const isSelected = this.selectedFolderId === node.id;
             const expandIcon = isExpanded ? '▼' : '▶';
             const folderIcon = isExpanded ? '📂' : '📁';
 
             let html = `
-                <div class="tree-node folder ${isExpanded ? 'expanded' : ''}" style="padding-left: ${indent}px">
+                <div class="tree-node folder${isSelected ? ' selected' : ''}" data-folder-id="${node.id}" style="padding-left: ${indent}px">
                     <span class="expand-icon" data-folder-id="${node.id}">${expandIcon}</span>
                     <span class="folder-icon">${folderIcon}</span>
                     <span class="node-name">${node.name}</span>
@@ -65,15 +90,15 @@ class ListsTree {
 
             return html;
         } else {
-            // Smart list node
-            const selectedClass = isSelected ? 'selected' : '';
+            const isSelected = this.selectedListId === node.id;
+            const count = node.book_count || 0;
             return `
-                <div class="tree-node list ${selectedClass}"
+                <div class="tree-node list${isSelected ? ' selected' : ''}"
                      style="padding-left: ${indent + 16}px"
                      data-list-id="${node.id}">
                     <span class="list-icon">📋</span>
                     <span class="node-name">${node.name}</span>
-                    <span class="book-count">${node.book_count || 0}</span>
+                    <span class="book-count">${count.toLocaleString()}</span>
                 </div>
             `;
         }
@@ -94,24 +119,28 @@ class ListsTree {
     }
 
     attachListeners() {
-        // Folder expand/collapse
+        // Expand toggle — only expand/collapse, no navigation
         document.querySelectorAll('.expand-icon').forEach(icon => {
             icon.addEventListener('click', (e) => {
                 e.stopPropagation();
-                const folderId = icon.dataset.folderId;
-                this.toggleFolder(folderId);
+                this.toggleFolder(icon.dataset.folderId);
+            });
+        });
+
+        // Folder row — navigate to folder in file browser AND expand
+        document.querySelectorAll('.tree-node.folder').forEach(node => {
+            node.addEventListener('click', () => {
+                this.navigateFolder(node.dataset.folderId);
             });
         });
 
         // List selection
         document.querySelectorAll('.tree-node.list').forEach(node => {
-            node.addEventListener('click', (e) => {
-                const listId = node.dataset.listId;
-                this.selectList(listId);
+            node.addEventListener('click', () => {
+                this.selectList(node.dataset.listId);
             });
         });
     }
 }
 
-// Export for use in other modules
 window.ListsTree = ListsTree;
