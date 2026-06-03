@@ -17,13 +17,13 @@ const (
 	OperatorEquals MatchOperator = 0
 
 	// String operators (ComicRack string matcher values)
-	OperatorContains    MatchOperator = 1
-	OperatorContainsAny MatchOperator = 2
-	OperatorContainsAll MatchOperator = 3
-	OperatorStartsWith  MatchOperator = 4
-	OperatorEndsWith    MatchOperator = 5
-	// 6 is ListContains (not implemented yet)
-	OperatorRegex MatchOperator = 7
+	OperatorContains     MatchOperator = 1
+	OperatorContainsAny  MatchOperator = 2
+	OperatorContainsAll  MatchOperator = 3
+	OperatorStartsWith   MatchOperator = 4
+	OperatorEndsWith     MatchOperator = 5
+	OperatorListContains MatchOperator = 6 // Field is a comma-separated list; checks membership
+	OperatorRegex        MatchOperator = 7
 
 	// Numeric operators (ComicRack numeric matcher values - reuse 1, 2, 3)
 	OperatorGreater MatchOperator = 1 // Same as OperatorContains
@@ -127,9 +127,17 @@ func NewMatcherFromXML(xmlMatcher *ComicBookMatcher) (*Matcher, error) {
 		}, nil
 	}
 
+	matchValue := xmlMatcher.MatchValue
+	// Normalize path separators for file/directory matchers so Windows paths
+	// stored in the library XML work correctly when the server runs on Linux.
+	switch MatcherType(fieldName) {
+	case MatcherTypeDirectory, MatcherTypeFile, MatcherTypeFullPath:
+		matchValue = strings.ReplaceAll(matchValue, "\\", "/")
+	}
+
 	m := &Matcher{
 		Type:       MatcherType(fieldName),
-		MatchValue: xmlMatcher.MatchValue,
+		MatchValue: matchValue,
 		Not:        xmlMatcher.Not,
 		IgnoreCase: true, // Default to case-insensitive
 	}
@@ -224,13 +232,14 @@ func (m *Matcher) Match(book *ComicBook) bool {
 func (m *Matcher) matchInternal(book *ComicBook) bool {
 	// Special handling for CustomValues matcher
 	if m.Type == "CustomValues" {
-		// CustomValues matcher: key=value pair must exist
 		// CustomValuesStore format: ",key1=value1,key2=value2"
+		// When MatchValue2 (expected value) is empty, check for key existence only.
+		// When MatchValue2 is set, check for exact key=value pair.
 		store := book.CustomValuesStore
 		key := m.MatchValue
 		expectedValue := m.MatchValue2
+		checkValueToo := expectedValue != ""
 
-		// Parse the store to find the key
 		pairs := strings.Split(store, ",")
 		for _, pair := range pairs {
 			pair = strings.TrimSpace(pair)
@@ -238,19 +247,29 @@ func (m *Matcher) matchInternal(book *ComicBook) bool {
 				continue
 			}
 			parts := strings.SplitN(pair, "=", 2)
-			if len(parts) != 2 {
+			if len(parts) < 1 {
 				continue
 			}
 			pairKey := strings.TrimSpace(parts[0])
-			pairValue := strings.TrimSpace(parts[1])
 
-			if m.IgnoreCase {
-				if strings.EqualFold(pairKey, key) && strings.EqualFold(pairValue, expectedValue) {
-					return true
-				}
-			} else {
-				if pairKey == key && pairValue == expectedValue {
-					return true
+			keyMatch := (m.IgnoreCase && strings.EqualFold(pairKey, key)) || (!m.IgnoreCase && pairKey == key)
+			if !keyMatch {
+				continue
+			}
+			if !checkValueToo {
+				return true
+			}
+			// Key matched; now check value
+			if len(parts) == 2 {
+				pairValue := strings.TrimSpace(parts[1])
+				if m.IgnoreCase {
+					if strings.EqualFold(pairValue, expectedValue) {
+						return true
+					}
+				} else {
+					if pairValue == expectedValue {
+						return true
+					}
 				}
 			}
 		}
@@ -325,19 +344,20 @@ func (m *Matcher) getValue(book *ComicBook) string {
 	case MatcherTypeOpenedTime:
 		return book.OpenedTime.Time.Format(time.RFC3339)
 	case MatcherTypeDirectory:
-		// Extract directory from file path
 		if book.FilePath != "" {
-			return filepath.Dir(book.FilePath)
+			// Normalize backslashes so Windows library paths work on Linux.
+			normalized := strings.ReplaceAll(book.FilePath, "\\", "/")
+			return filepath.Dir(normalized)
 		}
 		return ""
 	case MatcherTypeFile:
-		// Extract filename from file path
 		if book.FilePath != "" {
-			return filepath.Base(book.FilePath)
+			normalized := strings.ReplaceAll(book.FilePath, "\\", "/")
+			return filepath.Base(normalized)
 		}
 		return ""
 	case MatcherTypeFullPath:
-		return book.FilePath
+		return strings.ReplaceAll(book.FilePath, "\\", "/")
 	case MatcherTypeFileFormat:
 		// Extract file format from extension
 		// e.g., ".cbz" -> "ZIP", ".cbr" -> "RAR"
@@ -425,6 +445,17 @@ func (m *Matcher) matchString(value string) bool {
 		return strings.HasPrefix(value, matchValue)
 	case OperatorEndsWith:
 		return strings.HasSuffix(value, matchValue)
+	case OperatorListContains:
+		// The field is a comma/semicolon-separated list; check if matchValue is a member.
+		items := strings.FieldsFunc(value, func(r rune) bool {
+			return r == ',' || r == ';'
+		})
+		for _, item := range items {
+			if comp(strings.TrimSpace(item), matchValue) == 0 {
+				return true
+			}
+		}
+		return false
 	default:
 		return false
 	}

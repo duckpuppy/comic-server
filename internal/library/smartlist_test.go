@@ -732,3 +732,208 @@ func TestNewMatcherFromXML(t *testing.T) {
 		})
 	}
 }
+
+// TestCustomValuesMatcher tests the CustomValues matcher including key-existence checks
+func TestCustomValuesMatcher(t *testing.T) {
+	tests := []struct {
+		name       string
+		store      string
+		matchKey   string
+		matchVal   string
+		not        bool
+		want       bool
+	}{
+		{
+			name:     "key exists - match",
+			store:    ",comicvine_issue=133658,comicvine_volume=20784",
+			matchKey: "comicvine_issue",
+			matchVal: "",
+			want:     true,
+		},
+		{
+			name:     "key not present - no match",
+			store:    ",comicvine_volume=20784",
+			matchKey: "comicvine_issue",
+			matchVal: "",
+			want:     false,
+		},
+		{
+			name:     "NOT key exists - filters book with key",
+			store:    ",comicvine_issue=133658,comicvine_volume=20784",
+			matchKey: "comicvine_issue",
+			matchVal: "",
+			not:      true,
+			want:     false,
+		},
+		{
+			name:     "NOT key exists - passes book without key",
+			store:    ",comicvine_volume=20784",
+			matchKey: "comicvine_issue",
+			matchVal: "",
+			not:      true,
+			want:     true,
+		},
+		{
+			name:     "key+value match",
+			store:    ",comicvine_issue=133658",
+			matchKey: "comicvine_issue",
+			matchVal: "133658",
+			want:     true,
+		},
+		{
+			name:     "key+value mismatch",
+			store:    ",comicvine_issue=133658",
+			matchKey: "comicvine_issue",
+			matchVal: "999999",
+			want:     false,
+		},
+		{
+			name:     "empty store - no match",
+			store:    "",
+			matchKey: "comicvine_issue",
+			matchVal: "",
+			want:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			book := &ComicBook{CustomValuesStore: tt.store}
+			xmlM := &ComicBookMatcher{
+				Type:        "ComicBookCustomValuesMatcher",
+				MatchValue:  tt.matchKey,
+				MatchValue2: tt.matchVal,
+				Not:         tt.not,
+			}
+			matcher, err := NewMatcherFromXML(xmlM)
+			if err != nil {
+				t.Fatalf("NewMatcherFromXML error: %v", err)
+			}
+			got := matcher.Match(book)
+			if got != tt.want {
+				t.Errorf("Match() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestListContainsMatcher tests MatchOperator=6 (ListContains) for tag-like fields
+func TestListContainsMatcher(t *testing.T) {
+	tests := []struct {
+		name     string
+		tags     string
+		matchVal string
+		not      bool
+		want     bool
+	}{
+		{
+			name:     "tag present",
+			tags:     "Action, NOSCRAPE, Superhero",
+			matchVal: "NOSCRAPE",
+			want:     true,
+		},
+		{
+			name:     "tag absent",
+			tags:     "Action, Superhero",
+			matchVal: "NOSCRAPE",
+			want:     false,
+		},
+		{
+			name:     "NOT tag present - filters out",
+			tags:     "Action, NOSCRAPE",
+			matchVal: "NOSCRAPE",
+			not:      true,
+			want:     false,
+		},
+		{
+			name:     "NOT tag absent - passes through",
+			tags:     "Action, Superhero",
+			matchVal: "NOSCRAPE",
+			not:      true,
+			want:     true,
+		},
+		{
+			name:     "case insensitive match",
+			tags:     "noscrape, Action",
+			matchVal: "NOSCRAPE",
+			want:     true,
+		},
+		{
+			name:     "partial match does not count",
+			tags:     "NOSCRAPE_EXTRA, Action",
+			matchVal: "NOSCRAPE",
+			want:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			book := &ComicBook{Tags: tt.tags}
+			xmlM := &ComicBookMatcher{
+				Type:          "ComicBookTagsMatcher",
+				MatchOperator: "6",
+				MatchValue:    tt.matchVal,
+				Not:           tt.not,
+			}
+			matcher, err := NewMatcherFromXML(xmlM)
+			if err != nil {
+				t.Fatalf("NewMatcherFromXML error: %v", err)
+			}
+			got := matcher.Match(book)
+			if got != tt.want {
+				t.Errorf("Match() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestPathMatcherWindowsPaths verifies that Windows paths in library XML work on Linux
+func TestPathMatcherWindowsPaths(t *testing.T) {
+	book := &ComicBook{FilePath: `G:\Comics\Marvel\Spider-Man #001.cbz`}
+
+	t.Run("directory starts with Windows root", func(t *testing.T) {
+		xmlM := &ComicBookMatcher{
+			Type:          "ComicBookDirectoryMatcher",
+			MatchOperator: "4", // StartsWith
+			MatchValue:    `G:\Comics\`,
+		}
+		m, err := NewMatcherFromXML(xmlM)
+		if err != nil {
+			t.Fatalf("NewMatcherFromXML error: %v", err)
+		}
+		if !m.Match(book) {
+			t.Error("expected directory to match Windows root path prefix")
+		}
+	})
+
+	t.Run("NOT directory starts with root - book in root does not match", func(t *testing.T) {
+		xmlM := &ComicBookMatcher{
+			Type:          "ComicBookDirectoryMatcher",
+			Not:           true,
+			MatchOperator: "4",
+			MatchValue:    `G:\Comics\`,
+		}
+		m, err := NewMatcherFromXML(xmlM)
+		if err != nil {
+			t.Fatalf("NewMatcherFromXML error: %v", err)
+		}
+		if m.Match(book) {
+			t.Error("book in G:\\Comics\\ should not match NOT-StartsWith G:\\Comics\\")
+		}
+	})
+
+	t.Run("filename extraction from Windows path", func(t *testing.T) {
+		xmlM := &ComicBookMatcher{
+			Type:          "ComicBookFileMatcher",
+			MatchOperator: "1", // Contains
+			MatchValue:    "Spider-Man",
+		}
+		m, err := NewMatcherFromXML(xmlM)
+		if err != nil {
+			t.Fatalf("NewMatcherFromXML error: %v", err)
+		}
+		if !m.Match(book) {
+			t.Error("expected filename to contain 'Spider-Man'")
+		}
+	})
+}
