@@ -136,10 +136,11 @@ func NewMatcherFromXML(xmlMatcher *ComicBookMatcher) (*Matcher, error) {
 	}
 
 	m := &Matcher{
-		Type:       MatcherType(fieldName),
-		MatchValue: matchValue,
-		Not:        xmlMatcher.Not,
-		IgnoreCase: true, // Default to case-insensitive
+		Type:        MatcherType(fieldName),
+		MatchValue:  matchValue,
+		MatchValue2: xmlMatcher.MatchValue2, // Needed for InRange / IsInDateRange operators
+		Not:         xmlMatcher.Not,
+		IgnoreCase:  true, // Default to case-insensitive
 	}
 
 	// Parse operator from XML MatchOperator attribute
