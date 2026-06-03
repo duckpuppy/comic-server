@@ -345,18 +345,29 @@ func (m *Matcher) getValue(book *ComicBook) string {
 		return book.OpenedTime.Time.Format(time.RFC3339)
 	case MatcherTypeDirectory:
 		if book.FilePath != "" {
-			// Normalize backslashes so Windows library paths work on Linux.
+			// Normalize to forward slashes and use string ops only.
+			// filepath.Dir on Windows re-introduces backslashes even when given
+			// forward-slash input, breaking cross-platform path comparisons.
 			normalized := strings.ReplaceAll(book.FilePath, "\\", "/")
-			return filepath.Dir(normalized)
+			if idx := strings.LastIndex(normalized, "/"); idx >= 0 {
+				return normalized[:idx]
+			}
+			return ""
 		}
 		return ""
 	case MatcherTypeFile:
 		if book.FilePath != "" {
+			// Normalize and extract filename without extension via string ops.
+			// ComicRack uses Path.GetFileNameWithoutExtension (no extension).
 			normalized := strings.ReplaceAll(book.FilePath, "\\", "/")
-			base := filepath.Base(normalized)
-			// ComicRack's FileMatcher uses Path.GetFileNameWithoutExtension
-			ext := filepath.Ext(base)
-			return strings.TrimSuffix(base, ext)
+			base := normalized
+			if idx := strings.LastIndex(normalized, "/"); idx >= 0 {
+				base = normalized[idx+1:]
+			}
+			if idx := strings.LastIndex(base, "."); idx > 0 {
+				return base[:idx]
+			}
+			return base
 		}
 		return ""
 	case MatcherTypeFullPath:
