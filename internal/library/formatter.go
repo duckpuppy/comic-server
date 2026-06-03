@@ -112,10 +112,11 @@ func FormatMatcherMode(mode string) string {
 
 // MatcherInfo represents a matcher in a structured format for API responses
 type MatcherInfo struct {
-	Field    string `json:"field"`
-	Operator string `json:"operator"`
-	Value    string `json:"value"`
-	Value2   string `json:"value2,omitempty"`
+	Field    string        `json:"field"`
+	Operator string        `json:"operator"`
+	Value    string        `json:"value"`
+	Value2   string        `json:"value2,omitempty"`
+	Children []MatcherInfo `json:"children,omitempty"`
 }
 
 // GetMatcherInfo converts a ComicBookMatcher to structured MatcherInfo
@@ -132,10 +133,16 @@ func GetMatcherInfo(m ComicBookMatcher) MatcherInfo {
 			negation = "NOT "
 		}
 
+		children := make([]MatcherInfo, len(m.Matchers))
+		for i, child := range m.Matchers {
+			children[i] = GetMatcherInfo(child)
+		}
+
 		return MatcherInfo{
 			Field:    "Group",
 			Operator: negation + mode,
 			Value:    fmt.Sprintf("%d conditions", len(m.Matchers)),
+			Children: children,
 		}
 	}
 
@@ -146,10 +153,20 @@ func GetMatcherInfo(m ComicBookMatcher) MatcherInfo {
 	// Handle CustomValuesMatcher specially (MatchValue is key name, MatchValue2 is expected value)
 	if strings.Contains(m.Type, "CustomValuesMatcher") {
 		fieldName = "Custom Value: " + m.MatchValue
-		// For display, we only show the value in the Value field
+		negation := ""
+		if m.Not {
+			negation = "NOT "
+		}
+		if m.MatchValue2 == "" {
+			// Key-existence check
+			return MatcherInfo{
+				Field:    fieldName,
+				Operator: negation + "exists",
+			}
+		}
 		return MatcherInfo{
 			Field:    fieldName,
-			Operator: "equals",
+			Operator: negation + "equals",
 			Value:    m.MatchValue2,
 		}
 	}
@@ -284,6 +301,8 @@ func getOperatorText(operator MatchOperator, isDateField, isNumericField bool) s
 		return "starts with"
 	case OperatorEndsWith:
 		return "ends with"
+	case OperatorListContains:
+		return "list contains"
 	case OperatorRegex:
 		return "matches regex"
 	default:

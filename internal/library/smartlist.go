@@ -282,7 +282,7 @@ func (m *Matcher) matchInternal(book *ComicBook) bool {
 	// Perform type-specific comparison
 	switch m.Type {
 	case MatcherTypeYear, MatcherTypeMonth, MatcherTypeVolume,
-		MatcherTypePageCount, MatcherTypeRating:
+		MatcherTypePageCount, MatcherTypeRating, MatcherTypeCount:
 		return m.matchNumeric(value)
 	case MatcherTypeAddedTime, MatcherTypeOpenedTime:
 		return m.matchDate(value)
@@ -466,6 +466,12 @@ func (m *Matcher) matchNumeric(value string) bool {
 	numValue, err := strconv.ParseFloat(value, 64)
 	if err != nil {
 		return false
+	}
+
+	// Empty MatchValue means "field is not set" — represented as 0 in our model
+	// (ComicRack uses 0/-1 as sentinels for unset numeric fields).
+	if m.MatchValue == "" {
+		return numValue == 0 || numValue == -1
 	}
 
 	matchNum, err := strconv.ParseFloat(m.MatchValue, 64)

@@ -937,3 +937,60 @@ func TestPathMatcherWindowsPaths(t *testing.T) {
 		}
 	})
 }
+
+// TestCountMatcherNumeric verifies Count uses numeric matching so "Count NOT empty"
+// correctly distinguishes unset (0) from set (>0) books.
+func TestCountMatcherNumeric(t *testing.T) {
+	tests := []struct {
+		name      string
+		count     int
+		matchVal  string
+		not       bool
+		want      bool
+	}{
+		{
+			name: "count empty (0) matches empty check",
+			count: 0, matchVal: "", want: true,
+		},
+		{
+			name: "count set does not match empty check",
+			count: 6, matchVal: "", want: false,
+		},
+		{
+			name: "NOT count empty passes when count is set",
+			count: 6, matchVal: "", not: true, want: true,
+		},
+		{
+			name: "NOT count empty fails when count is unset",
+			count: 0, matchVal: "", not: true, want: false,
+		},
+		{
+			name: "count equals specific value",
+			count: 6, matchVal: "6", want: true,
+		},
+		{
+			name: "count not equal to specific value",
+			count: 4, matchVal: "6", want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			book := &ComicBook{Count: tt.count}
+			xmlM := &ComicBookMatcher{
+				Type:       "ComicBookCountMatcher",
+				MatchValue: tt.matchVal,
+				Not:        tt.not,
+			}
+			matcher, err := NewMatcherFromXML(xmlM)
+			if err != nil {
+				t.Fatalf("NewMatcherFromXML error: %v", err)
+			}
+			got := matcher.Match(book)
+			if got != tt.want {
+				t.Errorf("Match() = %v, want %v (count=%d, matchVal=%q, not=%v)",
+					got, tt.want, tt.count, tt.matchVal, tt.not)
+			}
+		})
+	}
+}

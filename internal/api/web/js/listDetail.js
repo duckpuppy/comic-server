@@ -165,36 +165,44 @@ class ListDetail {
         }
     }
 
-    renderMatchers() {
-        if (!this.list.matchers || this.list.matchers.length === 0) {
+    renderMatchers(matchers, depth = 0) {
+        const list = matchers || this.list.matchers;
+        if (!list || list.length === 0) {
             return '<li class="empty-message">No matchers defined</li>';
         }
 
-        return this.list.matchers.map(matcher => {
-            // Format the matcher display
-            let displayText = '';
+        return list.map(matcher => {
+            if (matcher.field === 'Group' && matcher.children && matcher.children.length > 0) {
+                return `
+                    <li class="matcher-item matcher-group" style="--depth:${depth}">
+                        <details${depth === 0 ? ' open' : ''}>
+                            <summary>
+                                <span class="matcher-bullet">▶</span>
+                                <span class="matcher-text">
+                                    <strong>${this.escapeHtml(matcher.operator)}</strong>:
+                                    ${this.escapeHtml(matcher.value)}
+                                </span>
+                            </summary>
+                            <ul class="matchers-list nested-matchers">
+                                ${this.renderMatchers(matcher.children, depth + 1)}
+                            </ul>
+                        </details>
+                    </li>
+                `;
+            }
 
-            if (matcher.field === 'Group') {
-                // Group matcher: show operator and value
-                displayText = `<strong>${matcher.operator}</strong>: ${matcher.value}`;
-            } else {
-                // Regular matcher: Field operator "value"
-                displayText = `<strong>${this.escapeHtml(matcher.field)}</strong> `;
-                displayText += `${this.escapeHtml(matcher.operator)} `;
-
-                // Format value with quotes for readability
-                if (matcher.value) {
-                    displayText += `<code>"${this.escapeHtml(matcher.value)}"</code>`;
-                }
-
-                // Add second value if present (for ranges)
-                if (matcher.value2) {
-                    displayText += ` and <code>"${this.escapeHtml(matcher.value2)}"</code>`;
-                }
+            // Regular matcher
+            let displayText = `<strong>${this.escapeHtml(matcher.field)}</strong> `;
+            displayText += `<em>${this.escapeHtml(matcher.operator)}</em>`;
+            if (matcher.value) {
+                displayText += ` <code>"${this.escapeHtml(matcher.value)}"</code>`;
+            }
+            if (matcher.value2) {
+                displayText += ` and <code>"${this.escapeHtml(matcher.value2)}"</code>`;
             }
 
             return `
-                <li class="matcher-item">
+                <li class="matcher-item" style="--depth:${depth}">
                     <span class="matcher-bullet">•</span>
                     <span class="matcher-text">${displayText}</span>
                 </li>
