@@ -21,7 +21,7 @@ class Navigation {
                 </a>
                 <a href="/lists" class="nav-tab" data-tab="lists">
                     <span class="nav-icon">📚</span>
-                    <span class="nav-label">Smart Lists</span>
+                    <span class="nav-label">Lists</span>
                     <span class="nav-badge" id="lists-count">0</span>
                 </a>
                 <a href="/devices" class="nav-tab" data-tab="devices">
