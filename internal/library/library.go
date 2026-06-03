@@ -132,6 +132,10 @@ type ComicListItem struct {
 	Favorite    bool   `xml:"Favorite,omitempty"`
 	BookCount   int    `xml:"BookCount,omitempty"`
 
+	// BaseListId scopes the smart list to match only within another list's result set.
+	// Corresponds to the "Match on [source]" dropdown in ComicRack CE.
+	BaseListId string `xml:"BaseListId,omitempty"`
+
 	// For ComicReadingList
 	Items []ComicReadingListItem `xml:"Books>Book,omitempty"`
 

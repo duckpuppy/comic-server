@@ -640,58 +640,78 @@ func evaluateMatcher(xmlMatcher *ComicBookMatcher, book *ComicBook) bool {
 	return matcher.Match(book)
 }
 
-// MatchBooks evaluates a smart list against a collection of books
-// Returns books that match the smart list criteria
-func (l *ComicLibrary) MatchBooks(list *ComicListItem) ([]*ComicBook, error) {
-	if list == nil {
-		return nil, fmt.Errorf("list is nil")
-	}
-
-	// Check if this is a smart list
-	if !strings.Contains(list.Type, "SmartList") {
-		return nil, fmt.Errorf("list %q is not a smart list (type: %s)", list.Name, list.Type)
-	}
-
-	if len(list.Matchers) == 0 {
-		return nil, fmt.Errorf("no matchers in list %q", list.Name)
-	}
-
-	// Determine matcher mode (AND vs OR)
+// matchBooks evaluates a list's matchers against a slice of candidate books.
+func matchBooks(list *ComicListItem, candidates []*ComicBook) []*ComicBook {
 	matcherMode := list.MatcherMode
 	if matcherMode == "" {
-		matcherMode = "And" // Default to AND
+		matcherMode = "And"
 	}
 
-	// Evaluate each book
-	var matchedBooks []*ComicBook
-	for i := range l.Books {
-		book := &l.Books[i]
-
-		var matches bool
+	var matched []*ComicBook
+	for _, book := range candidates {
+		var ok bool
 		if matcherMode == "Or" {
-			// OR mode: book matches if ANY matcher matches
-			matches = false
 			for j := range list.Matchers {
 				if evaluateMatcher(&list.Matchers[j], book) {
-					matches = true
+					ok = true
 					break
 				}
 			}
 		} else {
-			// AND mode: book matches if ALL matchers match
-			matches = true
+			ok = true
 			for j := range list.Matchers {
 				if !evaluateMatcher(&list.Matchers[j], book) {
-					matches = false
+					ok = false
 					break
 				}
 			}
 		}
+		if ok {
+			matched = append(matched, book)
+		}
+	}
+	return matched
+}
 
-		if matches {
-			matchedBooks = append(matchedBooks, book)
+// MatchBooks evaluates a smart list against the library.
+// If the list has a BaseListId, candidates are first restricted to books
+// matching that base list (mirrors ComicRack's "Match on [source]" scope).
+func (l *ComicLibrary) MatchBooks(list *ComicListItem) ([]*ComicBook, error) {
+	if list == nil {
+		return nil, fmt.Errorf("list is nil")
+	}
+	if !strings.Contains(list.Type, "SmartList") {
+		return nil, fmt.Errorf("list %q is not a smart list (type: %s)", list.Name, list.Type)
+	}
+	if len(list.Matchers) == 0 {
+		return nil, fmt.Errorf("no matchers in list %q", list.Name)
+	}
+
+	// Build the candidate set.
+	var candidates []*ComicBook
+	if list.BaseListId != "" {
+		baseList := l.FindListByID(list.BaseListId)
+		if baseList == nil {
+			// Base list not found — treat as empty scope.
+			return nil, nil
+		}
+		if strings.Contains(baseList.Type, "SmartList") {
+			// Recursively evaluate the base smart list.
+			var err error
+			candidates, err = l.MatchBooks(baseList)
+			if err != nil {
+				return nil, fmt.Errorf("evaluating base list %q: %w", baseList.Name, err)
+			}
+		} else {
+			// Reading list — use the referenced books directly.
+			candidates = l.GetBooksByList(baseList)
+		}
+	} else {
+		candidates = make([]*ComicBook, len(l.Books))
+		for i := range l.Books {
+			candidates[i] = &l.Books[i]
 		}
 	}
 
-	return matchedBooks, nil
+	return matchBooks(list, candidates), nil
 }
