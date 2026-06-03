@@ -158,10 +158,9 @@ func GetMatcherInfo(m ComicBookMatcher) MatcherInfo {
 			negation = "NOT "
 		}
 		if m.MatchValue2 == "" {
-			// Key-existence check
 			return MatcherInfo{
 				Field:    fieldName,
-				Operator: negation + "exists",
+				Operator: negation + "is blank",
 			}
 		}
 		return MatcherInfo{

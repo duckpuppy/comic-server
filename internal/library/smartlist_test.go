@@ -733,48 +733,69 @@ func TestNewMatcherFromXML(t *testing.T) {
 	}
 }
 
-// TestCustomValuesMatcher tests the CustomValues matcher including key-existence checks
+// TestCustomValuesMatcher tests the CustomValues matcher.
+// ComicRack's GetCustomValue returns null for absent keys; null is coerced to ""
+// before comparison. So "key is blank" (MatchValue2="") is true when the key is
+// absent OR has an empty value. NOT("key is blank") = key has a non-empty value.
 func TestCustomValuesMatcher(t *testing.T) {
 	tests := []struct {
-		name       string
-		store      string
-		matchKey   string
-		matchVal   string
-		not        bool
-		want       bool
+		name     string
+		store    string
+		matchKey string
+		matchVal string
+		not      bool
+		want     bool
 	}{
+		// "is blank" (MatchValue2=""): true when key absent or has empty value
 		{
-			name:     "key exists - match",
-			store:    ",comicvine_issue=133658,comicvine_volume=20784",
+			name:     "key absent - is blank = true",
+			store:    ",comicvine_volume=20784",
 			matchKey: "comicvine_issue",
 			matchVal: "",
 			want:     true,
 		},
 		{
-			name:     "key not present - no match",
-			store:    ",comicvine_volume=20784",
+			name:     "key with value - is blank = false",
+			store:    ",comicvine_issue=133658,comicvine_volume=20784",
 			matchKey: "comicvine_issue",
 			matchVal: "",
 			want:     false,
 		},
 		{
-			name:     "NOT key exists - filters book with key",
+			name:     "empty store - is blank = true",
+			store:    "",
+			matchKey: "comicvine_issue",
+			matchVal: "",
+			want:     true,
+		},
+		// NOT("is blank") = key has a non-empty value
+		{
+			name:     "NOT blank - passes book with value (scraped)",
 			store:    ",comicvine_issue=133658,comicvine_volume=20784",
+			matchKey: "comicvine_issue",
+			matchVal: "",
+			not:      true,
+			want:     true,
+		},
+		{
+			name:     "NOT blank - rejects book with absent key (unscraped)",
+			store:    ",comicvine_volume=20784",
 			matchKey: "comicvine_issue",
 			matchVal: "",
 			not:      true,
 			want:     false,
 		},
 		{
-			name:     "NOT key exists - passes book without key",
-			store:    ",comicvine_volume=20784",
+			name:     "NOT blank - rejects empty store",
+			store:    "",
 			matchKey: "comicvine_issue",
 			matchVal: "",
 			not:      true,
-			want:     true,
+			want:     false,
 		},
+		// Specific value (MatchValue2 non-empty)
 		{
-			name:     "key+value match",
+			name:     "key+value exact match",
 			store:    ",comicvine_issue=133658",
 			matchKey: "comicvine_issue",
 			matchVal: "133658",
@@ -785,13 +806,6 @@ func TestCustomValuesMatcher(t *testing.T) {
 			store:    ",comicvine_issue=133658",
 			matchKey: "comicvine_issue",
 			matchVal: "999999",
-			want:     false,
-		},
-		{
-			name:     "empty store - no match",
-			store:    "",
-			matchKey: "comicvine_issue",
-			matchVal: "",
 			want:     false,
 		},
 	}

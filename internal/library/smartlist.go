@@ -233,47 +233,45 @@ func (m *Matcher) matchInternal(book *ComicBook) bool {
 	// Special handling for CustomValues matcher
 	if m.Type == "CustomValues" {
 		// CustomValuesStore format: ",key1=value1,key2=value2"
-		// When MatchValue2 (expected value) is empty, check for key existence only.
-		// When MatchValue2 is set, check for exact key=value pair.
+		// Mirrors ComicRack's GetCustomValue which returns null for missing keys.
+		// null is coerced to "" before comparison, so a missing key == "".
+		// "Custom Value key is (blank)" is true when key is absent OR has empty value.
+		// NOT of that → true only when key has a non-empty value.
 		store := book.CustomValuesStore
 		key := m.MatchValue
 		expectedValue := m.MatchValue2
-		checkValueToo := expectedValue != ""
 
-		pairs := strings.Split(store, ",")
-		for _, pair := range pairs {
+		// Find the actual stored value for this key; nil means key absent.
+		var found *string
+		for _, pair := range strings.Split(store, ",") {
 			pair = strings.TrimSpace(pair)
 			if pair == "" {
 				continue
 			}
 			parts := strings.SplitN(pair, "=", 2)
-			if len(parts) < 1 {
-				continue
-			}
 			pairKey := strings.TrimSpace(parts[0])
-
 			keyMatch := (m.IgnoreCase && strings.EqualFold(pairKey, key)) || (!m.IgnoreCase && pairKey == key)
 			if !keyMatch {
 				continue
 			}
-			if !checkValueToo {
-				return true
-			}
-			// Key matched; now check value
+			val := ""
 			if len(parts) == 2 {
-				pairValue := strings.TrimSpace(parts[1])
-				if m.IgnoreCase {
-					if strings.EqualFold(pairValue, expectedValue) {
-						return true
-					}
-				} else {
-					if pairValue == expectedValue {
-						return true
-					}
-				}
+				val = strings.TrimSpace(parts[1])
 			}
+			found = &val
+			break
 		}
-		return false
+
+		// Coerce nil (absent key) to "" — mirrors ComicRack's null coercion.
+		actualValue := ""
+		if found != nil {
+			actualValue = *found
+		}
+
+		if m.IgnoreCase {
+			return strings.EqualFold(actualValue, expectedValue)
+		}
+		return actualValue == expectedValue
 	}
 
 	// Extract the value from the book based on matcher type
