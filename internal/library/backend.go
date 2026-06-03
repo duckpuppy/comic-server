@@ -16,6 +16,9 @@ type Backend interface {
 	// Smart list evaluation
 	MatchBooks(list *ComicListItem) ([]*ComicBook, error)
 
+	// GetBooksForList returns books for any list type (SmartList, IdList, ReadingList).
+	GetBooksForList(list *ComicListItem) ([]*ComicBook, error)
+
 	// Write operations (for reverse sync)
 	UpdateBook(book *ComicBook) error
 	UpdateBooks(books []*ComicBook) error

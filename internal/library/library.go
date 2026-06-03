@@ -142,6 +142,9 @@ type ComicListItem struct {
 	// For ComicSmartListItem
 	Matchers []ComicBookMatcher `xml:"Matchers>ComicBookMatcher,omitempty"`
 
+	// For ComicIdListItem — explicit set of books stored by GUID
+	BookIds []string `xml:"BookIds>guid,omitempty"`
+
 	// For ComicListItemFolder
 	ChildItems []ComicListItem `xml:"Items>Item,omitempty"`
 	Collapsed  bool            `xml:"Collapsed,omitempty"`

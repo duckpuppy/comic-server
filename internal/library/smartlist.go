@@ -716,3 +716,25 @@ func (l *ComicLibrary) MatchBooks(list *ComicListItem) ([]*ComicBook, error) {
 
 	return matchBooks(list, candidates), nil
 }
+
+// GetBooksForList returns books for any list type: SmartList (matcher-based),
+// IdList (explicit GUID set), or ReadingList (ordered book references).
+func (l *ComicLibrary) GetBooksForList(list *ComicListItem) ([]*ComicBook, error) {
+	if list == nil {
+		return nil, fmt.Errorf("list is nil")
+	}
+	if strings.Contains(list.Type, "SmartList") {
+		return l.MatchBooks(list)
+	}
+	if strings.Contains(list.Type, "IdListItem") {
+		books := make([]*ComicBook, 0, len(list.BookIds))
+		for _, id := range list.BookIds {
+			if book := l.GetBook(id); book != nil {
+				books = append(books, book)
+			}
+		}
+		return books, nil
+	}
+	// ComicReadingList and anything else — use Items references
+	return l.GetBooksByList(list), nil
+}

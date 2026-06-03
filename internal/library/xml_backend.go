@@ -103,6 +103,14 @@ func (b *XMLBackend) MatchBooks(list *ComicListItem) ([]*ComicBook, error) {
 	return b.library.MatchBooks(list)
 }
 
+// GetBooksForList returns books for any list type (SmartList, IdList, ReadingList).
+func (b *XMLBackend) GetBooksForList(list *ComicListItem) ([]*ComicBook, error) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	return b.library.GetBooksForList(list)
+}
+
 // UpdateBook updates a single book in the library.
 func (b *XMLBackend) UpdateBook(book *ComicBook) error {
 	b.mu.Lock()

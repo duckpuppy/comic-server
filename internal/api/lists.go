@@ -52,12 +52,11 @@ func (s *Server) buildListTree(items []library.ComicListItem) []ListTreeNode {
 		if isFolder {
 			// Recursively build children for folders
 			node.Children = s.buildListTree(item.ChildItems)
-		} else if strings.Contains(item.Type, "SmartList") {
-			// For smart lists, get book count and matcher info
+		} else if strings.Contains(item.Type, "SmartList") || strings.Contains(item.Type, "IdListItem") {
+			// For smart lists and id lists, get book count and matcher info
 			count, found := s.listCache.GetCount(item.ID)
 			if !found {
-				// Evaluate list to get count
-				matches, err := s.backend.MatchBooks(item)
+				matches, err := s.backend.GetBooksForList(item)
 				if err != nil {
 					count = 0
 				} else {
@@ -140,31 +139,30 @@ func (s *Server) handleGetLists(w http.ResponseWriter, r *http.Request) {
 				Int("child_count", len(list.ChildItems)).
 				Msg("Checking list")
 
-			// Only include smart lists (use Contains to match sync code behavior)
-			if strings.Contains(list.Type, "SmartList") {
-				// Get cached count, or calculate if not cached
+			// Include smart lists and id lists (not folders or reading lists)
+			isSmartOrId := strings.Contains(list.Type, "SmartList") || strings.Contains(list.Type, "IdListItem")
+			if isSmartOrId {
 				count, found := s.listCache.GetCount(list.ID)
 				if !found {
-					// Evaluate list to get count
 					log.Debug().
 						Str("list_name", list.Name).
 						Int("total_books", s.backend.BookCount()).
 						Int("matcher_count", len(list.Matchers)).
-						Msg("Evaluating smart list")
+						Msg("Evaluating list")
 
-					matches, err := s.backend.MatchBooks(&list)
+					matches, err := s.backend.GetBooksForList(&list)
 					if err != nil {
 						log.Warn().Err(err).
 							Str("list_id", list.ID).
 							Str("list_name", list.Name).
-							Msg("Failed to match books for list")
+							Msg("Failed to get books for list")
 						count = 0
 					} else {
 						count = len(matches)
 						log.Debug().
 							Str("list_name", list.Name).
 							Int("matched_books", count).
-							Msg("Smart list evaluation complete")
+							Msg("List evaluation complete")
 					}
 					s.listCache.SetCount(list.ID, count)
 				}
@@ -266,9 +264,9 @@ func (s *Server) handleGetListDetail(w http.ResponseWriter, r *http.Request) {
 	// Get cached count
 	count, found := s.listCache.GetCount(listID)
 	if !found {
-		matches, err := s.backend.MatchBooks(targetList)
+		matches, err := s.backend.GetBooksForList(targetList)
 		if err != nil {
-			log.Warn().Err(err).Str("list_id", listID).Msg("Failed to match books for list")
+			log.Warn().Err(err).Str("list_id", listID).Msg("Failed to get books for list")
 			count = 0
 		} else {
 			count = len(matches)
@@ -358,9 +356,9 @@ func (s *Server) handleGetListPreview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Evaluate list
-	matches, err := s.backend.MatchBooks(targetList)
+	matches, err := s.backend.GetBooksForList(targetList)
 	if err != nil {
-		log.Error().Err(err).Str("list_id", listID).Msg("Failed to match books for list")
+		log.Error().Err(err).Str("list_id", listID).Msg("Failed to get books for list")
 		http.Error(w, "Failed to evaluate list", http.StatusInternalServerError)
 		return
 	}

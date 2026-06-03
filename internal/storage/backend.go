@@ -130,6 +130,20 @@ func (b *SQLiteBackend) MatchBooks(list *library.ComicListItem) ([]*library.Comi
 	return tempLib.MatchBooks(list)
 }
 
+// GetBooksForList returns books for any list type (SmartList, IdList, ReadingList).
+func (b *SQLiteBackend) GetBooksForList(list *library.ComicListItem) ([]*library.ComicBook, error) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	books, err := b.db.GetAllBooks()
+	if err != nil {
+		return nil, err
+	}
+
+	tempLib := &library.ComicLibrary{Books: books}
+	return tempLib.GetBooksForList(list)
+}
+
 // UpdateBook updates a single book in the database.
 func (b *SQLiteBackend) UpdateBook(book *library.ComicBook) error {
 	b.mu.Lock()
