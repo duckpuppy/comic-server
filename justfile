@@ -4,24 +4,24 @@ default:
 
 # Build the comic-server binary
 build:
-    go build -o comic-server
+    mise exec -- go build -o comic-server
 
 # Build the test client
 build-testclient:
-    go build -o testclient ./cmd/testclient
+    mise exec -- go build -o testclient ./cmd/testclient
 
 # Build for Windows (useful when developing in WSL2)
 build-windows:
-    GOOS=windows GOARCH=amd64 go build -o comic-server.exe
+    mise exec -- env GOOS=windows GOARCH=amd64 go build -o comic-server.exe
     @echo "Windows binary created: comic-server.exe"
     @echo "Run on Windows: .\\comic-server.exe server --library path\\to\\ComicDb.xml"
 
 # Build for multiple platforms
 build-all:
-    GOOS=linux GOARCH=amd64 go build -o comic-server-linux-amd64
-    GOOS=darwin GOARCH=amd64 go build -o comic-server-darwin-amd64
-    GOOS=darwin GOARCH=arm64 go build -o comic-server-darwin-arm64
-    GOOS=windows GOARCH=amd64 go build -o comic-server-windows-amd64.exe
+    mise exec -- env GOOS=linux GOARCH=amd64 go build -o comic-server-linux-amd64
+    mise exec -- env GOOS=darwin GOARCH=amd64 go build -o comic-server-darwin-amd64
+    mise exec -- env GOOS=darwin GOARCH=arm64 go build -o comic-server-darwin-arm64
+    mise exec -- env GOOS=windows GOARCH=amd64 go build -o comic-server-windows-amd64.exe
 
 # Clean build artifacts
 clean:
@@ -29,30 +29,30 @@ clean:
 
 # Run all tests
 test:
-    go test ./...
+    mise exec -- go test ./...
 
 # Run tests with verbose output
 test-verbose:
-    go test -v ./...
+    mise exec -- go test -v ./...
 
 # Run tests with coverage
 test-coverage:
-    go test -cover ./...
-    go test -coverprofile=coverage.out ./...
-    go tool cover -html=coverage.out -o coverage.html
+    mise exec -- go test -cover ./...
+    mise exec -- go test -coverprofile=coverage.out ./...
+    mise exec -- go tool cover -html=coverage.out -o coverage.html
     @echo "Coverage report: coverage.html"
 
 # Run a specific test by pattern
 test-match PATTERN:
-    go test -v -run {{PATTERN}} ./...
+    mise exec -- go test -v -run {{PATTERN}} ./...
 
 # Format Go code
 fmt:
-    go fmt ./...
+    mise exec -- go fmt ./...
 
 # Run go vet
 vet:
-    go vet ./...
+    mise exec -- go vet ./...
 
 # Run all linters (fmt, vet)
 lint: fmt vet
@@ -79,17 +79,17 @@ version: build
 
 # Install dependencies
 deps:
-    go mod download
-    go mod verify
+    mise exec -- go mod download
+    mise exec -- go mod verify
 
 # Update dependencies
 deps-update:
-    go get -u ./...
-    go mod tidy
+    mise exec -- go get -u ./...
+    mise exec -- go mod tidy
 
 # Tidy go.mod
 tidy:
-    go mod tidy
+    mise exec -- go mod tidy
 
 # Build and run tests
 ci: lint test build
