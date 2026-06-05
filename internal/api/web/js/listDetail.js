@@ -136,7 +136,10 @@ class ListDetail {
                         <div class="list-detail-header">
                             <h1>${this.escapeHtml(this.list.name)}</h1>
                             <p class="list-count">
-                                ${this.list.book_count.toLocaleString()} comics match this list
+                                ${this.list.book_count.toLocaleString()} comics
+                                ${this.list.unread_count > 0
+                                    ? ` &mdash; <span class="list-unread-count">${this.list.unread_count.toLocaleString()} unread</span>`
+                                    : ' &mdash; <span class="list-all-read">all read</span>'}
                             </p>
                         </div>
 

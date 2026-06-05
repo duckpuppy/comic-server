@@ -185,11 +185,16 @@ class ListsBrowser {
     renderIconList(list) {
         const isIdList = list.type && list.type.includes('IdListItem');
         const cls = isIdList ? 'fb-large-idlist' : 'fb-large-list';
-        const count = (list.book_count || 0).toLocaleString();
+        const total = list.book_count || 0;
+        const unread = list.unread_count || 0;
+        const countHtml = typeof renderCountBadges === 'function'
+            ? renderCountBadges(total, unread, false)
+            : `<span class="book-count">${total.toLocaleString()}</span>`;
         return `
-            <div class="fb-icon-item fb-icon-list-item" data-list-id="${list.id}" title="${this.escapeHtml(list.name)} — ${count} comics">
+            <div class="fb-icon-item fb-icon-list-item" data-list-id="${list.id}" title="${this.escapeHtml(list.name)} — ${total.toLocaleString()} comics, ${unread.toLocaleString()} unread">
                 <div class="${cls}"></div>
                 <span class="fb-icon-label">${this.escapeHtml(list.name)}</span>
+                <span class="fb-icon-counts">${countHtml}</span>
             </div>
         `;
     }
@@ -244,7 +249,11 @@ class ListsBrowser {
         const typeLabel = isIdList ? 'ID List' : 'Smart List';
         const typeClass = isIdList ? 'fb-type-idlist' : 'fb-type-smart';
         const iconClass = isIdList ? 'fb-row-idlist-icon' : 'fb-row-list-icon';
-        const count = (list.book_count || 0).toLocaleString();
+        const total = list.book_count || 0;
+        const unread = list.unread_count || 0;
+        const countHtml = typeof renderCountBadges === 'function'
+            ? renderCountBadges(total, unread, false)
+            : `<span class="fb-col-count">${total.toLocaleString()}</span>`;
 
         return `
             <div class="fb-row fb-list-row" data-list-id="${list.id}">
@@ -253,7 +262,7 @@ class ListsBrowser {
                     <span class="fb-row-name">${this.escapeHtml(list.name)}</span>
                 </span>
                 <span class="fb-col-type ${typeClass}">${typeLabel}</span>
-                <span class="fb-col-count">${count}</span>
+                <span class="fb-col-count fb-count-badges">${countHtml}</span>
             </div>
         `;
     }

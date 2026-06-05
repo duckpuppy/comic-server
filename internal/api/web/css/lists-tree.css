@@ -66,19 +66,59 @@
     white-space: nowrap;
 }
 
+/* Base badge (used for book counts in tree nodes) */
 .tree-node .book-count {
-    background: var(--count-bg, rgba(0, 0, 0, 0.1));
-    color: var(--count-color, inherit);
-    padding: 2px 8px;
+    padding: 2px 7px;
     border-radius: 12px;
-    font-size: 12px;
-    font-weight: 500;
+    font-size: 11px;
+    font-weight: 600;
     flex-shrink: 0;
+    line-height: 1.5;
 }
 
-.tree-node.selected .book-count {
-    background: rgba(255, 255, 255, 0.2);
-    color: white;
+/* All-read: green tint */
+.book-count.count-read {
+    background: rgba(166, 227, 161, 0.25);  /* Catppuccin green tinted */
+    color: #40a02b;
+}
+
+/* Has unread: amber for unread count */
+.book-count.count-unread {
+    background: rgba(223, 160, 33, 0.2);
+    color: #df8e1d;                          /* Catppuccin yellow */
+}
+
+/* Neutral total when alongside unread badge */
+.book-count.count-total {
+    background: rgba(0, 0, 0, 0.08);
+    color: var(--text-secondary);
+}
+
+/* Zero count: dim */
+.book-count.count-zero {
+    background: rgba(0, 0, 0, 0.06);
+    color: var(--text-secondary);
+    opacity: 0.6;
+}
+
+/* Selected node: white-tinted versions */
+.tree-node.selected .book-count.count-read,
+.book-count.count-read.count-selected {
+    background: rgba(255, 255, 255, 0.25);
+    color: #b9f7b2;
+}
+
+.tree-node.selected .book-count.count-unread,
+.book-count.count-unread.count-selected {
+    background: rgba(255, 210, 100, 0.3);
+    color: #ffe08a;
+}
+
+.tree-node.selected .book-count.count-total,
+.book-count.count-total.count-selected,
+.tree-node.selected .book-count.count-zero {
+    background: rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.8);
 }
 
 /* Main content area (default: normal scrolling with padding) */

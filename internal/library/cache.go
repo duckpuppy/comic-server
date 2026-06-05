@@ -14,6 +14,7 @@ type ListCache struct {
 
 type cacheEntry struct {
 	count     int
+	unread    int
 	timestamp time.Time
 }
 
@@ -43,13 +44,42 @@ func (c *ListCache) GetCount(listID string) (int, bool) {
 	return entry.count, true
 }
 
-// SetCount sets a count in the cache with current timestamp
+// SetCount stores a total count, preserving any cached unread count.
 func (c *ListCache) SetCount(listID string, count int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	unread := 0
+	if existing, ok := c.counts[listID]; ok {
+		unread = existing.unread
+	}
+	c.counts[listID] = &cacheEntry{
+		count:     count,
+		unread:    unread,
+		timestamp: time.Now(),
+	}
+}
+
+// GetCounts retrieves both total and unread counts if cached and unexpired.
+func (c *ListCache) GetCounts(listID string) (count, unread int, found bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	entry, exists := c.counts[listID]
+	if !exists || time.Since(entry.timestamp) > c.ttl {
+		return 0, 0, false
+	}
+	return entry.count, entry.unread, true
+}
+
+// SetCounts stores both total and unread counts.
+func (c *ListCache) SetCounts(listID string, count, unread int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	c.counts[listID] = &cacheEntry{
 		count:     count,
+		unread:    unread,
 		timestamp: time.Now(),
 	}
 }

@@ -211,6 +211,19 @@ func SaveLibrary(path string, library *ComicLibrary) error {
 	return nil
 }
 
+// IsUnread returns true if the book has not been fully read.
+// A book is unread if it has never been opened, or if LastPageRead
+// hasn't reached the final page of the book.
+func (b *ComicBook) IsUnread() bool {
+	if b.OpenCount == 0 {
+		return true
+	}
+	if b.PageCount > 0 {
+		return b.LastPageRead < b.PageCount-1
+	}
+	return false
+}
+
 // GetBook returns a book by ID
 func (l *ComicLibrary) GetBook(id string) *ComicBook {
 	for i := range l.Books {

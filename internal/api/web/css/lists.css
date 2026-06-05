@@ -361,6 +361,33 @@
     color: var(--text-primary);
 }
 
+/* When the count cell contains badge spans, flex them */
+.fb-count-badges {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 4px;
+}
+
+/* Count badges inside the file browser rows */
+.fb-count-badges .book-count {
+    font-size: 11px;
+}
+
+/* Counts below the icon in icon view */
+.fb-icon-counts {
+    display: flex;
+    justify-content: center;
+    gap: 3px;
+    flex-wrap: wrap;
+    min-height: 18px;
+}
+
+.fb-icon-counts .book-count {
+    font-size: 10px;
+    padding: 1px 5px;
+}
+
 .fb-col-subdesc {
     font-size: 0.78rem;
     color: var(--text-secondary);
@@ -598,6 +625,16 @@
 .list-count {
     font-size: 1rem;
     color: var(--text-secondary);
+}
+
+.list-unread-count {
+    color: #df8e1d;   /* Catppuccin yellow */
+    font-weight: 600;
+}
+
+.list-all-read {
+    color: #40a02b;   /* Catppuccin green */
+    font-weight: 600;
 }
 
 /* Detail Content */

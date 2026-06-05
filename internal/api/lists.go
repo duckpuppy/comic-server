@@ -17,6 +17,7 @@ type ListSummary struct {
 	Type         string `json:"type"`
 	MatcherMode  string `json:"matcher_mode"`
 	BookCount    int    `json:"book_count"`
+	UnreadCount  int    `json:"unread_count"`
 	MatcherCount int    `json:"matcher_count"`
 }
 
@@ -27,9 +28,21 @@ type ListTreeNode struct {
 	Type         string         `json:"type"`
 	IsFolder     bool           `json:"is_folder"`
 	BookCount    int            `json:"book_count,omitempty"`
+	UnreadCount  int            `json:"unread_count,omitempty"`
 	MatcherCount int            `json:"matcher_count,omitempty"`
 	MatcherMode  string         `json:"matcher_mode,omitempty"`
 	Children     []ListTreeNode `json:"children,omitempty"`
+}
+
+// countUnread returns the number of unread books in a slice.
+func countUnread(books []*library.ComicBook) int {
+	n := 0
+	for _, b := range books {
+		if b.IsUnread() {
+			n++
+		}
+	}
+	return n
 }
 
 // buildListTree recursively builds a tree structure from ComicListItems
@@ -53,19 +66,20 @@ func (s *Server) buildListTree(items []library.ComicListItem) []ListTreeNode {
 			// Recursively build children for folders
 			node.Children = s.buildListTree(item.ChildItems)
 		} else if strings.Contains(item.Type, "SmartList") || strings.Contains(item.Type, "IdListItem") {
-			// For smart lists and id lists, get book count and matcher info
-			count, found := s.listCache.GetCount(item.ID)
+			count, unread, found := s.listCache.GetCounts(item.ID)
 			if !found {
 				matches, err := s.backend.GetBooksForList(item)
 				if err != nil {
-					count = 0
+					count, unread = 0, 0
 				} else {
 					count = len(matches)
+					unread = countUnread(matches)
 				}
-				s.listCache.SetCount(item.ID, count)
+				s.listCache.SetCounts(item.ID, count, unread)
 			}
 
 			node.BookCount = count
+			node.UnreadCount = unread
 			node.MatcherCount = len(item.Matchers)
 			node.MatcherMode = item.MatcherMode
 		}
@@ -142,7 +156,7 @@ func (s *Server) handleGetLists(w http.ResponseWriter, r *http.Request) {
 			// Include smart lists and id lists (not folders or reading lists)
 			isSmartOrId := strings.Contains(list.Type, "SmartList") || strings.Contains(list.Type, "IdListItem")
 			if isSmartOrId {
-				count, found := s.listCache.GetCount(list.ID)
+				count, unread, found := s.listCache.GetCounts(list.ID)
 				if !found {
 					log.Debug().
 						Str("list_name", list.Name).
@@ -156,15 +170,17 @@ func (s *Server) handleGetLists(w http.ResponseWriter, r *http.Request) {
 							Str("list_id", list.ID).
 							Str("list_name", list.Name).
 							Msg("Failed to get books for list")
-						count = 0
+						count, unread = 0, 0
 					} else {
 						count = len(matches)
+						unread = countUnread(matches)
 						log.Debug().
 							Str("list_name", list.Name).
 							Int("matched_books", count).
+							Int("unread_books", unread).
 							Msg("List evaluation complete")
 					}
-					s.listCache.SetCount(list.ID, count)
+					s.listCache.SetCounts(list.ID, count, unread)
 				}
 
 				lists = append(lists, ListSummary{
@@ -173,6 +189,7 @@ func (s *Server) handleGetLists(w http.ResponseWriter, r *http.Request) {
 					Type:         list.Type,
 					MatcherMode:  list.MatcherMode,
 					BookCount:    count,
+					UnreadCount:  unread,
 					MatcherCount: len(list.Matchers),
 				})
 			}
@@ -230,6 +247,7 @@ type ListDetail struct {
 	MatcherMode          string                `json:"matcher_mode"`
 	MatcherModeFormatted string                `json:"matcher_mode_formatted"`
 	BookCount            int                   `json:"book_count"`
+	UnreadCount          int                   `json:"unread_count"`
 	Matchers             []library.MatcherInfo `json:"matchers"`
 }
 
@@ -261,17 +279,18 @@ func (s *Server) handleGetListDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get cached count
-	count, found := s.listCache.GetCount(listID)
+	// Get cached counts
+	count, unread, found := s.listCache.GetCounts(listID)
 	if !found {
 		matches, err := s.backend.GetBooksForList(targetList)
 		if err != nil {
 			log.Warn().Err(err).Str("list_id", listID).Msg("Failed to get books for list")
-			count = 0
+			count, unread = 0, 0
 		} else {
 			count = len(matches)
+			unread = countUnread(matches)
 		}
-		s.listCache.SetCount(listID, count)
+		s.listCache.SetCounts(listID, count, unread)
 	}
 
 	// Format matchers
@@ -287,6 +306,7 @@ func (s *Server) handleGetListDetail(w http.ResponseWriter, r *http.Request) {
 		MatcherMode:          targetList.MatcherMode,
 		MatcherModeFormatted: library.FormatMatcherMode(targetList.MatcherMode),
 		BookCount:            count,
+		UnreadCount:          unread,
 		Matchers:             matchers,
 	}
 

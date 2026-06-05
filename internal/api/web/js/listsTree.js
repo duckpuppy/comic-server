@@ -106,14 +106,15 @@ class ListsTree {
             return html;
         } else {
             const isSelected = this.selectedListId === node.id;
-            const count = node.book_count || 0;
+            const total = node.book_count || 0;
+            const unread = node.unread_count || 0;
             return `
                 <div class="tree-node list${isSelected ? ' selected' : ''}"
                      style="padding-left: ${indent + 16}px"
                      data-list-id="${node.id}">
                     <span class="list-icon">📋</span>
                     <span class="node-name">${node.name}</span>
-                    <span class="book-count">${count.toLocaleString()}</span>
+                    ${renderCountBadges(total, unread, isSelected)}
                 </div>
             `;
         }
@@ -159,3 +160,20 @@ class ListsTree {
 }
 
 window.ListsTree = ListsTree;
+
+// Shared helper: renders count badge(s) for a list node.
+// When all books are read (unread === 0): single green badge showing total.
+// When some are unread: amber badge showing unread + neutral badge showing total.
+// isSelected: when true the node has a blue background, so use white-tinted badges.
+function renderCountBadges(total, unread, isSelected) {
+    if (total === 0) {
+        return `<span class="book-count count-zero${isSelected ? ' count-selected' : ''}">${total}</span>`;
+    }
+    if (unread === 0) {
+        return `<span class="book-count count-read${isSelected ? ' count-selected' : ''}">${total.toLocaleString()}</span>`;
+    }
+    return `
+        <span class="book-count count-unread${isSelected ? ' count-selected' : ''}" title="${unread.toLocaleString()} unread">${unread.toLocaleString()}</span>
+        <span class="book-count count-total${isSelected ? ' count-selected' : ''}" title="${total.toLocaleString()} total">${total.toLocaleString()}</span>
+    `;
+}
