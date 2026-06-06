@@ -24,6 +24,10 @@ func (db *DB) GetBook(id string) (*library.ComicBook, error) {
 			page_count, web, scan_information, series_complete,
 			black_and_white, manga,
 			preferred_front_cover, added_time, released_time,
+			file_size, file_modified_time, file_creation_time,
+			isbn, book_age, book_condition, book_store, book_owner,
+			book_collection_status, book_notes, book_location,
+			book_price, new_pages,
 			enable_proposed, enable_dynamic_update, last_opened_from_list_id,
 			pages
 		FROM books WHERE id = ?
@@ -66,6 +70,10 @@ func (db *DB) GetAllBooks() ([]library.ComicBook, error) {
 			page_count, web, scan_information, series_complete,
 			black_and_white, manga,
 			preferred_front_cover, added_time, released_time,
+			file_size, file_modified_time, file_creation_time,
+			isbn, book_age, book_condition, book_store, book_owner,
+			book_collection_status, book_notes, book_location,
+			book_price, new_pages,
 			enable_proposed, enable_dynamic_update, last_opened_from_list_id,
 			pages
 		FROM books
@@ -235,6 +243,7 @@ type scanner interface {
 func scanBook(s scanner) (*library.ComicBook, error) {
 	var book library.ComicBook
 	var openedTime, addedTime, releasedTime sql.NullString
+	var fileModifiedTime, fileCreationTime sql.NullString
 	var pagesJSON string
 	var checked, fileIsMissing, comicInfoIsDirty, enableProposed, enableDynamicUpdate int
 
@@ -251,6 +260,10 @@ func scanBook(s scanner) (*library.ComicBook, error) {
 		&book.PageCount, &book.Web, &book.ScanInformation, &book.SeriesComplete,
 		&book.BlackAndWhite, &book.Manga,
 		&book.PreferredFrontCover, &addedTime, &releasedTime,
+		&book.FileSize, &fileModifiedTime, &fileCreationTime,
+		&book.ISBN, &book.BookAge, &book.BookCondition, &book.BookStore, &book.BookOwner,
+		&book.BookCollectionStatus, &book.BookNotes, &book.BookLocation,
+		&book.BookPrice, &book.NewPages,
 		&enableProposed, &enableDynamicUpdate, &book.LastOpenedFromListID,
 		&pagesJSON,
 	)
@@ -274,6 +287,12 @@ func scanBook(s scanner) (*library.ComicBook, error) {
 	}
 	if releasedTime.Valid {
 		book.ReleasedTime = parseComicTime(releasedTime.String)
+	}
+	if fileModifiedTime.Valid {
+		book.FileModifiedTime = parseComicTime(fileModifiedTime.String)
+	}
+	if fileCreationTime.Valid {
+		book.FileCreationTime = parseComicTime(fileCreationTime.String)
 	}
 
 	// Parse pages JSON

@@ -165,6 +165,10 @@ func (db *DB) insertBook(tx *sql.Tx, book *library.ComicBook, hash string) error
 			page_count, web, scan_information, series_complete,
 			black_and_white, manga,
 			preferred_front_cover, added_time, released_time,
+			file_size, file_modified_time, file_creation_time,
+			isbn, book_age, book_condition, book_store, book_owner,
+			book_collection_status, book_notes, book_location,
+			book_price, new_pages,
 			enable_proposed, enable_dynamic_update, last_opened_from_list_id,
 			pages, import_hash, updated_at
 		) VALUES (
@@ -181,6 +185,10 @@ func (db *DB) insertBook(tx *sql.Tx, book *library.ComicBook, hash string) error
 			?, ?,
 			?, ?, ?,
 			?, ?, ?,
+			?, ?, ?, ?, ?,
+			?, ?, ?,
+			?, ?,
+			?, ?, ?,
 			?, ?, ?
 		)
 	`,
@@ -196,6 +204,10 @@ func (db *DB) insertBook(tx *sql.Tx, book *library.ComicBook, hash string) error
 		book.PageCount, book.Web, book.ScanInformation, book.SeriesComplete,
 		book.BlackAndWhite, book.Manga,
 		book.PreferredFrontCover, formatTime(book.AddedTime), formatTime(book.ReleasedTime),
+		book.FileSize, formatTime(book.FileModifiedTime), formatTime(book.FileCreationTime),
+		book.ISBN, book.BookAge, book.BookCondition, book.BookStore, book.BookOwner,
+		book.BookCollectionStatus, book.BookNotes, book.BookLocation,
+		book.BookPrice, book.NewPages,
 		boolToInt(book.EnableProposed), boolToInt(book.EnableDynamicUpdate), book.LastOpenedFromListID,
 		string(pagesJSON), hash, now,
 	)
@@ -239,6 +251,10 @@ func (db *DB) updateBook(tx *sql.Tx, book *library.ComicBook, hash string) error
 			page_count = ?, web = ?, scan_information = ?, series_complete = ?,
 			black_and_white = ?, manga = ?,
 			preferred_front_cover = ?, added_time = ?, released_time = ?,
+			file_size = ?, file_modified_time = ?, file_creation_time = ?,
+			isbn = ?, book_age = ?, book_condition = ?, book_store = ?, book_owner = ?,
+			book_collection_status = ?, book_notes = ?, book_location = ?,
+			book_price = ?, new_pages = ?,
 			enable_proposed = ?, enable_dynamic_update = ?, last_opened_from_list_id = ?,
 			pages = ?, import_hash = ?, updated_at = ?
 		WHERE id = ?
@@ -255,6 +271,10 @@ func (db *DB) updateBook(tx *sql.Tx, book *library.ComicBook, hash string) error
 		book.PageCount, book.Web, book.ScanInformation, book.SeriesComplete,
 		book.BlackAndWhite, book.Manga,
 		book.PreferredFrontCover, formatTime(book.AddedTime), formatTime(book.ReleasedTime),
+		book.FileSize, formatTime(book.FileModifiedTime), formatTime(book.FileCreationTime),
+		book.ISBN, book.BookAge, book.BookCondition, book.BookStore, book.BookOwner,
+		book.BookCollectionStatus, book.BookNotes, book.BookLocation,
+		book.BookPrice, book.NewPages,
 		boolToInt(book.EnableProposed), boolToInt(book.EnableDynamicUpdate), book.LastOpenedFromListID,
 		string(pagesJSON), hash, now,
 		book.ID,

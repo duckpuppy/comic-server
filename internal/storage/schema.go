@@ -3,7 +3,7 @@ package storage
 import "fmt"
 
 // Schema version for migrations
-const schemaVersion = 1
+const schemaVersion = 2
 
 // initSchema creates the database tables if they don't exist.
 func (db *DB) initSchema() error {
@@ -18,9 +18,18 @@ func (db *DB) initSchema() error {
 		return nil // Already up to date
 	}
 
-	// Create tables
-	if err := db.createTables(); err != nil {
-		return err
+	if version == 0 {
+		// Fresh database: create all tables at once
+		if err := db.createTables(); err != nil {
+			return err
+		}
+	} else {
+		// Incremental migrations for existing databases
+		if version < 2 {
+			if err := db.migrateV1ToV2(); err != nil {
+				return fmt.Errorf("migrate v1→v2: %w", err)
+			}
+		}
 	}
 
 	// Update schema version
@@ -29,6 +38,35 @@ func (db *DB) initSchema() error {
 		return fmt.Errorf("set schema version: %w", err)
 	}
 
+	return nil
+}
+
+// migrateV1ToV2 adds file system metadata, catalog/ownership, pricing, and dynamic fields.
+func (db *DB) migrateV1ToV2() error {
+	alters := []string{
+		// File system metadata
+		"ALTER TABLE books ADD COLUMN file_size INTEGER DEFAULT 0",
+		"ALTER TABLE books ADD COLUMN file_modified_time TEXT",
+		"ALTER TABLE books ADD COLUMN file_creation_time TEXT",
+		// Catalog / ownership
+		"ALTER TABLE books ADD COLUMN isbn TEXT",
+		"ALTER TABLE books ADD COLUMN book_age TEXT",
+		"ALTER TABLE books ADD COLUMN book_condition TEXT",
+		"ALTER TABLE books ADD COLUMN book_store TEXT",
+		"ALTER TABLE books ADD COLUMN book_owner TEXT",
+		"ALTER TABLE books ADD COLUMN book_collection_status TEXT",
+		"ALTER TABLE books ADD COLUMN book_notes TEXT",
+		"ALTER TABLE books ADD COLUMN book_location TEXT",
+		// Pricing
+		"ALTER TABLE books ADD COLUMN book_price REAL DEFAULT -1",
+		// Dynamic / sync metadata
+		"ALTER TABLE books ADD COLUMN new_pages INTEGER DEFAULT 0",
+	}
+	for _, stmt := range alters {
+		if _, err := db.Exec(stmt); err != nil {
+			return fmt.Errorf("%s: %w", stmt, err)
+		}
+	}
 	return nil
 }
 
@@ -118,6 +156,27 @@ func (db *DB) createTables() error {
 			-- Timestamps
 			added_time TEXT,
 			released_time TEXT,
+
+			-- File system metadata
+			file_size INTEGER DEFAULT 0,
+			file_modified_time TEXT,
+			file_creation_time TEXT,
+
+			-- Catalog / ownership
+			isbn TEXT,
+			book_age TEXT,
+			book_condition TEXT,
+			book_store TEXT,
+			book_owner TEXT,
+			book_collection_status TEXT,
+			book_notes TEXT,
+			book_location TEXT,
+
+			-- Pricing
+			book_price REAL DEFAULT -1,
+
+			-- Dynamic / sync metadata
+			new_pages INTEGER DEFAULT 0,
 
 			-- Dynamic features
 			enable_proposed INTEGER DEFAULT 0,
