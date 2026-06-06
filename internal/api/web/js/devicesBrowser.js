@@ -9,8 +9,9 @@ class DevicesBrowser {
         this.sortBy = 'name'; // 'name', 'name-desc', 'last-seen', 'status'
     }
 
-    async init() {
+    async init(ctx) {
         await this.loadDevices();
+        if (ctx && ctx.aborted) return;
         this.render();
         this.attachListeners();
         this.setupWebSocketListeners();

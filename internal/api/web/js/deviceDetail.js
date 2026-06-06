@@ -11,13 +11,15 @@ class DeviceDetail {
         this.syncProgress = null; // Track active sync progress
     }
 
-    async init() {
+    async init(ctx) {
         await this.loadDeviceInfo();
+        if (ctx && ctx.aborted) return;
         if (this.device) {
             this.render();
             this.attachListeners();
             this.setupWebSocketListeners();
             await this.loadSyncHistory();
+            if (ctx && ctx.aborted) return;
         }
     }
 

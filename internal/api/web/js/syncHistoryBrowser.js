@@ -12,11 +12,12 @@ class SyncHistoryBrowser {
         this.totalItems = 0;
     }
 
-    async init() {
+    async init(ctx) {
         await Promise.all([
             this.loadDevices(),
             this.loadHistory()
         ]);
+        if (ctx && ctx.aborted) return;
         this.render();
         this.attachListeners();
     }

@@ -11,7 +11,7 @@ class ListDetail {
         this.tree = tree; // Use provided tree instance
     }
 
-    async init() {
+    async init(ctx) {
         if (this.tree) {
             this.tree.onListSelected = (listId) => router.navigate(`/lists/${listId}`);
             this.tree.onFolderSelected = (folderId) => this.navigateToFolder(folderId);
@@ -33,6 +33,7 @@ class ListDetail {
             this.loadPreview()
         ]);
 
+        if (ctx && ctx.aborted) return;
         this.render();
         this.attachListeners();
     }

@@ -8,12 +8,13 @@ class DeviceSettings {
         this.settingsPreview = null; // Preview data for current settings
     }
 
-    async init() {
+    async init(ctx) {
         await Promise.all([
             this.loadDeviceInfo(),
             this.loadAllLists()
         ]);
 
+        if (ctx && ctx.aborted) return;
         if (this.device) {
             this.render();
             this.attachListeners();

@@ -109,62 +109,62 @@ document.addEventListener('DOMContentLoaded', () => {
         dashboard.show();
     });
 
-    router.register('/lists', async () => {
+    router.register('/lists', async (params, ctx) => {
         navigation.setActive('lists');
         dashboard.hide();
-        // Initialize shared tree if needed
         if (!listsTree) {
             listsTree = new ListsTree();
             await listsTree.init();
+            if (ctx.aborted) return;
         }
         if (!listsBrowser) {
             listsBrowser = new ListsBrowser(listsTree);
         }
-        await listsBrowser.init();
+        await listsBrowser.init(); // synchronous render, no check needed
     });
 
-    router.register('/lists/:listId', async (params) => {
+    router.register('/lists/:listId', async (params, ctx) => {
         navigation.setActive('lists');
         dashboard.hide();
-        // Initialize shared tree if needed
         if (!listsTree) {
             listsTree = new ListsTree();
             await listsTree.init();
+            if (ctx.aborted) return;
         }
         const listDetail = new ListDetail(params.listId, listsTree);
-        await listDetail.init();
+        await listDetail.init(ctx);
     });
 
-    router.register('/devices', async () => {
+    router.register('/devices', async (params, ctx) => {
         navigation.setActive('devices');
         dashboard.hide();
         if (!devicesBrowser) {
             devicesBrowser = new DevicesBrowser();
         }
-        await devicesBrowser.init();
+        await devicesBrowser.init(ctx);
     });
 
-    router.register('/sync', async () => {
+    router.register('/sync', async (params, ctx) => {
         navigation.setActive('sync');
         dashboard.hide();
         if (!syncHistoryBrowser) {
             syncHistoryBrowser = new SyncHistoryBrowser();
         }
-        await syncHistoryBrowser.init();
+        await syncHistoryBrowser.init(ctx);
     });
 
-    router.register('/devices/:deviceId', async (params) => {
+    router.register('/devices/:deviceId', async (params, ctx) => {
         navigation.setActive('devices');
         dashboard.hide();
         deviceDetail = new DeviceDetail(params.deviceId);
-        await deviceDetail.init();
+        await deviceDetail.init(ctx);
     });
 
-    router.register('/devices/:deviceId/settings', async (params) => {
+    router.register('/devices/:deviceId/settings', async (params, ctx) => {
         navigation.setActive('devices');
         dashboard.hide();
         const deviceSettings = new DeviceSettings(params.deviceId);
-        await deviceSettings.init();
+        await deviceSettings.init(ctx);
     });
 
     console.log('Dashboard initialized with routing');

@@ -3,6 +3,7 @@ class Router {
     constructor() {
         this.routes = new Map();
         this.currentPath = window.location.pathname;
+        this._navCtx = null; // context for the in-flight navigation
 
         // Handle back/forward navigation
         window.addEventListener('popstate', () => this.handleRoute());
@@ -42,9 +43,17 @@ class Router {
     }
 
     /**
-     * Handle current route
+     * Handle current route.
+     * Each navigation gets a fresh context object. When a new navigation
+     * starts, the previous context is marked aborted so in-flight async
+     * handlers know to bail out before rendering.
      */
     handleRoute() {
+        // Abort any in-flight navigation
+        if (this._navCtx) this._navCtx.aborted = true;
+        const ctx = { aborted: false };
+        this._navCtx = ctx;
+
         const path = window.location.pathname;
         this.currentPath = path;
 
@@ -54,7 +63,7 @@ class Router {
             if (match) {
                 // Extract params from named groups
                 const params = match.groups || {};
-                handler(params);
+                handler(params, ctx);
                 return;
             }
         }
