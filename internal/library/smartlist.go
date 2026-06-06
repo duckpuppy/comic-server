@@ -91,6 +91,27 @@ const (
 	MatcherTypeReadPercentage      MatcherType = "ReadPercentage"
 	MatcherTypeManga               MatcherType = "Manga"
 	MatcherTypeAllProperties       MatcherType = "AllProperties"
+	// Miscellaneous string
+	MatcherTypeISBN                MatcherType = "ISBN"
+	MatcherTypeWeb                 MatcherType = "Web"
+	// Book ownership/condition string
+	MatcherTypeBookAge             MatcherType = "BookAge"
+	MatcherTypeBookCondition       MatcherType = "BookCondition"
+	MatcherTypeBookStore           MatcherType = "BookStore"
+	MatcherTypeBookOwner           MatcherType = "BookOwner"
+	MatcherTypeBookCollectionStatus MatcherType = "BookCollectionStatus"
+	MatcherTypeBookNotes           MatcherType = "BookNotes"
+	MatcherTypeBookLocation        MatcherType = "BookLocation"
+	// Numeric
+	MatcherTypeAlternateNumber     MatcherType = "AlternateNumber"
+	MatcherTypeAlternateCount      MatcherType = "AlternateCount"
+	MatcherTypeFileSize            MatcherType = "FileSize"
+	MatcherTypeCommunityRating     MatcherType = "CommunityRating"
+	// Date
+	MatcherTypeModified            MatcherType = "Modified"
+	MatcherTypeCreation            MatcherType = "Creation"
+	MatcherTypePublished           MatcherType = "Published"
+	MatcherTypeReleased            MatcherType = "Released"
 	MatcherTypeLanguage            MatcherType = "LanguageISO"
 	MatcherTypeDirectory           MatcherType = "Directory"
 	MatcherTypeFile                MatcherType = "File"
@@ -324,9 +345,15 @@ func (m *Matcher) matchInternal(book *ComicBook) bool {
 	switch m.Type {
 	case MatcherTypeYear, MatcherTypeMonth, MatcherTypeVolume,
 		MatcherTypePageCount, MatcherTypeRating, MatcherTypeCount,
-		MatcherTypeReadPercentage:
+		MatcherTypeReadPercentage, MatcherTypeAlternateCount,
+		MatcherTypeFileSize, MatcherTypeCommunityRating:
 		return m.matchNumeric(value)
-	case MatcherTypeAddedTime, MatcherTypeOpenedTime:
+	case MatcherTypeAlternateNumber:
+		// AlternateNumber is stored as a string in ComicBook but matched numerically
+		return m.matchNumeric(value)
+	case MatcherTypeAddedTime, MatcherTypeOpenedTime,
+		MatcherTypeModified, MatcherTypeCreation,
+		MatcherTypePublished, MatcherTypeReleased:
 		return m.matchDate(value)
 	case MatcherTypeSeriesComplete, MatcherTypeBlackAndWhite,
 		MatcherTypeChecked, MatcherTypeHasCustomValues,
@@ -385,6 +412,73 @@ func (m *Matcher) getValue(book *ComicBook) string {
 		return book.Summary
 	case MatcherTypeReview:
 		return book.Review
+	// Miscellaneous string
+	case MatcherTypeISBN:
+		return book.ISBN
+	case MatcherTypeWeb:
+		return book.Web
+	// Book ownership/condition
+	case MatcherTypeBookAge:
+		return book.BookAge
+	case MatcherTypeBookCondition:
+		return book.BookCondition
+	case MatcherTypeBookStore:
+		return book.BookStore
+	case MatcherTypeBookOwner:
+		return book.BookOwner
+	case MatcherTypeBookCollectionStatus:
+		return book.BookCollectionStatus
+	case MatcherTypeBookNotes:
+		return book.BookNotes
+	case MatcherTypeBookLocation:
+		return book.BookLocation
+	// Numeric
+	case MatcherTypeAlternateNumber:
+		return book.AlternateNumber
+	case MatcherTypeAlternateCount:
+		return strconv.Itoa(book.AlternateCount)
+	case MatcherTypeFileSize:
+		return strconv.FormatInt(book.FileSize, 10)
+	case MatcherTypeCommunityRating:
+		return fmt.Sprintf("%.1f", book.CommunityRating)
+	// Date
+	case MatcherTypeModified:
+		if book.FileModifiedTime.Time.IsZero() {
+			return ""
+		}
+		return book.FileModifiedTime.Time.Format(time.RFC3339)
+	case MatcherTypeCreation:
+		if book.FileCreationTime.Time.IsZero() {
+			return ""
+		}
+		return book.FileCreationTime.Time.Format(time.RFC3339)
+	case MatcherTypePublished:
+		// Published is computed from Year+Month+Day (mirrors ComicRackCE's Published property)
+		if book.Year <= 0 {
+			return ""
+		}
+		year := book.Year
+		month := book.Month
+		if month < 1 {
+			month = 1
+		}
+		if month > 12 {
+			month = 12
+		}
+		day := book.Day
+		maxDay := daysInMonth(year, month)
+		if day < 1 {
+			day = 1
+		}
+		if day > maxDay {
+			day = maxDay
+		}
+		return time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC).Format(time.RFC3339)
+	case MatcherTypeReleased:
+		if book.ReleasedTime.Time.IsZero() {
+			return ""
+		}
+		return book.ReleasedTime.Time.Format(time.RFC3339)
 	case MatcherTypeReadPercentage:
 		return strconv.Itoa(bookReadPercentage(book))
 	case MatcherTypeManga:
@@ -672,6 +766,11 @@ func (m *Matcher) matchDate(value string) bool {
 	}
 }
 
+// daysInMonth returns the number of days in the given month/year.
+func daysInMonth(year, month int) int {
+	return time.Date(year, time.Month(month)+1, 0, 0, 0, 0, 0, time.UTC).Day()
+}
+
 // bookReadPercentage mirrors ComicRackCE's ReadPercentage property:
 // (LastPageRead+1)*100/PageCount clamped to [1,100], or 0 if unread/no pages.
 func bookReadPercentage(book *ComicBook) int {
@@ -726,9 +825,8 @@ func allPropertiesFields(book *ComicBook, option AllPropertiesOption) []string {
 		return []string{book.Notes, book.Summary, book.Review, book.Tags,
 			book.Characters, book.Teams, book.MainCharacterOrTeam, book.Locations, book.ScanInformation}
 	case AllPropertiesCatalog:
-		// BookAge, BookCollectionStatus, BookNotes, BookOwner, BookStore, BookLocation
-		// not yet in ComicBook struct (issue comic-server-igj); ISBN not yet added
-		return []string{}
+		return []string{book.BookAge, book.BookCollectionStatus, book.BookNotes,
+			book.BookOwner, book.BookStore, book.BookLocation, book.ISBN}
 	default: // AllPropertiesAll
 		vol := strconv.Itoa(book.Volume)
 		year := strconv.Itoa(book.Year)

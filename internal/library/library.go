@@ -82,6 +82,21 @@ type ComicBook struct {
 	LastPageRead         int       `xml:"LastPageRead,omitempty"`
 	LastOpenedFromListID string    `xml:"LastOpenedFromListId,omitempty"`
 
+	// File System Metadata
+	FileSize         int64     `xml:"FileSize,omitempty"`
+	FileModifiedTime ComicTime `xml:"FileModifiedTime,omitempty"`
+	FileCreationTime ComicTime `xml:"FileCreationTime,omitempty"`
+
+	// Catalog / Ownership
+	ISBN                string `xml:"ISBN,omitempty"`
+	BookAge             string `xml:"BookAge,omitempty"`
+	BookCondition       string `xml:"BookCondition,omitempty"`
+	BookStore           string `xml:"BookStore,omitempty"`
+	BookOwner           string `xml:"BookOwner,omitempty"`
+	BookCollectionStatus string `xml:"BookCollectionStatus,omitempty"`
+	BookNotes           string `xml:"BookNotes,omitempty"`
+	BookLocation        string `xml:"BookLocation,omitempty"`
+
 	// System Flags
 	Checked             bool   `xml:"Checked,attr,omitempty"` // Book attribute
 	FileIsMissing       bool   `xml:"Missing,omitempty"`      // File cannot be found

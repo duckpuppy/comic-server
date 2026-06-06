@@ -908,6 +908,169 @@ func TestAllPropertiesMatcher(t *testing.T) {
 	}
 }
 
+// TestMiscStringMatchers verifies ISBN and Web field extraction
+func TestMiscStringMatchers(t *testing.T) {
+	book := &ComicBook{ISBN: "978-1-56389-341-5", Web: "https://dc.com"}
+	for _, tt := range []struct {
+		matcherType MatcherType
+		value       string
+	}{
+		{MatcherTypeISBN, book.ISBN},
+		{MatcherTypeWeb, book.Web},
+	} {
+		t.Run(string(tt.matcherType), func(t *testing.T) {
+			m := &Matcher{Type: tt.matcherType, Operator: OperatorEquals, IgnoreCase: true, MatchValue: tt.value}
+			if !m.Match(book) {
+				t.Errorf("expected match")
+			}
+			if m.Match(&ComicBook{}) {
+				t.Errorf("expected no match for empty book")
+			}
+		})
+	}
+}
+
+// TestOwnershipMatchers verifies book ownership/condition string fields
+func TestOwnershipMatchers(t *testing.T) {
+	book := &ComicBook{
+		BookAge:             "Modern",
+		BookCondition:       "Near Mint",
+		BookStore:           "Mile High",
+		BookOwner:           "Patrick",
+		BookCollectionStatus: "Read",
+		BookNotes:           "Signed copy",
+		BookLocation:        "Shelf A",
+	}
+	for _, tt := range []struct {
+		matcherType MatcherType
+		value       string
+	}{
+		{MatcherTypeBookAge, book.BookAge},
+		{MatcherTypeBookCondition, book.BookCondition},
+		{MatcherTypeBookStore, book.BookStore},
+		{MatcherTypeBookOwner, book.BookOwner},
+		{MatcherTypeBookCollectionStatus, book.BookCollectionStatus},
+		{MatcherTypeBookNotes, book.BookNotes},
+		{MatcherTypeBookLocation, book.BookLocation},
+	} {
+		t.Run(string(tt.matcherType), func(t *testing.T) {
+			m := &Matcher{Type: tt.matcherType, Operator: OperatorEquals, IgnoreCase: true, MatchValue: tt.value}
+			if !m.Match(book) {
+				t.Errorf("expected match")
+			}
+			if m.Match(&ComicBook{}) {
+				t.Errorf("expected no match for empty book")
+			}
+		})
+	}
+}
+
+// TestAlternateNumericMatchers verifies AlternateNumber, AlternateCount, FileSize, CommunityRating
+func TestAlternateNumericMatchers(t *testing.T) {
+	book := &ComicBook{
+		AlternateNumber: "2",
+		AlternateCount:  5,
+		FileSize:        1024 * 1024,
+		CommunityRating: 4.5,
+	}
+	tests := []struct {
+		name        string
+		matcherType MatcherType
+		operator    MatchOperator
+		matchVal    string
+		want        bool
+	}{
+		{name: "AlternateNumber equals 2", matcherType: MatcherTypeAlternateNumber, operator: OperatorEquals, matchVal: "2", want: true},
+		{name: "AlternateNumber greater 1", matcherType: MatcherTypeAlternateNumber, operator: OperatorGreater, matchVal: "1", want: true},
+		{name: "AlternateCount equals 5", matcherType: MatcherTypeAlternateCount, operator: OperatorEquals, matchVal: "5", want: true},
+		{name: "AlternateCount lesser 10", matcherType: MatcherTypeAlternateCount, operator: OperatorLesser, matchVal: "10", want: true},
+		{name: "FileSize greater 0", matcherType: MatcherTypeFileSize, operator: OperatorGreater, matchVal: "0", want: true},
+		{name: "FileSize equals 1048576", matcherType: MatcherTypeFileSize, operator: OperatorEquals, matchVal: "1048576", want: true},
+		{name: "CommunityRating greater 4", matcherType: MatcherTypeCommunityRating, operator: OperatorGreater, matchVal: "4", want: true},
+		{name: "CommunityRating equals 4.5", matcherType: MatcherTypeCommunityRating, operator: OperatorEquals, matchVal: "4.5", want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &Matcher{Type: tt.matcherType, Operator: tt.operator, MatchValue: tt.matchVal}
+			if m.Match(book) != tt.want {
+				t.Errorf("Match() = %v, want %v", !tt.want, tt.want)
+			}
+		})
+	}
+}
+
+// TestFileDateMatchers verifies Modified and Creation date matchers
+func TestFileDateMatchers(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	book := &ComicBook{
+		FileModifiedTime: ComicTime{Time: now},
+		FileCreationTime: ComicTime{Time: now.AddDate(-1, 0, 0)},
+	}
+	tests := []struct {
+		name        string
+		matcherType MatcherType
+		operator    MatchOperator
+		matchVal    string
+		want        bool
+	}{
+		{name: "Modified after yesterday", matcherType: MatcherTypeModified, operator: OperatorIsAfter, matchVal: now.AddDate(0, 0, -1).Format(time.RFC3339), want: true},
+		{name: "Modified in last 1 day", matcherType: MatcherTypeModified, operator: OperatorIsInLastDays, matchVal: "1", want: true},
+		{name: "Creation before now", matcherType: MatcherTypeCreation, operator: OperatorIsBefore, matchVal: now.Format(time.RFC3339), want: true},
+		{name: "Modified zero book no match", matcherType: MatcherTypeModified, operator: OperatorIsAfter, matchVal: "2000-01-01T00:00:00Z", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b := book
+			if tt.name == "Modified zero book no match" {
+				b = &ComicBook{}
+			}
+			m := &Matcher{Type: tt.matcherType, Operator: tt.operator, MatchValue: tt.matchVal}
+			if m.Match(b) != tt.want {
+				t.Errorf("Match() = %v, want %v", !tt.want, tt.want)
+			}
+		})
+	}
+}
+
+// TestPublishedReleasedDateMatchers verifies Published (computed) and Released date matchers
+func TestPublishedReleasedDateMatchers(t *testing.T) {
+	released := time.Date(2023, 6, 15, 0, 0, 0, 0, time.UTC)
+	book := &ComicBook{
+		Year:         2020,
+		Month:        3,
+		Day:          15,
+		ReleasedTime: ComicTime{Time: released},
+	}
+	tests := []struct {
+		name        string
+		matcherType MatcherType
+		operator    MatchOperator
+		matchVal    string
+		want        bool
+	}{
+		// Published = 2020-03-15
+		{name: "Published after 2019", matcherType: MatcherTypePublished, operator: OperatorIsAfter, matchVal: "2019-01-01T00:00:00Z", want: true},
+		{name: "Published before 2021", matcherType: MatcherTypePublished, operator: OperatorIsBefore, matchVal: "2021-01-01T00:00:00Z", want: true},
+		{name: "Published not after 2021", matcherType: MatcherTypePublished, operator: OperatorIsAfter, matchVal: "2021-01-01T00:00:00Z", want: false},
+		{name: "Published zero year no match", matcherType: MatcherTypePublished, operator: OperatorIsAfter, matchVal: "2000-01-01T00:00:00Z", want: false},
+		// Released = 2023-06-15
+		{name: "Released after 2022", matcherType: MatcherTypeReleased, operator: OperatorIsAfter, matchVal: "2022-01-01T00:00:00Z", want: true},
+		{name: "Released before 2024", matcherType: MatcherTypeReleased, operator: OperatorIsBefore, matchVal: "2024-01-01T00:00:00Z", want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b := book
+			if tt.name == "Published zero year no match" {
+				b = &ComicBook{Month: 3, Day: 15}
+			}
+			m := &Matcher{Type: tt.matcherType, Operator: tt.operator, MatchValue: tt.matchVal}
+			if m.Match(b) != tt.want {
+				t.Errorf("Match() = %v, want %v", !tt.want, tt.want)
+			}
+		})
+	}
+}
+
 // TestMatcherDate tests date matching
 func TestMatcherDate(t *testing.T) {
 	now := time.Now()
