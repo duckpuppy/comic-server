@@ -112,6 +112,11 @@ const (
 	MatcherTypeCreation            MatcherType = "Creation"
 	MatcherTypePublished           MatcherType = "Published"
 	MatcherTypeReleased            MatcherType = "Released"
+	MatcherTypeDay                 MatcherType = "Day"
+	MatcherTypeWeek                MatcherType = "Week"
+	MatcherTypeNewPages            MatcherType = "NewPages"
+	MatcherTypeBookmarkCount       MatcherType = "BookmarkCount"
+	MatcherTypeBookPrice           MatcherType = "BookPrice"
 	MatcherTypeLanguage            MatcherType = "LanguageISO"
 	MatcherTypeDirectory           MatcherType = "Directory"
 	MatcherTypeFile                MatcherType = "File"
@@ -346,7 +351,9 @@ func (m *Matcher) matchInternal(book *ComicBook) bool {
 	case MatcherTypeYear, MatcherTypeMonth, MatcherTypeVolume,
 		MatcherTypePageCount, MatcherTypeRating, MatcherTypeCount,
 		MatcherTypeReadPercentage, MatcherTypeAlternateCount,
-		MatcherTypeFileSize, MatcherTypeCommunityRating:
+		MatcherTypeFileSize, MatcherTypeCommunityRating,
+		MatcherTypeDay, MatcherTypeWeek,
+		MatcherTypeNewPages, MatcherTypeBookmarkCount, MatcherTypeBookPrice:
 		return m.matchNumeric(value)
 	case MatcherTypeAlternateNumber:
 		// AlternateNumber is stored as a string in ComicBook but matched numerically
@@ -441,6 +448,25 @@ func (m *Matcher) getValue(book *ComicBook) string {
 		return strconv.FormatInt(book.FileSize, 10)
 	case MatcherTypeCommunityRating:
 		return fmt.Sprintf("%.1f", book.CommunityRating)
+	case MatcherTypeDay:
+		return strconv.Itoa(book.Day)
+	case MatcherTypeWeek:
+		return bookWeekOfYear(book)
+	case MatcherTypeNewPages:
+		return strconv.Itoa(book.NewPages)
+	case MatcherTypeBookmarkCount:
+		count := 0
+		for _, p := range book.Pages {
+			if p.Bookmark != "" {
+				count++
+			}
+		}
+		return strconv.Itoa(count)
+	case MatcherTypeBookPrice:
+		if book.BookPrice < 0 {
+			return ""
+		}
+		return fmt.Sprintf("%.2f", book.BookPrice)
 	// Date
 	case MatcherTypeModified:
 		if book.FileModifiedTime.Time.IsZero() {
@@ -769,6 +795,33 @@ func (m *Matcher) matchDate(value string) bool {
 // daysInMonth returns the number of days in the given month/year.
 func daysInMonth(year, month int) int {
 	return time.Date(year, time.Month(month)+1, 0, 0, 0, 0, 0, time.UTC).Day()
+}
+
+// bookWeekOfYear mirrors ComicRackCE's Week property: week-of-year derived from
+// the Published date (Year+Month+Day). Returns -1 (as string) if no published date.
+// Uses ISO week numbering (Monday = start of week), matching .NET's CalendarWeekRule.FirstDay
+// with DayOfWeek.Monday for all but edge-case years.
+func bookWeekOfYear(book *ComicBook) string {
+	if book.Year <= 0 {
+		return "-1"
+	}
+	month := book.Month
+	if month < 1 {
+		month = 1
+	}
+	if month > 12 {
+		month = 12
+	}
+	day := book.Day
+	if day < 1 {
+		day = 1
+	}
+	maxDay := daysInMonth(book.Year, month)
+	if day > maxDay {
+		day = maxDay
+	}
+	_, week := time.Date(book.Year, time.Month(month), day, 0, 0, 0, 0, time.UTC).ISOWeek()
+	return strconv.Itoa(week)
 }
 
 // bookReadPercentage mirrors ComicRackCE's ReadPercentage property:

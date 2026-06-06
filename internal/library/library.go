@@ -81,11 +81,15 @@ type ComicBook struct {
 	ReleasedTime         ComicTime `xml:"Released,omitempty"`
 	LastPageRead         int       `xml:"LastPageRead,omitempty"`
 	LastOpenedFromListID string    `xml:"LastOpenedFromListId,omitempty"`
+	NewPages             int       `xml:"NewPages,omitempty"` // Extra pages beyond PageCount (dynamic sources)
 
 	// File System Metadata
 	FileSize         int64     `xml:"FileSize,omitempty"`
 	FileModifiedTime ComicTime `xml:"FileModifiedTime,omitempty"`
 	FileCreationTime ComicTime `xml:"FileCreationTime,omitempty"`
+
+	// Pricing
+	BookPrice float64 `xml:"BookPrice,omitempty"` // Purchase price (-1 = unset)
 
 	// Catalog / Ownership
 	ISBN                string `xml:"ISBN,omitempty"`

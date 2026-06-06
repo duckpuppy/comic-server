@@ -1,6 +1,7 @@
 package library
 
 import (
+	"strconv"
 	"testing"
 	"time"
 )
@@ -1068,6 +1069,64 @@ func TestPublishedReleasedDateMatchers(t *testing.T) {
 				t.Errorf("Match() = %v, want %v", !tt.want, tt.want)
 			}
 		})
+	}
+}
+
+// TestP4NumericMatchers verifies NewPages, BookmarkCount, BookPrice, Day, Week
+func TestP4NumericMatchers(t *testing.T) {
+	book := &ComicBook{
+		Year:      2020,
+		Month:     3,
+		Day:       15,
+		NewPages:  7,
+		BookPrice: 4.99,
+		Pages: []ComicPageInfo{
+			{Image: 0, Bookmark: "Chapter 1"},
+			{Image: 1},
+			{Image: 2, Bookmark: "Plot twist"},
+		},
+	}
+	_, isoWeek := time.Date(2020, 3, 15, 0, 0, 0, 0, time.UTC).ISOWeek()
+
+	tests := []struct {
+		name        string
+		matcherType MatcherType
+		operator    MatchOperator
+		matchVal    string
+		want        bool
+	}{
+		{name: "Day equals 15", matcherType: MatcherTypeDay, operator: OperatorEquals, matchVal: "15", want: true},
+		{name: "Day greater 10", matcherType: MatcherTypeDay, operator: OperatorGreater, matchVal: "10", want: true},
+		{name: "Day lesser 20", matcherType: MatcherTypeDay, operator: OperatorLesser, matchVal: "20", want: true},
+		{name: "Week equals iso", matcherType: MatcherTypeWeek, operator: OperatorEquals, matchVal: strconv.Itoa(isoWeek), want: true},
+		{name: "NewPages equals 7", matcherType: MatcherTypeNewPages, operator: OperatorEquals, matchVal: "7", want: true},
+		{name: "NewPages greater 5", matcherType: MatcherTypeNewPages, operator: OperatorGreater, matchVal: "5", want: true},
+		{name: "BookmarkCount equals 2", matcherType: MatcherTypeBookmarkCount, operator: OperatorEquals, matchVal: "2", want: true},
+		{name: "BookmarkCount greater 1", matcherType: MatcherTypeBookmarkCount, operator: OperatorGreater, matchVal: "1", want: true},
+		{name: "BookPrice greater 4", matcherType: MatcherTypeBookPrice, operator: OperatorGreater, matchVal: "4", want: true},
+		{name: "BookPrice lesser 10", matcherType: MatcherTypeBookPrice, operator: OperatorLesser, matchVal: "10", want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &Matcher{Type: tt.matcherType, Operator: tt.operator, MatchValue: tt.matchVal}
+			if m.Match(book) != tt.want {
+				t.Errorf("Match() = %v, want %v", !tt.want, tt.want)
+			}
+		})
+	}
+
+	// Week returns -1 for books with no year
+	emptyBook := &ComicBook{}
+	mWeek := &Matcher{Type: MatcherTypeWeek, Operator: OperatorEquals, MatchValue: "-1"}
+	if !mWeek.Match(emptyBook) {
+		t.Error("Week matcher should return -1 for books with no year")
+	}
+
+	// BookPrice -1 (unset) should not match positive values
+	unpricedBook := &ComicBook{BookPrice: -1}
+	mPrice := &Matcher{Type: MatcherTypeBookPrice, Operator: OperatorGreater, MatchValue: "0"}
+	if mPrice.Match(unpricedBook) {
+		t.Error("unset BookPrice (-1) should not match")
 	}
 }
 
