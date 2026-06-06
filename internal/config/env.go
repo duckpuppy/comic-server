@@ -15,6 +15,11 @@ func (c *Config) ApplyEnvironment() error {
 		c.Server.LibraryPath = val
 	}
 
+	// SQLite database path
+	if val := os.Getenv("COMIC_SERVER_DATABASE_PATH"); val != "" {
+		c.Server.DatabasePath = val
+	}
+
 	// Network settings
 	if val := os.Getenv("COMIC_SERVER_PORT"); val != "" {
 		port, err := strconv.Atoi(val)

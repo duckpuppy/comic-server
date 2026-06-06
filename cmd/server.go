@@ -89,6 +89,9 @@ func runServer(cmd *cobra.Command, args []string) error {
 	if libraryPathSet {
 		cfg.Server.LibraryPath = libraryPath
 	}
+	if dbPath != "" {
+		cfg.Server.DatabasePath = dbPath
+	}
 	if ignoreDevicesSet {
 		cfg.Server.IgnoreDevices = ignoreDevices
 	}
@@ -131,9 +134,9 @@ func runServer(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to initialize logging: %w", err)
 	}
 
-	// Check that library path is set
-	if cfg.Server.LibraryPath == "" {
-		return fmt.Errorf("library path is required (set via --library flag, config file, or COMIC_SERVER_LIBRARY_PATH environment variable)")
+	// Check that a library source is configured
+	if cfg.Server.LibraryPath == "" && cfg.Server.DatabasePath == "" {
+		return fmt.Errorf("library path is required (set via --library or --db flag, config file, or COMIC_SERVER_LIBRARY_PATH / COMIC_SERVER_DATABASE_PATH environment variable)")
 	}
 
 	// Log server startup and configuration
@@ -154,10 +157,10 @@ func runServer(cmd *cobra.Command, args []string) error {
 
 	// Load library using appropriate backend
 	var backend library.Backend
-	if dbPath != "" {
-		// Use SQLite backend (experimental)
-		log.Info().Str("path", dbPath).Msg("Loading library from SQLite database (experimental)")
-		sqliteBackend, err := storage.NewSQLiteBackend(dbPath)
+	if cfg.Server.DatabasePath != "" {
+		// Use SQLite backend
+		log.Info().Str("path", cfg.Server.DatabasePath).Msg("Loading library from SQLite database")
+		sqliteBackend, err := storage.NewSQLiteBackend(cfg.Server.DatabasePath)
 		if err != nil {
 			return fmt.Errorf("failed to open SQLite database: %w", err)
 		}
