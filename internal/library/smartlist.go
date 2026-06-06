@@ -69,6 +69,12 @@ const (
 	MatcherTypeAddedTime       MatcherType = "Added"
 	MatcherTypeOpenedTime      MatcherType = "Opened"
 	MatcherTypeSeriesComplete  MatcherType = "SeriesComplete"
+	MatcherTypeChecked         MatcherType = "Checked"
+	MatcherTypeBlackAndWhite   MatcherType = "BlackAndWhite"
+	MatcherTypeHasCustomValues MatcherType = "HasCustomValues"
+	MatcherTypeIsLinked        MatcherType = "IsLinked"
+	MatcherTypeIsMissing       MatcherType = "IsMissing"
+	MatcherTypeModifiedInfo    MatcherType = "ModifiedInfo"
 	MatcherTypeLanguage        MatcherType = "LanguageISO"
 	MatcherTypeDirectory       MatcherType = "Directory"
 	MatcherTypeFile            MatcherType = "File"
@@ -285,7 +291,9 @@ func (m *Matcher) matchInternal(book *ComicBook) bool {
 		return m.matchNumeric(value)
 	case MatcherTypeAddedTime, MatcherTypeOpenedTime:
 		return m.matchDate(value)
-	case MatcherTypeSeriesComplete:
+	case MatcherTypeSeriesComplete, MatcherTypeBlackAndWhite,
+		MatcherTypeChecked, MatcherTypeHasCustomValues,
+		MatcherTypeIsLinked, MatcherTypeIsMissing, MatcherTypeModifiedInfo:
 		return m.matchYesNo(value)
 	default:
 		// String matching for all other types
@@ -336,6 +344,33 @@ func (m *Matcher) getValue(book *ComicBook) string {
 		return book.Notes
 	case MatcherTypeSeriesComplete:
 		return book.SeriesComplete
+	case MatcherTypeBlackAndWhite:
+		return book.BlackAndWhite
+	case MatcherTypeChecked:
+		if book.Checked {
+			return "yes"
+		}
+		return "no"
+	case MatcherTypeHasCustomValues:
+		if book.CustomValuesStore != "" {
+			return "yes"
+		}
+		return "no"
+	case MatcherTypeIsLinked:
+		if book.FilePath != "" {
+			return "yes"
+		}
+		return "no"
+	case MatcherTypeIsMissing:
+		if book.FileIsMissing {
+			return "yes"
+		}
+		return "no"
+	case MatcherTypeModifiedInfo:
+		if book.ComicInfoIsDirty {
+			return "yes"
+		}
+		return "no"
 	case MatcherTypeLanguage:
 		return book.LanguageISO
 	case MatcherTypeAddedTime:

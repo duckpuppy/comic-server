@@ -587,6 +587,62 @@ func TestMatcherYesNo(t *testing.T) {
 	}
 }
 
+// TestYesNoMatchers tests all Yes/No matcher types beyond SeriesComplete
+func TestYesNoMatchers(t *testing.T) {
+	tests := []struct {
+		name        string
+		matcherType MatcherType
+		operator    MatchOperator
+		book        *ComicBook
+		want        bool
+	}{
+		// BlackAndWhite — string field already in "Yes"/"No"/"Unknown" format
+		{name: "BlackAndWhite yes match", matcherType: MatcherTypeBlackAndWhite, operator: OperatorEqualsYes, book: &ComicBook{BlackAndWhite: "Yes"}, want: true},
+		{name: "BlackAndWhite yes no match", matcherType: MatcherTypeBlackAndWhite, operator: OperatorEqualsYes, book: &ComicBook{BlackAndWhite: "No"}, want: false},
+		{name: "BlackAndWhite unknown match", matcherType: MatcherTypeBlackAndWhite, operator: OperatorEqualsUnknown, book: &ComicBook{BlackAndWhite: "Unknown"}, want: true},
+		{name: "BlackAndWhite unknown empty", matcherType: MatcherTypeBlackAndWhite, operator: OperatorEqualsUnknown, book: &ComicBook{}, want: true},
+
+		// Checked — bool, no unknown state
+		{name: "Checked true yes", matcherType: MatcherTypeChecked, operator: OperatorEqualsYes, book: &ComicBook{Checked: true}, want: true},
+		{name: "Checked false yes", matcherType: MatcherTypeChecked, operator: OperatorEqualsYes, book: &ComicBook{Checked: false}, want: false},
+		{name: "Checked false no", matcherType: MatcherTypeChecked, operator: OperatorEqualsNo, book: &ComicBook{Checked: false}, want: true},
+		{name: "Checked unknown never", matcherType: MatcherTypeChecked, operator: OperatorEqualsUnknown, book: &ComicBook{Checked: true}, want: false},
+
+		// HasCustomValues — computed from CustomValuesStore
+		{name: "HasCustomValues with values", matcherType: MatcherTypeHasCustomValues, operator: OperatorEqualsYes, book: &ComicBook{CustomValuesStore: ",key=val"}, want: true},
+		{name: "HasCustomValues empty", matcherType: MatcherTypeHasCustomValues, operator: OperatorEqualsYes, book: &ComicBook{}, want: false},
+		{name: "HasCustomValues no match", matcherType: MatcherTypeHasCustomValues, operator: OperatorEqualsNo, book: &ComicBook{}, want: true},
+
+		// IsLinked — computed from FilePath
+		{name: "IsLinked with path", matcherType: MatcherTypeIsLinked, operator: OperatorEqualsYes, book: &ComicBook{FilePath: "/comics/book.cbz"}, want: true},
+		{name: "IsLinked no path", matcherType: MatcherTypeIsLinked, operator: OperatorEqualsYes, book: &ComicBook{}, want: false},
+		{name: "IsLinked not linked is no", matcherType: MatcherTypeIsLinked, operator: OperatorEqualsNo, book: &ComicBook{}, want: true},
+
+		// IsMissing — bool field FileIsMissing
+		{name: "IsMissing true yes", matcherType: MatcherTypeIsMissing, operator: OperatorEqualsYes, book: &ComicBook{FileIsMissing: true}, want: true},
+		{name: "IsMissing false yes", matcherType: MatcherTypeIsMissing, operator: OperatorEqualsYes, book: &ComicBook{FileIsMissing: false}, want: false},
+		{name: "IsMissing false no", matcherType: MatcherTypeIsMissing, operator: OperatorEqualsNo, book: &ComicBook{FileIsMissing: false}, want: true},
+
+		// ModifiedInfo — bool field ComicInfoIsDirty
+		{name: "ModifiedInfo true yes", matcherType: MatcherTypeModifiedInfo, operator: OperatorEqualsYes, book: &ComicBook{ComicInfoIsDirty: true}, want: true},
+		{name: "ModifiedInfo false yes", matcherType: MatcherTypeModifiedInfo, operator: OperatorEqualsYes, book: &ComicBook{ComicInfoIsDirty: false}, want: false},
+		{name: "ModifiedInfo false no", matcherType: MatcherTypeModifiedInfo, operator: OperatorEqualsNo, book: &ComicBook{ComicInfoIsDirty: false}, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			matcher := &Matcher{
+				Type:     tt.matcherType,
+				Operator: tt.operator,
+			}
+			got := matcher.Match(tt.book)
+			if got != tt.want {
+				t.Errorf("Matcher.Match() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestMatcherDate tests date matching
 func TestMatcherDate(t *testing.T) {
 	now := time.Now()
