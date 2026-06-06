@@ -820,6 +820,94 @@ func TestMangaMatcher(t *testing.T) {
 	}
 }
 
+// TestAllPropertiesMatcher verifies cross-field searching for each option
+func TestAllPropertiesMatcher(t *testing.T) {
+	book := &ComicBook{
+		Series:              "Batman",
+		AlternateSeries:     "Dark Knight",
+		Title:               "Year One",
+		Format:              "Annual",
+		SeriesGroup:         "DC Black Label",
+		StoryArc:            "Knightfall",
+		Writer:              "Frank Miller",
+		Penciller:           "David Mazzucchelli",
+		Inker:               "Richmond Lewis",
+		Colorist:            "Richmond Lewis",
+		Letterer:            "Todd Klein",
+		CoverArtist:         "Mazzucchelli",
+		Editor:              "Denny O'Neil",
+		Translator:          "Bob Smith",
+		Notes:               "Great issue",
+		Summary:             "Batman begins",
+		Review:              "Excellent",
+		Tags:                "classic, noir",
+		Characters:          "Batman, Gordon",
+		Teams:               "GCPD",
+		MainCharacterOrTeam: "Batman",
+		Locations:           "Gotham",
+		ScanInformation:     "CBR scan",
+		Genre:               "Superhero",
+		Publisher:           "DC Comics",
+		Imprint:             "DC",
+		Number:              "1",
+		Volume:              2,
+		Year:                1987,
+		FilePath:            "/comics/batman/year-one.cbz",
+	}
+
+	tests := []struct {
+		name       string
+		option     AllPropertiesOption
+		matchValue string
+		want       bool
+	}{
+		// All option searches everything
+		{name: "All finds series", option: AllPropertiesAll, matchValue: "Batman", want: true},
+		{name: "All finds writer", option: AllPropertiesAll, matchValue: "Miller", want: true},
+		{name: "All finds publisher", option: AllPropertiesAll, matchValue: "DC Comics", want: true},
+		{name: "All no match", option: AllPropertiesAll, matchValue: "Marvel", want: false},
+
+		// Series option
+		{name: "Series finds series", option: AllPropertiesSeries, matchValue: "Batman", want: true},
+		{name: "Series finds storyarc", option: AllPropertiesSeries, matchValue: "Knightfall", want: true},
+		{name: "Series not find publisher", option: AllPropertiesSeries, matchValue: "DC Comics", want: false},
+
+		// Writer option
+		{name: "Writer finds writer", option: AllPropertiesWriter, matchValue: "Miller", want: true},
+		{name: "Writer not find penciller", option: AllPropertiesWriter, matchValue: "Mazzucchelli", want: false},
+
+		// Artists option includes all credits
+		{name: "Artists finds writer", option: AllPropertiesArtists, matchValue: "Miller", want: true},
+		{name: "Artists finds letterer", option: AllPropertiesArtists, matchValue: "Klein", want: true},
+		{name: "Artists not find publisher", option: AllPropertiesArtists, matchValue: "DC Comics", want: false},
+
+		// Descriptive option
+		{name: "Descriptive finds notes", option: AllPropertiesDescriptive, matchValue: "Great", want: true},
+		{name: "Descriptive finds characters", option: AllPropertiesDescriptive, matchValue: "Gordon", want: true},
+		{name: "Descriptive not find writer", option: AllPropertiesDescriptive, matchValue: "Miller", want: false},
+
+		// File option
+		{name: "File finds path", option: AllPropertiesFile, matchValue: "year-one", want: true},
+		{name: "File not find writer", option: AllPropertiesFile, matchValue: "Miller", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			matcher := &Matcher{
+				Type:                MatcherTypeAllProperties,
+				Operator:            OperatorContains,
+				IgnoreCase:          true,
+				MatchValue:          tt.matchValue,
+				AllPropertiesOption: tt.option,
+			}
+			got := matcher.Match(book)
+			if got != tt.want {
+				t.Errorf("Match() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestMatcherDate tests date matching
 func TestMatcherDate(t *testing.T) {
 	now := time.Now()

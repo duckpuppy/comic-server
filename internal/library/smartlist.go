@@ -90,13 +90,27 @@ const (
 	MatcherTypeReview              MatcherType = "Review"
 	MatcherTypeReadPercentage      MatcherType = "ReadPercentage"
 	MatcherTypeManga               MatcherType = "Manga"
-	MatcherTypeLanguage        MatcherType = "LanguageISO"
-	MatcherTypeDirectory       MatcherType = "Directory"
-	MatcherTypeFile            MatcherType = "File"
-	MatcherTypeFullPath        MatcherType = "FullPath"
-	MatcherTypeFileFormat      MatcherType = "FileFormat"
-	MatcherTypeScanInfo        MatcherType = "ScanInformation"
-	MatcherTypeCount           MatcherType = "Count"
+	MatcherTypeAllProperties       MatcherType = "AllProperties"
+	MatcherTypeLanguage            MatcherType = "LanguageISO"
+	MatcherTypeDirectory           MatcherType = "Directory"
+	MatcherTypeFile                MatcherType = "File"
+	MatcherTypeFullPath            MatcherType = "FullPath"
+	MatcherTypeFileFormat          MatcherType = "FileFormat"
+	MatcherTypeScanInfo            MatcherType = "ScanInformation"
+	MatcherTypeCount               MatcherType = "Count"
+)
+
+// AllPropertiesOption controls which fields the AllProperties matcher searches
+type AllPropertiesOption string
+
+const (
+	AllPropertiesAll         AllPropertiesOption = "All"
+	AllPropertiesSeries      AllPropertiesOption = "Series"
+	AllPropertiesWriter      AllPropertiesOption = "Writer"
+	AllPropertiesArtists     AllPropertiesOption = "Artists"
+	AllPropertiesDescriptive AllPropertiesOption = "Descriptive"
+	AllPropertiesFile        AllPropertiesOption = "File"
+	AllPropertiesCatalog     AllPropertiesOption = "Catalog"
 )
 
 // Matcher represents a smart list filter rule
@@ -105,9 +119,10 @@ type Matcher struct {
 	Operator      MatchOperator
 	MatchValue    string
 	MatchValue2   string // For range operators
-	Not           bool   // Invert the match result
-	IgnoreCase    bool   // For string comparisons
-	compiledRegex *regexp.Regexp
+	Not                 bool                // Invert the match result
+	IgnoreCase          bool                // For string comparisons
+	AllPropertiesOption AllPropertiesOption // For MatcherTypeAllProperties only
+	compiledRegex       *regexp.Regexp
 }
 
 // extractFieldName extracts the field name from a ComicRack matcher type
@@ -156,12 +171,18 @@ func NewMatcherFromXML(xmlMatcher *ComicBookMatcher) (*Matcher, error) {
 		matchValue = strings.ReplaceAll(matchValue, "\\", "/")
 	}
 
+	opt := AllPropertiesOption(xmlMatcher.Option)
+	if opt == "" {
+		opt = AllPropertiesAll
+	}
+
 	m := &Matcher{
-		Type:        MatcherType(fieldName),
-		MatchValue:  matchValue,
-		MatchValue2: xmlMatcher.MatchValue2, // Needed for InRange / IsInDateRange operators
-		Not:         xmlMatcher.Not,
-		IgnoreCase:  true, // Default to case-insensitive
+		Type:                MatcherType(fieldName),
+		MatchValue:          matchValue,
+		MatchValue2:         xmlMatcher.MatchValue2,
+		Not:                 xmlMatcher.Not,
+		IgnoreCase:          true,
+		AllPropertiesOption: opt,
 	}
 
 	// Parse operator from XML MatchOperator attribute
@@ -313,6 +334,8 @@ func (m *Matcher) matchInternal(book *ComicBook) bool {
 		return m.matchYesNo(value)
 	case MatcherTypeManga:
 		return m.matchManga(value)
+	case MatcherTypeAllProperties:
+		return m.matchAllProperties(book)
 	default:
 		// String matching for all other types
 		return m.matchString(value)
@@ -683,6 +706,53 @@ func (m *Matcher) matchManga(value string) bool {
 	default:
 		return false
 	}
+}
+
+// allPropertiesFields returns the set of field values to search for a given option,
+// mirroring ComicRackCE's ComicBookAllPropertiesMatcher.GetOptionValueSet.
+// Fields from unimplemented issues (BookAge, BookNotes, etc.) return "" until added.
+func allPropertiesFields(book *ComicBook, option AllPropertiesOption) []string {
+	switch option {
+	case AllPropertiesSeries:
+		return []string{book.Series, book.AlternateSeries, book.Format, book.SeriesGroup, book.StoryArc}
+	case AllPropertiesWriter:
+		return []string{book.Writer}
+	case AllPropertiesArtists:
+		return []string{book.Writer, book.Penciller, book.Inker, book.Colorist,
+			book.Editor, book.Translator, book.Letterer, book.CoverArtist}
+	case AllPropertiesFile:
+		return []string{strings.ReplaceAll(book.FilePath, "\\", "/")}
+	case AllPropertiesDescriptive:
+		return []string{book.Notes, book.Summary, book.Review, book.Tags,
+			book.Characters, book.Teams, book.MainCharacterOrTeam, book.Locations, book.ScanInformation}
+	case AllPropertiesCatalog:
+		// BookAge, BookCollectionStatus, BookNotes, BookOwner, BookStore, BookLocation
+		// not yet in ComicBook struct (issue comic-server-igj); ISBN not yet added
+		return []string{}
+	default: // AllPropertiesAll
+		vol := strconv.Itoa(book.Volume)
+		year := strconv.Itoa(book.Year)
+		return []string{
+			book.Series, book.AlternateSeries, book.Title, book.SeriesGroup, book.StoryArc,
+			book.Writer, book.Penciller, book.Inker, book.Colorist, book.Letterer,
+			book.Editor, book.Translator, book.CoverArtist,
+			book.Summary, strings.ReplaceAll(book.FilePath, "\\", "/"),
+			book.Genre, book.Notes, book.Review, book.Publisher, book.Imprint,
+			vol, book.Number, year, book.Format, book.AgeRating,
+			book.Tags, book.Characters, book.Teams, book.MainCharacterOrTeam,
+			book.Locations, book.ScanInformation,
+		}
+	}
+}
+
+// matchAllProperties checks all fields in the option set and returns true if any match.
+func (m *Matcher) matchAllProperties(book *ComicBook) bool {
+	for _, v := range allPropertiesFields(book, m.AllPropertiesOption) {
+		if m.matchString(v) {
+			return true
+		}
+	}
+	return false
 }
 
 // matchYesNo performs Yes/No/Unknown comparison

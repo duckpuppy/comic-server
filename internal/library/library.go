@@ -169,6 +169,7 @@ type ComicBookMatcher struct {
 	MatchOperator string             `xml:"MatchOperator,attr,omitempty"`        // Operator number (0-7) - only for value matchers
 	MatchValue    string             `xml:"MatchValue,omitempty"`                // Value to match (child element) - only for value matchers
 	MatchValue2   string             `xml:"MatchValue2,omitempty"`               // Second value for multi-value matchers (Tags, CustomValues)
+	Option        string             `xml:"Option,attr,omitempty"`               // Option for AllProperties matcher: "All", "Series", "Writer", "Artists", "Descriptive", "File", "Catalog"
 	MatcherMode   string             `xml:"MatcherMode,attr,omitempty"`          // "And" or "Or" - only for group matchers
 	Matchers      []ComicBookMatcher `xml:"Matchers>ComicBookMatcher,omitempty"` // Nested matchers - only for group matchers
 }
