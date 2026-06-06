@@ -741,6 +741,49 @@ func TestContentMatchers(t *testing.T) {
 	}
 }
 
+// TestReadPercentageMatcher tests ReadPercentage computation and matching
+func TestReadPercentageMatcher(t *testing.T) {
+	tests := []struct {
+		name      string
+		book      *ComicBook
+		operator  MatchOperator
+		matchVal  string
+		matchVal2 string
+		want      bool
+	}{
+		// Unread: OpenCount==0 or LastPageRead==0 → 0%
+		{name: "unread book equals 0", book: &ComicBook{PageCount: 10, LastPageRead: 0}, operator: OperatorEquals, matchVal: "0", want: true},
+		{name: "no pages equals 0", book: &ComicBook{PageCount: 0, LastPageRead: 5}, operator: OperatorEquals, matchVal: "0", want: true},
+		// Halfway: LastPageRead=4 of 10 pages → (4+1)*100/10 = 50%
+		{name: "half read equals 50", book: &ComicBook{PageCount: 10, LastPageRead: 4}, operator: OperatorEquals, matchVal: "50", want: true},
+		{name: "half read greater than 25", book: &ComicBook{PageCount: 10, LastPageRead: 4}, operator: OperatorGreater, matchVal: "25", want: true},
+		{name: "half read less than 75", book: &ComicBook{PageCount: 10, LastPageRead: 4}, operator: OperatorLesser, matchVal: "75", want: true},
+		// Fully read: LastPageRead=9 of 10 → (9+1)*100/10 = 100%
+		{name: "fully read equals 100", book: &ComicBook{PageCount: 10, LastPageRead: 9}, operator: OperatorEquals, matchVal: "100", want: true},
+		{name: "fully read greater than 50", book: &ComicBook{PageCount: 10, LastPageRead: 9}, operator: OperatorGreater, matchVal: "50", want: true},
+		// Range: 25-75%
+		{name: "half read in range 25-75", book: &ComicBook{PageCount: 10, LastPageRead: 4}, operator: OperatorInRange, matchVal: "25", matchVal2: "75", want: true},
+		{name: "unread not in range 25-75", book: &ComicBook{PageCount: 10, LastPageRead: 0}, operator: OperatorInRange, matchVal: "25", matchVal2: "75", want: false},
+		// Clamped to 100 even if arithmetic exceeds it
+		{name: "clamped to 100", book: &ComicBook{PageCount: 10, LastPageRead: 99}, operator: OperatorEquals, matchVal: "100", want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			matcher := &Matcher{
+				Type:        MatcherTypeReadPercentage,
+				Operator:    tt.operator,
+				MatchValue:  tt.matchVal,
+				MatchValue2: tt.matchVal2,
+			}
+			got := matcher.Match(tt.book)
+			if got != tt.want {
+				t.Errorf("Match() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestMatcherDate tests date matching
 func TestMatcherDate(t *testing.T) {
 	now := time.Now()

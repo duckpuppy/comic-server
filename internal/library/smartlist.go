@@ -88,6 +88,7 @@ const (
 	MatcherTypeAgeRating           MatcherType = "AgeRating"
 	MatcherTypeSummary             MatcherType = "Summary"
 	MatcherTypeReview              MatcherType = "Review"
+	MatcherTypeReadPercentage      MatcherType = "ReadPercentage"
 	MatcherTypeLanguage        MatcherType = "LanguageISO"
 	MatcherTypeDirectory       MatcherType = "Directory"
 	MatcherTypeFile            MatcherType = "File"
@@ -300,7 +301,8 @@ func (m *Matcher) matchInternal(book *ComicBook) bool {
 	// Perform type-specific comparison
 	switch m.Type {
 	case MatcherTypeYear, MatcherTypeMonth, MatcherTypeVolume,
-		MatcherTypePageCount, MatcherTypeRating, MatcherTypeCount:
+		MatcherTypePageCount, MatcherTypeRating, MatcherTypeCount,
+		MatcherTypeReadPercentage:
 		return m.matchNumeric(value)
 	case MatcherTypeAddedTime, MatcherTypeOpenedTime:
 		return m.matchDate(value)
@@ -357,6 +359,8 @@ func (m *Matcher) getValue(book *ComicBook) string {
 		return book.Summary
 	case MatcherTypeReview:
 		return book.Review
+	case MatcherTypeReadPercentage:
+		return strconv.Itoa(bookReadPercentage(book))
 	case MatcherTypeYear:
 		return strconv.Itoa(book.Year)
 	case MatcherTypeMonth:
@@ -638,6 +642,22 @@ func (m *Matcher) matchDate(value string) bool {
 	default:
 		return false
 	}
+}
+
+// bookReadPercentage mirrors ComicRackCE's ReadPercentage property:
+// (LastPageRead+1)*100/PageCount clamped to [1,100], or 0 if unread/no pages.
+func bookReadPercentage(book *ComicBook) int {
+	if book.PageCount <= 0 || book.LastPageRead <= 0 {
+		return 0
+	}
+	pct := (book.LastPageRead + 1) * 100 / book.PageCount
+	if pct < 1 {
+		return 1
+	}
+	if pct > 100 {
+		return 100
+	}
+	return pct
 }
 
 // matchYesNo performs Yes/No/Unknown comparison
