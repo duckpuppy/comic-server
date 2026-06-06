@@ -124,6 +124,8 @@ class ListsTree {
         const container = document.getElementById('lists-tree-sidebar');
         if (!container) return;
 
+        const savedScroll = container.scrollTop;
+
         let html = '<div class="tree-container">';
         this.tree.forEach(node => {
             html += this.renderNode(node);
@@ -131,6 +133,8 @@ class ListsTree {
         html += '</div>';
 
         container.innerHTML = html;
+        container.scrollTop = savedScroll;
+
         this.attachListeners();
     }
 
