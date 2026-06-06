@@ -784,6 +784,42 @@ func TestReadPercentageMatcher(t *testing.T) {
 	}
 }
 
+// TestMangaMatcher tests the 4-way Manga enum matcher
+func TestMangaMatcher(t *testing.T) {
+	tests := []struct {
+		name     string
+		operator MatchOperator
+		manga    string
+		want     bool
+	}{
+		// Operator 0: is Yes (right-to-left)
+		{name: "yes RTL match", operator: 0, manga: "Yes", want: true},
+		{name: "yes RTL no match LTR", operator: 0, manga: "YesRightToLeft", want: false},
+		{name: "yes RTL no match No", operator: 0, manga: "No", want: false},
+		// Operator 1: is Yes, Left to Right
+		{name: "yes LTR match YesRightToLeft", operator: 1, manga: "YesRightToLeft", want: true},
+		{name: "yes LTR match YesAndRightToLeft", operator: 1, manga: "YesAndRightToLeft", want: true},
+		{name: "yes LTR no match Yes", operator: 1, manga: "Yes", want: false},
+		// Operator 2: is No
+		{name: "no match", operator: 2, manga: "No", want: true},
+		{name: "no no match Yes", operator: 2, manga: "Yes", want: false},
+		// Operator 3: is Unknown
+		{name: "unknown match", operator: 3, manga: "Unknown", want: true},
+		{name: "unknown empty", operator: 3, manga: "", want: true},
+		{name: "unknown no match Yes", operator: 3, manga: "Yes", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			matcher := &Matcher{Type: MatcherTypeManga, Operator: tt.operator}
+			got := matcher.Match(&ComicBook{Manga: tt.manga})
+			if got != tt.want {
+				t.Errorf("Match() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestMatcherDate tests date matching
 func TestMatcherDate(t *testing.T) {
 	now := time.Now()

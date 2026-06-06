@@ -89,6 +89,7 @@ const (
 	MatcherTypeSummary             MatcherType = "Summary"
 	MatcherTypeReview              MatcherType = "Review"
 	MatcherTypeReadPercentage      MatcherType = "ReadPercentage"
+	MatcherTypeManga               MatcherType = "Manga"
 	MatcherTypeLanguage        MatcherType = "LanguageISO"
 	MatcherTypeDirectory       MatcherType = "Directory"
 	MatcherTypeFile            MatcherType = "File"
@@ -310,6 +311,8 @@ func (m *Matcher) matchInternal(book *ComicBook) bool {
 		MatcherTypeChecked, MatcherTypeHasCustomValues,
 		MatcherTypeIsLinked, MatcherTypeIsMissing, MatcherTypeModifiedInfo:
 		return m.matchYesNo(value)
+	case MatcherTypeManga:
+		return m.matchManga(value)
 	default:
 		// String matching for all other types
 		return m.matchString(value)
@@ -361,6 +364,8 @@ func (m *Matcher) getValue(book *ComicBook) string {
 		return book.Review
 	case MatcherTypeReadPercentage:
 		return strconv.Itoa(bookReadPercentage(book))
+	case MatcherTypeManga:
+		return book.Manga
 	case MatcherTypeYear:
 		return strconv.Itoa(book.Year)
 	case MatcherTypeMonth:
@@ -658,6 +663,26 @@ func bookReadPercentage(book *ComicBook) int {
 		return 100
 	}
 	return pct
+}
+
+// matchManga performs the 4-way Manga enum comparison used by ComicRackCE.
+// Operators: 0=is Yes (RTL), 1=is Yes (LTR), 2=is No, 3=is Unknown.
+// The XML value for LTR manga is "YesRightToLeft" per ComicInfo spec;
+// "YesAndRightToLeft" (C# enum name) is also accepted for safety.
+func (m *Matcher) matchManga(value string) bool {
+	v := strings.ToLower(strings.TrimSpace(value))
+	switch m.Operator {
+	case 0: // is Yes (right-to-left, traditional manga)
+		return v == "yes"
+	case 1: // is Yes, Left to Right
+		return v == "yesrighttoleft" || v == "yesandrighttoleft"
+	case 2: // is No
+		return v == "no"
+	case 3: // is Unknown
+		return v == "unknown" || v == ""
+	default:
+		return false
+	}
 }
 
 // matchYesNo performs Yes/No/Unknown comparison
