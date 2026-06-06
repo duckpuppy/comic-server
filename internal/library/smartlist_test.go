@@ -691,6 +691,56 @@ func TestCreditsMatchers(t *testing.T) {
 	}
 }
 
+// TestCharacterLocationMatchers verifies MainCharacterOrTeam and Locations field extraction
+func TestCharacterLocationMatchers(t *testing.T) {
+	tests := []struct {
+		matcherType MatcherType
+		value       string
+		book        *ComicBook
+	}{
+		{MatcherTypeMainCharacterOrTeam, "Batman", &ComicBook{MainCharacterOrTeam: "Batman"}},
+		{MatcherTypeLocations, "Gotham City", &ComicBook{Locations: "Gotham City"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.matcherType), func(t *testing.T) {
+			matcher := &Matcher{Type: tt.matcherType, Operator: OperatorEquals, IgnoreCase: true, MatchValue: tt.value}
+			if !matcher.Match(tt.book) {
+				t.Errorf("expected match for %s", tt.matcherType)
+			}
+			if matcher.Match(&ComicBook{}) {
+				t.Errorf("expected no match for empty book on %s", tt.matcherType)
+			}
+		})
+	}
+}
+
+// TestContentMatchers verifies StoryArc, AgeRating, Summary, Review field extraction
+func TestContentMatchers(t *testing.T) {
+	tests := []struct {
+		matcherType MatcherType
+		value       string
+		book        *ComicBook
+	}{
+		{MatcherTypeStoryArc, "Knightfall", &ComicBook{StoryArc: "Knightfall"}},
+		{MatcherTypeAgeRating, "Teen", &ComicBook{AgeRating: "Teen"}},
+		{MatcherTypeSummary, "A dark tale", &ComicBook{Summary: "A dark tale"}},
+		{MatcherTypeReview, "Excellent", &ComicBook{Review: "Excellent"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.matcherType), func(t *testing.T) {
+			matcher := &Matcher{Type: tt.matcherType, Operator: OperatorEquals, IgnoreCase: true, MatchValue: tt.value}
+			if !matcher.Match(tt.book) {
+				t.Errorf("expected match for %s", tt.matcherType)
+			}
+			if matcher.Match(&ComicBook{}) {
+				t.Errorf("expected no match for empty book on %s", tt.matcherType)
+			}
+		})
+	}
+}
+
 // TestMatcherDate tests date matching
 func TestMatcherDate(t *testing.T) {
 	now := time.Now()
