@@ -643,6 +643,54 @@ func TestYesNoMatchers(t *testing.T) {
 	}
 }
 
+// TestCreditsMatchers verifies each credits field is correctly extracted and matched
+func TestCreditsMatchers(t *testing.T) {
+	tests := []struct {
+		matcherType MatcherType
+		book        *ComicBook
+	}{
+		{MatcherTypeColorist, &ComicBook{Colorist: "Dave Stewart"}},
+		{MatcherTypeCoverArtist, &ComicBook{CoverArtist: "Alex Ross"}},
+		{MatcherTypeEditor, &ComicBook{Editor: "Karen Berger"}},
+		{MatcherTypeInker, &ComicBook{Inker: "Klaus Janson"}},
+		{MatcherTypeLetterer, &ComicBook{Letterer: "Todd Klein"}},
+		{MatcherTypePenciller, &ComicBook{Penciller: "Neal Adams"}},
+		{MatcherTypeTranslator, &ComicBook{Translator: "Nora Stevens Heath"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.matcherType), func(t *testing.T) {
+			// Extract the field value by doing an Equals match against the known value
+			var fieldVal string
+			switch tt.matcherType {
+			case MatcherTypeColorist:
+				fieldVal = tt.book.Colorist
+			case MatcherTypeCoverArtist:
+				fieldVal = tt.book.CoverArtist
+			case MatcherTypeEditor:
+				fieldVal = tt.book.Editor
+			case MatcherTypeInker:
+				fieldVal = tt.book.Inker
+			case MatcherTypeLetterer:
+				fieldVal = tt.book.Letterer
+			case MatcherTypePenciller:
+				fieldVal = tt.book.Penciller
+			case MatcherTypeTranslator:
+				fieldVal = tt.book.Translator
+			}
+
+			matcher := &Matcher{Type: tt.matcherType, Operator: OperatorEquals, IgnoreCase: true, MatchValue: fieldVal}
+			if !matcher.Match(tt.book) {
+				t.Errorf("expected match for %s, got false", tt.matcherType)
+			}
+			// Verify no match against empty book
+			if matcher.Match(&ComicBook{}) {
+				t.Errorf("expected no match for empty book on %s", tt.matcherType)
+			}
+		})
+	}
+}
+
 // TestMatcherDate tests date matching
 func TestMatcherDate(t *testing.T) {
 	now := time.Now()

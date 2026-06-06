@@ -75,6 +75,13 @@ const (
 	MatcherTypeIsLinked        MatcherType = "IsLinked"
 	MatcherTypeIsMissing       MatcherType = "IsMissing"
 	MatcherTypeModifiedInfo    MatcherType = "ModifiedInfo"
+	MatcherTypeColorist        MatcherType = "Colorist"
+	MatcherTypeCoverArtist     MatcherType = "CoverArtist"
+	MatcherTypeEditor          MatcherType = "Editor"
+	MatcherTypeInker           MatcherType = "Inker"
+	MatcherTypeLetterer        MatcherType = "Letterer"
+	MatcherTypePenciller       MatcherType = "Penciller"
+	MatcherTypeTranslator      MatcherType = "Translator"
 	MatcherTypeLanguage        MatcherType = "LanguageISO"
 	MatcherTypeDirectory       MatcherType = "Directory"
 	MatcherTypeFile            MatcherType = "File"
@@ -318,6 +325,20 @@ func (m *Matcher) getValue(book *ComicBook) string {
 		return book.Imprint
 	case MatcherTypeWriter:
 		return book.Writer
+	case MatcherTypeColorist:
+		return book.Colorist
+	case MatcherTypeCoverArtist:
+		return book.CoverArtist
+	case MatcherTypeEditor:
+		return book.Editor
+	case MatcherTypeInker:
+		return book.Inker
+	case MatcherTypeLetterer:
+		return book.Letterer
+	case MatcherTypePenciller:
+		return book.Penciller
+	case MatcherTypeTranslator:
+		return book.Translator
 	case MatcherTypeYear:
 		return strconv.Itoa(book.Year)
 	case MatcherTypeMonth:
