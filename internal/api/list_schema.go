@@ -23,9 +23,9 @@ type OperatorInfo struct {
 
 // ListSchema is the static metadata returned by GET /api/library/lists/schema.
 type ListSchema struct {
-	MatcherTypes     []MatcherTypeInfo          `json:"matcherTypes"`
-	Operators        map[string][]OperatorInfo  `json:"operators"`
-	MatcherModes     []struct{ Value, Label string } `json:"matcherModes"`
+	MatcherTypes []MatcherTypeInfo               `json:"matcherTypes"`
+	Operators    map[string][]OperatorInfo       `json:"operators"`
+	MatcherModes []struct{ Value, Label string } `json:"matcherModes"`
 }
 
 var listSchemaCache *ListSchema

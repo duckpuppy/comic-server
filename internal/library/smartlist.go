@@ -47,40 +47,40 @@ type MatcherType string
 
 const (
 	// Common matcher types
-	MatcherTypeSeries          MatcherType = "Series"
-	MatcherTypeAlternateSeries MatcherType = "AlternateSeries"
-	MatcherTypeSeriesGroup     MatcherType = "SeriesGroup"
-	MatcherTypeTitle           MatcherType = "Title"
-	MatcherTypePublisher       MatcherType = "Publisher"
-	MatcherTypeImprint         MatcherType = "Imprint"
-	MatcherTypeWriter          MatcherType = "Writer"
-	MatcherTypeYear            MatcherType = "Year"
-	MatcherTypeMonth           MatcherType = "Month"
-	MatcherTypeGenre           MatcherType = "Genre"
-	MatcherTypeFormat          MatcherType = "Format"
-	MatcherTypeCharacters      MatcherType = "Characters"
-	MatcherTypeTeams           MatcherType = "Teams"
-	MatcherTypeVolume          MatcherType = "Volume"
-	MatcherTypeNumber          MatcherType = "Number"
-	MatcherTypePageCount       MatcherType = "PageCount"
-	MatcherTypeRating          MatcherType = "Rating"
-	MatcherTypeTags            MatcherType = "Tags"
-	MatcherTypeNotes           MatcherType = "Notes"
-	MatcherTypeAddedTime       MatcherType = "Added"
-	MatcherTypeOpenedTime      MatcherType = "Opened"
-	MatcherTypeSeriesComplete  MatcherType = "SeriesComplete"
-	MatcherTypeChecked         MatcherType = "Checked"
-	MatcherTypeBlackAndWhite   MatcherType = "BlackAndWhite"
-	MatcherTypeHasCustomValues MatcherType = "HasCustomValues"
-	MatcherTypeIsLinked        MatcherType = "IsLinked"
-	MatcherTypeIsMissing       MatcherType = "IsMissing"
-	MatcherTypeModifiedInfo    MatcherType = "ModifiedInfo"
-	MatcherTypeColorist        MatcherType = "Colorist"
-	MatcherTypeCoverArtist     MatcherType = "CoverArtist"
-	MatcherTypeEditor          MatcherType = "Editor"
-	MatcherTypeInker           MatcherType = "Inker"
-	MatcherTypeLetterer        MatcherType = "Letterer"
-	MatcherTypePenciller       MatcherType = "Penciller"
+	MatcherTypeSeries              MatcherType = "Series"
+	MatcherTypeAlternateSeries     MatcherType = "AlternateSeries"
+	MatcherTypeSeriesGroup         MatcherType = "SeriesGroup"
+	MatcherTypeTitle               MatcherType = "Title"
+	MatcherTypePublisher           MatcherType = "Publisher"
+	MatcherTypeImprint             MatcherType = "Imprint"
+	MatcherTypeWriter              MatcherType = "Writer"
+	MatcherTypeYear                MatcherType = "Year"
+	MatcherTypeMonth               MatcherType = "Month"
+	MatcherTypeGenre               MatcherType = "Genre"
+	MatcherTypeFormat              MatcherType = "Format"
+	MatcherTypeCharacters          MatcherType = "Characters"
+	MatcherTypeTeams               MatcherType = "Teams"
+	MatcherTypeVolume              MatcherType = "Volume"
+	MatcherTypeNumber              MatcherType = "Number"
+	MatcherTypePageCount           MatcherType = "PageCount"
+	MatcherTypeRating              MatcherType = "Rating"
+	MatcherTypeTags                MatcherType = "Tags"
+	MatcherTypeNotes               MatcherType = "Notes"
+	MatcherTypeAddedTime           MatcherType = "Added"
+	MatcherTypeOpenedTime          MatcherType = "Opened"
+	MatcherTypeSeriesComplete      MatcherType = "SeriesComplete"
+	MatcherTypeChecked             MatcherType = "Checked"
+	MatcherTypeBlackAndWhite       MatcherType = "BlackAndWhite"
+	MatcherTypeHasCustomValues     MatcherType = "HasCustomValues"
+	MatcherTypeIsLinked            MatcherType = "IsLinked"
+	MatcherTypeIsMissing           MatcherType = "IsMissing"
+	MatcherTypeModifiedInfo        MatcherType = "ModifiedInfo"
+	MatcherTypeColorist            MatcherType = "Colorist"
+	MatcherTypeCoverArtist         MatcherType = "CoverArtist"
+	MatcherTypeEditor              MatcherType = "Editor"
+	MatcherTypeInker               MatcherType = "Inker"
+	MatcherTypeLetterer            MatcherType = "Letterer"
+	MatcherTypePenciller           MatcherType = "Penciller"
 	MatcherTypeTranslator          MatcherType = "Translator"
 	MatcherTypeMainCharacterOrTeam MatcherType = "MainCharacterOrTeam"
 	MatcherTypeLocations           MatcherType = "Locations"
@@ -92,63 +92,68 @@ const (
 	MatcherTypeManga               MatcherType = "Manga"
 	MatcherTypeAllProperties       MatcherType = "AllProperties"
 	// Miscellaneous string
-	MatcherTypeISBN                MatcherType = "ISBN"
-	MatcherTypeWeb                 MatcherType = "Web"
+	MatcherTypeISBN MatcherType = "ISBN"
+	MatcherTypeWeb  MatcherType = "Web"
 	// Book ownership/condition string
-	MatcherTypeBookAge             MatcherType = "BookAge"
-	MatcherTypeBookCondition       MatcherType = "BookCondition"
-	MatcherTypeBookStore           MatcherType = "BookStore"
-	MatcherTypeBookOwner           MatcherType = "BookOwner"
+	MatcherTypeBookAge              MatcherType = "BookAge"
+	MatcherTypeBookCondition        MatcherType = "BookCondition"
+	MatcherTypeBookStore            MatcherType = "BookStore"
+	MatcherTypeBookOwner            MatcherType = "BookOwner"
 	MatcherTypeBookCollectionStatus MatcherType = "BookCollectionStatus"
-	MatcherTypeBookNotes           MatcherType = "BookNotes"
-	MatcherTypeBookLocation        MatcherType = "BookLocation"
+	MatcherTypeBookNotes            MatcherType = "BookNotes"
+	MatcherTypeBookLocation         MatcherType = "BookLocation"
 	// Numeric
-	MatcherTypeAlternateNumber     MatcherType = "AlternateNumber"
-	MatcherTypeAlternateCount      MatcherType = "AlternateCount"
-	MatcherTypeFileSize            MatcherType = "FileSize"
-	MatcherTypeCommunityRating     MatcherType = "CommunityRating"
+	MatcherTypeAlternateNumber MatcherType = "AlternateNumber"
+	MatcherTypeAlternateCount  MatcherType = "AlternateCount"
+	MatcherTypeFileSize        MatcherType = "FileSize"
+	MatcherTypeCommunityRating MatcherType = "CommunityRating"
 	// Date
-	MatcherTypeModified            MatcherType = "Modified"
-	MatcherTypeCreation            MatcherType = "Creation"
-	MatcherTypePublished           MatcherType = "Published"
-	MatcherTypeReleased            MatcherType = "Released"
-	MatcherTypeDay                 MatcherType = "Day"
-	MatcherTypeWeek                MatcherType = "Week"
-	MatcherTypeNewPages            MatcherType = "NewPages"
-	MatcherTypeBookmarkCount       MatcherType = "BookmarkCount"
-	MatcherTypeBookPrice           MatcherType = "BookPrice"
-	MatcherTypeLanguage            MatcherType = "LanguageISO"
-	MatcherTypeDirectory           MatcherType = "Directory"
-	MatcherTypeFile                MatcherType = "File"
-	MatcherTypeFullPath            MatcherType = "FullPath"
-	MatcherTypeFileFormat          MatcherType = "FileFormat"
-	MatcherTypeScanInfo            MatcherType = "ScanInformation"
-	MatcherTypeCount               MatcherType = "Count"
+	MatcherTypeModified      MatcherType = "Modified"
+	MatcherTypeCreation      MatcherType = "Creation"
+	MatcherTypePublished     MatcherType = "Published"
+	MatcherTypeReleased      MatcherType = "Released"
+	MatcherTypeDay           MatcherType = "Day"
+	MatcherTypeWeek          MatcherType = "Week"
+	MatcherTypeNewPages      MatcherType = "NewPages"
+	MatcherTypeBookmarkCount MatcherType = "BookmarkCount"
+	MatcherTypeBookPrice     MatcherType = "BookPrice"
+	MatcherTypeLanguage      MatcherType = "LanguageISO"
+	MatcherTypeDirectory     MatcherType = "Directory"
+	MatcherTypeFile          MatcherType = "File"
+	MatcherTypeFullPath      MatcherType = "FullPath"
+	MatcherTypeFileFormat    MatcherType = "FileFormat"
+	MatcherTypeScanInfo      MatcherType = "ScanInformation"
+	MatcherTypeCount         MatcherType = "Count"
+
+	// Duplicate matcher — requires cross-book comparison across the entire candidate set.
+	// Maps to ComicBookDuplicateMatcher xsi:type in the ComicRack XML.
+	// Operator 0 (On) returns books that are duplicates; operator != 0 (Off) returns all books.
+	MatcherTypeDuplicate MatcherType = "Duplicate"
 
 	// Series aggregate matchers — require stats across all books in the same series+volume.
 	// These map to SmartListSeries*Matcher xsi:type values in the ComicRack XML.
-	MatcherTypeSeriesAllComplete          MatcherType = "SeriesAllComplete"
+	MatcherTypeSeriesAllComplete            MatcherType = "SeriesAllComplete"
 	MatcherTypeSeriesAverageCommunityRating MatcherType = "SeriesAverageCommunityRating"
-	MatcherTypeSeriesAverageRating        MatcherType = "SeriesAverageRating"
-	MatcherTypeSeriesCount                MatcherType = "SeriesCount"
-	MatcherTypeSeriesEndOfGap             MatcherType = "SeriesEndOfGap"
-	MatcherTypeSeriesFirstNumber          MatcherType = "SeriesFirstNumber"
-	MatcherTypeSeriesGaps                 MatcherType = "SeriesGaps"
-	MatcherTypeSeriesLastAddedTime        MatcherType = "SeriesLastAddedTime"
-	MatcherTypeSeriesLastNumber           MatcherType = "SeriesLastNumber"
-	MatcherTypeSeriesLastOpenedTime       MatcherType = "SeriesLastOpenedTime"
-	MatcherTypeSeriesLastPublishedTime    MatcherType = "SeriesLastPublishedTime"
-	MatcherTypeSeriesLastReleasedTime     MatcherType = "SeriesLastReleasedTime"
-	MatcherTypeSeriesMaxCount             MatcherType = "SeriesMaxCount"
-	MatcherTypeSeriesMaxGapSize           MatcherType = "SeriesMaxGapSize"
-	MatcherTypeSeriesMaxYear              MatcherType = "SeriesMaxYear"
-	MatcherTypeSeriesMinCount             MatcherType = "SeriesMinCount"
-	MatcherTypeSeriesMinYear              MatcherType = "SeriesMinYear"
-	MatcherTypeSeriesPageCount            MatcherType = "SeriesPageCount"
-	MatcherTypeSeriesPagesRead            MatcherType = "SeriesPagesRead"
-	MatcherTypeSeriesPercentRead          MatcherType = "SeriesPercentRead"
-	MatcherTypeSeriesRunningTimeYears     MatcherType = "SeriesRunningTimeYears"
-	MatcherTypeSeriesStartOfGap           MatcherType = "SeriesStartOfGap"
+	MatcherTypeSeriesAverageRating          MatcherType = "SeriesAverageRating"
+	MatcherTypeSeriesCount                  MatcherType = "SeriesCount"
+	MatcherTypeSeriesEndOfGap               MatcherType = "SeriesEndOfGap"
+	MatcherTypeSeriesFirstNumber            MatcherType = "SeriesFirstNumber"
+	MatcherTypeSeriesGaps                   MatcherType = "SeriesGaps"
+	MatcherTypeSeriesLastAddedTime          MatcherType = "SeriesLastAddedTime"
+	MatcherTypeSeriesLastNumber             MatcherType = "SeriesLastNumber"
+	MatcherTypeSeriesLastOpenedTime         MatcherType = "SeriesLastOpenedTime"
+	MatcherTypeSeriesLastPublishedTime      MatcherType = "SeriesLastPublishedTime"
+	MatcherTypeSeriesLastReleasedTime       MatcherType = "SeriesLastReleasedTime"
+	MatcherTypeSeriesMaxCount               MatcherType = "SeriesMaxCount"
+	MatcherTypeSeriesMaxGapSize             MatcherType = "SeriesMaxGapSize"
+	MatcherTypeSeriesMaxYear                MatcherType = "SeriesMaxYear"
+	MatcherTypeSeriesMinCount               MatcherType = "SeriesMinCount"
+	MatcherTypeSeriesMinYear                MatcherType = "SeriesMinYear"
+	MatcherTypeSeriesPageCount              MatcherType = "SeriesPageCount"
+	MatcherTypeSeriesPagesRead              MatcherType = "SeriesPagesRead"
+	MatcherTypeSeriesPercentRead            MatcherType = "SeriesPercentRead"
+	MatcherTypeSeriesRunningTimeYears       MatcherType = "SeriesRunningTimeYears"
+	MatcherTypeSeriesStartOfGap             MatcherType = "SeriesStartOfGap"
 )
 
 // AllPropertiesOption controls which fields the AllProperties matcher searches
@@ -166,10 +171,10 @@ const (
 
 // Matcher represents a smart list filter rule
 type Matcher struct {
-	Type          MatcherType
-	Operator      MatchOperator
-	MatchValue    string
-	MatchValue2   string // For range operators
+	Type                MatcherType
+	Operator            MatchOperator
+	MatchValue          string
+	MatchValue2         string              // For range operators
 	Not                 bool                // Invert the match result
 	IgnoreCase          bool                // For string comparisons
 	AllPropertiesOption AllPropertiesOption // For MatcherTypeAllProperties only
@@ -234,11 +239,11 @@ func NewMatcherFromXML(xmlMatcher *ComicBookMatcher) (*Matcher, error) {
 	// Handle series aggregate matchers
 	if mt, ok := seriesMatcherTypes[xmlMatcher.Type]; ok {
 		m := &Matcher{
-			Type:       mt,
-			MatchValue: xmlMatcher.MatchValue,
+			Type:        mt,
+			MatchValue:  xmlMatcher.MatchValue,
 			MatchValue2: xmlMatcher.MatchValue2,
-			Not:        xmlMatcher.Not,
-			IgnoreCase: true,
+			Not:         xmlMatcher.Not,
+			IgnoreCase:  true,
 		}
 		if err := m.parseOperator(xmlMatcher.MatchOperator); err != nil {
 			return nil, fmt.Errorf("invalid operator %q: %w", xmlMatcher.MatchOperator, err)
@@ -998,7 +1003,7 @@ func (m *Matcher) matchYesNo(value string) bool {
 }
 
 // evaluateMatcher recursively evaluates a matcher (value or group) against a book
-func evaluateMatcher(xmlMatcher *ComicBookMatcher, book *ComicBook, stats map[seriesKey]*SeriesStats) bool {
+func evaluateMatcher(xmlMatcher *ComicBookMatcher, book *ComicBook, stats map[seriesKey]*SeriesStats, duplicates map[string]bool) bool {
 	// Check if this is a group matcher
 	if strings.Contains(xmlMatcher.Type, "GroupMatcher") {
 		// Evaluate nested matchers according to group mode
@@ -1020,7 +1025,7 @@ func evaluateMatcher(xmlMatcher *ComicBookMatcher, book *ComicBook, stats map[se
 			// OR mode: true if ANY nested matcher matches
 			result = false
 			for i := range xmlMatcher.Matchers {
-				if evaluateMatcher(&xmlMatcher.Matchers[i], book, stats) {
+				if evaluateMatcher(&xmlMatcher.Matchers[i], book, stats, duplicates) {
 					result = true
 					break
 				}
@@ -1029,7 +1034,7 @@ func evaluateMatcher(xmlMatcher *ComicBookMatcher, book *ComicBook, stats map[se
 			// AND mode: true if ALL nested matchers match
 			result = true
 			for i := range xmlMatcher.Matchers {
-				if !evaluateMatcher(&xmlMatcher.Matchers[i], book, stats) {
+				if !evaluateMatcher(&xmlMatcher.Matchers[i], book, stats, duplicates) {
 					result = false
 					break
 				}
@@ -1037,6 +1042,22 @@ func evaluateMatcher(xmlMatcher *ComicBookMatcher, book *ComicBook, stats map[se
 		}
 
 		// Apply negation if set
+		if xmlMatcher.Not {
+			return !result
+		}
+		return result
+	}
+
+	// Duplicate matcher: uses pre-computed cross-book duplicate set
+	if xmlMatcher.Type == "ComicBookDuplicateMatcher" {
+		// MatchOperator=0 (On) → filter to duplicates; any other value (Off) → all books match
+		op := xmlMatcher.MatchOperator
+		var result bool
+		if op == "" || op == "0" {
+			result = duplicates[book.ID]
+		} else {
+			result = true
+		}
 		if xmlMatcher.Not {
 			return !result
 		}
@@ -1172,6 +1193,110 @@ func hasSeriesMatchers(matchers []ComicBookMatcher) bool {
 	return false
 }
 
+// commonSeparators mirrors ComicRackCE's StringUtility.CommonSeparators.
+var commonSeparators = func() map[rune]bool {
+	m := make(map[rune]bool)
+	for _, r := range " \t\n\r-~,.:;/\\'`´" {
+		m[r] = true
+	}
+	return m
+}()
+
+// defaultArticles mirrors ComicRackCE's default StringUtility.Articles.
+var defaultArticles = map[string]bool{
+	"the": true, "der": true, "die": true, "das": true,
+	"le": true, "la": true, "les": true, "l'": true,
+}
+
+// compressedSeriesName strips common separators and articles from a series name and
+// uppercases the result, mirroring ComicRackCE's GroupInfo.CompressedName for use
+// in duplicate detection.
+func compressedSeriesName(text string) string {
+	words := strings.FieldsFunc(text, func(r rune) bool { return commonSeparators[r] })
+	var b strings.Builder
+	for _, w := range words {
+		if w == "" {
+			continue
+		}
+		if !defaultArticles[strings.ToLower(w)] {
+			b.WriteString(w)
+		}
+	}
+	return strings.ToUpper(b.String())
+}
+
+// dupMetaKey is the grouping key for metadata-based duplicate detection.
+// Mirrors ComicBookDuplicateComparer.EqualityComparer from ComicRackCE.
+type dupMetaKey struct {
+	series string // compressedSeriesName(Series), uppercased
+	format string
+	volume int
+	number string
+	lang   string
+	year   int // 0 = unset (XML omitempty means missing → 0 in Go)
+	month  int
+	day    int
+	bw     string
+}
+
+// buildDuplicateSet pre-processes all candidate books and returns the set of book IDs
+// that are duplicates (by metadata or file path), matching ComicBookDuplicateMatcher logic.
+func buildDuplicateSet(books []*ComicBook) map[string]bool {
+	metaGroups := make(map[dupMetaKey][]string)
+	pathGroups := make(map[string][]string)
+
+	for _, book := range books {
+		key := dupMetaKey{
+			series: compressedSeriesName(book.Series),
+			format: book.Format,
+			volume: book.Volume,
+			number: book.Number,
+			lang:   book.LanguageISO,
+			year:   book.Year,
+			month:  book.Month,
+			day:    book.Day,
+			bw:     book.BlackAndWhite,
+		}
+		metaGroups[key] = append(metaGroups[key], book.ID)
+
+		if book.FilePath != "" {
+			normPath := strings.ToLower(strings.ReplaceAll(book.FilePath, "\\", "/"))
+			pathGroups[normPath] = append(pathGroups[normPath], book.ID)
+		}
+	}
+
+	duplicates := make(map[string]bool)
+	for _, ids := range metaGroups {
+		if len(ids) > 1 {
+			for _, id := range ids {
+				duplicates[id] = true
+			}
+		}
+	}
+	for _, ids := range pathGroups {
+		if len(ids) > 1 {
+			for _, id := range ids {
+				duplicates[id] = true
+			}
+		}
+	}
+	return duplicates
+}
+
+// hasDuplicateMatcher reports whether any matcher in the list (including nested groups) is a
+// duplicate matcher.
+func hasDuplicateMatcher(matchers []ComicBookMatcher) bool {
+	for i := range matchers {
+		if matchers[i].Type == "ComicBookDuplicateMatcher" {
+			return true
+		}
+		if len(matchers[i].Matchers) > 0 && hasDuplicateMatcher(matchers[i].Matchers) {
+			return true
+		}
+	}
+	return false
+}
+
 // matchBooks evaluates a list's matchers against a slice of candidate books.
 func matchBooks(list *ComicListItem, candidates []*ComicBook) []*ComicBook {
 	matcherMode := list.MatcherMode
@@ -1185,12 +1310,18 @@ func matchBooks(list *ComicListItem, candidates []*ComicBook) []*ComicBook {
 		stats = buildSeriesStats(candidates)
 	}
 
+	// Pre-compute duplicate set only when needed.
+	var duplicates map[string]bool
+	if hasDuplicateMatcher(list.Matchers) {
+		duplicates = buildDuplicateSet(candidates)
+	}
+
 	var matched []*ComicBook
 	for _, book := range candidates {
 		var ok bool
 		if matcherMode == "Or" {
 			for j := range list.Matchers {
-				if evaluateMatcher(&list.Matchers[j], book, stats) {
+				if evaluateMatcher(&list.Matchers[j], book, stats, duplicates) {
 					ok = true
 					break
 				}
@@ -1198,7 +1329,7 @@ func matchBooks(list *ComicListItem, candidates []*ComicBook) []*ComicBook {
 		} else {
 			ok = true
 			for j := range list.Matchers {
-				if !evaluateMatcher(&list.Matchers[j], book, stats) {
+				if !evaluateMatcher(&list.Matchers[j], book, stats, duplicates) {
 					ok = false
 					break
 				}

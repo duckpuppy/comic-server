@@ -92,14 +92,14 @@ type ComicBook struct {
 	BookPrice float64 `xml:"BookPrice,omitempty"` // Purchase price (-1 = unset)
 
 	// Catalog / Ownership
-	ISBN                string `xml:"ISBN,omitempty"`
-	BookAge             string `xml:"BookAge,omitempty"`
-	BookCondition       string `xml:"BookCondition,omitempty"`
-	BookStore           string `xml:"BookStore,omitempty"`
-	BookOwner           string `xml:"BookOwner,omitempty"`
+	ISBN                 string `xml:"ISBN,omitempty"`
+	BookAge              string `xml:"BookAge,omitempty"`
+	BookCondition        string `xml:"BookCondition,omitempty"`
+	BookStore            string `xml:"BookStore,omitempty"`
+	BookOwner            string `xml:"BookOwner,omitempty"`
 	BookCollectionStatus string `xml:"BookCollectionStatus,omitempty"`
-	BookNotes           string `xml:"BookNotes,omitempty"`
-	BookLocation        string `xml:"BookLocation,omitempty"`
+	BookNotes            string `xml:"BookNotes,omitempty"`
+	BookLocation         string `xml:"BookLocation,omitempty"`
 
 	// System Flags
 	Checked             bool   `xml:"Checked,attr,omitempty"` // Book attribute

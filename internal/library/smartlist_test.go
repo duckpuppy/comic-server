@@ -934,13 +934,13 @@ func TestMiscStringMatchers(t *testing.T) {
 // TestOwnershipMatchers verifies book ownership/condition string fields
 func TestOwnershipMatchers(t *testing.T) {
 	book := &ComicBook{
-		BookAge:             "Modern",
-		BookCondition:       "Near Mint",
-		BookStore:           "Mile High",
-		BookOwner:           "Patrick",
+		BookAge:              "Modern",
+		BookCondition:        "Near Mint",
+		BookStore:            "Mile High",
+		BookOwner:            "Patrick",
 		BookCollectionStatus: "Read",
-		BookNotes:           "Signed copy",
-		BookLocation:        "Shelf A",
+		BookNotes:            "Signed copy",
+		BookLocation:         "Shelf A",
 	}
 	for _, tt := range []struct {
 		matcherType MatcherType
@@ -1499,34 +1499,34 @@ func TestPathMatcherWindowsPaths(t *testing.T) {
 // correctly distinguishes unset (0) from set (>0) books.
 func TestCountMatcherNumeric(t *testing.T) {
 	tests := []struct {
-		name      string
-		count     int
-		matchVal  string
-		not       bool
-		want      bool
+		name     string
+		count    int
+		matchVal string
+		not      bool
+		want     bool
 	}{
 		{
-			name: "count empty (0) matches empty check",
+			name:  "count empty (0) matches empty check",
 			count: 0, matchVal: "", want: true,
 		},
 		{
-			name: "count set does not match empty check",
+			name:  "count set does not match empty check",
 			count: 6, matchVal: "", want: false,
 		},
 		{
-			name: "NOT count empty passes when count is set",
+			name:  "NOT count empty passes when count is set",
 			count: 6, matchVal: "", not: true, want: true,
 		},
 		{
-			name: "NOT count empty fails when count is unset",
+			name:  "NOT count empty fails when count is unset",
 			count: 0, matchVal: "", not: true, want: false,
 		},
 		{
-			name: "count equals specific value",
+			name:  "count equals specific value",
 			count: 6, matchVal: "6", want: true,
 		},
 		{
-			name: "count not equal to specific value",
+			name:  "count not equal to specific value",
 			count: 4, matchVal: "6", want: false,
 		},
 	}
@@ -1610,7 +1610,7 @@ func TestSeriesMinMaxYearMatcher(t *testing.T) {
 	}
 	// MinYear for X is 1990; match series where min year <= 1990
 	list := seriesList("SmartListSeriesMinYearMatcher", "2", "1990", false) // Greater or Equals... use op=0 (equals)
-	list.Matchers[0].MatchOperator = "0" // Equals
+	list.Matchers[0].MatchOperator = "0"                                    // Equals
 	got := evalSeries(list, books)
 	if len(got) != 2 {
 		t.Errorf("got %d matches, want 2 (both X books)", len(got))
@@ -1753,5 +1753,186 @@ func TestSeriesMatcherMissingStatsReturnsFalse(t *testing.T) {
 	got := evaluateSeriesMatcher(xmlM, book, nil)
 	if got {
 		t.Error("expected false when stats is nil")
+	}
+}
+
+// --- Duplicate matcher tests ---
+
+func TestCompressedSeriesName(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"Batman", "BATMAN"},
+		{"The Dark Knight", "DARKKNIGHT"},
+		{"The Amazing Spider-Man", "AMAZINGSPIDERMAN"},
+		{"La Maison", "MAISON"},
+		{"Der Mann", "MANN"},
+		{"", ""},
+		{"The the", ""},       // both words are articles
+		{"A-Force", "AFORCE"}, // "A" is not in default articles; hyphen is separator
+		{"Justice League", "JUSTICELEAGUE"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			if got := compressedSeriesName(tt.input); got != tt.want {
+				t.Errorf("compressedSeriesName(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildDuplicateSet_MetadataMatch(t *testing.T) {
+	books := []*ComicBook{
+		{ID: "1", Series: "Batman", Format: "Comic", Volume: 1, Number: "1", Year: 2020, Month: 1, BlackAndWhite: "No"},
+		{ID: "2", Series: "Batman", Format: "Comic", Volume: 1, Number: "1", Year: 2020, Month: 1, BlackAndWhite: "No"},
+		{ID: "3", Series: "Superman", Format: "Comic", Volume: 1, Number: "1", Year: 2020, Month: 1, BlackAndWhite: "No"},
+	}
+	dups := buildDuplicateSet(books)
+	if !dups["1"] {
+		t.Error("book 1 should be a duplicate")
+	}
+	if !dups["2"] {
+		t.Error("book 2 should be a duplicate")
+	}
+	if dups["3"] {
+		t.Error("book 3 should NOT be a duplicate")
+	}
+}
+
+func TestBuildDuplicateSet_FilePathMatch(t *testing.T) {
+	books := []*ComicBook{
+		{ID: "1", Series: "Batman", Number: "1", FilePath: "/comics/batman-001.cbz"},
+		{ID: "2", Series: "Batman", Number: "1", FilePath: "/comics/batman-001.cbz"}, // same path
+		{ID: "3", Series: "Batman", Number: "2", FilePath: "/comics/batman-002.cbz"}, // different path and number
+	}
+	dups := buildDuplicateSet(books)
+	if !dups["1"] || !dups["2"] {
+		t.Error("books with same file path should be duplicates")
+	}
+	if dups["3"] {
+		t.Error("book with unique path should NOT be a duplicate")
+	}
+}
+
+func TestBuildDuplicateSet_FilePathCaseInsensitive(t *testing.T) {
+	books := []*ComicBook{
+		{ID: "1", FilePath: "C:\\Comics\\Batman.cbz"},
+		{ID: "2", FilePath: "c:/comics/batman.cbz"}, // same path, different case/separators
+	}
+	dups := buildDuplicateSet(books)
+	if !dups["1"] || !dups["2"] {
+		t.Error("file path comparison should be case-insensitive and normalize separators")
+	}
+}
+
+func TestBuildDuplicateSet_NoLinkedBooks(t *testing.T) {
+	// Fileless books (FilePath="") should not be grouped by path
+	books := []*ComicBook{
+		{ID: "1", Series: "Batman", FilePath: ""},
+		{ID: "2", Series: "Batman", FilePath: ""},
+	}
+	dups := buildDuplicateSet(books)
+	// Metadata differs only if series is different; same series → metadata duplicates
+	if !dups["1"] || !dups["2"] {
+		t.Error("fileless books with same metadata should still be metadata duplicates")
+	}
+}
+
+func TestBuildDuplicateSet_SeriesArticleStripping(t *testing.T) {
+	books := []*ComicBook{
+		{ID: "1", Series: "The Batman", Volume: 1, Number: "1"},
+		{ID: "2", Series: "Batman", Volume: 1, Number: "1"}, // same after stripping "The"
+	}
+	dups := buildDuplicateSet(books)
+	if !dups["1"] || !dups["2"] {
+		t.Error("series names differing only in leading article should be considered duplicates")
+	}
+}
+
+func TestBuildDuplicateSet_YearUnsetGroupsTogether(t *testing.T) {
+	// Two books with unset year (0 in Go) should group together
+	books := []*ComicBook{
+		{ID: "1", Series: "Batman", Volume: 1, Number: "1", Year: 0},
+		{ID: "2", Series: "Batman", Volume: 1, Number: "1", Year: 0},
+	}
+	dups := buildDuplicateSet(books)
+	if !dups["1"] || !dups["2"] {
+		t.Error("books with unset year should group together as duplicates")
+	}
+}
+
+func TestBuildDuplicateSet_YearDifferencePreventsMatch(t *testing.T) {
+	books := []*ComicBook{
+		{ID: "1", Series: "Batman", Volume: 1, Number: "1", Year: 2020},
+		{ID: "2", Series: "Batman", Volume: 1, Number: "1", Year: 2021},
+	}
+	dups := buildDuplicateSet(books)
+	if dups["1"] || dups["2"] {
+		t.Error("books with different years should NOT be duplicates")
+	}
+}
+
+func dupList(op string, not bool) *ComicListItem {
+	return &ComicListItem{
+		Type: "SmartListItem",
+		Matchers: []ComicBookMatcher{
+			{Type: "ComicBookDuplicateMatcher", MatchOperator: op, Not: not},
+		},
+	}
+}
+
+func evalDup(list *ComicListItem, books []*ComicBook) []*ComicBook {
+	return matchBooks(list, books)
+}
+
+func TestDuplicateMatcherOnMode(t *testing.T) {
+	books := []*ComicBook{
+		{ID: "1", Series: "Batman", Volume: 1, Number: "1", Year: 2020},
+		{ID: "2", Series: "Batman", Volume: 1, Number: "1", Year: 2020}, // dup of 1
+		{ID: "3", Series: "Superman", Volume: 1, Number: "1", Year: 2020},
+	}
+	got := evalDup(dupList("0", false), books)
+	if len(got) != 2 {
+		t.Fatalf("On mode: want 2 duplicates, got %d", len(got))
+	}
+}
+
+func TestDuplicateMatcherOffMode(t *testing.T) {
+	books := []*ComicBook{
+		{ID: "1", Series: "Batman", Volume: 1, Number: "1", Year: 2020},
+		{ID: "2", Series: "Batman", Volume: 1, Number: "1", Year: 2020},
+		{ID: "3", Series: "Superman", Volume: 1, Number: "1", Year: 2020},
+	}
+	// MatchOperator=1 → "Off" → all books match
+	got := evalDup(dupList("1", false), books)
+	if len(got) != 3 {
+		t.Fatalf("Off mode: want all 3 books, got %d", len(got))
+	}
+}
+
+func TestDuplicateMatcherNotInverts(t *testing.T) {
+	books := []*ComicBook{
+		{ID: "1", Series: "Batman", Volume: 1, Number: "1", Year: 2020},
+		{ID: "2", Series: "Batman", Volume: 1, Number: "1", Year: 2020}, // dup of 1
+		{ID: "3", Series: "Superman", Volume: 1, Number: "1", Year: 2020},
+	}
+	// NOT + On → only non-duplicates
+	got := evalDup(dupList("0", true), books)
+	if len(got) != 1 || got[0].ID != "3" {
+		t.Fatalf("NOT On mode: want 1 non-duplicate (Superman), got %d", len(got))
+	}
+}
+
+func TestDuplicateMatcherEmptyOperator(t *testing.T) {
+	// Empty MatchOperator defaults to "0" (On)
+	books := []*ComicBook{
+		{ID: "1", Series: "Batman", Volume: 1, Number: "1", Year: 2020},
+		{ID: "2", Series: "Batman", Volume: 1, Number: "1", Year: 2020},
+		{ID: "3", Series: "Superman"},
+	}
+	got := evalDup(dupList("", false), books)
+	if len(got) != 2 {
+		t.Fatalf("Empty operator (defaults to On): want 2 duplicates, got %d", len(got))
 	}
 }

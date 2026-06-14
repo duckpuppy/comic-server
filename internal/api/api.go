@@ -36,11 +36,11 @@ type VersionInfo struct {
 type Server struct {
 	syncManager       *syncstate.Manager
 	registry          *device.Registry
-	backend           library.Backend       // Backend for library operations
-	listCache         *library.ListCache    // Cache for smart list book counts
+	backend           library.Backend    // Backend for library operations
+	listCache         *library.ListCache // Cache for smart list book counts
 	config            *config.Config
-	configPath        string // Path to config file for saving
-	configMu          sync.RWMutex    // Protects config modifications
+	configPath        string       // Path to config file for saving
+	configMu          sync.RWMutex // Protects config modifications
 	version           VersionInfo
 	mux               *http.ServeMux
 	startTime         time.Time

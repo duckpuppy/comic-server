@@ -16,7 +16,7 @@ type Config struct {
 // ServerConfig contains global server settings
 type ServerConfig struct {
 	// Library settings
-	LibraryPath string `yaml:"library_path,omitempty" toml:"library_path,omitempty"` // Path to ComicDb.xml
+	LibraryPath  string `yaml:"library_path,omitempty" toml:"library_path,omitempty"`   // Path to ComicDb.xml
 	DatabasePath string `yaml:"database_path,omitempty" toml:"database_path,omitempty"` // Path to SQLite database (alternative to library_path)
 
 	// Network settings

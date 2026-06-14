@@ -19,29 +19,29 @@ func seriesKeyFor(book *ComicBook) seriesKey {
 
 // SeriesStats holds aggregate statistics for all books in a series+volume group.
 type SeriesStats struct {
-	Count                int
-	ReadCount            int
-	PageCount            int
-	PageReadCount        int
-	ReadPercentage       int
-	AverageRating        float64
+	Count                  int
+	ReadCount              int
+	PageCount              int
+	PageReadCount          int
+	ReadPercentage         int
+	AverageRating          float64
 	AverageCommunityRating float64
-	FirstNumber          float64 // MIN issue number (-1 if no numeric issues)
-	LastNumber           float64 // MAX issue number (-1 if no numeric issues)
-	MinYear              int
-	MaxYear              int
-	RunningTimeYears     int
-	GapCount             int
-	MaxGapSize           float64
-	GapStarts            map[float64]bool // issue numbers that are just before a gap
-	GapEnds              map[float64]bool // issue numbers that are just after a gap
-	AllComplete          string           // "Yes", "No", "Unknown"
-	LastOpenedTime       time.Time
-	LastAddedTime        time.Time
-	LastPublishedTime    time.Time
-	LastReleasedTime     time.Time
-	MaxCount             int // MAX of books' Count field (series announced count)
-	MinCount             int // MIN of books' Count field
+	FirstNumber            float64 // MIN issue number (-1 if no numeric issues)
+	LastNumber             float64 // MAX issue number (-1 if no numeric issues)
+	MinYear                int
+	MaxYear                int
+	RunningTimeYears       int
+	GapCount               int
+	MaxGapSize             float64
+	GapStarts              map[float64]bool // issue numbers that are just before a gap
+	GapEnds                map[float64]bool // issue numbers that are just after a gap
+	AllComplete            string           // "Yes", "No", "Unknown"
+	LastOpenedTime         time.Time
+	LastAddedTime          time.Time
+	LastPublishedTime      time.Time
+	LastReleasedTime       time.Time
+	MaxCount               int // MAX of books' Count field (series announced count)
+	MinCount               int // MIN of books' Count field
 }
 
 // buildSeriesStats groups books by (Series, Volume) and computes aggregate stats for each group.
@@ -61,8 +61,8 @@ func buildSeriesStats(books []*ComicBook) map[seriesKey]*SeriesStats {
 
 func computeSeriesStats(books []*ComicBook) *SeriesStats {
 	s := &SeriesStats{
-		GapStarts: make(map[float64]bool),
-		GapEnds:   make(map[float64]bool),
+		GapStarts:   make(map[float64]bool),
+		GapEnds:     make(map[float64]bool),
 		FirstNumber: -1,
 		LastNumber:  -1,
 	}
@@ -72,8 +72,8 @@ func computeSeriesStats(books []*ComicBook) *SeriesStats {
 		ratingCount        int
 		communityRatingSum float64
 		communityCount     int
-		minYear, maxYear   = int(^uint(0)>>1), -int(^uint(0)>>1) - 1 // MaxInt, MinInt
-		minCount, maxCount = int(^uint(0)>>1), -int(^uint(0)>>1) - 1
+		minYear, maxYear   = int(^uint(0) >> 1), -int(^uint(0)>>1) - 1 // MaxInt, MinInt
+		minCount, maxCount = int(^uint(0) >> 1), -int(^uint(0)>>1) - 1
 		numbers            []float64
 	)
 

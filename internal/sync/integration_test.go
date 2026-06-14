@@ -338,7 +338,7 @@ func TestPerformSync_ErrorHandling(t *testing.T) {
 
 			lib := &library.ComicLibrary{Books: []library.ComicBook{}}
 			backend := library.NewXMLBackendFromLibrary(lib, "", nil)
-	syncer := NewSyncer(mockClient, backend)
+			syncer := NewSyncer(mockClient, backend)
 
 			_, err := syncer.PerformSync()
 
