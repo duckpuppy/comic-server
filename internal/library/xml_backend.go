@@ -133,6 +133,64 @@ func (b *XMLBackend) DeleteList(id string) error {
 	return b.flushLocked()
 }
 
+// MoveList moves a list or folder to a new parent. parentID="" moves to root.
+func (b *XMLBackend) MoveList(id, parentID string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	// Extract the item from its current location
+	var extracted *ComicListItem
+	b.library.ComicLists, extracted = extractListRecursive(b.library.ComicLists, id)
+	if extracted == nil {
+		return fmt.Errorf("list not found: %s", id)
+	}
+
+	if parentID == "" {
+		// Move to root
+		b.library.ComicLists = append(b.library.ComicLists, *extracted)
+	} else {
+		// Insert under the new parent
+		if !insertIntoParentRecursive(b.library.ComicLists, parentID, *extracted) {
+			// Parent not found — put it back and return error
+			b.library.ComicLists = append(b.library.ComicLists, *extracted)
+			return fmt.Errorf("parent not found: %s", parentID)
+		}
+	}
+
+	return b.flushLocked()
+}
+
+// extractListRecursive removes the item with the given id from lists and returns it.
+func extractListRecursive(lists []ComicListItem, id string) ([]ComicListItem, *ComicListItem) {
+	result := make([]ComicListItem, 0, len(lists))
+	var found *ComicListItem
+	for i := range lists {
+		if lists[i].ID == id {
+			cp := lists[i]
+			found = &cp
+			continue
+		}
+		item := lists[i]
+		item.ChildItems, _ = extractListRecursive(item.ChildItems, id)
+		result = append(result, item)
+	}
+	return result, found
+}
+
+// insertIntoParentRecursive inserts child under the folder with parentID.
+func insertIntoParentRecursive(lists []ComicListItem, parentID string, child ComicListItem) bool {
+	for i := range lists {
+		if lists[i].ID == parentID {
+			lists[i].ChildItems = append(lists[i].ChildItems, child)
+			return true
+		}
+		if insertIntoParentRecursive(lists[i].ChildItems, parentID, child) {
+			return true
+		}
+	}
+	return false
+}
+
 // flushLocked saves the library to disk. Caller must hold mu.Lock().
 func (b *XMLBackend) flushLocked() error {
 	if b.libraryPath == "" {

@@ -447,6 +447,16 @@ func (db *DB) DeleteList(id string) error {
 	return err
 }
 
+// MoveList updates the parent_id of a list or folder. parentID="" sets parent to NULL (root).
+func (db *DB) MoveList(id, parentID string) error {
+	if parentID == "" {
+		_, err := db.Exec("UPDATE lists SET parent_id = NULL WHERE id = ?", id)
+		return err
+	}
+	_, err := db.Exec("UPDATE lists SET parent_id = ? WHERE id = ?", parentID, id)
+	return err
+}
+
 func parseComicTime(s string) library.ComicTime {
 	var ct library.ComicTime
 	ct.UnmarshalText([]byte(s))

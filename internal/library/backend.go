@@ -17,6 +17,8 @@ type Backend interface {
 	CreateList(list *ComicListItem) error
 	UpdateList(list *ComicListItem) error
 	DeleteList(id string) error
+	// MoveList moves a list or folder to a new parent. parentID="" moves to root.
+	MoveList(id, parentID string) error
 
 	// Smart list evaluation
 	MatchBooks(list *ComicListItem) ([]*ComicBook, error)

@@ -134,6 +134,13 @@ func (b *SQLiteBackend) DeleteList(id string) error {
 	return b.db.DeleteList(id)
 }
 
+// MoveList updates the parent_id of a list or folder. parentID="" moves to root.
+func (b *SQLiteBackend) MoveList(id, parentID string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.db.MoveList(id, parentID)
+}
+
 // MatchBooks evaluates a smart list and returns matching books.
 func (b *SQLiteBackend) MatchBooks(list *library.ComicListItem) ([]*library.ComicBook, error) {
 	b.mu.RLock()

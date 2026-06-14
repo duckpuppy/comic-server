@@ -111,6 +111,7 @@ class ListsBrowser {
                 ${this.renderBreadcrumb()}
                 <div class="fb-toolbar-actions">
                     <button id="new-list-btn" class="btn btn-primary btn-small">+ New List</button>
+                    <button id="new-folder-btn" class="btn btn-secondary btn-small">+ New Folder</button>
                 </div>
                 <div class="fb-view-toggle">
                     <button class="fb-view-btn${this.viewMode === 'icon' ? ' active' : ''}" data-view="icon" title="Icon view">
@@ -181,6 +182,11 @@ class ListsBrowser {
             <div class="fb-icon-item fb-icon-folder-item" data-folder-id="${folder.id}" title="${this.escapeHtml(folder.name)}">
                 <div class="fb-large-folder"></div>
                 <span class="fb-icon-label">${this.escapeHtml(folder.name)}</span>
+                <div class="fb-item-actions" data-stop>
+                    <button class="fb-action-btn" data-action="rename" data-id="${folder.id}" data-name="${this.escapeHtml(folder.name)}" title="Rename">✎</button>
+                    <button class="fb-action-btn" data-action="move" data-id="${folder.id}" data-name="${this.escapeHtml(folder.name)}" title="Move">↪</button>
+                    <button class="fb-action-btn fb-action-danger" data-action="delete-folder" data-id="${folder.id}" data-name="${this.escapeHtml(folder.name)}" title="Delete">✕</button>
+                </div>
             </div>
         `;
     }
@@ -198,6 +204,9 @@ class ListsBrowser {
                 <div class="${cls}"></div>
                 <span class="fb-icon-label">${this.escapeHtml(list.name)}</span>
                 <span class="fb-icon-counts">${countHtml}</span>
+                <div class="fb-item-actions" data-stop>
+                    <button class="fb-action-btn" data-action="move" data-id="${list.id}" data-name="${this.escapeHtml(list.name)}" title="Move">↪</button>
+                </div>
             </div>
         `;
     }
@@ -243,6 +252,11 @@ class ListsBrowser {
                 </span>
                 <span class="fb-col-type fb-type-folder">Folder</span>
                 <span class="fb-col-count fb-col-subdesc">${summary}</span>
+                <span class="fb-col-actions" data-stop>
+                    <button class="fb-action-btn" data-action="rename" data-id="${folder.id}" data-name="${this.escapeHtml(folder.name)}" title="Rename">✎</button>
+                    <button class="fb-action-btn" data-action="move" data-id="${folder.id}" data-name="${this.escapeHtml(folder.name)}" title="Move">↪</button>
+                    <button class="fb-action-btn fb-action-danger" data-action="delete-folder" data-id="${folder.id}" data-name="${this.escapeHtml(folder.name)}" title="Delete">✕</button>
+                </span>
             </div>
         `;
     }
@@ -266,6 +280,9 @@ class ListsBrowser {
                 </span>
                 <span class="fb-col-type ${typeClass}">${typeLabel}</span>
                 <span class="fb-col-count fb-count-badges">${countHtml}</span>
+                <span class="fb-col-actions" data-stop>
+                    <button class="fb-action-btn" data-action="move" data-id="${list.id}" data-name="${this.escapeHtml(list.name)}" title="Move">↪</button>
+                </span>
             </div>
         `;
     }
@@ -273,6 +290,11 @@ class ListsBrowser {
     // ── Event listeners ────────────────────────────────────────────────────
 
     attachContentListeners() {
+        // Action buttons stop propagation so they don't trigger folder navigation
+        document.querySelectorAll('[data-stop]').forEach(el => {
+            el.addEventListener('click', e => e.stopPropagation());
+        });
+
         document.querySelectorAll('[data-folder-id]').forEach(el => {
             el.addEventListener('click', () => this.navigateToFolder(el.dataset.folderId));
         });
@@ -291,40 +313,152 @@ class ListsBrowser {
             btn.addEventListener('click', () => this.setViewMode(btn.dataset.view));
         });
 
-        const newListBtn = document.getElementById('new-list-btn');
-        if (newListBtn) {
-            newListBtn.addEventListener('click', () => this.showNewListDialog());
+        document.getElementById('new-list-btn')?.addEventListener('click', () => this.showNewListDialog());
+        document.getElementById('new-folder-btn')?.addEventListener('click', () => this.showNewFolderDialog());
+
+        document.querySelectorAll('[data-action]').forEach(btn => {
+            btn.addEventListener('click', e => {
+                e.stopPropagation();
+                const { action, id, name } = btn.dataset;
+                if (action === 'rename') this.showRenameFolderDialog(id, name);
+                else if (action === 'delete-folder') this.showDeleteFolderDialog(id, name);
+                else if (action === 'move') this.showMoveDialog(id, name);
+            });
+        });
+    }
+
+    async reloadTree() {
+        if (this.tree) {
+            await this.tree.loadTree();
+            this.tree.render();
         }
+        this.renderContent();
     }
 
     async showNewListDialog() {
         const name = prompt('New smart list name:');
         if (!name || !name.trim()) return;
 
+        const parentID = this.currentFolderID();
         try {
             const resp = await fetch('/api/library/lists', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    name: name.trim(),
-                    type: 'ComicSmartListItem',
-                    matcher_mode: 'And',
-                    matchers: []
-                })
+                body: JSON.stringify({ name: name.trim(), type: 'ComicSmartListItem', matcher_mode: 'And', matchers: [] })
             });
-
-            if (!resp.ok) {
-                const text = await resp.text();
-                throw new Error(text || 'Create failed');
-            }
-
+            if (!resp.ok) throw new Error(await resp.text() || 'Create failed');
             const created = await resp.json();
-            // Navigate to the new list's detail/edit page
+            // If inside a folder, move the new list there
+            if (parentID) {
+                await fetch(`/api/library/lists/${created.id}/parent`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ parent_id: parentID })
+                });
+            }
             router.navigate(`/lists/${created.id}`);
         } catch (e) {
             console.error('Failed to create list:', e);
             alert('Failed to create list: ' + e.message);
         }
+    }
+
+    async showNewFolderDialog() {
+        const name = prompt('New folder name:');
+        if (!name || !name.trim()) return;
+
+        const parentID = this.currentFolderID();
+        try {
+            const resp = await fetch('/api/library/folders', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: name.trim(), parent_id: parentID || '' })
+            });
+            if (!resp.ok) throw new Error(await resp.text() || 'Create failed');
+            await this.reloadTree();
+        } catch (e) {
+            console.error('Failed to create folder:', e);
+            alert('Failed to create folder: ' + e.message);
+        }
+    }
+
+    async showRenameFolderDialog(id, currentName) {
+        const name = prompt('Rename folder:', currentName);
+        if (!name || !name.trim() || name.trim() === currentName) return;
+
+        try {
+            // Fetch current list state then update name
+            const resp = await fetch(`/api/library/lists/${id}/raw`);
+            if (!resp.ok) throw new Error('Failed to fetch folder');
+            const folder = await resp.json();
+            folder.Name = name.trim();
+            const updateResp = await fetch(`/api/library/lists/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: folder.Name, type: folder.Type, matcher_mode: folder.MatcherMode || '', matchers: folder.Matchers || [] })
+            });
+            if (!updateResp.ok) throw new Error(await updateResp.text() || 'Rename failed');
+            await this.reloadTree();
+        } catch (e) {
+            console.error('Failed to rename folder:', e);
+            alert('Failed to rename folder: ' + e.message);
+        }
+    }
+
+    async showDeleteFolderDialog(id, name) {
+        if (!confirm(`Delete folder "${name}" and all its contents? This cannot be undone.`)) return;
+        try {
+            const resp = await fetch(`/api/library/lists/${id}`, { method: 'DELETE' });
+            if (!resp.ok) throw new Error(await resp.text() || 'Delete failed');
+            await this.reloadTree();
+        } catch (e) {
+            console.error('Failed to delete folder:', e);
+            alert('Failed to delete folder: ' + e.message);
+        }
+    }
+
+    async showMoveDialog(id, name) {
+        // Build a flat list of all folders the item can be moved to
+        const allFolders = this.collectFolders(this.tree ? (this.tree.tree || []) : [], id);
+        const options = [{ id: '', name: '(Root)' }, ...allFolders];
+        const lines = options.map((f, i) => `${i + 1}. ${f.name}`).join('\n');
+        const sel = prompt(`Move "${name}" to:\n\n${lines}\n\nEnter number:`);
+        if (!sel) return;
+        const idx = parseInt(sel) - 1;
+        if (isNaN(idx) || idx < 0 || idx >= options.length) return;
+
+        const parentID = options[idx].id;
+        try {
+            const resp = await fetch(`/api/library/lists/${id}/parent`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ parent_id: parentID })
+            });
+            if (!resp.ok) throw new Error(await resp.text() || 'Move failed');
+            await this.reloadTree();
+        } catch (e) {
+            console.error('Failed to move item:', e);
+            alert('Failed to move: ' + e.message);
+        }
+    }
+
+    // Returns a flat list of all folders, excluding the given id and its descendants.
+    collectFolders(items, excludeId, prefix) {
+        prefix = prefix || '';
+        const result = [];
+        for (const node of items) {
+            if (!node.is_folder || node.id === excludeId) continue;
+            const label = prefix ? `${prefix} / ${node.name}` : node.name;
+            result.push({ id: node.id, name: label });
+            result.push(...this.collectFolders(node.children || [], excludeId, label));
+        }
+        return result;
+    }
+
+    // Returns the ID of the current folder (deepest path segment), or '' for root.
+    currentFolderID() {
+        if (this.pathStack.length === 0) return '';
+        return this.pathStack[this.pathStack.length - 1].id;
     }
 
     escapeHtml(text) {

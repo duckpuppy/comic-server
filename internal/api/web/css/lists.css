@@ -1047,3 +1047,59 @@
     margin-top: 0.25rem;
     font-size: 0.9rem;
 }
+
+/* Folder/list action buttons (rename, delete, move) */
+.fb-item-actions,
+.fb-col-actions {
+    display: flex;
+    gap: 0.2rem;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.fb-icon-item:hover .fb-item-actions,
+.fb-row:hover .fb-col-actions {
+    opacity: 1;
+}
+
+.fb-action-btn {
+    padding: 0.15rem 0.4rem;
+    font-size: 0.8rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--surface-0, #1e2030);
+    color: var(--text-secondary);
+    cursor: pointer;
+    line-height: 1;
+}
+
+.fb-action-btn:hover {
+    background: var(--border-color);
+    color: var(--text-primary);
+}
+
+.fb-action-danger:hover {
+    background: rgba(237, 135, 150, 0.15);
+    color: #ed8796;
+    border-color: #ed8796;
+}
+
+/* Make icon items position:relative for action overlay */
+.fb-icon-item {
+    position: relative;
+}
+
+.fb-icon-item .fb-item-actions {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: var(--surface-1, #24273a);
+    border-radius: 4px;
+    padding: 2px;
+}
+
+/* Detail table actions column */
+.fb-col-actions {
+    margin-left: auto;
+    flex-shrink: 0;
+}

@@ -257,6 +257,12 @@ func (s *Server) handleListsRouter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// /api/library/lists/:listId/parent
+	if strings.HasSuffix(path, "/parent") {
+		s.handleMoveList(w, r)
+		return
+	}
+
 	// /api/library/lists/:listId/preview
 	if strings.HasSuffix(path, "/preview") {
 		s.handleGetListPreview(w, r)
