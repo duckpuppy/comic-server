@@ -1551,3 +1551,207 @@ func TestCountMatcherNumeric(t *testing.T) {
 		})
 	}
 }
+
+// seriesList builds a ComicListItem with a single series matcher for testing.
+func seriesList(xmlType, matchOp, matchVal string, not bool) *ComicListItem {
+	return &ComicListItem{
+		Type:        "ComicSmartListItem",
+		MatcherMode: "And",
+		Matchers: []ComicBookMatcher{
+			{Type: xmlType, MatchOperator: matchOp, MatchValue: matchVal, Not: not},
+		},
+	}
+}
+
+// evalSeries runs matchBooks and returns which of books matched.
+func evalSeries(list *ComicListItem, books []*ComicBook) []*ComicBook {
+	return matchBooks(list, books)
+}
+
+func TestSeriesCountMatcher(t *testing.T) {
+	books := []*ComicBook{
+		{ID: "1", Series: "X-Men", Volume: 1, Number: "1"},
+		{ID: "2", Series: "X-Men", Volume: 1, Number: "2"},
+		{ID: "3", Series: "X-Men", Volume: 1, Number: "3"},
+		{ID: "4", Series: "Batman", Volume: 1, Number: "1"},
+	}
+	// Matches books whose series has exactly 3 books
+	list := seriesList("SmartListSeriesCountMatcher", "0", "3", false) // op 0 = Equals
+	got := evalSeries(list, books)
+	if len(got) != 3 {
+		t.Errorf("got %d matches, want 3 (all X-Men books)", len(got))
+	}
+	for _, b := range got {
+		if b.Series != "X-Men" {
+			t.Errorf("unexpected match: %s", b.Series)
+		}
+	}
+}
+
+func TestSeriesAverageRatingMatcher(t *testing.T) {
+	books := []*ComicBook{
+		{ID: "1", Series: "X", Volume: 1, Rating: 4.0},
+		{ID: "2", Series: "X", Volume: 1, Rating: 2.0},
+		{ID: "3", Series: "Y", Volume: 1, Rating: 1.0},
+	}
+	// Series average rating for X = 3.0; match books in series with avg rating > 2
+	list := seriesList("SmartListSeriesAverageRatingMatcher", "1", "2", false) // op 1 = Greater
+	got := evalSeries(list, books)
+	if len(got) != 2 {
+		t.Errorf("got %d matches, want 2 (X books)", len(got))
+	}
+}
+
+func TestSeriesMinMaxYearMatcher(t *testing.T) {
+	books := []*ComicBook{
+		{ID: "1", Series: "X", Volume: 1, Year: 1990},
+		{ID: "2", Series: "X", Volume: 1, Year: 2005},
+		{ID: "3", Series: "Y", Volume: 1, Year: 2000},
+	}
+	// MinYear for X is 1990; match series where min year <= 1990
+	list := seriesList("SmartListSeriesMinYearMatcher", "2", "1990", false) // Greater or Equals... use op=0 (equals)
+	list.Matchers[0].MatchOperator = "0" // Equals
+	got := evalSeries(list, books)
+	if len(got) != 2 {
+		t.Errorf("got %d matches, want 2 (both X books)", len(got))
+	}
+
+	// MaxYear for X is 2005
+	listMax := seriesList("SmartListSeriesMaxYearMatcher", "0", "2005", false)
+	got2 := evalSeries(listMax, books)
+	if len(got2) != 2 {
+		t.Errorf("got %d max-year matches, want 2", len(got2))
+	}
+}
+
+func TestSeriesFirstLastNumberMatcher(t *testing.T) {
+	books := []*ComicBook{
+		{ID: "1", Series: "X", Volume: 1, Number: "3"},
+		{ID: "2", Series: "X", Volume: 1, Number: "1"},
+		{ID: "3", Series: "X", Volume: 1, Number: "7"},
+	}
+	// FirstNumber = 1
+	listFirst := seriesList("SmartListSeriesMinNumbertMatcher", "0", "1", false) // XmlType alias
+	got := evalSeries(listFirst, books)
+	if len(got) != 3 {
+		t.Errorf("FirstNumber: got %d matches, want 3", len(got))
+	}
+
+	// LastNumber = 7
+	listLast := seriesList("SmartListSeriesMaxNumbertMatcher", "0", "7", false) // XmlType alias
+	got2 := evalSeries(listLast, books)
+	if len(got2) != 3 {
+		t.Errorf("LastNumber: got %d matches, want 3", len(got2))
+	}
+}
+
+func TestSeriesGapMatchers(t *testing.T) {
+	books := []*ComicBook{
+		{ID: "1", Series: "X", Volume: 1, Number: "1"},
+		{ID: "2", Series: "X", Volume: 1, Number: "2"},
+		{ID: "3", Series: "X", Volume: 1, Number: "5"}, // gap after #2
+		{ID: "4", Series: "Y", Volume: 1, Number: "1"},
+		{ID: "5", Series: "Y", Volume: 1, Number: "2"},
+	}
+	// Gaps: X has 1 gap, Y has 0 gaps
+	listGaps := seriesList("SmartListSeriesGapsMatcher", "1", "0", false) // op 1 = Greater
+	got := evalSeries(listGaps, books)
+	if len(got) != 3 {
+		t.Errorf("Gaps>0: got %d matches, want 3 (X books)", len(got))
+	}
+
+	// EndOfGap: book #5 in X is the end of a gap
+	listEndGap := seriesList("SmartListSeriesEndOfGapMatcher", "0", "Yes", false)
+	gotEnd := evalSeries(listEndGap, books)
+	if len(gotEnd) != 1 || gotEnd[0].ID != "3" {
+		t.Errorf("EndOfGap: expected only book#3, got %v", gotEnd)
+	}
+
+	// StartOfGap: book #2 in X is the start of a gap
+	listStartGap := seriesList("SmartListSeriesStartOfGapMatcher", "0", "Yes", false)
+	gotStart := evalSeries(listStartGap, books)
+	if len(gotStart) != 1 || gotStart[0].ID != "2" {
+		t.Errorf("StartOfGap: expected only book#2, got %v", gotStart)
+	}
+}
+
+func TestSeriesAllCompleteMatcher(t *testing.T) {
+	books := []*ComicBook{
+		{ID: "1", Series: "X", Volume: 1, SeriesComplete: "Yes"},
+		{ID: "2", Series: "X", Volume: 1, SeriesComplete: "Yes"},
+		{ID: "3", Series: "Y", Volume: 1, SeriesComplete: "No"},
+	}
+	listYes := seriesList("SmartListSeriesAllCompleteMatcher", "0", "Yes", false)
+	got := evalSeries(listYes, books)
+	if len(got) != 2 {
+		t.Errorf("AllComplete=Yes: got %d, want 2", len(got))
+	}
+}
+
+func TestSeriesPageCountMatcher(t *testing.T) {
+	books := []*ComicBook{
+		{ID: "1", Series: "X", Volume: 1, PageCount: 22},
+		{ID: "2", Series: "X", Volume: 1, PageCount: 22},
+		{ID: "3", Series: "Y", Volume: 1, PageCount: 10},
+	}
+	// Series X total page count = 44
+	listPC := seriesList("SmartListSeriesPageCountMatcher", "1", "40", false) // op 1 = Greater
+	got := evalSeries(listPC, books)
+	if len(got) != 2 {
+		t.Errorf("PageCount>40: got %d, want 2 (X books)", len(got))
+	}
+}
+
+func TestSeriesPercentReadMatcher(t *testing.T) {
+	books := []*ComicBook{
+		// read
+		{ID: "1", Series: "X", Volume: 1, PageCount: 22, LastPageRead: 21, OpenCount: 1},
+		// unread
+		{ID: "2", Series: "X", Volume: 1, PageCount: 22, LastPageRead: 0, OpenCount: 0},
+		{ID: "3", Series: "Y", Volume: 1, PageCount: 22, LastPageRead: 21, OpenCount: 1},
+	}
+	// X: 1/2 read = 50%; Y: 1/1 = 100%
+	listPct := seriesList("SmartListSeriesPercentReadMatcher", "0", "50", false) // Equals 50
+	got := evalSeries(listPct, books)
+	if len(got) != 2 {
+		t.Errorf("PercentRead=50: got %d, want 2 (X books)", len(got))
+	}
+}
+
+func TestSeriesRunningTimeYearsMatcher(t *testing.T) {
+	books := []*ComicBook{
+		{ID: "1", Series: "X", Volume: 1, Year: 1990},
+		{ID: "2", Series: "X", Volume: 1, Year: 2000},
+		{ID: "3", Series: "Y", Volume: 1, Year: 2020},
+	}
+	// X: 2000-1990=10; Y: 0
+	listRTY := seriesList("SmartListSeriesRunningTimeYearsMatcher", "0", "10", false)
+	got := evalSeries(listRTY, books)
+	if len(got) != 2 {
+		t.Errorf("RunningTimeYears=10: got %d, want 2 (X books)", len(got))
+	}
+}
+
+func TestSeriesNegation(t *testing.T) {
+	books := []*ComicBook{
+		{ID: "1", Series: "X", Volume: 1},
+		{ID: "2", Series: "X", Volume: 1},
+		{ID: "3", Series: "Y", Volume: 1},
+	}
+	// NOT SeriesCount = 2 → should match Y (1 book) and NOT X (2 books)
+	list := seriesList("SmartListSeriesCountMatcher", "0", "2", true)
+	got := evalSeries(list, books)
+	if len(got) != 1 || got[0].ID != "3" {
+		t.Errorf("NOT SeriesCount=2: got %d matches, want 1 (Y book)", len(got))
+	}
+}
+
+func TestSeriesMatcherMissingStatsReturnsFalse(t *testing.T) {
+	book := &ComicBook{Series: "X", Volume: 1}
+	xmlM := &ComicBookMatcher{Type: "SmartListSeriesCountMatcher", MatchValue: "1"}
+	// Pass nil stats explicitly
+	got := evaluateSeriesMatcher(xmlM, book, nil)
+	if got {
+		t.Error("expected false when stats is nil")
+	}
+}

@@ -124,6 +124,31 @@ const (
 	MatcherTypeFileFormat          MatcherType = "FileFormat"
 	MatcherTypeScanInfo            MatcherType = "ScanInformation"
 	MatcherTypeCount               MatcherType = "Count"
+
+	// Series aggregate matchers — require stats across all books in the same series+volume.
+	// These map to SmartListSeries*Matcher xsi:type values in the ComicRack XML.
+	MatcherTypeSeriesAllComplete          MatcherType = "SeriesAllComplete"
+	MatcherTypeSeriesAverageCommunityRating MatcherType = "SeriesAverageCommunityRating"
+	MatcherTypeSeriesAverageRating        MatcherType = "SeriesAverageRating"
+	MatcherTypeSeriesCount                MatcherType = "SeriesCount"
+	MatcherTypeSeriesEndOfGap             MatcherType = "SeriesEndOfGap"
+	MatcherTypeSeriesFirstNumber          MatcherType = "SeriesFirstNumber"
+	MatcherTypeSeriesGaps                 MatcherType = "SeriesGaps"
+	MatcherTypeSeriesLastAddedTime        MatcherType = "SeriesLastAddedTime"
+	MatcherTypeSeriesLastNumber           MatcherType = "SeriesLastNumber"
+	MatcherTypeSeriesLastOpenedTime       MatcherType = "SeriesLastOpenedTime"
+	MatcherTypeSeriesLastPublishedTime    MatcherType = "SeriesLastPublishedTime"
+	MatcherTypeSeriesLastReleasedTime     MatcherType = "SeriesLastReleasedTime"
+	MatcherTypeSeriesMaxCount             MatcherType = "SeriesMaxCount"
+	MatcherTypeSeriesMaxGapSize           MatcherType = "SeriesMaxGapSize"
+	MatcherTypeSeriesMaxYear              MatcherType = "SeriesMaxYear"
+	MatcherTypeSeriesMinCount             MatcherType = "SeriesMinCount"
+	MatcherTypeSeriesMinYear              MatcherType = "SeriesMinYear"
+	MatcherTypeSeriesPageCount            MatcherType = "SeriesPageCount"
+	MatcherTypeSeriesPagesRead            MatcherType = "SeriesPagesRead"
+	MatcherTypeSeriesPercentRead          MatcherType = "SeriesPercentRead"
+	MatcherTypeSeriesRunningTimeYears     MatcherType = "SeriesRunningTimeYears"
+	MatcherTypeSeriesStartOfGap           MatcherType = "SeriesStartOfGap"
 )
 
 // AllPropertiesOption controls which fields the AllProperties matcher searches
@@ -163,12 +188,62 @@ func extractFieldName(matcherType string) string {
 }
 
 // NewMatcherFromXML creates a Matcher from XML ComicBookMatcher data
+// seriesMatcherTypes maps SmartListSeries*Matcher XML type names to MatcherType constants.
+// Note: FirstNumber and LastNumber have XmlType aliases with a typo ("Numbert") in ComicRack CE.
+var seriesMatcherTypes = map[string]MatcherType{
+	"SmartListSeriesAllCompleteMatcher":            MatcherTypeSeriesAllComplete,
+	"SmartListSeriesAverageCommunityRatingMatcher": MatcherTypeSeriesAverageCommunityRating,
+	"SmartListSeriesAverageRatingMatcher":          MatcherTypeSeriesAverageRating,
+	"SmartListSeriesCountMatcher":                  MatcherTypeSeriesCount,
+	"SmartListSeriesEndOfGapMatcher":               MatcherTypeSeriesEndOfGap,
+	"SmartListSeriesFirstNumberMatcher":            MatcherTypeSeriesFirstNumber,
+	"SmartListSeriesMinNumbertMatcher":             MatcherTypeSeriesFirstNumber, // XmlType alias (typo in ComicRack CE)
+	"SmartListSeriesGapsMatcher":                   MatcherTypeSeriesGaps,
+	"SmartListSeriesLastAddedTimeMatcher":          MatcherTypeSeriesLastAddedTime,
+	"SmartListSeriesLastNumberMatcher":             MatcherTypeSeriesLastNumber,
+	"SmartListSeriesMaxNumbertMatcher":             MatcherTypeSeriesLastNumber, // XmlType alias (typo in ComicRack CE)
+	"SmartListSeriesLastOpenedTimeMatcher":         MatcherTypeSeriesLastOpenedTime,
+	"SmartListSeriesLastPublishedTimeMatcher":      MatcherTypeSeriesLastPublishedTime,
+	"SmartListSeriesLastReleasedTimeMatcher":       MatcherTypeSeriesLastReleasedTime,
+	"SmartListSeriesMaxCountMatcher":               MatcherTypeSeriesMaxCount,
+	"SmartListSeriesMaxGapSizeMatcher":             MatcherTypeSeriesMaxGapSize,
+	"SmartListSeriesMaxYearMatcher":                MatcherTypeSeriesMaxYear,
+	"SmartListSeriesMinCountMatcher":               MatcherTypeSeriesMinCount,
+	"SmartListSeriesMinYearMatcher":                MatcherTypeSeriesMinYear,
+	"SmartListSeriesPageCountMatcher":              MatcherTypeSeriesPageCount,
+	"SmartListSeriesPagesReadMatcher":              MatcherTypeSeriesPagesRead,
+	"SmartListSeriesPercentReadMatcher":            MatcherTypeSeriesPercentRead,
+	"SmartListSeriesRunningTimeYearsMatcher":       MatcherTypeSeriesRunningTimeYears,
+	"SmartListSeriesStartOfGapMatcher":             MatcherTypeSeriesStartOfGap,
+}
+
+// isSeriesMatcherType returns true if the XML type name is a series aggregate matcher.
+func isSeriesMatcherType(xmlType string) bool {
+	_, ok := seriesMatcherTypes[xmlType]
+	return ok
+}
+
 func NewMatcherFromXML(xmlMatcher *ComicBookMatcher) (*Matcher, error) {
 	// Check if this is a group matcher (has nested matchers)
 	if strings.Contains(xmlMatcher.Type, "GroupMatcher") {
 		// Group matchers don't have MatchOperator/MatchValue, skip them
 		// The nested matchers will be processed separately
 		return nil, fmt.Errorf("group matcher not supported as individual matcher")
+	}
+
+	// Handle series aggregate matchers
+	if mt, ok := seriesMatcherTypes[xmlMatcher.Type]; ok {
+		m := &Matcher{
+			Type:       mt,
+			MatchValue: xmlMatcher.MatchValue,
+			MatchValue2: xmlMatcher.MatchValue2,
+			Not:        xmlMatcher.Not,
+			IgnoreCase: true,
+		}
+		if err := m.parseOperator(xmlMatcher.MatchOperator); err != nil {
+			return nil, fmt.Errorf("invalid operator %q: %w", xmlMatcher.MatchOperator, err)
+		}
+		return m, nil
 	}
 
 	// Extract field name from matcher type
@@ -923,7 +998,7 @@ func (m *Matcher) matchYesNo(value string) bool {
 }
 
 // evaluateMatcher recursively evaluates a matcher (value or group) against a book
-func evaluateMatcher(xmlMatcher *ComicBookMatcher, book *ComicBook) bool {
+func evaluateMatcher(xmlMatcher *ComicBookMatcher, book *ComicBook, stats map[seriesKey]*SeriesStats) bool {
 	// Check if this is a group matcher
 	if strings.Contains(xmlMatcher.Type, "GroupMatcher") {
 		// Evaluate nested matchers according to group mode
@@ -945,7 +1020,7 @@ func evaluateMatcher(xmlMatcher *ComicBookMatcher, book *ComicBook) bool {
 			// OR mode: true if ANY nested matcher matches
 			result = false
 			for i := range xmlMatcher.Matchers {
-				if evaluateMatcher(&xmlMatcher.Matchers[i], book) {
+				if evaluateMatcher(&xmlMatcher.Matchers[i], book, stats) {
 					result = true
 					break
 				}
@@ -954,7 +1029,7 @@ func evaluateMatcher(xmlMatcher *ComicBookMatcher, book *ComicBook) bool {
 			// AND mode: true if ALL nested matchers match
 			result = true
 			for i := range xmlMatcher.Matchers {
-				if !evaluateMatcher(&xmlMatcher.Matchers[i], book) {
+				if !evaluateMatcher(&xmlMatcher.Matchers[i], book, stats) {
 					result = false
 					break
 				}
@@ -966,6 +1041,11 @@ func evaluateMatcher(xmlMatcher *ComicBookMatcher, book *ComicBook) bool {
 			return !result
 		}
 		return result
+	}
+
+	// Series aggregate matchers need pre-computed stats
+	if isSeriesMatcherType(xmlMatcher.Type) {
+		return evaluateSeriesMatcher(xmlMatcher, book, stats)
 	}
 
 	// Regular value matcher
@@ -981,6 +1061,117 @@ func evaluateMatcher(xmlMatcher *ComicBookMatcher, book *ComicBook) bool {
 	return matcher.Match(book)
 }
 
+// evaluateSeriesMatcher evaluates a series aggregate matcher against a book using pre-computed stats.
+// Returns false when stats are unavailable (no stats map or series not found).
+func evaluateSeriesMatcher(xmlMatcher *ComicBookMatcher, book *ComicBook, stats map[seriesKey]*SeriesStats) bool {
+	if stats == nil {
+		return false
+	}
+	k := seriesKeyFor(book)
+	s, ok := stats[k]
+	if !ok {
+		return false
+	}
+
+	m, err := NewMatcherFromXML(xmlMatcher)
+	if err != nil {
+		return false
+	}
+
+	var result bool
+	switch m.Type {
+	case MatcherTypeSeriesAllComplete:
+		result = m.matchYesNo(s.AllComplete)
+	case MatcherTypeSeriesEndOfGap:
+		n, numOK := parseIssueNumber(book.Number)
+		if !numOK {
+			result = m.matchYesNo("Unknown")
+		} else if s.GapEnds[n] {
+			result = m.matchYesNo("Yes")
+		} else {
+			result = m.matchYesNo("No")
+		}
+	case MatcherTypeSeriesStartOfGap:
+		n, numOK := parseIssueNumber(book.Number)
+		if !numOK {
+			result = m.matchYesNo("Unknown")
+		} else if s.GapStarts[n] {
+			result = m.matchYesNo("Yes")
+		} else {
+			result = m.matchYesNo("No")
+		}
+	case MatcherTypeSeriesAverageCommunityRating:
+		result = m.matchNumeric(fmt.Sprintf("%g", s.AverageCommunityRating))
+	case MatcherTypeSeriesAverageRating:
+		result = m.matchNumeric(fmt.Sprintf("%g", s.AverageRating))
+	case MatcherTypeSeriesCount:
+		result = m.matchNumeric(fmt.Sprintf("%d", s.Count))
+	case MatcherTypeSeriesFirstNumber:
+		if s.FirstNumber < 0 {
+			return m.Not // no numeric issues → treated as not matching; Not inverts
+		}
+		result = m.matchNumeric(fmt.Sprintf("%g", s.FirstNumber))
+	case MatcherTypeSeriesLastNumber:
+		if s.LastNumber < 0 {
+			return m.Not
+		}
+		result = m.matchNumeric(fmt.Sprintf("%g", s.LastNumber))
+	case MatcherTypeSeriesGaps:
+		result = m.matchNumeric(fmt.Sprintf("%d", s.GapCount))
+	case MatcherTypeSeriesMaxGapSize:
+		result = m.matchNumeric(fmt.Sprintf("%g", s.MaxGapSize))
+	case MatcherTypeSeriesMaxCount:
+		if s.MaxCount == 0 {
+			return m.Not
+		}
+		result = m.matchNumeric(fmt.Sprintf("%d", s.MaxCount))
+	case MatcherTypeSeriesMinCount:
+		if s.MinCount == 0 {
+			return m.Not
+		}
+		result = m.matchNumeric(fmt.Sprintf("%d", s.MinCount))
+	case MatcherTypeSeriesMaxYear:
+		result = m.matchNumeric(fmt.Sprintf("%d", s.MaxYear))
+	case MatcherTypeSeriesMinYear:
+		result = m.matchNumeric(fmt.Sprintf("%d", s.MinYear))
+	case MatcherTypeSeriesPageCount:
+		result = m.matchNumeric(fmt.Sprintf("%d", s.PageCount))
+	case MatcherTypeSeriesPagesRead:
+		result = m.matchNumeric(fmt.Sprintf("%d", s.PageReadCount))
+	case MatcherTypeSeriesPercentRead:
+		result = m.matchNumeric(fmt.Sprintf("%d", s.ReadPercentage))
+	case MatcherTypeSeriesRunningTimeYears:
+		result = m.matchNumeric(fmt.Sprintf("%d", s.RunningTimeYears))
+	case MatcherTypeSeriesLastAddedTime:
+		result = m.matchDate(s.LastAddedTime.Format("2006-01-02T15:04:05"))
+	case MatcherTypeSeriesLastOpenedTime:
+		result = m.matchDate(s.LastOpenedTime.Format("2006-01-02T15:04:05"))
+	case MatcherTypeSeriesLastPublishedTime:
+		result = m.matchDate(s.LastPublishedTime.Format("2006-01-02T15:04:05"))
+	case MatcherTypeSeriesLastReleasedTime:
+		result = m.matchDate(s.LastReleasedTime.Format("2006-01-02T15:04:05"))
+	default:
+		return false
+	}
+	if m.Not {
+		return !result
+	}
+	return result
+}
+
+// hasSeriesMatchers returns true if any matcher in the list (including nested groups) is a series aggregate matcher.
+func hasSeriesMatchers(matchers []ComicBookMatcher) bool {
+	for i := range matchers {
+		if isSeriesMatcherType(matchers[i].Type) {
+			return true
+		}
+		if len(matchers[i].Matchers) > 0 && hasSeriesMatchers(matchers[i].Matchers) {
+			return true
+		}
+	}
+	return false
+}
+
 // matchBooks evaluates a list's matchers against a slice of candidate books.
 func matchBooks(list *ComicListItem, candidates []*ComicBook) []*ComicBook {
 	matcherMode := list.MatcherMode
@@ -988,12 +1179,18 @@ func matchBooks(list *ComicListItem, candidates []*ComicBook) []*ComicBook {
 		matcherMode = "And"
 	}
 
+	// Pre-compute series stats only when needed (series matchers require cross-book aggregation).
+	var stats map[seriesKey]*SeriesStats
+	if hasSeriesMatchers(list.Matchers) {
+		stats = buildSeriesStats(candidates)
+	}
+
 	var matched []*ComicBook
 	for _, book := range candidates {
 		var ok bool
 		if matcherMode == "Or" {
 			for j := range list.Matchers {
-				if evaluateMatcher(&list.Matchers[j], book) {
+				if evaluateMatcher(&list.Matchers[j], book, stats) {
 					ok = true
 					break
 				}
@@ -1001,7 +1198,7 @@ func matchBooks(list *ComicListItem, candidates []*ComicBook) []*ComicBook {
 		} else {
 			ok = true
 			for j := range list.Matchers {
-				if !evaluateMatcher(&list.Matchers[j], book) {
+				if !evaluateMatcher(&list.Matchers[j], book, stats) {
 					ok = false
 					break
 				}
