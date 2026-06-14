@@ -288,12 +288,12 @@ class ListDetail {
                     ` : ''}
                     ${showValue && !isYesNo ? `
                     <input type="text" class="matcher-value-input" data-index="${index}"
-                           value="${this.escapeHtml(matcher.Value || '')}" placeholder="value">
+                           value="${this.escapeHtml(matcher.MatchValue || '')}" placeholder="value">
                     ` : ''}
                     ${showValue2 ? `
                     <span class="matcher-range-and">and</span>
                     <input type="text" class="matcher-value2-input" data-index="${index}"
-                           value="${this.escapeHtml(matcher.Value2 || '')}" placeholder="value 2">
+                           value="${this.escapeHtml(matcher.MatchValue2 || '')}" placeholder="value 2">
                     ` : ''}
                 </div>
                 <button class="btn btn-small btn-danger matcher-remove-btn" data-index="${index}" title="Remove">✕</button>
@@ -426,16 +426,11 @@ class ListDetail {
     // --- Edit mode helpers ---
 
     enterEditMode() {
-        // Clone matchers from the raw list data (use Type/Not/MatchOperator/Value/Value2 form)
-        // The API returns MatcherInfo (human-readable), but for editing we need raw matchers.
-        // Re-fetch from a dedicated raw endpoint — or use the raw list data we already have.
-        // Since handleGetListDetail currently returns human-readable matchers, we need the raw list.
-        // We'll call a separate fetch to get raw matchers via the same endpoint but cast them.
         this.fetchRawList().then(rawList => {
             this.editState = {
-                name: rawList ? rawList.name : this.list.name,
-                matcherMode: rawList ? (rawList.matcher_mode || 'And') : (this.list.matcher_mode || 'And'),
-                matchers: rawList ? (rawList.matchers || []) : []
+                name: rawList ? rawList.Name : this.list.name,
+                matcherMode: rawList ? (rawList.MatcherMode || 'And') : (this.list.matcher_mode || 'And'),
+                matchers: rawList ? (rawList.Matchers || []) : []
             };
             this.editMode = true;
             this.render();
@@ -444,34 +439,10 @@ class ListDetail {
     }
 
     async fetchRawList() {
-        // The /api/library/lists/:id endpoint returns human-formatted matchers.
-        // We need the raw ComicBookMatcher fields for editing.
-        // Until a /raw endpoint exists, reconstruct from the schema.
-        // For now we use a simple approach: call the existing endpoint and
-        // map MatcherInfo back to raw matcher using the type.
         try {
-            const resp = await fetch(`/api/library/lists/${this.listId}`);
-            const data = await resp.json();
-            // matchers in response are MatcherInfo (field/operator/value/value2)
-            // We need ComicBookMatcher (Type/Not/MatchOperator/Value/Value2)
-            // Map back using schema
-            const schema = this.schema || { matcherTypes: [] };
-            const rawMatchers = (data.matchers || []).map(m => {
-                // Find the type whose label matches m.field
-                const typeInfo = schema.matcherTypes.find(t => t.label === m.field) || {};
-                // Map operator label to numeric value
-                const fieldType = typeInfo.fieldType || 'string';
-                const ops = (this.schema && this.schema.operators && this.schema.operators[fieldType]) || [];
-                const opInfo = ops.find(o => o.label === m.operator) || ops[0] || {};
-                return {
-                    Type: typeInfo.id || m.field,
-                    Not: !!m.negated,
-                    MatchOperator: opInfo.value || '0',
-                    Value: m.value || '',
-                    Value2: m.value2 || ''
-                };
-            });
-            return { name: data.name, matcher_mode: data.matcher_mode, matchers: rawMatchers };
+            const resp = await fetch(`/api/library/lists/${this.listId}/raw`);
+            if (!resp.ok) throw new Error('Failed to fetch raw list');
+            return await resp.json();
         } catch (e) {
             console.error('Failed to fetch raw list:', e);
             return null;
@@ -499,8 +470,8 @@ class ListDetail {
             Type: firstType.id,
             Not: false,
             MatchOperator: '0',
-            Value: '',
-            Value2: ''
+            MatchValue: '',
+            MatchValue2: ''
         });
         this.collectEditState();
         this.renderMatcherList();
@@ -521,8 +492,8 @@ class ListDetail {
         // When type changes, reset operator and values
         if (field === 'Type') {
             matcher.MatchOperator = '0';
-            matcher.Value = '';
-            matcher.Value2 = '';
+            matcher.MatchValue = '';
+            matcher.MatchValue2 = '';
         }
 
         // Re-render just the matcher row to update visible inputs
@@ -696,14 +667,14 @@ class ListDetail {
         document.querySelectorAll('.matcher-value-input').forEach(el => {
             el.addEventListener('input', () => {
                 const i = parseInt(el.dataset.index);
-                if (this.editState.matchers[i]) this.editState.matchers[i].Value = el.value;
+                if (this.editState.matchers[i]) this.editState.matchers[i].MatchValue = el.value;
             });
         });
 
         document.querySelectorAll('.matcher-value2-input').forEach(el => {
             el.addEventListener('input', () => {
                 const i = parseInt(el.dataset.index);
-                if (this.editState.matchers[i]) this.editState.matchers[i].Value2 = el.value;
+                if (this.editState.matchers[i]) this.editState.matchers[i].MatchValue2 = el.value;
             });
         });
 

@@ -251,6 +251,12 @@ func (s *Server) handleListsRouter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// /api/library/lists/:listId/raw
+	if strings.HasSuffix(path, "/raw") {
+		s.handleGetListRaw(w, r)
+		return
+	}
+
 	// /api/library/lists/:listId/preview
 	if strings.HasSuffix(path, "/preview") {
 		s.handleGetListPreview(w, r)
@@ -635,4 +641,38 @@ func (s *Server) handleDeleteList(w http.ResponseWriter, r *http.Request) {
 
 	log.Info().Str("id", listID).Msg("Smart list deleted")
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleGetListRaw returns the raw ComicListItem with unprocessed ComicBookMatcher structs.
+// Used by the editor UI for lossless round-trip editing.
+// GET /api/library/lists/:id/raw
+func (s *Server) handleGetListRaw(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.backend == nil {
+		http.Error(w, "Library not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	path := r.URL.Path
+	listID := path[len("/api/library/lists/"):]
+	if idx := strings.LastIndex(listID, "/"); idx != -1 {
+		listID = listID[:idx]
+	}
+
+	list, err := s.backend.FindListByID(listID)
+	if err != nil {
+		log.Error().Err(err).Str("list_id", listID).Msg("Error looking up list")
+		http.Error(w, "Error looking up list", http.StatusInternalServerError)
+		return
+	}
+	if list == nil {
+		http.Error(w, "List not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(list)
 }
