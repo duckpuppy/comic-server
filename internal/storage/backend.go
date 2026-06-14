@@ -113,6 +113,27 @@ func (b *SQLiteBackend) GetAllLists() ([]library.ComicListItem, error) {
 	return b.db.GetAllLists()
 }
 
+// CreateList inserts a new list into the database.
+func (b *SQLiteBackend) CreateList(list *library.ComicListItem) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.db.InsertList(list)
+}
+
+// UpdateList updates an existing list in the database.
+func (b *SQLiteBackend) UpdateList(list *library.ComicListItem) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.db.UpdateListRecord(list)
+}
+
+// DeleteList removes a list and its children from the database.
+func (b *SQLiteBackend) DeleteList(id string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.db.DeleteList(id)
+}
+
 // MatchBooks evaluates a smart list and returns matching books.
 func (b *SQLiteBackend) MatchBooks(list *library.ComicListItem) ([]*library.ComicBook, error) {
 	b.mu.RLock()

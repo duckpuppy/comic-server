@@ -903,3 +903,147 @@
     color: var(--text-secondary);
     font-style: italic;
 }
+
+/* List detail header row with action buttons */
+.list-detail-header-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.list-detail-header-row h1 {
+    flex: 1;
+    margin: 0;
+}
+
+.list-header-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+/* List name edit input */
+.list-name-input {
+    flex: 1;
+    font-size: 1.5rem;
+    font-weight: 700;
+    padding: 0.25rem 0.5rem;
+    border: 2px solid var(--accent-color, #8aadf4);
+    border-radius: 6px;
+    background: var(--surface-0, #1e2030);
+    color: var(--text-primary);
+    min-width: 200px;
+}
+
+/* Matchers editor */
+.matchers-editor-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.matchers-editor-header h2 {
+    margin: 0;
+}
+
+.matcher-mode-selector label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.matcher-mode-selector select {
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    background: var(--surface-0, #1e2030);
+    color: var(--text-primary);
+    font-size: 0.9rem;
+}
+
+.matchers-editor-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 1rem 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.matcher-editor-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    background: var(--surface-1, #24273a);
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    flex-wrap: wrap;
+}
+
+.matcher-editor-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 1;
+    flex-wrap: wrap;
+}
+
+.matcher-not-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.matcher-type-select,
+.matcher-op-select {
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    background: var(--surface-0, #1e2030);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+}
+
+.matcher-type-select {
+    min-width: 160px;
+}
+
+.matcher-value-input,
+.matcher-value2-input {
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    background: var(--surface-0, #1e2030);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    min-width: 120px;
+    flex: 1;
+}
+
+.matcher-range-and {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.matcher-remove-btn {
+    padding: 0.2rem 0.5rem;
+    font-size: 0.8rem;
+    flex-shrink: 0;
+}
+
+.btn-add-matcher {
+    margin-top: 0.25rem;
+    font-size: 0.9rem;
+}

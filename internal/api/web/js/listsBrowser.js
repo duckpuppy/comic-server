@@ -109,6 +109,9 @@ class ListsBrowser {
         const toolbar = `
             <div class="fb-toolbar">
                 ${this.renderBreadcrumb()}
+                <div class="fb-toolbar-actions">
+                    <button id="new-list-btn" class="btn btn-primary btn-small">+ New List</button>
+                </div>
                 <div class="fb-view-toggle">
                     <button class="fb-view-btn${this.viewMode === 'icon' ? ' active' : ''}" data-view="icon" title="Icon view">
                         <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
@@ -287,6 +290,41 @@ class ListsBrowser {
         document.querySelectorAll('.fb-view-btn').forEach(btn => {
             btn.addEventListener('click', () => this.setViewMode(btn.dataset.view));
         });
+
+        const newListBtn = document.getElementById('new-list-btn');
+        if (newListBtn) {
+            newListBtn.addEventListener('click', () => this.showNewListDialog());
+        }
+    }
+
+    async showNewListDialog() {
+        const name = prompt('New smart list name:');
+        if (!name || !name.trim()) return;
+
+        try {
+            const resp = await fetch('/api/library/lists', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: name.trim(),
+                    type: 'ComicSmartListItem',
+                    matcher_mode: 'And',
+                    matchers: []
+                })
+            });
+
+            if (!resp.ok) {
+                const text = await resp.text();
+                throw new Error(text || 'Create failed');
+            }
+
+            const created = await resp.json();
+            // Navigate to the new list's detail/edit page
+            router.navigate(`/lists/${created.id}`);
+        } catch (e) {
+            console.error('Failed to create list:', e);
+            alert('Failed to create list: ' + e.message);
+        }
     }
 
     escapeHtml(text) {

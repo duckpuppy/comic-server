@@ -9,6 +9,9 @@ class ListDetail {
         this.previewLimit = 20;
         this.previewTotal = 0;
         this.tree = tree; // Use provided tree instance
+        this.editMode = false;
+        this.editState = null;
+        this.schema = null;
     }
 
     async init(ctx) {
@@ -30,7 +33,8 @@ class ListDetail {
         await Promise.all([
             this.loadListDetail(),
             this.loadDevices(),
-            this.loadPreview()
+            this.loadPreview(),
+            this.loadSchema()
         ]);
 
         if (ctx && ctx.aborted) return;
@@ -90,6 +94,17 @@ class ListDetail {
         }
     }
 
+    async loadSchema() {
+        if (this.schema) return;
+        try {
+            const resp = await fetch('/api/library/lists/schema');
+            this.schema = await resp.json();
+        } catch (e) {
+            console.error('Failed to load list schema:', e);
+            this.schema = { matcherTypes: [], operators: {}, matcherModes: [] };
+        }
+    }
+
     renderBreadcrumb() {
         let html = `<a href="/lists" onclick="router.navigate('/lists'); return false;">Lists</a>`;
         (this.ancestors || []).forEach(folder => {
@@ -133,48 +148,7 @@ class ListDetail {
                     <div class="list-detail-page">
                         ${this.renderBreadcrumb()}
 
-                        <!-- Header -->
-                        <div class="list-detail-header">
-                            <h1>${this.escapeHtml(this.list.name)}</h1>
-                            <p class="list-count">
-                                ${this.list.book_count.toLocaleString()} comics
-                                ${this.list.unread_count > 0
-                                    ? ` &mdash; <span class="list-unread-count">${this.list.unread_count.toLocaleString()} unread</span>`
-                                    : ' &mdash; <span class="list-all-read">all read</span>'}
-                            </p>
-                        </div>
-
-                        <!-- Main Content -->
-                        <div class="list-detail-content">
-                            <!-- Matchers Panel -->
-                            <div class="panel matchers-panel">
-                                <h2>Matchers</h2>
-                                <div class="matcher-mode">
-                                    ${this.list.matcher_mode_formatted}
-                                </div>
-                                <ul class="matchers-list">
-                                    ${this.renderMatchers()}
-                                </ul>
-                            </div>
-
-                            <!-- Device Assignments Panel -->
-                            <div class="panel devices-panel">
-                                <h2>Device Assignments</h2>
-                                <div class="device-assignments">
-                                    ${this.renderDeviceAssignments()}
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Comics Preview -->
-                        <div class="panel preview-panel">
-                            <h2>Comics Preview</h2>
-                            <p class="preview-info">Showing ${this.preview.length} of ${this.previewTotal.toLocaleString()}</p>
-                            <div class="comics-grid">
-                                ${this.renderComicsPreview()}
-                            </div>
-                            ${this.renderLoadMore()}
-                        </div>
+                        ${this.editMode ? this.renderEditView() : this.renderReadView()}
                     </div>
                 </main>
             </div>
@@ -184,6 +158,163 @@ class ListDetail {
         if (this.tree) {
             setTimeout(() => this.tree.render(), 0);
         }
+    }
+
+    renderReadView() {
+        const canEdit = true; // Only disable when backend signals read-only
+        return `
+            <!-- Header -->
+            <div class="list-detail-header">
+                <div class="list-detail-header-row">
+                    <h1>${this.escapeHtml(this.list.name)}</h1>
+                    ${canEdit ? `
+                    <div class="list-header-actions">
+                        <button id="edit-list-btn" class="btn btn-secondary">Edit</button>
+                        <button id="delete-list-btn" class="btn btn-danger">Delete</button>
+                    </div>` : ''}
+                </div>
+                <p class="list-count">
+                    ${this.list.book_count.toLocaleString()} comics
+                    ${this.list.unread_count > 0
+                        ? ` &mdash; <span class="list-unread-count">${this.list.unread_count.toLocaleString()} unread</span>`
+                        : ' &mdash; <span class="list-all-read">all read</span>'}
+                </p>
+            </div>
+
+            <!-- Main Content -->
+            <div class="list-detail-content">
+                <!-- Matchers Panel -->
+                <div class="panel matchers-panel">
+                    <h2>Matchers</h2>
+                    <div class="matcher-mode">
+                        ${this.list.matcher_mode_formatted}
+                    </div>
+                    <ul class="matchers-list">
+                        ${this.renderMatchers()}
+                    </ul>
+                </div>
+
+                <!-- Device Assignments Panel -->
+                <div class="panel devices-panel">
+                    <h2>Device Assignments</h2>
+                    <div class="device-assignments">
+                        ${this.renderDeviceAssignments()}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Comics Preview -->
+            <div class="panel preview-panel">
+                <h2>Comics Preview</h2>
+                <p class="preview-info">Showing ${this.preview.length} of ${this.previewTotal.toLocaleString()}</p>
+                <div class="comics-grid">
+                    ${this.renderComicsPreview()}
+                </div>
+                ${this.renderLoadMore()}
+            </div>
+        `;
+    }
+
+    renderEditView() {
+        const state = this.editState;
+        return `
+            <!-- Edit Header -->
+            <div class="list-detail-header">
+                <div class="list-detail-header-row">
+                    <input type="text" id="edit-list-name" class="list-name-input"
+                           value="${this.escapeHtml(state.name)}" placeholder="List name">
+                    <div class="list-header-actions">
+                        <button id="save-list-btn" class="btn btn-primary">Save</button>
+                        <button id="cancel-edit-btn" class="btn btn-secondary">Cancel</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Matchers Editor -->
+            <div class="panel matchers-panel">
+                <div class="matchers-editor-header">
+                    <h2>Matchers</h2>
+                    <div class="matcher-mode-selector">
+                        <label>Match:
+                            <select id="edit-matcher-mode">
+                                <option value="And" ${state.matcherMode === 'And' ? 'selected' : ''}>ALL conditions (AND)</option>
+                                <option value="Or" ${state.matcherMode === 'Or' ? 'selected' : ''}>ANY condition (OR)</option>
+                            </select>
+                        </label>
+                    </div>
+                </div>
+
+                <ul class="matchers-list matchers-editor-list" id="matchers-editor-list">
+                    ${state.matchers.map((m, i) => this.renderMatcherEditor(m, i)).join('')}
+                </ul>
+
+                <button id="add-matcher-btn" class="btn btn-secondary btn-add-matcher">+ Add Matcher</button>
+            </div>
+        `;
+    }
+
+    renderMatcherEditor(matcher, index) {
+        const schema = this.schema || { matcherTypes: [], operators: {} };
+        const typeInfo = schema.matcherTypes.find(t => t.id === matcher.Type) || { fieldType: 'string', label: matcher.Type };
+        const fieldType = typeInfo.fieldType;
+        const ops = (schema.operators && schema.operators[fieldType]) || [];
+
+        // Group types by category for the select
+        const typeOptions = this.renderTypeOptions(matcher.Type);
+        const opOptions = ops.map(op =>
+            `<option value="${op.value}" ${matcher.MatchOperator === op.value ? 'selected' : ''}>${this.escapeHtml(op.label)}</option>`
+        ).join('');
+
+        const selectedOp = ops.find(o => o.value === matcher.MatchOperator) || ops[0] || {};
+        const showValue = selectedOp.hasValue !== false;
+        const showValue2 = !!selectedOp.hasValue2;
+
+        const isYesNo = fieldType === 'yesno' || fieldType === 'manga';
+
+        return `
+            <li class="matcher-editor-row" data-index="${index}">
+                <div class="matcher-editor-controls">
+                    <label class="matcher-not-toggle" title="Negate this matcher">
+                        <input type="checkbox" class="matcher-not-check" data-index="${index}"
+                               ${matcher.Not ? 'checked' : ''}> NOT
+                    </label>
+                    <select class="matcher-type-select" data-index="${index}">
+                        ${typeOptions}
+                    </select>
+                    ${!isYesNo ? `
+                    <select class="matcher-op-select" data-index="${index}">
+                        ${opOptions}
+                    </select>
+                    ` : ''}
+                    ${showValue && !isYesNo ? `
+                    <input type="text" class="matcher-value-input" data-index="${index}"
+                           value="${this.escapeHtml(matcher.Value || '')}" placeholder="value">
+                    ` : ''}
+                    ${showValue2 ? `
+                    <span class="matcher-range-and">and</span>
+                    <input type="text" class="matcher-value2-input" data-index="${index}"
+                           value="${this.escapeHtml(matcher.Value2 || '')}" placeholder="value 2">
+                    ` : ''}
+                </div>
+                <button class="btn btn-small btn-danger matcher-remove-btn" data-index="${index}" title="Remove">✕</button>
+            </li>
+        `;
+    }
+
+    renderTypeOptions(selectedType) {
+        const schema = this.schema || { matcherTypes: [] };
+        const groups = {};
+        for (const t of schema.matcherTypes) {
+            if (!groups[t.category]) groups[t.category] = [];
+            groups[t.category].push(t);
+        }
+        return Object.entries(groups).map(([cat, types]) => `
+            <optgroup label="${this.escapeHtml(cat)}">
+                ${types.map(t =>
+                    `<option value="${t.id}" ${t.id === selectedType ? 'selected' : ''}>${this.escapeHtml(t.label)}</option>`
+                ).join('')}
+            </optgroup>
+        `).join('');
     }
 
     renderMatchers(matchers, depth = 0) {
@@ -292,6 +423,178 @@ class ListDetail {
         `;
     }
 
+    // --- Edit mode helpers ---
+
+    enterEditMode() {
+        // Clone matchers from the raw list data (use Type/Not/MatchOperator/Value/Value2 form)
+        // The API returns MatcherInfo (human-readable), but for editing we need raw matchers.
+        // Re-fetch from a dedicated raw endpoint — or use the raw list data we already have.
+        // Since handleGetListDetail currently returns human-readable matchers, we need the raw list.
+        // We'll call a separate fetch to get raw matchers via the same endpoint but cast them.
+        this.fetchRawList().then(rawList => {
+            this.editState = {
+                name: rawList ? rawList.name : this.list.name,
+                matcherMode: rawList ? (rawList.matcher_mode || 'And') : (this.list.matcher_mode || 'And'),
+                matchers: rawList ? (rawList.matchers || []) : []
+            };
+            this.editMode = true;
+            this.render();
+            this.attachListeners();
+        });
+    }
+
+    async fetchRawList() {
+        // The /api/library/lists/:id endpoint returns human-formatted matchers.
+        // We need the raw ComicBookMatcher fields for editing.
+        // Until a /raw endpoint exists, reconstruct from the schema.
+        // For now we use a simple approach: call the existing endpoint and
+        // map MatcherInfo back to raw matcher using the type.
+        try {
+            const resp = await fetch(`/api/library/lists/${this.listId}`);
+            const data = await resp.json();
+            // matchers in response are MatcherInfo (field/operator/value/value2)
+            // We need ComicBookMatcher (Type/Not/MatchOperator/Value/Value2)
+            // Map back using schema
+            const schema = this.schema || { matcherTypes: [] };
+            const rawMatchers = (data.matchers || []).map(m => {
+                // Find the type whose label matches m.field
+                const typeInfo = schema.matcherTypes.find(t => t.label === m.field) || {};
+                // Map operator label to numeric value
+                const fieldType = typeInfo.fieldType || 'string';
+                const ops = (this.schema && this.schema.operators && this.schema.operators[fieldType]) || [];
+                const opInfo = ops.find(o => o.label === m.operator) || ops[0] || {};
+                return {
+                    Type: typeInfo.id || m.field,
+                    Not: !!m.negated,
+                    MatchOperator: opInfo.value || '0',
+                    Value: m.value || '',
+                    Value2: m.value2 || ''
+                };
+            });
+            return { name: data.name, matcher_mode: data.matcher_mode, matchers: rawMatchers };
+        } catch (e) {
+            console.error('Failed to fetch raw list:', e);
+            return null;
+        }
+    }
+
+    cancelEdit() {
+        this.editMode = false;
+        this.editState = null;
+        this.render();
+        this.attachListeners();
+    }
+
+    collectEditState() {
+        const nameInput = document.getElementById('edit-list-name');
+        const modeSelect = document.getElementById('edit-matcher-mode');
+        if (nameInput) this.editState.name = nameInput.value.trim();
+        if (modeSelect) this.editState.matcherMode = modeSelect.value;
+    }
+
+    addMatcher() {
+        const schema = this.schema || { matcherTypes: [] };
+        const firstType = schema.matcherTypes[0] || { id: 'ComicBookSeriesMatcher' };
+        this.editState.matchers.push({
+            Type: firstType.id,
+            Not: false,
+            MatchOperator: '0',
+            Value: '',
+            Value2: ''
+        });
+        this.collectEditState();
+        this.renderMatcherList();
+    }
+
+    removeMatcher(index) {
+        this.collectEditState();
+        this.editState.matchers.splice(index, 1);
+        this.renderMatcherList();
+    }
+
+    updateMatcherField(index, field, value) {
+        this.collectEditState();
+        const matcher = this.editState.matchers[index];
+        if (!matcher) return;
+        matcher[field] = value;
+
+        // When type changes, reset operator and values
+        if (field === 'Type') {
+            matcher.MatchOperator = '0';
+            matcher.Value = '';
+            matcher.Value2 = '';
+        }
+
+        // Re-render just the matcher row to update visible inputs
+        this.renderMatcherList();
+    }
+
+    renderMatcherList() {
+        const list = document.getElementById('matchers-editor-list');
+        if (!list) return;
+        list.innerHTML = this.editState.matchers.map((m, i) => this.renderMatcherEditor(m, i)).join('');
+        this.attachMatcherListeners();
+    }
+
+    async saveList() {
+        this.collectEditState();
+        const state = this.editState;
+
+        if (!state.name) {
+            alert('List name is required');
+            return;
+        }
+
+        const body = {
+            name: state.name,
+            type: this.list.type,
+            matcher_mode: state.matcherMode,
+            matchers: state.matchers
+        };
+
+        try {
+            const resp = await fetch(`/api/library/lists/${this.listId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+
+            if (!resp.ok) {
+                const text = await resp.text();
+                throw new Error(text || 'Save failed');
+            }
+
+            // Reload and exit edit mode
+            this.editMode = false;
+            this.editState = null;
+            this.previewOffset = 0;
+            await Promise.all([this.loadListDetail(), this.loadPreview()]);
+            this.render();
+            this.attachListeners();
+        } catch (e) {
+            console.error('Failed to save list:', e);
+            alert('Failed to save list: ' + e.message);
+        }
+    }
+
+    async deleteList() {
+        if (!confirm(`Delete "${this.list.name}"? This cannot be undone.`)) return;
+
+        try {
+            const resp = await fetch(`/api/library/lists/${this.listId}`, { method: 'DELETE' });
+            if (!resp.ok) {
+                const text = await resp.text();
+                throw new Error(text || 'Delete failed');
+            }
+            router.navigate('/lists');
+        } catch (e) {
+            console.error('Failed to delete list:', e);
+            alert('Failed to delete list: ' + e.message);
+        }
+    }
+
+    // --- Event wiring ---
+
     attachListeners() {
         // Breadcrumb folder links — navigate to that folder in the file browser
         document.querySelectorAll('.breadcrumb-folder-link').forEach(link => {
@@ -301,6 +604,14 @@ class ListDetail {
             });
         });
 
+        if (this.editMode) {
+            this.attachEditListeners();
+        } else {
+            this.attachReadListeners();
+        }
+    }
+
+    attachReadListeners() {
         const loadMoreBtn = document.getElementById('load-more-btn');
         if (loadMoreBtn) {
             loadMoreBtn.addEventListener('click', async () => {
@@ -311,6 +622,16 @@ class ListDetail {
                 await this.loadPreview();
                 this.render();
             });
+        }
+
+        const editBtn = document.getElementById('edit-list-btn');
+        if (editBtn) {
+            editBtn.addEventListener('click', () => this.enterEditMode());
+        }
+
+        const deleteBtn = document.getElementById('delete-list-btn');
+        if (deleteBtn) {
+            deleteBtn.addEventListener('click', () => this.deleteList());
         }
 
         // Assign device button
@@ -333,6 +654,63 @@ class ListDetail {
             btn.addEventListener('click', (e) => {
                 const deviceId = e.target.dataset.deviceId;
                 this.unassignDevice(deviceId);
+            });
+        });
+    }
+
+    attachEditListeners() {
+        const saveBtn = document.getElementById('save-list-btn');
+        if (saveBtn) saveBtn.addEventListener('click', () => this.saveList());
+
+        const cancelBtn = document.getElementById('cancel-edit-btn');
+        if (cancelBtn) cancelBtn.addEventListener('click', () => this.cancelEdit());
+
+        const addBtn = document.getElementById('add-matcher-btn');
+        if (addBtn) addBtn.addEventListener('click', () => this.addMatcher());
+
+        this.attachMatcherListeners();
+    }
+
+    attachMatcherListeners() {
+        document.querySelectorAll('.matcher-not-check').forEach(el => {
+            el.addEventListener('change', () => {
+                const i = parseInt(el.dataset.index);
+                this.updateMatcherField(i, 'Not', el.checked);
+            });
+        });
+
+        document.querySelectorAll('.matcher-type-select').forEach(el => {
+            el.addEventListener('change', () => {
+                const i = parseInt(el.dataset.index);
+                this.updateMatcherField(i, 'Type', el.value);
+            });
+        });
+
+        document.querySelectorAll('.matcher-op-select').forEach(el => {
+            el.addEventListener('change', () => {
+                const i = parseInt(el.dataset.index);
+                this.updateMatcherField(i, 'MatchOperator', el.value);
+            });
+        });
+
+        document.querySelectorAll('.matcher-value-input').forEach(el => {
+            el.addEventListener('input', () => {
+                const i = parseInt(el.dataset.index);
+                if (this.editState.matchers[i]) this.editState.matchers[i].Value = el.value;
+            });
+        });
+
+        document.querySelectorAll('.matcher-value2-input').forEach(el => {
+            el.addEventListener('input', () => {
+                const i = parseInt(el.dataset.index);
+                if (this.editState.matchers[i]) this.editState.matchers[i].Value2 = el.value;
+            });
+        });
+
+        document.querySelectorAll('.matcher-remove-btn').forEach(el => {
+            el.addEventListener('click', () => {
+                const i = parseInt(el.dataset.index);
+                this.removeMatcher(i);
             });
         });
     }

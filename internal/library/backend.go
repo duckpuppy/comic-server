@@ -8,10 +8,15 @@ type Backend interface {
 	GetBook(id string) (*ComicBook, error)
 	GetAllBooks() ([]ComicBook, error)
 
-	// List operations
+	// List read operations
 	FindListByID(id string) (*ComicListItem, error)
 	FindList(name string) (*ComicListItem, error)
 	GetAllLists() ([]ComicListItem, error)
+
+	// List write operations
+	CreateList(list *ComicListItem) error
+	UpdateList(list *ComicListItem) error
+	DeleteList(id string) error
 
 	// Smart list evaluation
 	MatchBooks(list *ComicListItem) ([]*ComicBook, error)

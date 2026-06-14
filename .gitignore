@@ -75,3 +75,5 @@ test.db
 .dolt/
 *.db
 .beads-credential-key
+
+.history/

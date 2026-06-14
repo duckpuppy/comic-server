@@ -413,6 +413,40 @@ func (db *DB) loadReadingListItems(list *library.ComicListItem) error {
 	return nil
 }
 
+// InsertList creates a new list record in the database.
+func (db *DB) InsertList(list *library.ComicListItem) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	if err := db.insertList(tx, list, "", ""); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// UpdateListRecord updates an existing list record in the database.
+func (db *DB) UpdateListRecord(list *library.ComicListItem) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	if err := db.updateList(tx, list, "", ""); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// DeleteList removes a list (and cascades to children and reading_list_items).
+func (db *DB) DeleteList(id string) error {
+	_, err := db.Exec("DELETE FROM lists WHERE id = ?", id)
+	return err
+}
+
 func parseComicTime(s string) library.ComicTime {
 	var ct library.ComicTime
 	ct.UnmarshalText([]byte(s))

@@ -6,9 +6,15 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
+
 	"github.com/duckpuppy/comic-server/internal/library"
 	"github.com/duckpuppy/comic-server/internal/log"
 )
+
+func newUUID() string {
+	return uuid.New().String()
+}
 
 // ListSummary represents a smart list with cached count
 type ListSummary struct {
@@ -121,7 +127,13 @@ func (s *Server) handleGetListTree(w http.ResponseWriter, r *http.Request) {
 
 // handleGetLists returns all smart lists with cached counts
 func (s *Server) handleGetLists(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	switch r.Method {
+	case http.MethodGet:
+		// fall through to existing logic
+	case http.MethodPost:
+		s.handleCreateList(w, r)
+		return
+	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -216,11 +228,26 @@ func (s *Server) handleGetLists(w http.ResponseWriter, r *http.Request) {
 // handleListsRouter routes requests to list detail, preview, or devices endpoints
 func (s *Server) handleListsRouter(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
+	suffix := path[len("/api/library/lists/"):]
 
-	// Check for sub-paths
-	// /api/library/lists/:listId
-	if !strings.Contains(path[len("/api/library/lists/"):], "/") {
-		s.handleGetListDetail(w, r)
+	// Reserved sub-paths (before generic :listId handler)
+	if suffix == "schema" {
+		s.handleGetListSchema(w, r)
+		return
+	}
+
+	// /api/library/lists/:listId  (no further slash)
+	if !strings.Contains(suffix, "/") {
+		switch r.Method {
+		case http.MethodGet:
+			s.handleGetListDetail(w, r)
+		case http.MethodPut:
+			s.handleUpdateList(w, r)
+		case http.MethodDelete:
+			s.handleDeleteList(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
 		return
 	}
 
@@ -471,4 +498,141 @@ func (s *Server) handleGetListDevices(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+// ListWriteRequest is the body for create/update smart list endpoints.
+type ListWriteRequest struct {
+	Name        string                     `json:"name"`
+	Type        string                     `json:"type"`
+	MatcherMode string                     `json:"matcher_mode"`
+	Matchers    []library.ComicBookMatcher `json:"matchers"`
+	BaseListId  string                     `json:"base_list_id,omitempty"`
+	Description string                     `json:"description,omitempty"`
+	Favorite    bool                       `json:"favorite,omitempty"`
+}
+
+// handleCreateList creates a new smart list. POST /api/library/lists
+func (s *Server) handleCreateList(w http.ResponseWriter, r *http.Request) {
+	if s.backend == nil {
+		http.Error(w, "Library not available", http.StatusServiceUnavailable)
+		return
+	}
+	if !s.backend.CanPersist() {
+		http.Error(w, "Library is read-only", http.StatusForbidden)
+		return
+	}
+
+	var req ListWriteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.Name == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+	if req.Type == "" {
+		req.Type = "ComicSmartListItem"
+	}
+	if req.MatcherMode == "" {
+		req.MatcherMode = "And"
+	}
+
+	list := &library.ComicListItem{
+		ID:          "{" + newUUID() + "}",
+		Name:        req.Name,
+		Type:        req.Type,
+		MatcherMode: req.MatcherMode,
+		Matchers:    req.Matchers,
+		BaseListId:  req.BaseListId,
+		Description: req.Description,
+		Favorite:    req.Favorite,
+	}
+
+	if err := s.backend.CreateList(list); err != nil {
+		log.Error().Err(err).Msg("Failed to create list")
+		http.Error(w, "Failed to create list", http.StatusInternalServerError)
+		return
+	}
+
+	log.Info().Str("id", list.ID).Str("name", list.Name).Msg("Smart list created")
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(list)
+}
+
+// handleUpdateList replaces an existing smart list. PUT /api/library/lists/:id
+func (s *Server) handleUpdateList(w http.ResponseWriter, r *http.Request) {
+	if s.backend == nil {
+		http.Error(w, "Library not available", http.StatusServiceUnavailable)
+		return
+	}
+	if !s.backend.CanPersist() {
+		http.Error(w, "Library is read-only", http.StatusForbidden)
+		return
+	}
+
+	path := r.URL.Path
+	listID := path[len("/api/library/lists/"):]
+
+	var req ListWriteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.Name == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+
+	existing, err := s.backend.FindListByID(listID)
+	if err != nil || existing == nil {
+		http.Error(w, "List not found", http.StatusNotFound)
+		return
+	}
+
+	existing.Name = req.Name
+	existing.MatcherMode = req.MatcherMode
+	existing.Matchers = req.Matchers
+	existing.BaseListId = req.BaseListId
+	existing.Description = req.Description
+	existing.Favorite = req.Favorite
+
+	if err := s.backend.UpdateList(existing); err != nil {
+		log.Error().Err(err).Str("id", listID).Msg("Failed to update list")
+		http.Error(w, "Failed to update list", http.StatusInternalServerError)
+		return
+	}
+
+	s.listCache.Invalidate(listID)
+
+	log.Info().Str("id", listID).Str("name", existing.Name).Msg("Smart list updated")
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(existing)
+}
+
+// handleDeleteList removes a smart list. DELETE /api/library/lists/:id
+func (s *Server) handleDeleteList(w http.ResponseWriter, r *http.Request) {
+	if s.backend == nil {
+		http.Error(w, "Library not available", http.StatusServiceUnavailable)
+		return
+	}
+	if !s.backend.CanPersist() {
+		http.Error(w, "Library is read-only", http.StatusForbidden)
+		return
+	}
+
+	path := r.URL.Path
+	listID := path[len("/api/library/lists/"):]
+
+	if err := s.backend.DeleteList(listID); err != nil {
+		log.Error().Err(err).Str("id", listID).Msg("Failed to delete list")
+		http.Error(w, "List not found", http.StatusNotFound)
+		return
+	}
+
+	s.listCache.Invalidate(listID)
+
+	log.Info().Str("id", listID).Msg("Smart list deleted")
+	w.WriteHeader(http.StatusNoContent)
 }

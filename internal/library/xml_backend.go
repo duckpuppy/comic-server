@@ -95,6 +95,77 @@ func (b *XMLBackend) GetAllLists() ([]ComicListItem, error) {
 	return lists, nil
 }
 
+// CreateList adds a new list to the library and persists it.
+func (b *XMLBackend) CreateList(list *ComicListItem) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	// Ensure no duplicate IDs
+	if b.library.FindListByID(list.ID) != nil {
+		return fmt.Errorf("list with ID %s already exists", list.ID)
+	}
+
+	b.library.ComicLists = append(b.library.ComicLists, *list)
+	return b.flushLocked()
+}
+
+// UpdateList replaces the list with the matching ID and persists.
+func (b *XMLBackend) UpdateList(list *ComicListItem) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if updateListRecursive(b.library.ComicLists, list) {
+		return b.flushLocked()
+	}
+	return fmt.Errorf("list not found: %s", list.ID)
+}
+
+// DeleteList removes a list by ID and persists.
+func (b *XMLBackend) DeleteList(id string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	original := len(b.library.ComicLists)
+	b.library.ComicLists = deleteListRecursive(b.library.ComicLists, id)
+	if len(b.library.ComicLists) == original {
+		return fmt.Errorf("list not found: %s", id)
+	}
+	return b.flushLocked()
+}
+
+// flushLocked saves the library to disk. Caller must hold mu.Lock().
+func (b *XMLBackend) flushLocked() error {
+	if b.libraryPath == "" {
+		return nil
+	}
+	return SaveLibrary(b.libraryPath, b.library)
+}
+
+func updateListRecursive(lists []ComicListItem, update *ComicListItem) bool {
+	for i := range lists {
+		if lists[i].ID == update.ID {
+			lists[i] = *update
+			return true
+		}
+		if updateListRecursive(lists[i].ChildItems, update) {
+			return true
+		}
+	}
+	return false
+}
+
+func deleteListRecursive(lists []ComicListItem, id string) []ComicListItem {
+	result := lists[:0]
+	for _, item := range lists {
+		if item.ID == id {
+			continue
+		}
+		item.ChildItems = deleteListRecursive(item.ChildItems, id)
+		result = append(result, item)
+	}
+	return result
+}
+
 // MatchBooks evaluates a smart list and returns matching books.
 func (b *XMLBackend) MatchBooks(list *ComicListItem) ([]*ComicBook, error) {
 	b.mu.RLock()
