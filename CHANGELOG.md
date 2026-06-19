@@ -1,5 +1,60 @@
 # Changelog
 
+## [1.1.0](https://github.com/duckpuppy/comic-server/compare/v1.0.0...v1.1.0) (2026-06-19)
+
+
+### Features
+
+* **api:** add REST API endpoints for device configuration management ([39bd779](https://github.com/duckpuppy/comic-server/commit/39bd77993d650b48ce6db030fbed954efd3a1ce8))
+* **build:** add run-real and deploy-windows just recipes ([c033d62](https://github.com/duckpuppy/comic-server/commit/c033d62ced8ed753ade2463a429252c6e367d8bf))
+* **comic-server-0g1,comic-server-cqy:** add character/location and content string matchers ([f79622c](https://github.com/duckpuppy/comic-server/commit/f79622c524230b14327a5c5518548791b5486e01))
+* **comic-server-1n6:** add series aggregate matchers ([87a0a10](https://github.com/duckpuppy/comic-server/commit/87a0a10f811cb85df6fc61549255c8ce5462d888))
+* **comic-server-43s:** add folder management - create, rename, delete, move ([267c30a](https://github.com/duckpuppy/comic-server/commit/267c30aa9c796bd59e12c11c18f98504c8d02b36))
+* **comic-server-4hb:** add ComicVine API client with circuit breaker and cache ([a7cff84](https://github.com/duckpuppy/comic-server/commit/a7cff84e7d24a34fc2b96215d83fb48486584f37))
+* **comic-server-4hb:** add CV series completeness matchers and docs ([57d9b1e](https://github.com/duckpuppy/comic-server/commit/57d9b1e9aaa709d2e6643e47c39783b180cabb57))
+* **comic-server-4hb:** wire ComicVine sync into server startup and add CLI ([2b195b2](https://github.com/duckpuppy/comic-server/commit/2b195b2441b33dc1294137fb470740a306a1151e))
+* **comic-server-58d:** add raw matcher endpoint for lossless list editing ([91baafb](https://github.com/duckpuppy/comic-server/commit/91baafb4b3b6962a0b69ca13a628f1675565c9af))
+* **comic-server-b8m:** add duplicate matcher (cross-book comparison) ([2c48062](https://github.com/duckpuppy/comic-server/commit/2c48062a4b88e5e49f3e84a0f18cc448bd48671b))
+* **comic-server-ltf:** add ReadPercentage numeric matcher ([25db966](https://github.com/duckpuppy/comic-server/commit/25db966655e90a2c01a3a2732ca8d8308364896c))
+* **comic-server-na6:** add Manga 4-way enum matcher ([45d6c71](https://github.com/duckpuppy/comic-server/commit/45d6c7175d4b5c3e0800938199b29617b711f1b0))
+* **comic-server-nby:** add credits string matchers: Colorist, CoverArtist, Editor, Inker, Letterer, Penciller, Translator ([275f99a](https://github.com/duckpuppy/comic-server/commit/275f99aac7b5ecc8828a12af3897bc754a21deb9))
+* **comic-server-v45:** add Yes/No matchers for Checked, BlackAndWhite, HasCustomValues, IsLinked, IsMissing, ModifiedInfo ([e1e3c6e](https://github.com/duckpuppy/comic-server/commit/e1e3c6ee4eedef08d7bf018c3fa19bd8fb45cc56))
+* **comic-server-wlz:** add smart list CRUD via API and web UI ([c1398fe](https://github.com/duckpuppy/comic-server/commit/c1398fe04c3b088742c08c42dc92da2f0b087997))
+* **comic-server-xyf:** add AllProperties cross-field string matcher ([164c9ba](https://github.com/duckpuppy/comic-server/commit/164c9ba5f861464254430e4ef226172460ec7fde))
+* **config:** add database_path config field and COMIC_SERVER_DATABASE_PATH env var ([b85f964](https://github.com/duckpuppy/comic-server/commit/b85f96413e36b04a89d52dfe2b4f021b53b1047b))
+* **library:** implement BaseListId scoping for smart lists ([3d110ac](https://github.com/duckpuppy/comic-server/commit/3d110ac7e8eb7911f6044288ddef2ac73341beb9))
+* **library:** implement ComicIdListItem support ([607c0b2](https://github.com/duckpuppy/comic-server/commit/607c0b245365e78d596b149a9480f80ec7ade2dc))
+* **matchers:** implement P3 matcher batch for parity with ComicRack ([eab6256](https://github.com/duckpuppy/comic-server/commit/eab6256689b90ec10c61495dcaedbc759b93aac5))
+* **matchers:** implement P4 matcher batch - Day, Week, NewPages, BookmarkCount, BookPrice ([716063b](https://github.com/duckpuppy/comic-server/commit/716063bdb8406fbe18059d6e4ff9b2ec994085de))
+* **storage:** add Backend interface for pluggable library storage ([8f47d8f](https://github.com/duckpuppy/comic-server/commit/8f47d8f8a5492a64b505eb60ff363b8697ab1517))
+* **storage:** add missing fields to SQLite schema (v2 migration) ([86eafd0](https://github.com/duckpuppy/comic-server/commit/86eafd05c24b21a1a575cabe5931ba3a32d81bdf))
+* **storage:** add SQLite library import with idempotent sync ([9e73e0d](https://github.com/duckpuppy/comic-server/commit/9e73e0de0d5f6f67475725f1b9853f08e26e2295))
+* **ui:** replace lists card grid with Explorer-style file browser ([8fd1ffb](https://github.com/duckpuppy/comic-server/commit/8fd1ffbfff9822c32d774b10c0792c78b79a3ad3))
+* **ui:** show unread book counts in list browser and tree ([caaa47d](https://github.com/duckpuppy/comic-server/commit/caaa47da47d470703036563c0f3c3856f4185c39))
+* **web:** add device sync settings management UI ([6e875ef](https://github.com/duckpuppy/comic-server/commit/6e875ef6984e0b5319a0008cff41abedb654c3d4))
+* **web:** refresh dashboard with useful panels and real stats ([4c10e8c](https://github.com/duckpuppy/comic-server/commit/4c10e8cb9da43eb098f1459eaccc15ada7b54dbb))
+
+
+### Bug Fixes
+
+* **build:** use mise exec for all go commands in justfile ([470ab45](https://github.com/duckpuppy/comic-server/commit/470ab45f52417752e413452c3f246cd6d6cbdc53))
+* **library:** copy MatchValue2 in NewMatcherFromXML for range operators ([a483cc4](https://github.com/duckpuppy/comic-server/commit/a483cc44f75b07380bd0de94d2c26ce51eb2fa4a))
+* **library:** correct CustomValues matcher semantics to match ComicRack ([5a316de](https://github.com/duckpuppy/comic-server/commit/5a316deed11855bdce59a454940e85ace2184b43))
+* **library:** correct three smart list matcher bugs ([56e87b6](https://github.com/duckpuppy/comic-server/commit/56e87b648c4faba228d99a98383f4bf763611507))
+* **library:** count matcher numeric + expandable nested UI matchers ([2e6c674](https://github.com/duckpuppy/comic-server/commit/2e6c67499b50997b475dc909aea9f1da4d61fdd2))
+* **library:** use string ops for path extraction to fix Windows cross-compile ([1dc0ea5](https://github.com/duckpuppy/comic-server/commit/1dc0ea556fa395ff95e3f2d920c84ce21c28780d))
+* **ui:** folder click navigation and full breadcrumb path in list detail ([2da2ce6](https://github.com/duckpuppy/comic-server/commit/2da2ce65ee5573b6ed4a80f8f05c36076e4b8464))
+* **ui:** preserve tree sidebar scroll position across re-renders ([6ff34c2](https://github.com/duckpuppy/comic-server/commit/6ff34c2a7f6bef72a5c5a21eed2564e7a0711442))
+* **ui:** prevent stale navigation from rendering over the active page ([d0e0684](https://github.com/duckpuppy/comic-server/commit/d0e0684cea3f612d9bb0f68a865040a2b1597415))
+* **ui:** rename hardcoded breadcrumb root from 'Smart Lists' to 'Lists' ([f68911a](https://github.com/duckpuppy/comic-server/commit/f68911ac9c2a735dc6f2bcdf2495871ff5edeb9d))
+* **ui:** rename nav tab from 'Smart Lists' to 'Lists' ([7a805f9](https://github.com/duckpuppy/comic-server/commit/7a805f9a62cd6c184a750e84cab50481a2aa3488))
+* **web,library:** fix duplicate expand arrows and FileName without extension ([07f762c](https://github.com/duckpuppy/comic-server/commit/07f762cee8769b71855bfd601225a9b9582d91bc))
+
+
+### Documentation
+
+* Update link to WIRELESS_SYNC_PROTOCOL.md location ([e82b177](https://github.com/duckpuppy/comic-server/commit/e82b1772cb8413909bbff34a5c98f80f88a90ef6))
+
 ## [1.1.0](https://github.com/duckpuppy/comic-server/compare/v1.0.0...v1.1.0) (2025-11-18)
 
 
