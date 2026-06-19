@@ -6,11 +6,13 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/duckpuppy/comic-server/internal/api"
+	"github.com/duckpuppy/comic-server/internal/comicvine"
 	"github.com/duckpuppy/comic-server/internal/config"
 	"github.com/duckpuppy/comic-server/internal/device"
 	"github.com/duckpuppy/comic-server/internal/library"
@@ -297,6 +299,13 @@ func runServer(cmd *cobra.Command, args []string) error {
 			log.Error().Err(err).Msg("REST API server error")
 		}
 	}()
+
+	// Start ComicVine background sync if API key is configured
+	cvCtx, cvCancel := context.WithCancel(context.Background())
+	defer cvCancel()
+	if cfg.Server.ComicVineAPIKey != "" {
+		go startComicVineSync(cvCtx, cfg.Server.ComicVineAPIKey, backend)
+	}
 
 	// Handle signals gracefully
 	sigChan := make(chan os.Signal, 1)
@@ -870,5 +879,68 @@ func init() {
 		logFormatSet = cmd.Flags().Changed("log-format")
 		pingDeviceSet = cmd.Flags().Changed("ping-device")
 		return nil
+	}
+}
+
+func startComicVineSync(ctx context.Context, apiKey string, backend library.Backend) {
+	dataDir, err := config.EnsureDataDir()
+	if err != nil {
+		log.Error().Err(err).Msg("ComicVine sync: failed to create data directory")
+		return
+	}
+
+	cachePath := filepath.Join(dataDir, "comicvine_cache.db")
+	cache, err := comicvine.OpenCache(cachePath)
+	if err != nil {
+		log.Error().Err(err).Msg("ComicVine sync: failed to open cache database")
+		return
+	}
+	defer cache.Close()
+
+	client := comicvine.NewClient(apiKey,
+		comicvine.WithCircuitBreaker(comicvine.NewCircuitBreaker(
+			comicvine.WithOnStateChange(func(from, to comicvine.CircuitState) {
+				log.Info().
+					Str("from", from.String()).
+					Str("to", to.String()).
+					Msg("ComicVine sync: circuit breaker state change")
+			}),
+		)),
+	)
+
+	syncer := comicvine.NewSyncer(client, cache)
+
+	// Seed from library
+	books, err := backend.GetAllBooks()
+	if err != nil {
+		log.Error().Err(err).Msg("ComicVine sync: failed to get books from library")
+		return
+	}
+
+	stores := make([]string, len(books))
+	for i := range books {
+		stores[i] = books[i].CustomValuesStore
+	}
+
+	seeded, err := syncer.SeedFromLibrary(stores)
+	if err != nil {
+		log.Error().Err(err).Msg("ComicVine sync: failed to seed volumes")
+		return
+	}
+
+	owned := comicvine.BuildOwnedCounts(stores)
+
+	synced, pending, failed, _ := cache.SyncStats()
+	log.Info().
+		Int("seeded_volumes", seeded).
+		Int("synced", synced).
+		Int("pending", pending).
+		Int("failed", failed).
+		Int("library_books", len(books)).
+		Str("cache_path", cachePath).
+		Msg("ComicVine sync: starting background sync")
+
+	if err := syncer.Run(ctx, owned); err != nil && ctx.Err() == nil {
+		log.Error().Err(err).Msg("ComicVine sync: background sync stopped with error")
 	}
 }

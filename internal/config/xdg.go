@@ -45,6 +45,32 @@ func GetDefaultConfigPath() (string, error) {
 	return filepath.Join(dir, "config.yaml"), nil
 }
 
+// GetDataDir returns the XDG-compliant data directory for comic-server.
+// 1. $XDG_DATA_HOME/comic-server if XDG_DATA_HOME is set
+// 2. ~/.local/share/comic-server otherwise
+func GetDataDir() (string, error) {
+	if xdgData := os.Getenv("XDG_DATA_HOME"); xdgData != "" {
+		return filepath.Join(xdgData, "comic-server"), nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get user home directory: %w", err)
+	}
+	return filepath.Join(home, ".local", "share", "comic-server"), nil
+}
+
+// EnsureDataDir creates the data directory if it doesn't exist.
+func EnsureDataDir() (string, error) {
+	dir, err := GetDataDir()
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create data directory: %w", err)
+	}
+	return dir, nil
+}
+
 // EnsureConfigDir creates the configuration directory if it doesn't exist
 // Returns the path to the config directory
 func EnsureConfigDir() (string, error) {
