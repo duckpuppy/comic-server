@@ -1157,7 +1157,7 @@ This project uses **GoReleaser** + **Release Please** for fully automated releas
    ```
 
 2. **Release Please creates PR automatically**:
-   - Monitors commits on `master` branch
+   - Monitors commits on `main` branch
    - Creates/updates a release PR with:
      - Version bump (based on commit types)
      - Updated CHANGELOG.md
@@ -1165,7 +1165,7 @@ This project uses **GoReleaser** + **Release Please** for fully automated releas
 
 3. **Merge the release PR**:
    - Review the CHANGELOG
-   - Merge the PR to `master`
+   - Merge the PR to `main`
 
 4. **Release Please tags and creates GitHub Release**:
    - Creates a git tag (e.g., `v0.8.0`)
