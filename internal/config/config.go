@@ -41,6 +41,9 @@ type ServerConfig struct {
 	// Logging settings
 	LogLevel  string `yaml:"log_level,omitempty" toml:"log_level,omitempty"`   // Log level: debug, info, warn, error
 	LogFormat string `yaml:"log_format,omitempty" toml:"log_format,omitempty"` // Log format: text, json
+
+	// ComicVine integration
+	ComicVineAPIKey string `yaml:"comicvine_api_key,omitempty" toml:"comicvine_api_key,omitempty"` // API key for ComicVine enrichment
 }
 
 // DeviceConfig contains sync configuration for a specific device
