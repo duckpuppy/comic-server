@@ -12,6 +12,15 @@ type ComicLibrary struct {
 	Name       string          `xml:"Name,omitempty"`
 	Books      []ComicBook     `xml:"Books>Book"`
 	ComicLists []ComicListItem `xml:"ComicLists>Item"`
+
+	// cvData holds optional ComicVine enrichment data keyed by book ID.
+	// Set via SetCVData; used by smart list matchers during evaluation.
+	cvData map[string]*CVCompleteness `xml:"-"`
+}
+
+// SetCVData sets ComicVine enrichment data for use by CV smart list matchers.
+func (l *ComicLibrary) SetCVData(data map[string]*CVCompleteness) {
+	l.cvData = data
 }
 
 // ComicBook represents an individual comic entry in the library

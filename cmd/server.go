@@ -930,6 +930,9 @@ func startComicVineSync(ctx context.Context, apiKey string, backend library.Back
 
 	owned := comicvine.BuildOwnedCounts(stores)
 
+	// Build and apply initial completeness data from any previously cached volumes
+	updateCVData(backend, books, cache)
+
 	synced, pending, failed, _ := cache.SyncStats()
 	log.Info().
 		Int("seeded_volumes", seeded).
@@ -942,5 +945,20 @@ func startComicVineSync(ctx context.Context, apiKey string, backend library.Back
 
 	if err := syncer.Run(ctx, owned); err != nil && ctx.Err() == nil {
 		log.Error().Err(err).Msg("ComicVine sync: background sync stopped with error")
+	}
+
+	// Final update after sync completes
+	updateCVData(backend, books, cache)
+}
+
+func updateCVData(backend library.Backend, books []library.ComicBook, cache *comicvine.Cache) {
+	cvData, err := comicvine.BuildCompletenessMap(books, cache)
+	if err != nil {
+		log.Error().Err(err).Msg("ComicVine sync: failed to build completeness map")
+		return
+	}
+	if xmlBackend, ok := backend.(*library.XMLBackend); ok {
+		xmlBackend.SetCVData(cvData)
+		log.Info().Int("books_with_cv_data", len(cvData)).Msg("ComicVine sync: completeness data updated")
 	}
 }

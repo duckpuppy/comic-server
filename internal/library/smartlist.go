@@ -130,6 +130,12 @@ const (
 	// Operator 0 (On) returns books that are duplicates; operator != 0 (Off) returns all books.
 	MatcherTypeDuplicate MatcherType = "Duplicate"
 
+	// ComicVine enrichment matchers — comic-server only, not recognized by ComicRack.
+	// Maps to ComicServerCV*Matcher xsi:type values.
+	MatcherTypeCVSeriesComplete MatcherType = "CVSeriesComplete" // yes/no/unknown
+	MatcherTypeCVMissingCount   MatcherType = "CVMissingCount"   // numeric: missing issue count
+	MatcherTypeCVPercentOwned   MatcherType = "CVPercentOwned"   // numeric: 0-100
+
 	// Series aggregate matchers — require stats across all books in the same series+volume.
 	// These map to SmartListSeries*Matcher xsi:type values in the ComicRack XML.
 	MatcherTypeSeriesAllComplete            MatcherType = "SeriesAllComplete"
@@ -238,6 +244,21 @@ func NewMatcherFromXML(xmlMatcher *ComicBookMatcher) (*Matcher, error) {
 
 	// Handle series aggregate matchers
 	if mt, ok := seriesMatcherTypes[xmlMatcher.Type]; ok {
+		m := &Matcher{
+			Type:        mt,
+			MatchValue:  xmlMatcher.MatchValue,
+			MatchValue2: xmlMatcher.MatchValue2,
+			Not:         xmlMatcher.Not,
+			IgnoreCase:  true,
+		}
+		if err := m.parseOperator(xmlMatcher.MatchOperator); err != nil {
+			return nil, fmt.Errorf("invalid operator %q: %w", xmlMatcher.MatchOperator, err)
+		}
+		return m, nil
+	}
+
+	// Handle ComicVine enrichment matchers
+	if mt, ok := cvMatcherTypes[xmlMatcher.Type]; ok {
 		m := &Matcher{
 			Type:        mt,
 			MatchValue:  xmlMatcher.MatchValue,
@@ -1003,45 +1024,37 @@ func (m *Matcher) matchYesNo(value string) bool {
 }
 
 // evaluateMatcher recursively evaluates a matcher (value or group) against a book
-func evaluateMatcher(xmlMatcher *ComicBookMatcher, book *ComicBook, stats map[seriesKey]*SeriesStats, duplicates map[string]bool) bool {
+func evaluateMatcher(xmlMatcher *ComicBookMatcher, book *ComicBook, ctx *evalCtx) bool {
 	// Check if this is a group matcher
 	if strings.Contains(xmlMatcher.Type, "GroupMatcher") {
-		// Evaluate nested matchers according to group mode
 		groupMode := xmlMatcher.MatcherMode
 		if groupMode == "" {
-			groupMode = "And" // Default
+			groupMode = "And"
 		}
 
 		if len(xmlMatcher.Matchers) == 0 {
-			// Empty group matcher - no conditions to evaluate
-			// This should NOT match anything (return false for AND, true for OR to maintain neutral element)
-			// But in practice, lists with empty group matchers in ComicRack use CacheStorage
-			// For safety, treat as no match
 			return false
 		}
 
 		var result bool
 		if groupMode == "Or" {
-			// OR mode: true if ANY nested matcher matches
 			result = false
 			for i := range xmlMatcher.Matchers {
-				if evaluateMatcher(&xmlMatcher.Matchers[i], book, stats, duplicates) {
+				if evaluateMatcher(&xmlMatcher.Matchers[i], book, ctx) {
 					result = true
 					break
 				}
 			}
 		} else {
-			// AND mode: true if ALL nested matchers match
 			result = true
 			for i := range xmlMatcher.Matchers {
-				if !evaluateMatcher(&xmlMatcher.Matchers[i], book, stats, duplicates) {
+				if !evaluateMatcher(&xmlMatcher.Matchers[i], book, ctx) {
 					result = false
 					break
 				}
 			}
 		}
 
-		// Apply negation if set
 		if xmlMatcher.Not {
 			return !result
 		}
@@ -1050,11 +1063,10 @@ func evaluateMatcher(xmlMatcher *ComicBookMatcher, book *ComicBook, stats map[se
 
 	// Duplicate matcher: uses pre-computed cross-book duplicate set
 	if xmlMatcher.Type == "ComicBookDuplicateMatcher" {
-		// MatchOperator=0 (On) → filter to duplicates; any other value (Off) → all books match
 		op := xmlMatcher.MatchOperator
 		var result bool
 		if op == "" || op == "0" {
-			result = duplicates[book.ID]
+			result = ctx.duplicates[book.ID]
 		} else {
 			result = true
 		}
@@ -1064,22 +1076,64 @@ func evaluateMatcher(xmlMatcher *ComicBookMatcher, book *ComicBook, stats map[se
 		return result
 	}
 
+	// ComicVine enrichment matchers
+	if isCVMatcherType(xmlMatcher.Type) {
+		return evaluateCVMatcher(xmlMatcher, book, ctx)
+	}
+
 	// Series aggregate matchers need pre-computed stats
 	if isSeriesMatcherType(xmlMatcher.Type) {
-		return evaluateSeriesMatcher(xmlMatcher, book, stats)
+		return evaluateSeriesMatcher(xmlMatcher, book, ctx.stats)
 	}
 
 	// Regular value matcher
 	matcher, err := NewMatcherFromXML(xmlMatcher)
 	if err != nil {
-		// Unsupported matcher type - log and return false (don't match)
-		// Common unsupported types: CustomValues, Plugin, Expression, ReadPercentage, etc.
-		// These require additional implementation
-		// Silently return false to avoid flooding logs
 		return false
 	}
 
 	return matcher.Match(book)
+}
+
+// evaluateCVMatcher evaluates a ComicVine enrichment matcher against a book.
+func evaluateCVMatcher(xmlMatcher *ComicBookMatcher, book *ComicBook, ctx *evalCtx) bool {
+	cv := ctx.cvData[book.ID]
+
+	mt := cvMatcherTypes[xmlMatcher.Type]
+	m, err := NewMatcherFromXML(xmlMatcher)
+	if err != nil {
+		return false
+	}
+
+	// If no CV data for this book, treat as "Unknown"
+	if cv == nil {
+		switch mt {
+		case MatcherTypeCVSeriesComplete:
+			result := m.matchYesNo("Unknown")
+			if m.Not {
+				return !result
+			}
+			return result
+		default:
+			return m.Not // no data → no match; Not inverts
+		}
+	}
+
+	var result bool
+	switch mt {
+	case MatcherTypeCVSeriesComplete:
+		result = m.matchYesNo(cv.IsComplete)
+	case MatcherTypeCVMissingCount:
+		result = m.matchNumeric(strconv.Itoa(cv.MissingCount))
+	case MatcherTypeCVPercentOwned:
+		result = m.matchNumeric(strconv.Itoa(cv.PercentOwned))
+	default:
+		return false
+	}
+	if m.Not {
+		return !result
+	}
+	return result
 }
 
 // evaluateSeriesMatcher evaluates a series aggregate matcher against a book using pre-computed stats.
@@ -1193,6 +1247,47 @@ func hasSeriesMatchers(matchers []ComicBookMatcher) bool {
 	return false
 }
 
+// CVCompleteness holds pre-computed ComicVine series completeness data for a book.
+// Keyed by book ID in the evalCtx.cvData map.
+type CVCompleteness struct {
+	TotalIssues  int
+	OwnedIssues  int
+	MissingCount int
+	PercentOwned int
+	IsComplete   string // "Yes", "No", "Unknown"
+}
+
+// evalCtx holds pre-computed cross-book data used during matcher evaluation.
+type evalCtx struct {
+	stats      map[seriesKey]*SeriesStats
+	duplicates map[string]bool
+	cvData     map[string]*CVCompleteness // book ID → completeness
+}
+
+// cvMatcherTypes maps XML type names to library MatcherType constants for CV matchers.
+var cvMatcherTypes = map[string]MatcherType{
+	"ComicServerCVSeriesCompleteMatcher": MatcherTypeCVSeriesComplete,
+	"ComicServerCVMissingCountMatcher":   MatcherTypeCVMissingCount,
+	"ComicServerCVPercentOwnedMatcher":   MatcherTypeCVPercentOwned,
+}
+
+func isCVMatcherType(xmlType string) bool {
+	_, ok := cvMatcherTypes[xmlType]
+	return ok
+}
+
+func hasCVMatcher(matchers []ComicBookMatcher) bool {
+	for i := range matchers {
+		if isCVMatcherType(matchers[i].Type) {
+			return true
+		}
+		if len(matchers[i].Matchers) > 0 && hasCVMatcher(matchers[i].Matchers) {
+			return true
+		}
+	}
+	return false
+}
+
 // commonSeparators mirrors ComicRackCE's StringUtility.CommonSeparators.
 var commonSeparators = func() map[rune]bool {
 	m := make(map[rune]bool)
@@ -1298,22 +1393,20 @@ func hasDuplicateMatcher(matchers []ComicBookMatcher) bool {
 }
 
 // matchBooks evaluates a list's matchers against a slice of candidate books.
-func matchBooks(list *ComicListItem, candidates []*ComicBook) []*ComicBook {
+// cvData is optional ComicVine enrichment data keyed by book ID (nil if unavailable).
+func matchBooks(list *ComicListItem, candidates []*ComicBook, cvData map[string]*CVCompleteness) []*ComicBook {
 	matcherMode := list.MatcherMode
 	if matcherMode == "" {
 		matcherMode = "And"
 	}
 
-	// Pre-compute series stats only when needed (series matchers require cross-book aggregation).
-	var stats map[seriesKey]*SeriesStats
+	// Build evaluation context with pre-computed cross-book data.
+	ctx := &evalCtx{cvData: cvData}
 	if hasSeriesMatchers(list.Matchers) {
-		stats = buildSeriesStats(candidates)
+		ctx.stats = buildSeriesStats(candidates)
 	}
-
-	// Pre-compute duplicate set only when needed.
-	var duplicates map[string]bool
 	if hasDuplicateMatcher(list.Matchers) {
-		duplicates = buildDuplicateSet(candidates)
+		ctx.duplicates = buildDuplicateSet(candidates)
 	}
 
 	var matched []*ComicBook
@@ -1321,7 +1414,7 @@ func matchBooks(list *ComicListItem, candidates []*ComicBook) []*ComicBook {
 		var ok bool
 		if matcherMode == "Or" {
 			for j := range list.Matchers {
-				if evaluateMatcher(&list.Matchers[j], book, stats, duplicates) {
+				if evaluateMatcher(&list.Matchers[j], book, ctx) {
 					ok = true
 					break
 				}
@@ -1329,7 +1422,7 @@ func matchBooks(list *ComicListItem, candidates []*ComicBook) []*ComicBook {
 		} else {
 			ok = true
 			for j := range list.Matchers {
-				if !evaluateMatcher(&list.Matchers[j], book, stats, duplicates) {
+				if !evaluateMatcher(&list.Matchers[j], book, ctx) {
 					ok = false
 					break
 				}
@@ -1382,7 +1475,7 @@ func (l *ComicLibrary) MatchBooks(list *ComicListItem) ([]*ComicBook, error) {
 		}
 	}
 
-	return matchBooks(list, candidates), nil
+	return matchBooks(list, candidates, l.cvData), nil
 }
 
 // GetBooksForList returns books for any list type: SmartList (matcher-based),

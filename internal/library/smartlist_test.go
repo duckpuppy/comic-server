@@ -1565,7 +1565,7 @@ func seriesList(xmlType, matchOp, matchVal string, not bool) *ComicListItem {
 
 // evalSeries runs matchBooks and returns which of books matched.
 func evalSeries(list *ComicListItem, books []*ComicBook) []*ComicBook {
-	return matchBooks(list, books)
+	return matchBooks(list, books, nil)
 }
 
 func TestSeriesCountMatcher(t *testing.T) {
@@ -1883,7 +1883,11 @@ func dupList(op string, not bool) *ComicListItem {
 }
 
 func evalDup(list *ComicListItem, books []*ComicBook) []*ComicBook {
-	return matchBooks(list, books)
+	return matchBooks(list, books, nil)
+}
+
+func evalCV(list *ComicListItem, books []*ComicBook, cvData map[string]*CVCompleteness) []*ComicBook {
+	return matchBooks(list, books, cvData)
 }
 
 func TestDuplicateMatcherOnMode(t *testing.T) {
@@ -1934,5 +1938,109 @@ func TestDuplicateMatcherEmptyOperator(t *testing.T) {
 	got := evalDup(dupList("", false), books)
 	if len(got) != 2 {
 		t.Fatalf("Empty operator (defaults to On): want 2 duplicates, got %d", len(got))
+	}
+}
+
+// --- ComicVine enrichment matcher tests ---
+
+func cvList(xmlType, op, matchVal string, not bool) *ComicListItem {
+	return &ComicListItem{
+		Type: "SmartListItem",
+		Matchers: []ComicBookMatcher{
+			{Type: xmlType, MatchOperator: op, MatchValue: matchVal, Not: not},
+		},
+	}
+}
+
+func TestCVSeriesComplete_Yes(t *testing.T) {
+	books := []*ComicBook{{ID: "1"}, {ID: "2"}, {ID: "3"}}
+	cvData := map[string]*CVCompleteness{
+		"1": {IsComplete: "Yes", TotalIssues: 5, OwnedIssues: 5},
+		"2": {IsComplete: "No", TotalIssues: 10, OwnedIssues: 7},
+		// "3" has no CV data
+	}
+	list := cvList("ComicServerCVSeriesCompleteMatcher", "0", "", false) // EqualsYes
+	got := evalCV(list, books, cvData)
+	if len(got) != 1 || got[0].ID != "1" {
+		t.Errorf("want only book 1 (complete), got %d matches", len(got))
+	}
+}
+
+func TestCVSeriesComplete_No(t *testing.T) {
+	books := []*ComicBook{{ID: "1"}, {ID: "2"}}
+	cvData := map[string]*CVCompleteness{
+		"1": {IsComplete: "Yes"},
+		"2": {IsComplete: "No"},
+	}
+	list := cvList("ComicServerCVSeriesCompleteMatcher", "1", "", false) // EqualsNo
+	got := evalCV(list, books, cvData)
+	if len(got) != 1 || got[0].ID != "2" {
+		t.Errorf("want only book 2 (incomplete), got %d matches", len(got))
+	}
+}
+
+func TestCVSeriesComplete_Unknown(t *testing.T) {
+	books := []*ComicBook{{ID: "1"}, {ID: "2"}}
+	cvData := map[string]*CVCompleteness{
+		"1": {IsComplete: "Yes"},
+		// "2" has no CV data → Unknown
+	}
+	list := cvList("ComicServerCVSeriesCompleteMatcher", "2", "", false) // EqualsUnknown
+	got := evalCV(list, books, cvData)
+	if len(got) != 1 || got[0].ID != "2" {
+		t.Errorf("want only book 2 (unknown), got %d matches", len(got))
+	}
+}
+
+func TestCVMissingCount(t *testing.T) {
+	books := []*ComicBook{{ID: "1"}, {ID: "2"}, {ID: "3"}}
+	cvData := map[string]*CVCompleteness{
+		"1": {MissingCount: 0},
+		"2": {MissingCount: 5},
+		"3": {MissingCount: 12},
+	}
+	// Greater than 3
+	list := cvList("ComicServerCVMissingCountMatcher", "1", "3", false)
+	got := evalCV(list, books, cvData)
+	if len(got) != 2 {
+		t.Errorf("want 2 books with >3 missing, got %d", len(got))
+	}
+}
+
+func TestCVPercentOwned(t *testing.T) {
+	books := []*ComicBook{{ID: "1"}, {ID: "2"}}
+	cvData := map[string]*CVCompleteness{
+		"1": {PercentOwned: 100},
+		"2": {PercentOwned: 60},
+	}
+	// PercentOwned >= 90 (InRange 90-100)
+	list := cvList("ComicServerCVPercentOwnedMatcher", "0", "100", false) // Equals 100
+	got := evalCV(list, books, cvData)
+	if len(got) != 1 || got[0].ID != "1" {
+		t.Errorf("want only book 1 (100%% owned), got %d", len(got))
+	}
+}
+
+func TestCVMatcher_NoCVData(t *testing.T) {
+	books := []*ComicBook{{ID: "1"}}
+	// No CV data at all
+	list := cvList("ComicServerCVMissingCountMatcher", "0", "0", false)
+	got := evalCV(list, books, nil)
+	if len(got) != 0 {
+		t.Errorf("want 0 matches with nil cvData, got %d", len(got))
+	}
+}
+
+func TestCVMatcher_NotInverts(t *testing.T) {
+	books := []*ComicBook{{ID: "1"}, {ID: "2"}}
+	cvData := map[string]*CVCompleteness{
+		"1": {IsComplete: "Yes"},
+		"2": {IsComplete: "No"},
+	}
+	// NOT CVSeriesComplete=Yes → incomplete or unknown books
+	list := cvList("ComicServerCVSeriesCompleteMatcher", "0", "", true)
+	got := evalCV(list, books, cvData)
+	if len(got) != 1 || got[0].ID != "2" {
+		t.Errorf("want book 2 (NOT complete), got %d matches", len(got))
 	}
 }

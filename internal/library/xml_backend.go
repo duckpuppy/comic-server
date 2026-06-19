@@ -224,6 +224,13 @@ func deleteListRecursive(lists []ComicListItem, id string) []ComicListItem {
 	return result
 }
 
+// SetCVData sets ComicVine enrichment data for use by CV smart list matchers.
+func (b *XMLBackend) SetCVData(data map[string]*CVCompleteness) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.library.SetCVData(data)
+}
+
 // MatchBooks evaluates a smart list and returns matching books.
 func (b *XMLBackend) MatchBooks(list *ComicListItem) ([]*ComicBook, error) {
 	b.mu.RLock()

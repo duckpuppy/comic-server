@@ -70,6 +70,14 @@ comic-server/
 │   │   ├── loader.go     # YAML/TOML loading/saving
 │   │   ├── helpers.go    # Device/list resolution
 │   │   └── device.go     # Device-specific operations
+│   ├── comicvine/        # ComicVine API integration and enrichment
+│   │   ├── client.go     # API client with burst-and-pause rate limiting
+│   │   ├── circuit.go    # Circuit breaker with exponential backoff
+│   │   ├── pacer.go      # Burst-and-pause rate limiter
+│   │   ├── cache.go      # SQLite cache for volumes, issues, sync state
+│   │   ├── sync.go       # Background sync orchestrator
+│   │   ├── completeness.go # Series completeness computation
+│   │   └── types.go      # API response and cache types
 │   ├── device/           # Device discovery and management
 │   │   ├── discovery.go  # UDP multicast listener
 │   │   ├── info.go       # Device info parsing (INI format)
@@ -709,6 +717,88 @@ See issues #15, #16, #17 for:
 - CLI/API for configuration management
 - Advanced matchers (nested groups, file path matching, etc.)
 
+## ComicVine Enrichment
+
+Background sync pipeline that fetches series/issue data from the ComicVine API to enable series completeness checking and missing issue detection.
+
+### How It Works
+
+1. **Seeding**: On server startup, extracts `comicvine_volume` IDs from library books' `CustomValuesStore` fields (~97.5% of books are tagged)
+2. **Background sync**: Fetches volume metadata and issue lists from ComicVine API, prioritized by how many issues you own per volume
+3. **Completeness computation**: Compares owned issues against ComicVine's issue list to determine completeness percentage and missing issues
+4. **Matcher evaluation**: CV enrichment matchers use the pre-computed data during smart list evaluation
+
+### Configuration
+
+```yaml
+server:
+  comicvine_api_key: "your-api-key-here"
+```
+
+The API key can also be set via `COMIC_SERVER_COMICVINE_API_KEY` environment variable.
+
+### Rate Limiting
+
+ComicVine's API is burst-hostile — sustained requests at any rate will eventually trigger timeouts. The client uses:
+
+- **Burst-and-pause pacing**: 20 requests, then 5-minute pause. After 200 requests, 30-minute cooldown.
+- **Circuit breaker**: On ANY failure (timeout, 429, 5xx), immediately stops all requests. Minimum 1-hour backoff with exponential increase up to 24-hour cap.
+- **Resumable sync**: Progress tracked in SQLite. Survives server restarts, backoff pauses, and interruptions.
+
+Initial sync of ~12K volumes takes approximately 2 weeks at conservative pacing.
+
+### Cache Storage
+
+Data cached in SQLite at `$XDG_DATA_HOME/comic-server/comicvine_cache.db` (default: `~/.local/share/comic-server/comicvine_cache.db`).
+
+Tables:
+
+- `cv_volumes` — Volume metadata (name, publisher, issue count, sync status)
+- `cv_issues` — Issue list per volume (number, cover date, store date)
+- `cv_sync_state` — Key-value store for sync state tracking
+
+### CLI Commands
+
+```bash
+# Show sync status
+comic-server comicvine status
+```
+
+### Smart List Matchers (comic-server only)
+
+These matchers are comic-server extensions — they won't be recognized by ComicRack.
+
+| XML Type | Matcher | Operators | Description |
+|----------|---------|-----------|-------------|
+| `ComicServerCVSeriesCompleteMatcher` | CVSeriesComplete | Yes/No/Unknown | Whether you own all known issues |
+| `ComicServerCVMissingCountMatcher` | CVMissingCount | Numeric (=, >, <, range) | Number of missing issues |
+| `ComicServerCVPercentOwnedMatcher` | CVPercentOwned | Numeric (=, >, <, range) | Percentage of series owned (0-100) |
+
+Books without ComicVine tags or with volumes not yet synced evaluate as "Unknown" for CVSeriesComplete and don't match numeric CV matchers.
+
+### Architecture
+
+```
+internal/comicvine/
+├── client.go        # API client with burst-and-pause rate limiting
+├── circuit.go       # Circuit breaker (closed→open→half-open state machine)
+├── pacer.go         # Burst/window rate limiting with context cancellation
+├── cache.go         # SQLite cache (cv_volumes, cv_issues, cv_sync_state)
+├── sync.go          # Background sync orchestrator (seed → fetch → cache)
+├── completeness.go  # Builds book ID → CVCompleteness map from cache
+└── types.go         # API response types and cached data types
+```
+
+### Duplicate Matcher
+
+ComicRack-compatible duplicate detection across the entire candidate set. Identifies comics that are duplicates by metadata (series/format/volume/number/language/year/month/day/BlackAndWhite) or by file path.
+
+- XML type: `ComicBookDuplicateMatcher`
+- Operator 0 (On): returns only duplicate books
+- Operator 1 (Off): returns all books
+- `Not` flag inverts the result (e.g., NOT + On = non-duplicates only)
+- Series name comparison strips articles ("the", "der", "die", etc.) and common separators, matching ComicRackCE's `GroupInfo.CompressedName`
+
 ## Status
 
 ### v0.2 Milestone - Complete! ✅
@@ -905,9 +995,13 @@ See issues #15, #16, #17 for:
 ### 📋 Backlog (v1.1+):
 
 **Future Enhancements:**
+
 - Security Phase 3: TLS/SSL encryption, certificate-based auth
 - SQLite storage investigation - Issue #19
 - Additional sync options and filters
+- ComicVine enrichment: series completeness matchers (in progress - Issue comic-server-4hb)
+- ComicVine scraper: metadata tagging without ComicRack dependency
+- LLM-powered smart list matchers (per-book classification via local Ollama)
 
 ### Web UI (v0.8)
 
