@@ -28,7 +28,7 @@ func TestBuildCompletenessMap(t *testing.T) {
 		{ID: "book-1", CustomValuesStore: ",comicvine_volume=100,comicvine_issue=1001"},
 		{ID: "book-2", CustomValuesStore: ",comicvine_volume=100,comicvine_issue=1002"},
 		{ID: "book-3", CustomValuesStore: ",comicvine_volume=100,comicvine_issue=1003"},
-		{ID: "book-4", CustomValuesStore: ""},                                          // no CV data
+		{ID: "book-4", CustomValuesStore: ""},                                           // no CV data
 		{ID: "book-5", CustomValuesStore: ",comicvine_volume=999,comicvine_issue=9999"}, // unknown volume
 	}
 

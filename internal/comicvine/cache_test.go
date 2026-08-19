@@ -180,3 +180,65 @@ func TestCache_SyncState(t *testing.T) {
 		t.Errorf("expected empty for missing key, got %q", got)
 	}
 }
+
+func TestCache_UpsertAndGetIssueDetail(t *testing.T) {
+	c := testCache(t)
+
+	detail := &IssueDetail{
+		ID:          12345,
+		IssueNumber: "1",
+		Name:        "Origins",
+		CoverDate:   "1940-01-01",
+		Description: "The first appearance.",
+		Image:       ImageURLs{SuperURL: "https://example.com/super.jpg"},
+		PersonCredits: []PersonCredit{
+			{ID: 1, Name: "Bill Finger", Role: "writer"},
+		},
+		CharacterCredits: []NamedCredit{{ID: 100, Name: "Batman"}},
+	}
+	detail.Volume.ID = 999
+	detail.Volume.Name = "Batman"
+
+	if err := c.UpsertIssueDetail(detail); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := c.GetIssueDetail(12345)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil {
+		t.Fatal("expected issue detail, got nil")
+	}
+	if got.Name != "Origins" || got.Volume.Name != "Batman" {
+		t.Errorf("got %+v", got)
+	}
+	if len(got.PersonCredits) != 1 || got.PersonCredits[0].Role != "writer" {
+		t.Errorf("PersonCredits = %+v", got.PersonCredits)
+	}
+
+	// Upsert again with updated data
+	detail.Name = "Origins (Updated)"
+	if err := c.UpsertIssueDetail(detail); err != nil {
+		t.Fatal(err)
+	}
+	got, err = c.GetIssueDetail(12345)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Name != "Origins (Updated)" {
+		t.Errorf("got Name = %q, want updated", got.Name)
+	}
+}
+
+func TestCache_GetIssueDetail_NotFound(t *testing.T) {
+	c := testCache(t)
+
+	got, err := c.GetIssueDetail(99999)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != nil {
+		t.Errorf("expected nil, got %+v", got)
+	}
+}

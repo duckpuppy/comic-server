@@ -12,14 +12,15 @@ import (
 )
 
 const (
-	baseURL           = "https://comicvine.gamespot.com/api"
-	defaultTimeout    = 30 * time.Second
-	userAgent         = "comic-server/1.0"
+	baseURL        = "https://comicvine.gamespot.com/api"
+	defaultTimeout = 30 * time.Second
+	userAgent      = "comic-server/1.0"
 )
 
 // Client is a ComicVine API client with built-in rate limiting and circuit breaking.
 type Client struct {
 	apiKey  string
+	baseURL string
 	http    *http.Client
 	circuit *CircuitBreaker
 	pacer   *Pacer
@@ -40,10 +41,16 @@ func WithPacer(p *Pacer) ClientOption {
 	return func(cl *Client) { cl.pacer = p }
 }
 
+// WithBaseURL overrides the ComicVine API base URL (used in tests).
+func WithBaseURL(u string) ClientOption {
+	return func(cl *Client) { cl.baseURL = u }
+}
+
 // NewClient creates a ComicVine API client.
 func NewClient(apiKey string, opts ...ClientOption) *Client {
 	c := &Client{
 		apiKey:  apiKey,
+		baseURL: baseURL,
 		http:    &http.Client{Timeout: defaultTimeout},
 		circuit: NewCircuitBreaker(),
 		pacer:   NewPacer(),
@@ -110,6 +117,39 @@ func (c *Client) FetchVolumeIssues(ctx context.Context, volumeCVID int) ([]Issue
 	return all, nil
 }
 
+// SearchVolumes searches ComicVine for volumes matching a query string.
+func (c *Client) SearchVolumes(ctx context.Context, query string) ([]Volume, error) {
+	params := url.Values{
+		"query":      {query},
+		"resources":  {"volume"},
+		"field_list": {"id,name,start_year,publisher,count_of_issues,image,description,deck,site_detail_url"},
+	}
+	var resp apiResponse[[]Volume]
+	if err := c.get(ctx, "/search", params, &resp); err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != 1 {
+		return nil, fmt.Errorf("comicvine API error %d: %s", resp.StatusCode, resp.Error)
+	}
+	return resp.Results, nil
+}
+
+// FetchIssueDetail fetches full metadata for a single issue, including credits and cover images.
+func (c *Client) FetchIssueDetail(ctx context.Context, cvIssueID int) (*IssueDetail, error) {
+	params := url.Values{
+		"field_list": {"id,issue_number,name,volume,cover_date,store_date,description,site_detail_url," +
+			"person_credits,character_credits,team_credits,location_credits,story_arc_credits,image"},
+	}
+	var resp apiResponse[IssueDetail]
+	if err := c.get(ctx, fmt.Sprintf("/issue/4000-%d", cvIssueID), params, &resp); err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != 1 {
+		return nil, fmt.Errorf("comicvine API error %d: %s", resp.StatusCode, resp.Error)
+	}
+	return &resp.Results, nil
+}
+
 // get performs a rate-limited, circuit-broken GET request.
 func (c *Client) get(ctx context.Context, path string, params url.Values, dest any) error {
 	if !c.circuit.Allow() {
@@ -123,7 +163,7 @@ func (c *Client) get(ctx context.Context, path string, params url.Values, dest a
 	params.Set("api_key", c.apiKey)
 	params.Set("format", "json")
 
-	reqURL := fmt.Sprintf("%s%s/?%s", baseURL, path, params.Encode())
+	reqURL := fmt.Sprintf("%s%s/?%s", c.baseURL, path, params.Encode())
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return fmt.Errorf("build request: %w", err)

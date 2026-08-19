@@ -123,10 +123,10 @@ func TestCircuitBreaker_StateChangeCallback(t *testing.T) {
 		}),
 	)
 
-	cb.RecordFailure()             // closed→open
+	cb.RecordFailure() // closed→open
 	time.Sleep(15 * time.Millisecond)
-	cb.Allow()                     // open→half-open
-	cb.RecordSuccess()             // half-open→closed
+	cb.Allow()         // open→half-open
+	cb.RecordSuccess() // half-open→closed
 
 	expected := []string{"closed→open", "open→half-open", "half-open→closed"}
 	if len(transitions) != len(expected) {

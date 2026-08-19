@@ -2,6 +2,7 @@ package comicvine
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,7 +11,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const cacheSchemaVersion = 1
+const cacheSchemaVersion = 2
 
 // Cache provides SQLite-backed storage for ComicVine API responses.
 type Cache struct {
@@ -79,6 +80,12 @@ func (c *Cache) initSchema() error {
 		CREATE TABLE IF NOT EXISTS cv_sync_state (
 			key   TEXT PRIMARY KEY,
 			value TEXT NOT NULL
+		);
+
+		CREATE TABLE IF NOT EXISTS cv_issue_details (
+			cv_id        INTEGER PRIMARY KEY,
+			details_json TEXT NOT NULL,
+			fetched_at   TEXT
 		);
 	`)
 	if err != nil {
@@ -256,6 +263,38 @@ func (c *Cache) GetSyncState(key string) (string, error) {
 		return "", nil
 	}
 	return val, err
+}
+
+// UpsertIssueDetail stores the full metadata for an issue, fetched lazily during scraping.
+func (c *Cache) UpsertIssueDetail(detail *IssueDetail) error {
+	data, err := json.Marshal(detail)
+	if err != nil {
+		return fmt.Errorf("marshal issue detail: %w", err)
+	}
+	_, err = c.db.Exec(`
+		INSERT INTO cv_issue_details (cv_id, details_json, fetched_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT(cv_id) DO UPDATE SET
+			details_json=excluded.details_json, fetched_at=excluded.fetched_at`,
+		detail.ID, string(data), time.Now().Format(time.RFC3339))
+	return err
+}
+
+// GetIssueDetail returns cached full issue metadata, or nil if not cached.
+func (c *Cache) GetIssueDetail(cvID int) (*IssueDetail, error) {
+	var data string
+	err := c.db.QueryRow(`SELECT details_json FROM cv_issue_details WHERE cv_id = ?`, cvID).Scan(&data)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var detail IssueDetail
+	if err := json.Unmarshal([]byte(data), &detail); err != nil {
+		return nil, fmt.Errorf("unmarshal issue detail: %w", err)
+	}
+	return &detail, nil
 }
 
 // sortByOwned sorts volume IDs by how many books are owned, descending.

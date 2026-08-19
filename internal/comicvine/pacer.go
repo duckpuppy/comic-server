@@ -7,10 +7,10 @@ import (
 )
 
 const (
-	defaultBurstSize    = 20
-	defaultBurstPause   = 5 * time.Minute
-	defaultWindowSize   = 200
-	defaultWindowPause  = 30 * time.Minute
+	defaultBurstSize   = 20
+	defaultBurstPause  = 5 * time.Minute
+	defaultWindowSize  = 200
+	defaultWindowPause = 30 * time.Minute
 )
 
 // Pacer implements burst-and-pause rate limiting to avoid triggering ComicVine's
@@ -20,13 +20,13 @@ const (
 // Pattern: send BurstSize requests, pause BurstPause, repeat. After WindowSize
 // total requests, take a longer WindowPause before continuing.
 type Pacer struct {
-	mu           sync.Mutex
-	burstSize    int
-	burstPause   time.Duration
-	windowSize   int
-	windowPause  time.Duration
-	burstCount   int // requests in current burst
-	windowCount  int // requests in current window
+	mu          sync.Mutex
+	burstSize   int
+	burstPause  time.Duration
+	windowSize  int
+	windowPause time.Duration
+	burstCount  int // requests in current burst
+	windowCount int // requests in current window
 }
 
 // PacerOption configures a Pacer.

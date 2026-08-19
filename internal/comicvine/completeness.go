@@ -14,8 +14,8 @@ import (
 func BuildCompletenessMap(books []library.ComicBook, cache *Cache) (map[string]*library.CVCompleteness, error) {
 	// Group books by CV volume ID
 	type volumeBooks struct {
-		cvVolumeID int
-		bookIDs    []string
+		cvVolumeID    int
+		bookIDs       []string
 		ownedIssueIDs map[int]bool // CV issue IDs owned
 	}
 	byVolume := make(map[int]*volumeBooks)
