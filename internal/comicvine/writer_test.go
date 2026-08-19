@@ -15,9 +15,15 @@ type fakeBackend struct {
 	updated   []*library.ComicBook
 	dirty     []string
 	updateErr error
+	books     map[string]*library.ComicBook
 }
 
-func (f *fakeBackend) GetBook(id string) (*library.ComicBook, error)          { return nil, nil }
+func (f *fakeBackend) GetBook(id string) (*library.ComicBook, error) {
+	if f.books == nil {
+		return nil, nil
+	}
+	return f.books[id], nil
+}
 func (f *fakeBackend) GetAllBooks() ([]library.ComicBook, error)              { return nil, nil }
 func (f *fakeBackend) FindListByID(id string) (*library.ComicListItem, error) { return nil, nil }
 func (f *fakeBackend) FindList(name string) (*library.ComicListItem, error)   { return nil, nil }

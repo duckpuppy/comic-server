@@ -242,3 +242,102 @@ func TestCache_GetIssueDetail_NotFound(t *testing.T) {
 		t.Errorf("expected nil, got %+v", got)
 	}
 }
+
+func TestCache_ScrapeJobMeta(t *testing.T) {
+	c := testCache(t)
+
+	job := &ScrapeJob{ID: "job-1", Status: JobStatusRunning, Total: 10, Completed: 3, StartedAt: time.Now().Truncate(time.Second), UpdatedAt: time.Now().Truncate(time.Second)}
+	if err := c.SaveScrapeJobMeta(job); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := c.GetScrapeJob("job-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.Status != JobStatusRunning || got.Total != 10 || got.Completed != 3 {
+		t.Fatalf("got %+v", got)
+	}
+
+	job.Status = JobStatusComplete
+	job.Completed = 10
+	if err := c.SaveScrapeJobMeta(job); err != nil {
+		t.Fatal(err)
+	}
+	got, err = c.GetScrapeJob("job-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != JobStatusComplete || got.Completed != 10 {
+		t.Errorf("got %+v", got)
+	}
+}
+
+func TestCache_GetScrapeJob_NotFound(t *testing.T) {
+	c := testCache(t)
+	got, err := c.GetScrapeJob("nonexistent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != nil {
+		t.Errorf("expected nil, got %+v", got)
+	}
+}
+
+func TestCache_ScrapeJobBooks(t *testing.T) {
+	c := testCache(t)
+
+	r1 := &BookScrapeResult{BookID: "book-1", Filename: "a.cbz", Series: "A", Status: BookStatusScraped, VolumeID: 100, IssueID: 1000}
+	r2 := &BookScrapeResult{
+		BookID: "book-2", Filename: "b.cbz", Series: "B", Status: BookStatusPendingReview,
+		Candidates: []ReviewCandidate{{VolumeID: 1, Name: "B", Score: 10, Confidence: ConfidenceLow}},
+	}
+	if err := c.UpsertScrapeJobBook("job-1", r1); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.UpsertScrapeJobBook("job-1", r2); err != nil {
+		t.Fatal(err)
+	}
+
+	all, err := c.GetScrapeJobBooks("job-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("got %d books, want 2", len(all))
+	}
+	if all["book-1"].Status != BookStatusScraped || all["book-1"].VolumeID != 100 {
+		t.Errorf("book-1 = %+v", all["book-1"])
+	}
+	if len(all["book-2"].Candidates) != 1 || all["book-2"].Candidates[0].Name != "B" {
+		t.Errorf("book-2 candidates = %+v", all["book-2"].Candidates)
+	}
+
+	// Update book-1 to failed; verify overwrite.
+	if err := c.UpsertScrapeJobBook("job-1", &BookScrapeResult{BookID: "book-1", Status: BookStatusFailed, Error: "boom"}); err != nil {
+		t.Fatal(err)
+	}
+	all, err = c.GetScrapeJobBooks("job-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if all["book-1"].Status != BookStatusFailed || all["book-1"].Error != "boom" {
+		t.Errorf("book-1 after update = %+v", all["book-1"])
+	}
+
+	pending, err := c.GetPendingReviewBooks("job-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].BookID != "book-2" {
+		t.Errorf("pending = %+v", pending)
+	}
+
+	pendingAllJobs, err := c.GetPendingReviewBooks("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pendingAllJobs) != 1 {
+		t.Errorf("pendingAllJobs = %+v", pendingAllJobs)
+	}
+}

@@ -11,7 +11,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const cacheSchemaVersion = 2
+const cacheSchemaVersion = 3
 
 // Cache provides SQLite-backed storage for ComicVine API responses.
 type Cache struct {
@@ -87,6 +87,32 @@ func (c *Cache) initSchema() error {
 			details_json TEXT NOT NULL,
 			fetched_at   TEXT
 		);
+
+		CREATE TABLE IF NOT EXISTS scrape_jobs (
+			job_id         TEXT PRIMARY KEY,
+			status         TEXT NOT NULL,
+			total          INTEGER DEFAULT 0,
+			completed      INTEGER DEFAULT 0,
+			skipped        INTEGER DEFAULT 0,
+			failed         INTEGER DEFAULT 0,
+			pending_review INTEGER DEFAULT 0,
+			started_at     TEXT,
+			updated_at     TEXT
+		);
+
+		CREATE TABLE IF NOT EXISTS scrape_job_books (
+			job_id          TEXT NOT NULL,
+			book_id         TEXT NOT NULL,
+			filename        TEXT,
+			series          TEXT,
+			status          TEXT NOT NULL,
+			volume_cv_id    INTEGER DEFAULT 0,
+			issue_cv_id     INTEGER DEFAULT 0,
+			error           TEXT,
+			candidates_json TEXT,
+			PRIMARY KEY (job_id, book_id)
+		);
+		CREATE INDEX IF NOT EXISTS idx_scrape_job_books_status ON scrape_job_books(job_id, status);
 	`)
 	if err != nil {
 		return fmt.Errorf("create tables: %w", err)
@@ -295,6 +321,137 @@ func (c *Cache) GetIssueDetail(cvID int) (*IssueDetail, error) {
 		return nil, fmt.Errorf("unmarshal issue detail: %w", err)
 	}
 	return &detail, nil
+}
+
+// SaveScrapeJobMeta upserts a scrape job's status and progress counters.
+func (c *Cache) SaveScrapeJobMeta(job *ScrapeJob) error {
+	_, err := c.db.Exec(`
+		INSERT INTO scrape_jobs (job_id, status, total, completed, skipped, failed, pending_review, started_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(job_id) DO UPDATE SET
+			status=excluded.status, total=excluded.total, completed=excluded.completed,
+			skipped=excluded.skipped, failed=excluded.failed, pending_review=excluded.pending_review,
+			updated_at=excluded.updated_at`,
+		job.ID, job.Status, job.Total, job.Completed, job.Skipped, job.Failed, job.PendingReview,
+		job.StartedAt.Format(time.RFC3339), job.UpdatedAt.Format(time.RFC3339))
+	return err
+}
+
+// UpsertScrapeJobBook records the outcome of scraping a single book within a job,
+// so the job can be resumed or reviewed after a restart.
+func (c *Cache) UpsertScrapeJobBook(jobID string, r *BookScrapeResult) error {
+	var candidatesJSON string
+	if len(r.Candidates) > 0 {
+		data, err := json.Marshal(r.Candidates)
+		if err != nil {
+			return fmt.Errorf("marshal candidates: %w", err)
+		}
+		candidatesJSON = string(data)
+	}
+	_, err := c.db.Exec(`
+		INSERT INTO scrape_job_books (job_id, book_id, filename, series, status, volume_cv_id, issue_cv_id, error, candidates_json)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(job_id, book_id) DO UPDATE SET
+			filename=excluded.filename, series=excluded.series, status=excluded.status,
+			volume_cv_id=excluded.volume_cv_id, issue_cv_id=excluded.issue_cv_id,
+			error=excluded.error, candidates_json=excluded.candidates_json`,
+		jobID, r.BookID, r.Filename, r.Series, r.Status, r.VolumeID, r.IssueID, r.Error, candidatesJSON)
+	return err
+}
+
+// GetScrapeJob returns a job's status and counters, or nil if not found.
+func (c *Cache) GetScrapeJob(jobID string) (*ScrapeJob, error) {
+	row := c.db.QueryRow(`SELECT job_id, status, total, completed, skipped, failed, pending_review, started_at, updated_at
+		FROM scrape_jobs WHERE job_id = ?`, jobID)
+
+	var job ScrapeJob
+	var started, updated sql.NullString
+	err := row.Scan(&job.ID, &job.Status, &job.Total, &job.Completed, &job.Skipped, &job.Failed,
+		&job.PendingReview, &started, &updated)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if started.Valid {
+		job.StartedAt, _ = time.Parse(time.RFC3339, started.String)
+	}
+	if updated.Valid {
+		job.UpdatedAt, _ = time.Parse(time.RFC3339, updated.String)
+	}
+	return &job, nil
+}
+
+// GetScrapeJobBooks returns all per-book results recorded for a job, keyed by book ID.
+func (c *Cache) GetScrapeJobBooks(jobID string) (map[string]*BookScrapeResult, error) {
+	rows, err := c.db.Query(`SELECT book_id, filename, series, status, volume_cv_id, issue_cv_id,
+		COALESCE(error,''), COALESCE(candidates_json,'') FROM scrape_job_books WHERE job_id = ?`, jobID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	results := make(map[string]*BookScrapeResult)
+	for rows.Next() {
+		r, candidatesJSON, err := scanScrapeJobBookRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		if err := decodeCandidates(r, candidatesJSON); err != nil {
+			return nil, err
+		}
+		results[r.BookID] = r
+	}
+	return results, rows.Err()
+}
+
+// GetPendingReviewBooks returns books awaiting manual review. If jobID is
+// non-empty, results are limited to that job.
+func (c *Cache) GetPendingReviewBooks(jobID string) ([]*BookScrapeResult, error) {
+	query := `SELECT book_id, filename, series, status, volume_cv_id, issue_cv_id,
+		COALESCE(error,''), COALESCE(candidates_json,'') FROM scrape_job_books WHERE status = ?`
+	args := []any{BookStatusPendingReview}
+	if jobID != "" {
+		query += " AND job_id = ?"
+		args = append(args, jobID)
+	}
+
+	rows, err := c.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []*BookScrapeResult
+	for rows.Next() {
+		r, candidatesJSON, err := scanScrapeJobBookRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		if err := decodeCandidates(r, candidatesJSON); err != nil {
+			return nil, err
+		}
+		results = append(results, r)
+	}
+	return results, rows.Err()
+}
+
+func scanScrapeJobBookRow(rows *sql.Rows) (*BookScrapeResult, string, error) {
+	var r BookScrapeResult
+	var candidatesJSON string
+	err := rows.Scan(&r.BookID, &r.Filename, &r.Series, &r.Status, &r.VolumeID, &r.IssueID, &r.Error, &candidatesJSON)
+	return &r, candidatesJSON, err
+}
+
+func decodeCandidates(r *BookScrapeResult, candidatesJSON string) error {
+	if candidatesJSON == "" {
+		return nil
+	}
+	if err := json.Unmarshal([]byte(candidatesJSON), &r.Candidates); err != nil {
+		return fmt.Errorf("unmarshal candidates for %s: %w", r.BookID, err)
+	}
+	return nil
 }
 
 // sortByOwned sorts volume IDs by how many books are owned, descending.
