@@ -443,7 +443,7 @@ func (s *Scraper) verifyCovers(ctx context.Context, book *library.ComicBook, sco
 		return scored, false
 	}
 
-	localData, err := ExtractCoverFromCBZ(book.FilePath)
+	localData, err := ExtractCover(book.FilePath)
 	if err != nil {
 		log.Debug().Err(err).Str("book_id", book.ID).Msg("scrape: cover extraction failed, skipping cover verification")
 		return scored, false

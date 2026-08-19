@@ -16,6 +16,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/bodgit/sevenzip"
+	rardecode "github.com/nwaples/rardecode/v2"
 )
 
 // CoverHash is a 64-bit difference hash (dHash) of a cover image, used for
@@ -99,10 +102,59 @@ var imageExtensions = map[string]bool{
 	".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true,
 }
 
-// ExtractCoverFromCBZ returns the raw bytes of a CBZ (zip) comic's cover
-// image: the page marked Type="FrontCover" in ComicInfo.xml if present,
-// otherwise the first image file in alphabetical order. CBR (RAR) archives
-// are not supported.
+// ExtractCover returns the raw bytes of a comic archive's cover image: the
+// page marked Type="FrontCover" in ComicInfo.xml if present, otherwise the
+// first image file in alphabetical order. Supports CBZ (zip), CBR (RAR), and
+// CB7 (7-Zip) archives, dispatched by file extension.
+func ExtractCover(path string) ([]byte, error) {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".cbz", ".zip":
+		return ExtractCoverFromCBZ(path)
+	case ".cbr", ".rar":
+		return extractCoverFromCBR(path)
+	case ".cb7", ".7z":
+		return extractCoverFromCB7(path)
+	default:
+		return nil, fmt.Errorf("unsupported archive format: %s", path)
+	}
+}
+
+// chooseCoverIndex picks which of numImages sorted image entries is the
+// cover: the ComicInfo.xml FrontCover index if it's valid, else the first
+// image.
+func chooseCoverIndex(numImages, fcIdx int, fcOK bool) int {
+	if fcOK && fcIdx >= 0 && fcIdx < numImages {
+		return fcIdx
+	}
+	return 0
+}
+
+type comicInfoXML struct {
+	XMLName xml.Name `xml:"ComicInfo"`
+	Pages   struct {
+		Page []struct {
+			Image int    `xml:"Image,attr"`
+			Type  string `xml:"Type,attr"`
+		} `xml:"Page"`
+	} `xml:"Pages"`
+}
+
+// frontCoverIndexFromXML parses ComicInfo.xml bytes and returns the page
+// index of the entry marked Type="FrontCover", if any.
+func frontCoverIndexFromXML(data []byte) (int, bool) {
+	var ci comicInfoXML
+	if err := xml.Unmarshal(data, &ci); err != nil {
+		return 0, false
+	}
+	for _, p := range ci.Pages.Page {
+		if strings.EqualFold(p.Type, "FrontCover") {
+			return p.Image, true
+		}
+	}
+	return 0, false
+}
+
+// ExtractCoverFromCBZ returns the raw bytes of a CBZ (zip) comic's cover image.
 func ExtractCoverFromCBZ(path string) ([]byte, error) {
 	zr, err := zip.OpenReader(path)
 	if err != nil {
@@ -116,8 +168,8 @@ func ExtractCoverFromCBZ(path string) ([]byte, error) {
 	}
 
 	idx := 0
-	if fcIdx, ok := frontCoverIndex(zr.File); ok && fcIdx >= 0 && fcIdx < len(images) {
-		idx = fcIdx
+	if fcIdx, ok := frontCoverIndex(zr.File); ok {
+		idx = chooseCoverIndex(len(images), fcIdx, ok)
 	}
 	return readZipFile(images[idx])
 }
@@ -136,16 +188,6 @@ func sortedImageFiles(files []*zip.File) []*zip.File {
 	return out
 }
 
-type comicInfoXML struct {
-	XMLName xml.Name `xml:"ComicInfo"`
-	Pages   struct {
-		Page []struct {
-			Image int    `xml:"Image,attr"`
-			Type  string `xml:"Type,attr"`
-		} `xml:"Page"`
-	} `xml:"Pages"`
-}
-
 // frontCoverIndex looks for ComicInfo.xml in the archive and returns the
 // page index of the entry marked Type="FrontCover", if any.
 func frontCoverIndex(files []*zip.File) (int, bool) {
@@ -157,16 +199,7 @@ func frontCoverIndex(files []*zip.File) (int, bool) {
 		if err != nil {
 			return 0, false
 		}
-		var ci comicInfoXML
-		if err := xml.Unmarshal(data, &ci); err != nil {
-			return 0, false
-		}
-		for _, p := range ci.Pages.Page {
-			if strings.EqualFold(p.Type, "FrontCover") {
-				return p.Image, true
-			}
-		}
-		return 0, false
+		return frontCoverIndexFromXML(data)
 	}
 	return 0, false
 }
@@ -175,6 +208,123 @@ func readZipFile(f *zip.File) ([]byte, error) {
 	rc, err := f.Open()
 	if err != nil {
 		return nil, err
+	}
+	defer rc.Close()
+	return io.ReadAll(rc)
+}
+
+// extractCoverFromCBR returns the raw bytes of a CBR (RAR) comic's cover
+// image. Solid RAR archives aren't supported for random access by the
+// underlying decoder; comics are essentially never packed solid since it
+// breaks page-random-access for readers too, so this only returns an error
+// in that rare case rather than falling back to a full sequential decode.
+func extractCoverFromCBR(path string) ([]byte, error) {
+	files, err := rardecode.List(path)
+	if err != nil {
+		return nil, fmt.Errorf("open cbr: %w", err)
+	}
+
+	images := sortedRARFiles(files)
+	if len(images) == 0 {
+		return nil, fmt.Errorf("no image files found in %s", path)
+	}
+
+	idx := 0
+	if f := findRARFile(files, "ComicInfo.xml"); f != nil {
+		if data, err := readRARFile(f); err == nil {
+			if fcIdx, ok := frontCoverIndexFromXML(data); ok {
+				idx = chooseCoverIndex(len(images), fcIdx, ok)
+			}
+		}
+	}
+
+	return readRARFile(images[idx])
+}
+
+func sortedRARFiles(files []*rardecode.File) []*rardecode.File {
+	var out []*rardecode.File
+	for _, f := range files {
+		if f.IsDir {
+			continue
+		}
+		if imageExtensions[strings.ToLower(filepath.Ext(f.Name))] {
+			out = append(out, f)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+func findRARFile(files []*rardecode.File, name string) *rardecode.File {
+	for _, f := range files {
+		if strings.EqualFold(filepath.Base(f.Name), name) {
+			return f
+		}
+	}
+	return nil
+}
+
+func readRARFile(f *rardecode.File) ([]byte, error) {
+	rc, err := f.Open()
+	if err != nil {
+		return nil, fmt.Errorf("open %q: %w", f.Name, err)
+	}
+	defer rc.Close()
+	return io.ReadAll(rc)
+}
+
+// extractCoverFromCB7 returns the raw bytes of a CB7 (7-Zip) comic's cover image.
+func extractCoverFromCB7(path string) ([]byte, error) {
+	rc, err := sevenzip.OpenReader(path)
+	if err != nil {
+		return nil, fmt.Errorf("open cb7: %w", err)
+	}
+	defer rc.Close()
+
+	images := sortedSevenZipFiles(rc.File)
+	if len(images) == 0 {
+		return nil, fmt.Errorf("no image files found in %s", path)
+	}
+
+	idx := 0
+	if f := findSevenZipFile(rc.File, "ComicInfo.xml"); f != nil {
+		if data, err := readSevenZipFile(f); err == nil {
+			if fcIdx, ok := frontCoverIndexFromXML(data); ok {
+				idx = chooseCoverIndex(len(images), fcIdx, ok)
+			}
+		}
+	}
+
+	return readSevenZipFile(images[idx])
+}
+
+func sortedSevenZipFiles(files []*sevenzip.File) []*sevenzip.File {
+	var out []*sevenzip.File
+	for _, f := range files {
+		if f.FileInfo().IsDir() {
+			continue
+		}
+		if imageExtensions[strings.ToLower(filepath.Ext(f.Name))] {
+			out = append(out, f)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+func findSevenZipFile(files []*sevenzip.File, name string) *sevenzip.File {
+	for _, f := range files {
+		if strings.EqualFold(filepath.Base(f.Name), name) {
+			return f
+		}
+	}
+	return nil
+}
+
+func readSevenZipFile(f *sevenzip.File) ([]byte, error) {
+	rc, err := f.Open()
+	if err != nil {
+		return nil, fmt.Errorf("open %q: %w", f.Name, err)
 	}
 	defer rc.Close()
 	return io.ReadAll(rc)
