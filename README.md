@@ -1,3 +1,5 @@
+[![Release](https://github.com/duckpuppy/comic-server/actions/workflows/release.yml/badge.svg)](https://github.com/duckpuppy/comic-server/actions/workflows/release.yml)
+
 # comic-server
 
 A headless, standalone wireless sync server for ComicRack Android/iOS clients.
