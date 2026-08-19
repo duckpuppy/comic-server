@@ -14,7 +14,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	go.starlark.net v0.0.0-20260708150628-5395d018f003
 	golang.org/x/image v0.45.0
-	golang.org/x/net v0.56.0
+	golang.org/x/net v0.58.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.57.0
 )
