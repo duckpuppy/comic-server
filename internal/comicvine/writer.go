@@ -369,7 +369,12 @@ func splitCredits(credits []PersonCredit) (writers, pencillers, inkers, colorist
 				p = appendUnique(p, credit.Name)
 			case "inker":
 				i = appendUnique(i, credit.Name)
-			case "colorist", "colourist":
+			case "artist":
+				// ComicVine's generic "artist" role covers both penciling and
+				// inking when the two aren't credited separately.
+				p = appendUnique(p, credit.Name)
+				i = appendUnique(i, credit.Name)
+			case "colorist", "colourist", "colorer":
 				c = appendUnique(c, credit.Name)
 			case "letterer":
 				l = appendUnique(l, credit.Name)

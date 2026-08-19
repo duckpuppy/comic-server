@@ -169,6 +169,32 @@ func TestApplyMetadata_FieldMapping(t *testing.T) {
 	}
 }
 
+// TestSplitCredits_ArtistAndColorerRoles verifies the role mapping matches
+// ComicVine's actual ROLE_DICT (comic-vine-scraper's cvdb.py): "artist"
+// covers both penciling and inking when credited generically, and "colorer"
+// is an alternate spelling of "colorist".
+func TestSplitCredits_ArtistAndColorerRoles(t *testing.T) {
+	credits := []PersonCredit{
+		{Name: "Jack Kirby", Role: "artist"},
+		{Name: "Vince Colletta", Role: "inker"},
+		{Name: "Steve Oliff", Role: "colorer"},
+	}
+	writers, pencillers, inkers, colorists, _, _, _ := splitCredits(credits)
+
+	if writers != "" {
+		t.Errorf("Writer = %q, want empty", writers)
+	}
+	if pencillers != "Jack Kirby" {
+		t.Errorf("Penciller = %q, want %q (artist role covers penciling)", pencillers, "Jack Kirby")
+	}
+	if inkers != "Jack Kirby, Vince Colletta" {
+		t.Errorf("Inker = %q, want %q (artist role also covers inking)", inkers, "Jack Kirby, Vince Colletta")
+	}
+	if colorists != "Steve Oliff" {
+		t.Errorf("Colorist = %q, want %q (colorer is an alternate spelling)", colorists, "Steve Oliff")
+	}
+}
+
 func TestApplyMetadata_HTMLStripVariants(t *testing.T) {
 	tests := []struct {
 		in, want string
