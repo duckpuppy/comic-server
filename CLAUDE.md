@@ -776,6 +776,18 @@ These matchers are comic-server extensions — they won't be recognized by Comic
 
 Books without ComicVine tags or with volumes not yet synced evaluate as "Unknown" for CVSeriesComplete and don't match numeric CV matchers.
 
+### Expression Matcher (`ComicBookExpressionMatcher`)
+
+ComicRack-compatible (same XML type), but a best-effort approximation, not full parity. ComicRackCE evaluates arbitrary Python via IronPython; comic-server evaluates the same `MatchValue` expression via [Starlark](https://github.com/google/starlark-go) (`go.starlark.net`), a Python-like language with a pure-Go implementation — no CGO, no external Python dependency.
+
+- `MatchValue` is a raw expression referencing `ComicBook` field names directly (e.g. `Rating > 3 and "X-Men" in Series`), exposed as Starlark globals via reflection (`internal/library/expression.go`).
+- Operator `0` = "is true", operator `1` = "is false" (negates the result) — matches `ComicBookExpressionMatcher.MatchBook`.
+- Works: field access, comparisons, boolean logic (`and`/`or`/`not`), string methods (`.lower()`, `in`), simple arithmetic.
+- Does not work: Python stdlib (`datetime`, `re`, etc.), Python-3-only syntax, series-stats access (`__bookStats`) — series aggregates are ComicRackCE's own separate `SmartListSeries*Matcher` types, already implemented natively in comic-server (see Series aggregate matchers above), not something Expression needs to reach into.
+- A parse or eval failure never matches (mirrors ComicRack's own error handling) rather than aborting the whole smart list.
+
+**Known gap**: `ComicBookVirtualTagMatcher` (VirtualTag01-20) is not ported — tracked as `comic-server-65u`. Unlike other matchers, VirtualTags aren't stored per-book in the library XML; they're computed at runtime from a `CaptionFormat` template defined in a desktop-UI-configured collection that has no equivalent in comic-server's config today.
+
 ### Architecture
 
 ```

@@ -2044,3 +2044,102 @@ func TestCVMatcher_NotInverts(t *testing.T) {
 		t.Errorf("want book 2 (NOT complete), got %d matches", len(got))
 	}
 }
+
+func TestExpressionMatcher(t *testing.T) {
+	tests := []struct {
+		name     string
+		expr     string
+		operator string
+		not      bool
+		book     *ComicBook
+		want     bool
+	}{
+		{
+			name: "numeric comparison",
+			expr: "Rating > 3",
+			book: &ComicBook{Rating: 4},
+			want: true,
+		},
+		{
+			name: "numeric comparison false",
+			expr: "Rating > 3",
+			book: &ComicBook{Rating: 2},
+			want: false,
+		},
+		{
+			name: "string equality",
+			expr: `Series == "X-Men"`,
+			book: &ComicBook{Series: "X-Men"},
+			want: true,
+		},
+		{
+			name: "string contains via 'in'",
+			expr: `"Men" in Series`,
+			book: &ComicBook{Series: "X-Men"},
+			want: true,
+		},
+		{
+			name: "boolean and",
+			expr: `Rating > 3 and Publisher == "Marvel"`,
+			book: &ComicBook{Rating: 5, Publisher: "Marvel"},
+			want: true,
+		},
+		{
+			name: "boolean and short-circuits false",
+			expr: `Rating > 3 and Publisher == "Marvel"`,
+			book: &ComicBook{Rating: 5, Publisher: "DC"},
+			want: false,
+		},
+		{
+			name: "string method lower",
+			expr: `Series.lower() == "x-men"`,
+			book: &ComicBook{Series: "X-Men"},
+			want: true,
+		},
+		{
+			name:     "operator 1 negates result",
+			expr:     "Rating > 3",
+			operator: "1",
+			book:     &ComicBook{Rating: 4},
+			want:     false,
+		},
+		{
+			name: "unparseable expression never matches",
+			expr: "this is not valid python(((",
+			book: &ComicBook{},
+			want: false,
+		},
+		{
+			name: "unknown identifier never matches",
+			expr: "NotARealField > 3",
+			book: &ComicBook{},
+			want: false,
+		},
+		{
+			name: "Not attribute inverts on top of expression result",
+			expr: "Rating > 3",
+			not:  true,
+			book: &ComicBook{Rating: 4},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			xmlM := &ComicBookMatcher{
+				Type:          "ComicBookExpressionMatcher",
+				MatchValue:    tt.expr,
+				MatchOperator: tt.operator,
+				Not:           tt.not,
+			}
+			matcher, err := NewMatcherFromXML(xmlM)
+			if err != nil {
+				t.Fatalf("NewMatcherFromXML error: %v", err)
+			}
+			got := matcher.Match(tt.book)
+			if got != tt.want {
+				t.Errorf("Match() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

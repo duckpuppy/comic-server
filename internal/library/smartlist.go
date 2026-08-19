@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"go.starlark.net/syntax"
 )
 
 // MatchOperator represents the comparison operation for a matcher
@@ -91,6 +93,12 @@ const (
 	MatcherTypeReadPercentage      MatcherType = "ReadPercentage"
 	MatcherTypeManga               MatcherType = "Manga"
 	MatcherTypeAllProperties       MatcherType = "AllProperties"
+
+	// MatcherTypeExpression maps to ComicBookExpressionMatcher. It evaluates a
+	// Starlark expression (a best-effort, non-stdlib approximation of
+	// ComicRack's Python expression matcher) against the book's field names.
+	// Operator 0 = "is true", operator 1 = "is false" (negates the result).
+	MatcherTypeExpression MatcherType = "Expression"
 	// Miscellaneous string
 	MatcherTypeISBN MatcherType = "ISBN"
 	MatcherTypeWeb  MatcherType = "Web"
@@ -185,6 +193,7 @@ type Matcher struct {
 	IgnoreCase          bool                // For string comparisons
 	AllPropertiesOption AllPropertiesOption // For MatcherTypeAllProperties only
 	compiledRegex       *regexp.Regexp
+	compiledExpr        syntax.Expr // For MatcherTypeExpression only
 }
 
 // extractFieldName extracts the field name from a ComicRack matcher type
@@ -290,6 +299,13 @@ func NewMatcherFromXML(xmlMatcher *ComicBookMatcher) (*Matcher, error) {
 		}, nil
 	}
 
+	// Special handling for the Expression matcher: MatchValue is a raw
+	// expression (e.g. `Rating > 3 and "X-Men" in Series`), not a value to
+	// compare against a single field.
+	if fieldName == "Expression" {
+		return newExpressionMatcher(xmlMatcher)
+	}
+
 	matchValue := xmlMatcher.MatchValue
 	// Normalize path separators for file/directory matchers so Windows paths
 	// stored in the library XML work correctly when the server runs on Linux.
@@ -387,6 +403,26 @@ func (m *Matcher) parseOperator(op string) error {
 	return nil
 }
 
+// newExpressionMatcher builds a Matcher for ComicBookExpressionMatcher.
+// Parse failures are mirrored on ComicRack's own behavior: a matcher that
+// fails to compile simply never matches, rather than breaking the whole
+// smart list evaluation.
+func newExpressionMatcher(xmlMatcher *ComicBookMatcher) (*Matcher, error) {
+	m := &Matcher{
+		Type:       MatcherTypeExpression,
+		MatchValue: xmlMatcher.MatchValue,
+		Not:        xmlMatcher.Not,
+	}
+	if err := m.parseOperator(xmlMatcher.MatchOperator); err != nil {
+		return nil, fmt.Errorf("invalid operator %q: %w", xmlMatcher.MatchOperator, err)
+	}
+	var opts syntax.FileOptions
+	if expr, err := opts.ParseExpr("expression", m.MatchValue, 0); err == nil {
+		m.compiledExpr = expr
+	}
+	return m, nil
+}
+
 // Match evaluates this matcher against a comic book
 func (m *Matcher) Match(book *ComicBook) bool {
 	result := m.matchInternal(book)
@@ -400,6 +436,11 @@ func (m *Matcher) Match(book *ComicBook) bool {
 
 // matchInternal performs the actual matching logic
 func (m *Matcher) matchInternal(book *ComicBook) bool {
+	// Special handling for the Expression matcher
+	if m.Type == MatcherTypeExpression {
+		return m.matchExpression(book)
+	}
+
 	// Special handling for CustomValues matcher
 	if m.Type == "CustomValues" {
 		// CustomValuesStore format: ",key1=value1,key2=value2"
