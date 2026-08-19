@@ -19,6 +19,7 @@ import (
 
 	"github.com/bodgit/sevenzip"
 	rardecode "github.com/nwaples/rardecode/v2"
+	_ "golang.org/x/image/webp"
 )
 
 // CoverHash is a 64-bit difference hash (dHash) of a cover image, used for
