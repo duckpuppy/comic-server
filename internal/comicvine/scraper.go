@@ -64,27 +64,27 @@ type ReviewCandidate struct {
 
 // BookScrapeResult records the outcome of scraping a single book.
 type BookScrapeResult struct {
-	BookID     string
-	Filename   string
-	Series     string
-	Status     string
-	VolumeID   int
-	IssueID    int
-	Error      string
-	Candidates []ReviewCandidate // populated when Status == pending_review
+	BookID     string            `json:"book_id"`
+	Filename   string            `json:"filename"`
+	Series     string            `json:"series"`
+	Status     string            `json:"status"`
+	VolumeID   int               `json:"volume_id,omitempty"`
+	IssueID    int               `json:"issue_id,omitempty"`
+	Error      string            `json:"error,omitempty"`
+	Candidates []ReviewCandidate `json:"candidates,omitempty"` // populated when Status == pending_review
 }
 
 // ScrapeJob tracks progress of a batch scrape run.
 type ScrapeJob struct {
-	ID            string
-	Status        string
-	Total         int
-	Completed     int
-	Skipped       int
-	Failed        int
-	PendingReview int
-	StartedAt     time.Time
-	UpdatedAt     time.Time
+	ID            string    `json:"job_id"`
+	Status        string    `json:"status"`
+	Total         int       `json:"total"`
+	Completed     int       `json:"completed"`
+	Skipped       int       `json:"skipped"`
+	Failed        int       `json:"failed"`
+	PendingReview int       `json:"pending_review"`
+	StartedAt     time.Time `json:"started_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // ProgressFunc is invoked after each book is processed, letting callers

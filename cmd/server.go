@@ -277,6 +277,12 @@ func runServer(cmd *cobra.Command, args []string) error {
 	}
 	apiServer := api.NewServer(syncManager, registry, backend, cfg, configPath, apiVersion, wsHub)
 
+	if cfg.Server.ComicVineAPIKey != "" {
+		if err := wireScraperAPI(apiServer, cfg.Server.ComicVineAPIKey); err != nil {
+			log.Warn().Err(err).Msg("Failed to enable ComicVine scraper API endpoints")
+		}
+	}
+
 	httpServer := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.Server.ServerPort),
 		Handler: apiServer,
@@ -294,6 +300,9 @@ func runServer(cmd *cobra.Command, args []string) error {
 		log.Info().Msgf("  GET  http://localhost:%d/api/sync/history?limit=N - Sync history", cfg.Server.ServerPort)
 		log.Info().Msgf("  GET  http://localhost:%d/api/devices - Registered devices", cfg.Server.ServerPort)
 		log.Info().Msgf("  GET  http://localhost:%d/api/stats - Server statistics", cfg.Server.ServerPort)
+		log.Info().Msgf("  POST http://localhost:%d/api/scrape - Start a ComicVine scrape job", cfg.Server.ServerPort)
+		log.Info().Msgf("  GET  http://localhost:%d/api/scrape/status - Scrape job progress", cfg.Server.ServerPort)
+		log.Info().Msgf("  GET  http://localhost:%d/api/scrape/review - Books pending manual review", cfg.Server.ServerPort)
 		log.Info().Msgf("  GET  http://localhost:%d/metrics - Prometheus metrics", cfg.Server.ServerPort)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Error().Err(err).Msg("REST API server error")
@@ -880,6 +889,27 @@ func init() {
 		pingDeviceSet = cmd.Flags().Changed("ping-device")
 		return nil
 	}
+}
+
+// wireScraperAPI opens a ComicVine client and cache for the lifetime of the
+// server process and wires them into the API server's /api/scrape endpoints.
+// The cache handle is intentionally not closed here; it's released when the
+// process exits.
+func wireScraperAPI(apiServer *api.Server, apiKey string) error {
+	dataDir, err := config.EnsureDataDir()
+	if err != nil {
+		return fmt.Errorf("create data directory: %w", err)
+	}
+
+	cachePath := filepath.Join(dataDir, "comicvine_cache.db")
+	cache, err := comicvine.OpenCache(cachePath)
+	if err != nil {
+		return fmt.Errorf("open ComicVine cache: %w", err)
+	}
+
+	client := comicvine.NewClient(apiKey)
+	apiServer.SetScraper(client, cache)
+	return nil
 }
 
 func startComicVineSync(ctx context.Context, apiKey string, backend library.Backend) {

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/duckpuppy/comic-server/internal/comicvine"
 	"github.com/duckpuppy/comic-server/internal/config"
 	"github.com/duckpuppy/comic-server/internal/device"
 	"github.com/duckpuppy/comic-server/internal/library"
@@ -48,6 +49,19 @@ type Server struct {
 	upgrader          websocket.Upgrader
 	registeredDevices map[string]bool // In-memory registered device tracking
 	mu                sync.RWMutex    // Protects registeredDevices
+
+	cvClient *comicvine.Client
+	cvCache  *comicvine.Cache
+	scraper  *comicvine.Scraper
+}
+
+// SetScraper wires ComicVine scraper support into the API server. Call this
+// once at startup when a ComicVine API key is configured; without it, the
+// /api/scrape endpoints respond with 503 Service Unavailable.
+func (s *Server) SetScraper(client *comicvine.Client, cache *comicvine.Cache) {
+	s.cvClient = client
+	s.cvCache = cache
+	s.scraper = comicvine.NewScraper(client, cache, s.backend, comicvine.DefaultScraperConfig())
 }
 
 // NewServer creates a new API server with version information
@@ -104,6 +118,12 @@ func (s *Server) registerRoutes() {
 	// Device endpoints (all routes go through router)
 	s.mux.HandleFunc("/api/devices", s.handleDevicesRouter)
 	s.mux.HandleFunc("/api/devices/", s.handleDevicesRouter)
+
+	// ComicVine scraper endpoints
+	s.mux.HandleFunc("/api/scrape", s.handleScrapeStart)
+	s.mux.HandleFunc("/api/scrape/status", s.handleScrapeStatus)
+	s.mux.HandleFunc("/api/scrape/review", s.handleScrapeReviewList)
+	s.mux.HandleFunc("/api/scrape/review/", s.handleScrapeReviewResolve)
 
 	// WebSocket endpoint
 	s.mux.HandleFunc("/ws", s.handleWebSocket)

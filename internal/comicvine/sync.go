@@ -190,6 +190,12 @@ func (s *Syncer) markFailed(cvID int) {
 	s.cache.UpsertVolume(v)
 }
 
+// HasComicVineTag reports whether a CustomValuesStore already has a
+// comicvine_volume identity tag.
+func HasComicVineTag(store string) bool {
+	return extractCVVolumeID(store) > 0
+}
+
 // extractCVVolumeID parses comicvine_volume=NNNN from a CustomValuesStore string.
 func extractCVVolumeID(store string) int {
 	for _, pair := range strings.Split(store, ",") {

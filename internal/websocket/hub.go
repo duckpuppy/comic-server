@@ -22,6 +22,10 @@ const (
 	EventDeviceRegistered   EventType = "device_registered"
 	EventDeviceUnregistered EventType = "device_unregistered"
 	EventDeviceUpdated      EventType = "device_updated"
+	EventScrapeStarted      EventType = "scrape_started"
+	EventScrapeProgress     EventType = "scrape_progress"
+	EventScrapeCompleted    EventType = "scrape_completed"
+	EventScrapeReviewNeeded EventType = "scrape_review_needed"
 )
 
 // Event represents a WebSocket event to be broadcast

@@ -175,22 +175,13 @@ func selectBooksToScrape(allBooks []library.ComicBook, args []string) ([]*librar
 			}
 		}
 
-		hasTag := hasComicVineTag(book.CustomValuesStore)
+		hasTag := comicvine.HasComicVineTag(book.CustomValuesStore)
 		if hasTag && !scrapeRescrape {
 			continue
 		}
 		out = append(out, book)
 	}
 	return out, nil
-}
-
-func hasComicVineTag(store string) bool {
-	for pair := range strings.SplitSeq(store, ",") {
-		if strings.HasPrefix(strings.TrimSpace(pair), "comicvine_volume=") {
-			return true
-		}
-	}
-	return false
 }
 
 func runScrapeStatus(cmd *cobra.Command, args []string) error {
