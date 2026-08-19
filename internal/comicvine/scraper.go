@@ -49,7 +49,17 @@ type ScrapeOptions struct {
 	// BatchSize stops the job after this many books have been processed.
 	// 0 means no limit.
 	BatchSize int
+
+	// CoverVerify compares the local CBZ cover against the top candidates'
+	// cover art (perceptual hash) to sharpen confidence and catch
+	// single-issue-vs-TPB confusion. Requires reading the comic file from
+	// disk and downloading cover images, so it's opt-in.
+	CoverVerify bool
 }
+
+// coverVerifyTopN caps how many top candidates get their covers downloaded
+// and compared per book.
+const coverVerifyTopN = 3
 
 // ReviewCandidate is a lightweight, JSON-serializable summary of a scored
 // volume candidate, used for manual review display.
@@ -297,12 +307,21 @@ func (s *Scraper) scrapeOneBook(ctx context.Context, book *library.ComicBook, ca
 	}
 
 	scored := ScoreVolumes(parsed, candidates, existingVolID)
+
+	ambiguousCover := false
+	if opts.CoverVerify {
+		scored, ambiguousCover = s.verifyCovers(ctx, book, scored)
+	}
 	best := scored[0]
 
-	if best.Confidence != ConfidenceHigh {
+	if ambiguousCover || best.Confidence != ConfidenceHigh {
 		if opts.AutoOnly {
 			result.Status = BookStatusSkipped
-			result.Error = fmt.Sprintf("best match confidence %q below auto-only threshold", best.Confidence)
+			reason := fmt.Sprintf("best match confidence %q below auto-only threshold", best.Confidence)
+			if ambiguousCover {
+				reason = "ambiguous cover match between top candidates"
+			}
+			result.Error = reason
 			return result
 		}
 		result.Status = BookStatusPendingReview
@@ -412,6 +431,54 @@ func (s *Scraper) cachedVolume(ctx context.Context, volumeCVID int) (*Volume, er
 			SiteDetailURL: cached.SiteURL}, nil
 	}
 	return s.client.FetchVolume(ctx, volumeCVID)
+}
+
+// verifyCovers compares the local comic's cover against the top-N scored
+// candidates' cover art, adjusting scores and confidence accordingly. If the
+// local cover can't be extracted or hashed (missing file, CBR archive,
+// unsupported format), it returns scored unchanged — cover verification is
+// a best-effort sharpening step, never a hard requirement.
+func (s *Scraper) verifyCovers(ctx context.Context, book *library.ComicBook, scored []MatchResult) ([]MatchResult, bool) {
+	if len(scored) == 0 {
+		return scored, false
+	}
+
+	localData, err := ExtractCoverFromCBZ(book.FilePath)
+	if err != nil {
+		log.Debug().Err(err).Str("book_id", book.ID).Msg("scrape: cover extraction failed, skipping cover verification")
+		return scored, false
+	}
+	localHash, err := ComputeDHash(localData)
+	if err != nil {
+		log.Debug().Err(err).Str("book_id", book.ID).Msg("scrape: cover hash failed, skipping cover verification")
+		return scored, false
+	}
+
+	n := min(len(scored), coverVerifyTopN)
+	hashes := make(map[int]CoverHash, n)
+	for i := range n {
+		volID := scored[i].Volume.ID
+		if hash, ok, err := s.cache.GetVolumeCoverHash(volID); err == nil && ok {
+			hashes[volID] = hash
+			continue
+		}
+		hash, err := s.client.DownloadCoverHash(ctx, scored[i].Volume.Image.SmallURL)
+		if err != nil {
+			log.Debug().Err(err).Int("volume_cv_id", volID).Msg("scrape: cover download failed")
+			continue
+		}
+		if err := s.cache.SaveVolumeCoverHash(volID, hash); err != nil {
+			log.Warn().Err(err).Int("volume_cv_id", volID).Msg("scrape: failed to cache cover hash")
+		}
+		hashes[volID] = hash
+	}
+	if len(hashes) == 0 {
+		return scored, false
+	}
+
+	ambiguous := AmbiguousByCover(scored, hashes)
+	scored = ApplyCoverVerification(scored, localHash, hashes)
+	return scored, ambiguous
 }
 
 func (s *Scraper) recordResult(job *ScrapeJob, result *BookScrapeResult, onProgress ProgressFunc) {

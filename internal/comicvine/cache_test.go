@@ -341,3 +341,47 @@ func TestCache_ScrapeJobBooks(t *testing.T) {
 		t.Errorf("pendingAllJobs = %+v", pendingAllJobs)
 	}
 }
+
+func TestCache_CoverHashes(t *testing.T) {
+	c := testCache(t)
+
+	if _, ok, err := c.GetVolumeCoverHash(100); err != nil || ok {
+		t.Fatalf("expected no cached hash, got ok=%v err=%v", ok, err)
+	}
+
+	if err := c.SaveVolumeCoverHash(100, CoverHash(0xDEADBEEF)); err != nil {
+		t.Fatal(err)
+	}
+	hash, ok, err := c.GetVolumeCoverHash(100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || hash != CoverHash(0xDEADBEEF) {
+		t.Errorf("hash = %x, ok = %v", hash, ok)
+	}
+
+	// Overwrite.
+	if err := c.SaveVolumeCoverHash(100, CoverHash(0xCAFEBABE)); err != nil {
+		t.Fatal(err)
+	}
+	hash, _, _ = c.GetVolumeCoverHash(100)
+	if hash != CoverHash(0xCAFEBABE) {
+		t.Errorf("hash after overwrite = %x, want cafebabe", hash)
+	}
+
+	// Issue hashes are stored separately from volume hashes, even with the same ID.
+	if err := c.SaveIssueCoverHash(100, CoverHash(0x1111)); err != nil {
+		t.Fatal(err)
+	}
+	issueHash, ok, err := c.GetIssueCoverHash(100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || issueHash != CoverHash(0x1111) {
+		t.Errorf("issue hash = %x, ok = %v", issueHash, ok)
+	}
+	volHash, _, _ := c.GetVolumeCoverHash(100)
+	if volHash != CoverHash(0xCAFEBABE) {
+		t.Errorf("volume hash was clobbered by issue hash: %x", volHash)
+	}
+}

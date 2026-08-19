@@ -21,10 +21,11 @@ type scrapeRequest struct {
 }
 
 type scrapeRequestOptions struct {
-	AutoOnly  bool `json:"auto_only"`
-	Rescrape  bool `json:"rescrape"`
-	DryRun    bool `json:"dry_run"`
-	BatchSize int  `json:"batch_size"`
+	AutoOnly    bool `json:"auto_only"`
+	Rescrape    bool `json:"rescrape"`
+	DryRun      bool `json:"dry_run"`
+	BatchSize   int  `json:"batch_size"`
+	CoverVerify bool `json:"cover_verify"`
 }
 
 type scrapeReviewResolveRequest struct {
@@ -72,6 +73,7 @@ func (s *Server) handleScrapeStart(w http.ResponseWriter, r *http.Request) {
 		AutoOnly:     req.Options.AutoOnly,
 		DryRun:       req.Options.DryRun,
 		BatchSize:    req.Options.BatchSize,
+		CoverVerify:  req.Options.CoverVerify,
 	}
 
 	s.wsHub.Broadcast(ws.EventScrapeStarted, map[string]any{

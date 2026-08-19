@@ -22,6 +22,7 @@ var (
 	scrapeAutoOnly    bool
 	scrapeBatchSize   int
 	scrapeSeries      string
+	scrapeCoverVerify bool
 )
 
 const defaultScrapeJobID = "cli"
@@ -69,6 +70,7 @@ func init() {
 	scrapeCmd.Flags().BoolVar(&scrapeAutoOnly, "auto-only", false, "only scrape high-confidence matches; skip ambiguous ones instead of queuing for review")
 	scrapeCmd.Flags().IntVar(&scrapeBatchSize, "batch-size", 0, "process at most N books then stop (0 = no limit)")
 	scrapeCmd.Flags().StringVar(&scrapeSeries, "series", "", "only scrape books whose parsed series name contains this string")
+	scrapeCmd.Flags().BoolVar(&scrapeCoverVerify, "cover-verify", false, "compare local cover art against candidates to sharpen matches (slower, downloads cover images)")
 }
 
 func runScrape(cmd *cobra.Command, args []string) error {
@@ -99,6 +101,7 @@ func runScrape(cmd *cobra.Command, args []string) error {
 		AutoOnly:     scrapeAutoOnly,
 		DryRun:       scrapeDryRun,
 		BatchSize:    scrapeBatchSize,
+		CoverVerify:  scrapeCoverVerify,
 	}
 
 	fmt.Printf("Scraping %d book(s) from %s%s\n", len(books), libPath, dryRunSuffix())

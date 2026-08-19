@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"image/color"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -21,9 +22,10 @@ type scrapeFixture struct {
 	searchResults  map[string][]Volume // keyed by query string
 	issuesByVolume map[int][]Issue
 	issueDetails   map[int]*IssueDetail
+	covers         map[string][]byte // keyed by URL path, for cover-hash downloads
 }
 
-func newScrapeFixtureClient(t *testing.T, fx *scrapeFixture) *Client {
+func newScrapeFixtureClient(t *testing.T, fx *scrapeFixture) (*Client, string) {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimSuffix(r.URL.Path, "/")
@@ -76,11 +78,18 @@ func newScrapeFixtureClient(t *testing.T, fx *scrapeFixture) *Client {
 			json.NewEncoder(w).Encode(apiResponse[Volume]{StatusCode: 1, Results: *found})
 
 		default:
-			t.Errorf("unexpected request path: %s", r.URL.Path)
+			fx.mu.Lock()
+			data, ok := fx.covers[r.URL.Path]
+			fx.mu.Unlock()
+			if !ok {
+				t.Errorf("unexpected request path: %s", r.URL.Path)
+				return
+			}
+			w.Write(data)
 		}
 	}))
 	t.Cleanup(srv.Close)
-	return NewClient("test-key", WithBaseURL(srv.URL))
+	return NewClient("test-key", WithBaseURL(srv.URL)), srv.URL
 }
 
 func TestGroupBooksBySeries(t *testing.T) {
@@ -113,7 +122,7 @@ func TestScrape_HighConfidenceAutoScrapes(t *testing.T) {
 			1001: {ID: 1001, IssueNumber: "1", Name: "I Am Gotham"},
 		},
 	}
-	client := newScrapeFixtureClient(t, fx)
+	client, _ := newScrapeFixtureClient(t, fx)
 	cache := testCache(t)
 	backend := &fakeBackend{}
 	scraper := NewScraper(client, cache, backend, DefaultScraperConfig())
@@ -140,7 +149,7 @@ func TestScrape_AmbiguousQueuesForReview(t *testing.T) {
 		{ID: 2, Name: "Ambiguous Comic", StartYear: "2020", CountOfIssues: 150},
 	}
 	fx := &scrapeFixture{searchResults: map[string][]Volume{"Ambiguous Comic": ambiguous}}
-	client := newScrapeFixtureClient(t, fx)
+	client, _ := newScrapeFixtureClient(t, fx)
 	cache := testCache(t)
 	backend := &fakeBackend{}
 	scraper := NewScraper(client, cache, backend, DefaultScraperConfig())
@@ -172,7 +181,7 @@ func TestScrape_AutoOnlySkipsAmbiguous(t *testing.T) {
 		{ID: 2, Name: "Ambiguous Comic", StartYear: "2020", CountOfIssues: 150},
 	}
 	fx := &scrapeFixture{searchResults: map[string][]Volume{"Ambiguous Comic": ambiguous}}
-	client := newScrapeFixtureClient(t, fx)
+	client, _ := newScrapeFixtureClient(t, fx)
 	cache := testCache(t)
 	backend := &fakeBackend{}
 	scraper := NewScraper(client, cache, backend, DefaultScraperConfig())
@@ -200,7 +209,7 @@ func TestScrape_SeriesGroupingSearchesOnce(t *testing.T) {
 			1002: {ID: 1002, IssueNumber: "2"},
 		},
 	}
-	client := newScrapeFixtureClient(t, fx)
+	client, _ := newScrapeFixtureClient(t, fx)
 	cache := testCache(t)
 	backend := &fakeBackend{}
 	scraper := NewScraper(client, cache, backend, DefaultScraperConfig())
@@ -233,7 +242,7 @@ func TestScrape_FastRescrapeSkipsSearch(t *testing.T) {
 			1001: {ID: 1001, IssueNumber: "1", Name: "Refreshed Title"},
 		},
 	}
-	client := newScrapeFixtureClient(t, fx)
+	client, _ := newScrapeFixtureClient(t, fx)
 	cache := testCache(t)
 	backend := &fakeBackend{}
 	scraper := NewScraper(client, cache, backend, DefaultScraperConfig())
@@ -267,7 +276,7 @@ func TestScrape_DryRunDoesNotPersist(t *testing.T) {
 		issuesByVolume: map[int][]Issue{100: {{ID: 1001, IssueNumber: "1"}}},
 		issueDetails:   map[int]*IssueDetail{1001: {ID: 1001, IssueNumber: "1"}},
 	}
-	client := newScrapeFixtureClient(t, fx)
+	client, _ := newScrapeFixtureClient(t, fx)
 	cache := testCache(t)
 	backend := &fakeBackend{}
 	scraper := NewScraper(client, cache, backend, DefaultScraperConfig())
@@ -293,7 +302,7 @@ func TestScrape_ResumeSkipsAlreadyProcessedBooks(t *testing.T) {
 		issuesByVolume: map[int][]Issue{100: {{ID: 1002, IssueNumber: "2"}}},
 		issueDetails:   map[int]*IssueDetail{1002: {ID: 1002, IssueNumber: "2"}},
 	}
-	client := newScrapeFixtureClient(t, fx)
+	client, _ := newScrapeFixtureClient(t, fx)
 	cache := testCache(t)
 	backend := &fakeBackend{}
 	scraper := NewScraper(client, cache, backend, DefaultScraperConfig())
@@ -332,7 +341,7 @@ func TestScraper_AcceptReview(t *testing.T) {
 		issuesByVolume: map[int][]Issue{2: {{ID: 2001, IssueNumber: "1"}}},
 		issueDetails:   map[int]*IssueDetail{2001: {ID: 2001, IssueNumber: "1", Name: "Chosen"}},
 	}
-	client := newScrapeFixtureClient(t, fx)
+	client, _ := newScrapeFixtureClient(t, fx)
 	cache := testCache(t)
 	book := &library.ComicBook{ID: "book-1", FilePath: "Ambiguous Comic 001.cbz"}
 	backend := &fakeBackend{books: map[string]*library.ComicBook{"book-1": book}}
@@ -369,7 +378,7 @@ func TestScraper_AcceptReview(t *testing.T) {
 
 func TestScrape_NoCandidatesFails(t *testing.T) {
 	fx := &scrapeFixture{searchResults: map[string][]Volume{}}
-	client := newScrapeFixtureClient(t, fx)
+	client, _ := newScrapeFixtureClient(t, fx)
 	cache := testCache(t)
 	backend := &fakeBackend{}
 	scraper := NewScraper(client, cache, backend, DefaultScraperConfig())
@@ -386,7 +395,7 @@ func TestScrape_NoCandidatesFails(t *testing.T) {
 
 func TestScrape_ConcurrentJobRejected(t *testing.T) {
 	fx := &scrapeFixture{searchResults: map[string][]Volume{}}
-	client := newScrapeFixtureClient(t, fx)
+	client, _ := newScrapeFixtureClient(t, fx)
 	cache := testCache(t)
 	backend := &fakeBackend{}
 	scraper := NewScraper(client, cache, backend, DefaultScraperConfig())
@@ -398,5 +407,72 @@ func TestScrape_ConcurrentJobRejected(t *testing.T) {
 	_, err := scraper.Scrape(context.Background(), "job-2", nil, ScrapeOptions{}, nil)
 	if err != ErrScrapeInProgress {
 		t.Errorf("err = %v, want ErrScrapeInProgress", err)
+	}
+}
+
+func TestScrape_CoverVerifyResolvesAmbiguousTextMatch(t *testing.T) {
+	localCover := gradientImage(t, 32, 32)
+	matchingCover := gradientImage(t, 32, 32)                    // identical to local -> boosted
+	mismatchedCover := solidImage(t, color.RGBA{A: 255}, 32, 32) // very different -> penalized
+
+	fx := &scrapeFixture{
+		searchResults: map[string][]Volume{
+			"Ambiguous Comic": {
+				{ID: 1, Name: "Ambiguous Comic", StartYear: "2020", CountOfIssues: 150},
+				{ID: 2, Name: "Ambiguous Comic", StartYear: "2020", CountOfIssues: 150},
+			},
+		},
+		issuesByVolume: map[int][]Issue{2: {{ID: 2001, IssueNumber: "1"}}},
+		issueDetails:   map[int]*IssueDetail{2001: {ID: 2001, IssueNumber: "1", Name: "Right Match"}},
+		covers: map[string][]byte{
+			"/covers/vol1.jpg": mismatchedCover,
+			"/covers/vol2.jpg": matchingCover,
+		},
+	}
+	client, baseURL := newScrapeFixtureClient(t, fx)
+	fx.searchResults["Ambiguous Comic"][0].Image.SmallURL = baseURL + "/covers/vol1.jpg"
+	fx.searchResults["Ambiguous Comic"][1].Image.SmallURL = baseURL + "/covers/vol2.jpg"
+
+	cache := testCache(t)
+	backend := &fakeBackend{}
+	scraper := NewScraper(client, cache, backend, DefaultScraperConfig())
+
+	path := writeCBZ(t, t.TempDir(), "Ambiguous Comic 001.cbz", map[string][]byte{"page001.png": localCover})
+	books := []*library.ComicBook{{ID: "book-1", FilePath: path}}
+
+	job, err := scraper.Scrape(context.Background(), "job-1", books, ScrapeOptions{CoverVerify: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.Completed != 1 || job.PendingReview != 0 {
+		t.Fatalf("job = %+v, want Completed=1 PendingReview=0", job)
+	}
+	if len(backend.updated) != 1 || backend.updated[0].Title != "Right Match" {
+		t.Errorf("updated = %+v, want the cover-matching volume's metadata applied", backend.updated)
+	}
+}
+
+func TestScrape_CoverVerifyIgnoredWhenLocalCoverMissing(t *testing.T) {
+	fx := &scrapeFixture{
+		searchResults: map[string][]Volume{
+			"Batman": {{ID: 100, Name: "Batman", StartYear: "2016", CountOfIssues: 85}},
+		},
+		issuesByVolume: map[int][]Issue{100: {{ID: 1001, IssueNumber: "1"}}},
+		issueDetails:   map[int]*IssueDetail{1001: {ID: 1001, IssueNumber: "1"}},
+	}
+	client, _ := newScrapeFixtureClient(t, fx)
+	cache := testCache(t)
+	backend := &fakeBackend{}
+	scraper := NewScraper(client, cache, backend, DefaultScraperConfig())
+
+	// FilePath points at a file that doesn't exist; cover verification should
+	// silently no-op rather than failing the whole scrape.
+	books := []*library.ComicBook{{ID: "book-1", FilePath: "/nonexistent/Batman 001.cbz"}}
+	job, err := scraper.Scrape(context.Background(), "job-1", books, ScrapeOptions{CoverVerify: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.Completed != 1 {
+		t.Errorf("job = %+v, want Completed=1 despite missing local cover file", job)
 	}
 }

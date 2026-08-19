@@ -285,3 +285,47 @@ func normalizeIssueNumber(s string) string {
 	}
 	return strings.ToLower(s)
 }
+
+// Score adjustments applied by cover verification — roughly equivalent to
+// two word matches worth of namescore, enough to break close ties without
+// overriding a strong text-based mismatch.
+const (
+	coverMatchBoost      = 20.0
+	coverMismatchPenalty = -20.0
+)
+
+// ApplyCoverVerification adjusts each result's score based on how closely
+// its cover art matches the local comic's cover (coverHashes maps volume CV
+// ID to a previously downloaded/cached cover hash), then re-sorts and
+// reassigns confidence. Candidates with no known cover hash are left
+// unchanged, so cover verification only ever sharpens an existing match.
+func ApplyCoverVerification(results []MatchResult, localHash CoverHash, coverHashes map[int]CoverHash) []MatchResult {
+	for i := range results {
+		hash, ok := coverHashes[results[i].Volume.ID]
+		if !ok {
+			continue
+		}
+		if localHash.Similarity(hash) >= CoverVerifyThreshold {
+			results[i].Score += coverMatchBoost
+		} else {
+			results[i].Score += coverMismatchPenalty
+		}
+	}
+	assignConfidence(results)
+	return results
+}
+
+// AmbiguousByCover reports whether the top two candidates' own cover art is
+// too similar to tell apart confidently — the classic single-issue-vs-its-
+// own-TPB-collection confusion — even though their text scores differ.
+func AmbiguousByCover(results []MatchResult, coverHashes map[int]CoverHash) bool {
+	if len(results) < 2 {
+		return false
+	}
+	h1, ok1 := coverHashes[results[0].Volume.ID]
+	h2, ok2 := coverHashes[results[1].Volume.ID]
+	if !ok1 || !ok2 {
+		return false
+	}
+	return h1.Similarity(h2) >= AmbiguousCoverThreshold
+}

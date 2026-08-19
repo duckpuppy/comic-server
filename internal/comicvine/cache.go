@@ -11,7 +11,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const cacheSchemaVersion = 3
+const cacheSchemaVersion = 4
 
 // Cache provides SQLite-backed storage for ComicVine API responses.
 type Cache struct {
@@ -113,6 +113,14 @@ func (c *Cache) initSchema() error {
 			PRIMARY KEY (job_id, book_id)
 		);
 		CREATE INDEX IF NOT EXISTS idx_scrape_job_books_status ON scrape_job_books(job_id, status);
+
+		CREATE TABLE IF NOT EXISTS cv_cover_hashes (
+			kind       TEXT NOT NULL, -- 'volume' or 'issue'
+			cv_id      INTEGER NOT NULL,
+			hash       INTEGER NOT NULL,
+			fetched_at TEXT,
+			PRIMARY KEY (kind, cv_id)
+		);
 	`)
 	if err != nil {
 		return fmt.Errorf("create tables: %w", err)
@@ -452,6 +460,53 @@ func decodeCandidates(r *BookScrapeResult, candidatesJSON string) error {
 		return fmt.Errorf("unmarshal candidates for %s: %w", r.BookID, err)
 	}
 	return nil
+}
+
+const (
+	coverHashKindVolume = "volume"
+	coverHashKindIssue  = "issue"
+)
+
+// SaveVolumeCoverHash caches a volume's cover hash to avoid re-downloading
+// and re-hashing its cover art on future scrapes.
+func (c *Cache) SaveVolumeCoverHash(cvID int, hash CoverHash) error {
+	return c.saveCoverHash(coverHashKindVolume, cvID, hash)
+}
+
+// GetVolumeCoverHash returns a cached volume cover hash, if present.
+func (c *Cache) GetVolumeCoverHash(cvID int) (CoverHash, bool, error) {
+	return c.getCoverHash(coverHashKindVolume, cvID)
+}
+
+// SaveIssueCoverHash caches an issue's cover hash.
+func (c *Cache) SaveIssueCoverHash(cvID int, hash CoverHash) error {
+	return c.saveCoverHash(coverHashKindIssue, cvID, hash)
+}
+
+// GetIssueCoverHash returns a cached issue cover hash, if present.
+func (c *Cache) GetIssueCoverHash(cvID int) (CoverHash, bool, error) {
+	return c.getCoverHash(coverHashKindIssue, cvID)
+}
+
+func (c *Cache) saveCoverHash(kind string, cvID int, hash CoverHash) error {
+	_, err := c.db.Exec(`
+		INSERT INTO cv_cover_hashes (kind, cv_id, hash, fetched_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(kind, cv_id) DO UPDATE SET hash=excluded.hash, fetched_at=excluded.fetched_at`,
+		kind, cvID, int64(hash), time.Now().Format(time.RFC3339))
+	return err
+}
+
+func (c *Cache) getCoverHash(kind string, cvID int) (CoverHash, bool, error) {
+	var hash int64
+	err := c.db.QueryRow(`SELECT hash FROM cv_cover_hashes WHERE kind = ? AND cv_id = ?`, kind, cvID).Scan(&hash)
+	if err == sql.ErrNoRows {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return CoverHash(hash), true, nil
 }
 
 // sortByOwned sorts volume IDs by how many books are owned, descending.

@@ -262,3 +262,98 @@ func TestNormalizeIssueNumber(t *testing.T) {
 		}
 	}
 }
+
+func TestApplyCoverVerification_BoostsMatchingCover(t *testing.T) {
+	results := []MatchResult{
+		{Volume: Volume{ID: 1, Name: "Batman"}, Score: 100},
+		{Volume: Volume{ID: 2, Name: "Batman Beyond"}, Score: 98},
+	}
+	localHash := CoverHash(0x0F0F0F0F0F0F0F0F)
+	coverHashes := map[int]CoverHash{
+		1: 0x0F0F0F0F0F0F0F0F, // identical to local -> boosted
+		2: 0xFFFFFFFFFFFFFFFF, // maximally different -> penalized
+	}
+
+	out := ApplyCoverVerification(results, localHash, coverHashes)
+	if out[0].Volume.ID != 1 || out[0].Score <= 100 {
+		t.Errorf("volume 1 should be boosted and remain first: %+v", out[0])
+	}
+	if out[1].Volume.ID != 2 || out[1].Score >= 98 {
+		t.Errorf("volume 2 should be penalized: %+v", out[1])
+	}
+}
+
+func TestApplyCoverVerification_UnknownHashLeftUnchanged(t *testing.T) {
+	results := []MatchResult{{Volume: Volume{ID: 1}, Score: 50}}
+	out := ApplyCoverVerification(results, 0x0, map[int]CoverHash{})
+	if out[0].Score != 50 {
+		t.Errorf("score = %v, want unchanged at 50", out[0].Score)
+	}
+}
+
+func TestApplyCoverVerification_CanFlipRanking(t *testing.T) {
+	results := []MatchResult{
+		{Volume: Volume{ID: 1, Name: "Wrong Match"}, Score: 100},
+		{Volume: Volume{ID: 2, Name: "Right Match"}, Score: 90},
+	}
+	localHash := CoverHash(0xAAAAAAAAAAAAAAAA)
+	coverHashes := map[int]CoverHash{
+		1: 0x5555555555555555, // maximally different from local
+		2: 0xAAAAAAAAAAAAAAAA, // identical to local
+	}
+
+	out := ApplyCoverVerification(results, localHash, coverHashes)
+	if out[0].Volume.ID != 2 {
+		t.Errorf("expected cover match to overtake a weaker text score, got top=%+v", out[0])
+	}
+}
+
+func TestAmbiguousByCover(t *testing.T) {
+	tests := []struct {
+		name    string
+		results []MatchResult
+		hashes  map[int]CoverHash
+		want    bool
+	}{
+		{
+			name: "similar covers are ambiguous",
+			results: []MatchResult{
+				{Volume: Volume{ID: 1}, Score: 100},
+				{Volume: Volume{ID: 2}, Score: 90},
+			},
+			hashes: map[int]CoverHash{1: 0x0, 2: 0x0},
+			want:   true,
+		},
+		{
+			name: "different covers are not ambiguous",
+			results: []MatchResult{
+				{Volume: Volume{ID: 1}, Score: 100},
+				{Volume: Volume{ID: 2}, Score: 90},
+			},
+			hashes: map[int]CoverHash{1: 0x0, 2: 0xFFFFFFFFFFFFFFFF},
+			want:   false,
+		},
+		{
+			name:    "fewer than two candidates",
+			results: []MatchResult{{Volume: Volume{ID: 1}, Score: 100}},
+			hashes:  map[int]CoverHash{1: 0x0},
+			want:    false,
+		},
+		{
+			name: "missing hash for a candidate",
+			results: []MatchResult{
+				{Volume: Volume{ID: 1}, Score: 100},
+				{Volume: Volume{ID: 2}, Score: 90},
+			},
+			hashes: map[int]CoverHash{1: 0x0},
+			want:   false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := AmbiguousByCover(tt.results, tt.hashes); got != tt.want {
+				t.Errorf("AmbiguousByCover() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
