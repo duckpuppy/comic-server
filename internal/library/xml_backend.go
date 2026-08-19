@@ -12,6 +12,7 @@ type XMLBackend struct {
 	library     *ComicLibrary
 	cache       *LibraryCache
 	libraryPath string
+	dirty       bool // tracks unsaved book changes when no LibraryCache is configured
 }
 
 // NewXMLBackend creates a new XML-based backend from a library file.
@@ -258,6 +259,8 @@ func (b *XMLBackend) UpdateBook(book *ComicBook) error {
 			b.library.Books[i] = *book
 			if b.cache != nil {
 				b.cache.MarkDirty(book.ID)
+			} else {
+				b.dirty = true
 			}
 			return nil
 		}
@@ -286,8 +289,12 @@ func (b *XMLBackend) UpdateBooks(books []*ComicBook) error {
 		}
 	}
 
-	if b.cache != nil && len(updatedIDs) > 0 {
-		b.cache.MarkManyDirty(updatedIDs)
+	if b.cache != nil {
+		if len(updatedIDs) > 0 {
+			b.cache.MarkManyDirty(updatedIDs)
+		}
+	} else if len(updatedIDs) > 0 {
+		b.dirty = true
 	}
 
 	return nil
@@ -297,27 +304,46 @@ func (b *XMLBackend) UpdateBooks(books []*ComicBook) error {
 func (b *XMLBackend) MarkDirty(bookID string) {
 	if b.cache != nil {
 		b.cache.MarkDirty(bookID)
+		return
 	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.dirty = true
 }
 
 // MarkManyDirty marks multiple books as modified.
 func (b *XMLBackend) MarkManyDirty(bookIDs []string) {
 	if b.cache != nil {
 		b.cache.MarkManyDirty(bookIDs)
+		return
 	}
+	if len(bookIDs) == 0 {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.dirty = true
 }
 
-// Flush writes any pending changes to disk.
+// Flush writes any pending changes to disk. When no LibraryCache is
+// configured, this is a no-op unless a book was actually changed since the
+// last flush (via UpdateBook/UpdateBooks/MarkDirty/MarkManyDirty).
 func (b *XMLBackend) Flush() error {
 	if b.cache != nil {
 		_, err := b.cache.Flush()
 		return err
 	}
 
-	// No cache - save directly
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return SaveLibrary(b.libraryPath, b.library)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !b.dirty || b.libraryPath == "" {
+		return nil
+	}
+	if err := SaveLibrary(b.libraryPath, b.library); err != nil {
+		return err
+	}
+	b.dirty = false
+	return nil
 }
 
 // Close stops the backend and flushes any pending changes.
