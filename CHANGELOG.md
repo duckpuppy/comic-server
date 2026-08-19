@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.1.1](https://github.com/duckpuppy/comic-server/compare/v1.1.0...v1.1.1) (2026-08-19)
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/pelletier/go-toml/v2 to v2.4.3 ([672b56e](https://github.com/duckpuppy/comic-server/commit/672b56e7b209ae9342d96a467ecec3e1c5a6d926))
+* **deps:** update module github.com/prometheus/client_golang to v1.24.1 ([2e6c638](https://github.com/duckpuppy/comic-server/commit/2e6c638bb8a9cb1e74c004384660d4750635fe90))
+* **deps:** update module github.com/prometheus/client_golang to v1.24.1 ([ee2305b](https://github.com/duckpuppy/comic-server/commit/ee2305b09df6374dcd0bccdd0ffce5f843b1fe2a))
+* **deps:** update module golang.org/x/net to v0.58.0 ([c1620bf](https://github.com/duckpuppy/comic-server/commit/c1620bf0bb32b2d62fc471f3c39fc048e8c26588))
+* **deps:** update module modernc.org/sqlite to v1.57.0 ([27422d3](https://github.com/duckpuppy/comic-server/commit/27422d3d60ec1428b038318ce2248f12a6b04352))
+
 ## [1.1.0](https://github.com/duckpuppy/comic-server/compare/v1.0.0...v1.1.0) (2026-08-19)
 
 
