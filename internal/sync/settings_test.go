@@ -148,6 +148,145 @@ func TestSortByPublished(t *testing.T) {
 	}
 }
 
+// TestSortByAdded tests sorting by date added to the library
+func TestSortByAdded(t *testing.T) {
+	base := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	books := []*library.ComicBook{
+		createTestBook("1", "Batman", 2020, 1, "1", 20, 0),
+		createTestBook("2", "Batman", 2020, 1, "2", 20, 0),
+		createTestBook("3", "Batman", 2020, 1, "3", 20, 0),
+	}
+	books[0].AddedTime = library.ComicTime{Time: base.AddDate(0, 0, 5)}
+	books[1].AddedTime = library.ComicTime{Time: base}
+	books[2].AddedTime = library.ComicTime{Time: base.AddDate(0, 0, 2)}
+
+	sortByAdded(books)
+
+	expectedOrder := []string{"2", "3", "1"}
+	for i, expectedID := range expectedOrder {
+		if books[i].ID != expectedID {
+			t.Errorf("Position %d: expected ID %s, got %s", i, expectedID, books[i].ID)
+		}
+	}
+}
+
+// TestSortByStoryArc tests grouping by story arc, then sorting by published date within an arc
+func TestSortByStoryArc(t *testing.T) {
+	books := []*library.ComicBook{
+		createTestBook("1", "Batman", 2020, 1, "1", 20, 0),
+		createTestBook("2", "Batman", 2019, 1, "1", 20, 0),
+		createTestBook("3", "Batman", 2020, 1, "2", 20, 0),
+		createTestBook("4", "Batman", 2018, 1, "1", 20, 0),
+	}
+	books[0].StoryArc = "No Man's Land"
+	books[1].StoryArc = "No Man's Land"
+	books[2].StoryArc = "Knightfall"
+	books[3].StoryArc = "Knightfall"
+
+	sortByStoryArc(books)
+
+	// "Knightfall" < "No Man's Land" alphabetically; within each arc, oldest first
+	expectedOrder := []string{"4", "3", "2", "1"}
+	for i, expectedID := range expectedOrder {
+		if books[i].ID != expectedID {
+			t.Errorf("Position %d: expected ID %s, got %s", i, expectedID, books[i].ID)
+		}
+	}
+}
+
+// TestSortByAlternateSeries tests sorting by AlternateSeries, then AlternateCount, then AlternateNumber
+func TestSortByAlternateSeries(t *testing.T) {
+	books := []*library.ComicBook{
+		createTestBook("1", "Batman", 2020, 1, "1", 20, 0),
+		createTestBook("2", "Batman", 2020, 1, "1", 20, 0),
+		createTestBook("3", "Batman", 2020, 1, "1", 20, 0),
+	}
+	books[0].AlternateSeries = "Detective Comics"
+	books[0].AlternateCount = 1
+	books[0].AlternateNumber = "2"
+
+	books[1].AlternateSeries = "Detective Comics"
+	books[1].AlternateCount = 1
+	books[1].AlternateNumber = "1"
+
+	books[2].AlternateSeries = "Batman Annual"
+	books[2].AlternateCount = 1
+	books[2].AlternateNumber = "1"
+
+	sortByAlternateSeries(books)
+
+	// "Batman Annual" < "Detective Comics"; within Detective Comics, by number
+	expectedOrder := []string{"3", "2", "1"}
+	for i, expectedID := range expectedOrder {
+		if books[i].ID != expectedID {
+			t.Errorf("Position %d: expected ID %s, got %s", i, expectedID, books[i].ID)
+		}
+	}
+}
+
+// TestSortTypeListOrder verifies SortTypeListOrder preserves the input order (no-op)
+func TestSortTypeListOrder(t *testing.T) {
+	books := []*library.ComicBook{
+		createTestBook("3", "Batman", 2020, 1, "3", 20, 0),
+		createTestBook("1", "Batman", 2020, 1, "1", 20, 0),
+		createTestBook("2", "Batman", 2020, 1, "2", 20, 0),
+	}
+
+	result := sortBooks(books, SortTypeListOrder)
+
+	expectedOrder := []string{"3", "1", "2"}
+	for i, expectedID := range expectedOrder {
+		if result[i].ID != expectedID {
+			t.Errorf("Position %d: expected ID %s, got %s", i, expectedID, result[i].ID)
+		}
+	}
+}
+
+// TestSortTypeRandom verifies SortTypeRandom preserves the book set (a shuffle,
+// not a filter) and that it actually reorders a large-enough input at least
+// once across repeated trials, so a no-op implementation would be caught.
+func TestSortTypeRandom(t *testing.T) {
+	makeBooks := func() []*library.ComicBook {
+		books := make([]*library.ComicBook, 20)
+		for i := range books {
+			books[i] = createTestBook(string(rune('a'+i)), "Batman", 2020, 1, string(rune('a'+i)), 20, 0)
+		}
+		return books
+	}
+
+	original := makeBooks()
+
+	reordered := false
+	for trial := 0; trial < 20 && !reordered; trial++ {
+		result := sortBooks(makeBooks(), SortTypeRandom)
+
+		if len(result) != len(original) {
+			t.Fatalf("expected %d books, got %d", len(original), len(result))
+		}
+
+		seen := make(map[string]bool, len(result))
+		for _, book := range result {
+			seen[book.ID] = true
+		}
+		for _, book := range original {
+			if !seen[book.ID] {
+				t.Fatalf("book %s missing from shuffled result", book.ID)
+			}
+		}
+
+		for i, book := range result {
+			if book.ID != original[i].ID {
+				reordered = true
+				break
+			}
+		}
+	}
+
+	if !reordered {
+		t.Error("expected SortTypeRandom to reorder books at least once across 20 trials")
+	}
+}
+
 // TestLimitByCount tests limiting by book count
 func TestLimitByCount(t *testing.T) {
 	books := []*library.ComicBook{
@@ -471,6 +610,69 @@ func TestLimitBySize(t *testing.T) {
 
 	if result[0].ID != "1" || result[1].ID != "2" {
 		t.Errorf("Expected books 1 and 2, got %s and %s", result[0].ID, result[1].ID)
+	}
+}
+
+// TestLimitBySize_ExactBoundary verifies a book is included when adding it
+// lands exactly on the limit (totalSize+size == maxBytes is not "over").
+func TestLimitBySize_ExactBoundary(t *testing.T) {
+	tmpDir := t.TempDir()
+	file1 := filepath.Join(tmpDir, "book1.cbz")
+	file2 := filepath.Join(tmpDir, "book2.cbz")
+	writeFile(t, file1, 1*1024*1024)
+	writeFile(t, file2, 2*1024*1024)
+
+	books := []*library.ComicBook{
+		createTestBook("1", "Batman", 2020, 1, "1", 20, 0),
+		createTestBook("2", "Batman", 2020, 1, "2", 20, 0),
+	}
+	books[0].FilePath = file1
+	books[1].FilePath = file2
+
+	// Limit is exactly 1MB + 2MB - both books should fit.
+	result, err := limitBySize(books, 3*1024*1024)
+	if err != nil {
+		t.Fatalf("limitBySize failed: %v", err)
+	}
+	if len(result) != 2 {
+		t.Errorf("Expected 2 books at exact boundary, got %d", len(result))
+	}
+}
+
+// TestLimitBySize_FirstBookExceedsLimit verifies a single book larger than
+// the limit is still included (there must be at least one result, matching
+// limitBySize's len(result) > 0 guard before it breaks).
+func TestLimitBySize_FirstBookExceedsLimit(t *testing.T) {
+	tmpDir := t.TempDir()
+	file1 := filepath.Join(tmpDir, "book1.cbz")
+	writeFile(t, file1, 5*1024*1024)
+
+	books := []*library.ComicBook{
+		createTestBook("1", "Batman", 2020, 1, "1", 20, 0),
+	}
+	books[0].FilePath = file1
+
+	result, err := limitBySize(books, 1*1024*1024)
+	if err != nil {
+		t.Fatalf("limitBySize failed: %v", err)
+	}
+	if len(result) != 1 {
+		t.Errorf("Expected the single oversized book to still be included, got %d books", len(result))
+	}
+}
+
+// TestLimitBySize_CountLargerThanAvailable verifies limitByCount returns all
+// books when the requested count exceeds the available book count.
+func TestLimitByCount_LargerThanAvailable(t *testing.T) {
+	books := []*library.ComicBook{
+		createTestBook("1", "Batman", 2020, 1, "1", 20, 0),
+		createTestBook("2", "Batman", 2020, 1, "2", 20, 0),
+	}
+
+	result := limitByCount(books, 10)
+
+	if len(result) != 2 {
+		t.Errorf("Expected all 2 books when count exceeds available, got %d", len(result))
 	}
 }
 
