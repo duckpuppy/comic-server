@@ -44,6 +44,55 @@ type ServerConfig struct {
 
 	// ComicVine integration
 	ComicVineAPIKey string `yaml:"comicvine_api_key,omitempty" toml:"comicvine_api_key,omitempty"` // API key for ComicVine enrichment
+
+	// Komga integration
+	Komga KomgaConfig `yaml:"komga,omitempty" toml:"komga,omitempty"`
+}
+
+// KomgaConfig configures pushing comic-server smart lists into Komga
+// collections and read lists, since Komga has no native smart-list concept
+// of its own. comic-server and Komga read independent, synced copies of the
+// same library (potentially on different machines/OSes), so books are
+// matched by translating file paths between the two roots rather than by
+// any shared ID - see LocalRoot/RemoteRoot.
+type KomgaConfig struct {
+	Enabled bool   `yaml:"enabled,omitempty" toml:"enabled,omitempty"`
+	BaseURL string `yaml:"base_url,omitempty" toml:"base_url,omitempty"` // e.g. https://comics.example.com
+	// APIKey can also be set via COMIC_SERVER_KOMGA_API_KEY; prefer the env
+	// var over committing a real key to a config file.
+	APIKey string `yaml:"api_key,omitempty" toml:"api_key,omitempty"`
+
+	// Path mapping: comic-server's library paths are rooted at LocalRoot;
+	// Komga sees the same files rooted at RemoteRoot. Directory structure
+	// below the root is assumed identical, so translation is a simple
+	// prefix swap - the same approach as the *Arr apps' Remote Path
+	// Mapping. Both roots are compared/joined using forward-slash-
+	// normalized paths (matching how comic-server already normalizes
+	// Directory/File/FullPath matchers).
+	LocalRoot  string `yaml:"local_root,omitempty" toml:"local_root,omitempty"`
+	RemoteRoot string `yaml:"remote_root,omitempty" toml:"remote_root,omitempty"`
+
+	Targets []KomgaTarget `yaml:"targets,omitempty" toml:"targets,omitempty"`
+}
+
+// KomgaTargetType is which kind of Komga entity a smart list syncs into.
+type KomgaTargetType string
+
+const (
+	KomgaTargetCollection KomgaTargetType = "collection" // series-level grouping
+	KomgaTargetReadList   KomgaTargetType = "readlist"   // book-level grouping, can span series
+)
+
+// KomgaTarget maps one comic-server smart list to one Komga collection or
+// read list. Books matched by the list but not found in Komga (via the
+// LocalRoot/RemoteRoot path translation) are skipped and logged, not
+// treated as a sync failure.
+type KomgaTarget struct {
+	ListID    string          `yaml:"list_id" toml:"list_id"`                         // Smart list GUID from the library
+	ListName  string          `yaml:"list_name,omitempty" toml:"list_name,omitempty"` // Cached name for display
+	Type      KomgaTargetType `yaml:"type" toml:"type"`
+	KomgaName string          `yaml:"komga_name" toml:"komga_name"` // Name of the collection/read list in Komga
+	Enabled   bool            `yaml:"enabled" toml:"enabled"`       // Allow disable without deleting
 }
 
 // DeviceConfig contains sync configuration for a specific device
@@ -157,6 +206,47 @@ func (c *Config) Validate() error {
 	validFormats := map[string]bool{"text": true, "json": true}
 	if !validFormats[c.Server.LogFormat] {
 		return fmt.Errorf("log_format must be one of: text, json, got %q", c.Server.LogFormat)
+	}
+
+	if err := c.Server.Komga.Validate(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Validate checks the Komga configuration for errors. A no-op when Komga
+// integration is disabled.
+func (kc *KomgaConfig) Validate() error {
+	if !kc.Enabled {
+		return nil
+	}
+	if kc.BaseURL == "" {
+		return fmt.Errorf("komga.base_url is required when komga.enabled is true")
+	}
+	if kc.APIKey == "" {
+		return fmt.Errorf("komga.api_key is required when komga.enabled is true (set directly or via COMIC_SERVER_KOMGA_API_KEY)")
+	}
+	if kc.LocalRoot == "" || kc.RemoteRoot == "" {
+		return fmt.Errorf("komga.local_root and komga.remote_root are both required when komga.enabled is true")
+	}
+
+	seen := make(map[string]bool, len(kc.Targets))
+	for i, t := range kc.Targets {
+		if t.ListID == "" {
+			return fmt.Errorf("komga.targets[%d].list_id is required", i)
+		}
+		if seen[t.ListID] {
+			return fmt.Errorf("komga.targets[%d]: duplicate list_id %q", i, t.ListID)
+		}
+		seen[t.ListID] = true
+
+		if t.Type != KomgaTargetCollection && t.Type != KomgaTargetReadList {
+			return fmt.Errorf("komga.targets[%d].type must be %q or %q, got %q", i, KomgaTargetCollection, KomgaTargetReadList, t.Type)
+		}
+		if t.KomgaName == "" {
+			return fmt.Errorf("komga.targets[%d].komga_name is required", i)
+		}
 	}
 
 	return nil

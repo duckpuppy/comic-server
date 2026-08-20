@@ -77,5 +77,10 @@ func (c *Config) ApplyEnvironment() error {
 		c.Server.LogFormat = strings.ToLower(val)
 	}
 
+	// Komga integration
+	if val := os.Getenv("COMIC_SERVER_KOMGA_API_KEY"); val != "" {
+		c.Server.Komga.APIKey = val
+	}
+
 	return nil
 }
