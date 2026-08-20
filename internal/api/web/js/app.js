@@ -75,6 +75,7 @@ const dashboard = new Dashboard();
 let listsBrowser = null;
 let devicesBrowser = null;
 let syncHistoryBrowser = null;
+let komgaStatus = null;
 let deviceDetail = null; // Current device detail view
 let listsTree = null; // Shared tree instance for lists pages
 
@@ -151,6 +152,15 @@ document.addEventListener('DOMContentLoaded', () => {
             syncHistoryBrowser = new SyncHistoryBrowser();
         }
         await syncHistoryBrowser.init(ctx);
+    });
+
+    router.register('/komga', async (params, ctx) => {
+        navigation.setActive('komga');
+        dashboard.hide();
+        if (!komgaStatus) {
+            komgaStatus = new KomgaStatus();
+        }
+        await komgaStatus.init(ctx);
     });
 
     router.register('/devices/:deviceId', async (params, ctx) => {

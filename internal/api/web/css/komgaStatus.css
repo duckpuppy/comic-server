@@ -1,0 +1,130 @@
+/* Komga Sync Status Page */
+.komga-status-page {
+    padding: 2rem;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.komga-status-header {
+    margin-bottom: 2rem;
+}
+
+.komga-status-header h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    margin: 0;
+}
+
+.komga-status-subtitle {
+    color: var(--text-secondary);
+    margin: 0.5rem 0 0;
+}
+
+.komga-index-error {
+    background: #fee2e2;
+    color: #991b1b;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.komga-index-error-time {
+    font-size: 0.85rem;
+    opacity: 0.8;
+    margin-top: 0.25rem;
+}
+
+.komga-targets {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.komga-target-card {
+    background: var(--card-bg);
+    border-radius: 0.5rem;
+    padding: 1.25rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.komga-target-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.komga-target-type {
+    margin-left: 0.5rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+}
+
+.komga-target-timestamp {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.komga-target-stats {
+    display: flex;
+    gap: 1.5rem;
+}
+
+.komga-stat-label {
+    color: var(--text-secondary);
+    margin-right: 0.25rem;
+}
+
+.komga-stat-value {
+    font-weight: 600;
+}
+
+.komga-stat-warning {
+    color: #92400e;
+}
+
+.komga-target-error {
+    margin-top: 0.75rem;
+    color: #991b1b;
+    font-size: 0.9rem;
+}
+
+.komga-unmatched {
+    margin-top: 0.75rem;
+}
+
+.komga-unmatched summary {
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.komga-unmatched-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 0.75rem;
+    font-size: 0.85rem;
+}
+
+.komga-unmatched-table th,
+.komga-unmatched-table td {
+    text-align: left;
+    padding: 0.4rem 0.6rem;
+    border-bottom: 1px solid var(--border-color, #e5e7eb);
+}
+
+.komga-unmatched-path {
+    font-family: monospace;
+    word-break: break-all;
+}
+
+@media (max-width: 768px) {
+    .komga-unmatched-table {
+        display: block;
+        overflow-x: auto;
+    }
+}

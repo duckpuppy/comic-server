@@ -97,8 +97,9 @@ func (s *Syncer) Run(ctx context.Context, onResult func(TargetResult)) {
 func (s *Syncer) syncOnce(ctx context.Context, onResult func(TargetResult)) {
 	idx, err := BuildIndex(ctx, s.client)
 	if err != nil {
+		// BuildIndex already wraps err with context; pass it through as-is.
 		if onResult != nil {
-			onResult(TargetResult{Err: fmt.Errorf("build komga index: %w", err)})
+			onResult(TargetResult{Err: err})
 		}
 		return
 	}

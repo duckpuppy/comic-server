@@ -284,6 +284,12 @@ func runServer(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	var komgaStatus *komga.StatusStore
+	if cfg.Server.Komga.Enabled {
+		komgaStatus = komga.NewStatusStore()
+		apiServer.SetKomgaStatus(komgaStatus)
+	}
+
 	httpServer := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.Server.ServerPort),
 		Handler: apiServer,
@@ -304,6 +310,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 		log.Info().Msgf("  POST http://localhost:%d/api/scrape - Start a ComicVine scrape job", cfg.Server.ServerPort)
 		log.Info().Msgf("  GET  http://localhost:%d/api/scrape/status - Scrape job progress", cfg.Server.ServerPort)
 		log.Info().Msgf("  GET  http://localhost:%d/api/scrape/review - Books pending manual review", cfg.Server.ServerPort)
+		log.Info().Msgf("  GET  http://localhost:%d/api/komga/status - Komga sync status", cfg.Server.ServerPort)
 		log.Info().Msgf("  GET  http://localhost:%d/metrics - Prometheus metrics", cfg.Server.ServerPort)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Error().Err(err).Msg("REST API server error")
@@ -321,7 +328,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 	komgaCtx, komgaCancel := context.WithCancel(context.Background())
 	defer komgaCancel()
 	if cfg.Server.Komga.Enabled {
-		go startKomgaSync(komgaCtx, cfg.Server.Komga, backend)
+		go startKomgaSync(komgaCtx, cfg.Server.Komga, backend, komgaStatus)
 	}
 
 	// Handle signals gracefully
@@ -994,7 +1001,7 @@ func startComicVineSync(ctx context.Context, apiKey string, backend library.Back
 // comic-server has no way to detect ComicRack library changes while
 // running (see comic-server-bwz), so this is a scheduled push, not
 // change-triggered.
-func startKomgaSync(ctx context.Context, cfg config.KomgaConfig, backend library.Backend) {
+func startKomgaSync(ctx context.Context, cfg config.KomgaConfig, backend library.Backend, status *komga.StatusStore) {
 	targets := make([]komga.Target, 0, len(cfg.Targets))
 	for _, t := range cfg.Targets {
 		if !t.Enabled {
@@ -1038,6 +1045,17 @@ func startKomgaSync(ctx context.Context, cfg config.KomgaConfig, backend library
 		Msg("Komga sync: starting background sync")
 
 	syncer.Run(ctx, func(r komga.TargetResult) {
+		status.Record(r)
+
+		// An empty Target.ListID means BuildIndex itself failed (see
+		// Syncer.syncOnce) - that isn't a per-target push failure.
+		if r.Target.ListID == "" {
+			if r.Err != nil {
+				log.Error().Err(r.Err).Msg("Komga sync: failed to build Komga path index, skipping this pass")
+			}
+			return
+		}
+
 		logger := log.With().Str("komga_name", r.Target.KomgaName).Str("list_id", r.Target.ListID).Logger()
 		if r.Err != nil {
 			logger.Error().Err(r.Err).Msg("Komga sync: target push failed")

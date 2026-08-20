@@ -14,6 +14,7 @@ import (
 	"github.com/duckpuppy/comic-server/internal/comicvine"
 	"github.com/duckpuppy/comic-server/internal/config"
 	"github.com/duckpuppy/comic-server/internal/device"
+	"github.com/duckpuppy/comic-server/internal/komga"
 	"github.com/duckpuppy/comic-server/internal/library"
 	"github.com/duckpuppy/comic-server/internal/log"
 	csync "github.com/duckpuppy/comic-server/internal/sync"
@@ -53,6 +54,15 @@ type Server struct {
 	cvClient *comicvine.Client
 	cvCache  *comicvine.Cache
 	scraper  *comicvine.Scraper
+
+	komgaStatus *komga.StatusStore
+}
+
+// SetKomgaStatus wires Komga sync status reporting into the API server.
+// Call this once at startup when Komga sync is enabled; without it,
+// /api/komga/status responds with 503 Service Unavailable.
+func (s *Server) SetKomgaStatus(status *komga.StatusStore) {
+	s.komgaStatus = status
 }
 
 // SetScraper wires ComicVine scraper support into the API server. Call this
@@ -124,6 +134,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/scrape/status", s.handleScrapeStatus)
 	s.mux.HandleFunc("/api/scrape/review", s.handleScrapeReviewList)
 	s.mux.HandleFunc("/api/scrape/review/", s.handleScrapeReviewResolve)
+
+	// Komga sync endpoints
+	s.mux.HandleFunc("/api/komga/status", s.handleKomgaStatus)
 
 	// WebSocket endpoint
 	s.mux.HandleFunc("/ws", s.handleWebSocket)
