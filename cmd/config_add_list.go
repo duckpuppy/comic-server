@@ -26,12 +26,13 @@ var (
 	addListLibraryPath string
 
 	// Sync option flags
-	onlyUnread   bool
-	keepLastRead bool
-	onlyChecked  bool
-	limit        int
-	limitType    string
-	sortType     string
+	onlyUnread        bool
+	keepLastRead      bool
+	keepLastReadCount int
+	onlyChecked       bool
+	limit             int
+	limitType         string
+	sortType          string
 )
 
 func runAddList(cmd *cobra.Command, args []string) error {
@@ -100,7 +101,7 @@ func runAddList(cmd *cobra.Command, args []string) error {
 			fmt.Println("  - Only unread books")
 		}
 		if settings.KeepLastRead {
-			fmt.Println("  - Keep last read books")
+			fmt.Printf("  - Keep last read books (%d)\n", sync.EffectiveKeepLastReadCount(settings))
 		}
 		if settings.OnlyChecked {
 			fmt.Println("  - Only checked books")
@@ -122,6 +123,7 @@ func parseSyncOptions(cmd *cobra.Command) (*sync.SharedListSettings, error) {
 	// Check if any flags were set
 	flagsSet := cmd.Flags().Changed("only-unread") ||
 		cmd.Flags().Changed("keep-last-read") ||
+		cmd.Flags().Changed("keep-last-read-count") ||
 		cmd.Flags().Changed("only-checked") ||
 		cmd.Flags().Changed("limit") ||
 		cmd.Flags().Changed("limit-type") ||
@@ -141,6 +143,9 @@ func parseSyncOptions(cmd *cobra.Command) (*sync.SharedListSettings, error) {
 	}
 	if cmd.Flags().Changed("keep-last-read") {
 		settings.KeepLastRead = keepLastRead
+	}
+	if cmd.Flags().Changed("keep-last-read-count") {
+		settings.KeepLastReadCount = keepLastReadCount
 	}
 	if cmd.Flags().Changed("only-checked") {
 		settings.OnlyChecked = onlyChecked
@@ -202,6 +207,7 @@ func init() {
 	// Sync option flags
 	addListCmd.Flags().BoolVar(&onlyUnread, "only-unread", false, "Only sync unread books")
 	addListCmd.Flags().BoolVar(&keepLastRead, "keep-last-read", false, "Keep recently read books")
+	addListCmd.Flags().IntVar(&keepLastReadCount, "keep-last-read-count", 0, "Number of recently read books to keep (default 3)")
 	addListCmd.Flags().BoolVar(&onlyChecked, "only-checked", false, "Only sync checked books")
 	addListCmd.Flags().IntVar(&limit, "limit", 0, "Limit number of books (0 = no limit)")
 	addListCmd.Flags().StringVar(&limitType, "limit-type", "books", "Limit type: books, mb, or gb")

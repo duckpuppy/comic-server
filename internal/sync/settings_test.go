@@ -238,6 +238,89 @@ func TestApplySettings_OnlyUnreadWithKeepLastRead(t *testing.T) {
 	}
 }
 
+// TestApplySettings_KeepLastReadCount verifies the configured
+// KeepLastReadCount is honored, and that omitting it (zero value) falls
+// back to the ComicRackCE default of 3.
+func TestApplySettings_KeepLastReadCount(t *testing.T) {
+	now := time.Now()
+	newBooks := func() []*library.ComicBook {
+		books := []*library.ComicBook{
+			createTestBook("1", "Batman", 2020, 1, "1", 20, 0),  // Unread
+			createTestBook("2", "Batman", 2020, 1, "2", 20, 20), // Read (most recent)
+			createTestBook("3", "Batman", 2020, 1, "3", 20, 20), // Read
+			createTestBook("4", "Batman", 2020, 1, "4", 20, 20), // Read
+			createTestBook("5", "Batman", 2020, 1, "5", 20, 20), // Read (oldest)
+		}
+		books[1].OpenedTime = library.ComicTime{Time: now.AddDate(0, 0, -1)}
+		books[2].OpenedTime = library.ComicTime{Time: now.AddDate(0, 0, -2)}
+		books[3].OpenedTime = library.ComicTime{Time: now.AddDate(0, 0, -3)}
+		books[4].OpenedTime = library.ComicTime{Time: now.AddDate(0, 0, -4)}
+		return books
+	}
+
+	tests := []struct {
+		name       string
+		count      int
+		wantTotal  int // unread (1 book) + kept read books
+		wantKeptID string
+	}{
+		{name: "explicit count of 1", count: 1, wantTotal: 2, wantKeptID: "2"},
+		{name: "explicit count of 2", count: 2, wantTotal: 3, wantKeptID: "3"},
+		{name: "zero falls back to default of 3", count: 0, wantTotal: 4, wantKeptID: "4"},
+		{name: "negative falls back to default of 3", count: -1, wantTotal: 4, wantKeptID: "4"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			settings := &SharedListSettings{
+				OnlyUnread:        true,
+				KeepLastRead:      true,
+				KeepLastReadCount: tt.count,
+			}
+
+			result, err := ApplySettings(newBooks(), settings)
+			if err != nil {
+				t.Fatalf("ApplySettings failed: %v", err)
+			}
+			if len(result) != tt.wantTotal {
+				t.Errorf("Expected %d books, got %d", tt.wantTotal, len(result))
+			}
+
+			var haveOldestKept bool
+			for _, book := range result {
+				if book.ID == tt.wantKeptID {
+					haveOldestKept = true
+				}
+			}
+			if !haveOldestKept {
+				t.Errorf("Expected kept books to include the %s-th most recently read book (ID %s)", tt.name, tt.wantKeptID)
+			}
+		})
+	}
+}
+
+// TestEffectiveKeepLastReadCount verifies the standalone helper used for
+// display purposes matches ApplySettings' own fallback behavior.
+func TestEffectiveKeepLastReadCount(t *testing.T) {
+	tests := []struct {
+		name  string
+		count int
+		want  int
+	}{
+		{name: "explicit positive value", count: 5, want: 5},
+		{name: "zero falls back to 3", count: 0, want: 3},
+		{name: "negative falls back to 3", count: -2, want: 3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			settings := &SharedListSettings{KeepLastReadCount: tt.count}
+			if got := EffectiveKeepLastReadCount(settings); got != tt.want {
+				t.Errorf("EffectiveKeepLastReadCount() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestApplySettings_SortAndLimit tests sorting followed by limiting
 func TestApplySettings_SortAndLimit(t *testing.T) {
 	books := []*library.ComicBook{

@@ -121,7 +121,11 @@ type SharedListSettings struct {
 	// Filtering options
 	OnlyUnread   bool `yaml:"only_unread" toml:"only_unread"`       // Only sync unread books (CurrentPage < PageCount)
 	KeepLastRead bool `yaml:"keep_last_read" toml:"keep_last_read"` // When OnlyUnread=true, include N recently read books for context
-	OnlyChecked  bool `yaml:"only_checked" toml:"only_checked"`     // Only sync books marked as "checked"
+	// KeepLastReadCount is N above. Zero (including configs saved before this
+	// field existed) falls back to the ComicRackCE default of 3 in
+	// ApplySettings, so omitting it from YAML/TOML is backward compatible.
+	KeepLastReadCount int  `yaml:"keep_last_read_count,omitempty" toml:"keep_last_read_count,omitempty"`
+	OnlyChecked       bool `yaml:"only_checked" toml:"only_checked"` // Only sync books marked as "checked"
 
 	// Limiting options
 	Limit          bool      `yaml:"limit" toml:"limit"`                       // Enable limiting
@@ -136,15 +140,27 @@ type SharedListSettings struct {
 // DefaultSettings returns the default SharedListSettings
 func DefaultSettings() *SharedListSettings {
 	return &SharedListSettings{
-		OnlyUnread:     false,
-		KeepLastRead:   false,
-		OnlyChecked:    false,
-		Limit:          false,
-		LimitValue:     50,
-		LimitValueType: LimitTypeBooks,
-		Sort:           true,
-		ListSortType:   SortTypeSeries,
+		OnlyUnread:        false,
+		KeepLastRead:      false,
+		KeepLastReadCount: 3,
+		OnlyChecked:       false,
+		Limit:             false,
+		LimitValue:        50,
+		LimitValueType:    LimitTypeBooks,
+		Sort:              true,
+		ListSortType:      SortTypeSeries,
 	}
+}
+
+// EffectiveKeepLastReadCount returns the number of recently-read books kept
+// when KeepLastRead is enabled. A zero KeepLastReadCount (unset, or a config
+// saved before this field existed) falls back to the ComicRackCE default of
+// 3, so omitting it from YAML/TOML is backward compatible.
+func EffectiveKeepLastReadCount(settings *SharedListSettings) int {
+	if settings.KeepLastReadCount <= 0 {
+		return 3
+	}
+	return settings.KeepLastReadCount
 }
 
 // ApplySettings applies all configured options to a list of books
@@ -174,8 +190,7 @@ func ApplySettings(books []*library.ComicBook, settings *SharedListSettings) ([]
 			}
 
 			// Add back the most recently opened books
-			// TODO: Make this configurable (default 3 from ComicRackCE)
-			keepCount := 3
+			keepCount := EffectiveKeepLastReadCount(settings)
 			lastRead := getMostRecentlyOpened(readBooks, keepCount)
 			result = append(result, lastRead...)
 		}

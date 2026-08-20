@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/duckpuppy/comic-server/internal/config"
+	"github.com/duckpuppy/comic-server/internal/sync"
 	"github.com/spf13/cobra"
 )
 
@@ -62,7 +63,7 @@ func runShowDevice(cmd *cobra.Command, args []string) error {
 			fmt.Println("  - Only unread books")
 		}
 		if device.DefaultSettings.KeepLastRead {
-			fmt.Println("  - Keep last read books")
+			fmt.Printf("  - Keep last read books (%d)\n", sync.EffectiveKeepLastReadCount(device.DefaultSettings))
 		}
 		if device.DefaultSettings.OnlyChecked {
 			fmt.Println("  - Only checked books")

@@ -26,12 +26,13 @@ var (
 	setOptionsLibraryPath string
 
 	// Sync option flags for set-options
-	setOnlyUnread   *bool
-	setKeepLastRead *bool
-	setOnlyChecked  *bool
-	setLimit        *int
-	setLimitType    string
-	setSortType     string
+	setOnlyUnread        *bool
+	setKeepLastRead      *bool
+	setKeepLastReadCount *int
+	setOnlyChecked       *bool
+	setLimit             *int
+	setLimitType         string
+	setSortType          string
 )
 
 func runSetOptions(cmd *cobra.Command, args []string) error {
@@ -100,6 +101,9 @@ func runSetOptions(cmd *cobra.Command, args []string) error {
 	}
 	if cmd.Flags().Changed("keep-last-read") {
 		settings.KeepLastRead = *setKeepLastRead
+	}
+	if cmd.Flags().Changed("keep-last-read-count") {
+		settings.KeepLastReadCount = *setKeepLastReadCount
 	}
 	if cmd.Flags().Changed("only-checked") {
 		settings.OnlyChecked = *setOnlyChecked
@@ -171,7 +175,7 @@ func runSetOptions(cmd *cobra.Command, args []string) error {
 		fmt.Println("  - Only unread books")
 	}
 	if settings.KeepLastRead {
-		fmt.Println("  - Keep last read books")
+		fmt.Printf("  - Keep last read books (%d)\n", sync.EffectiveKeepLastReadCount(settings))
 	}
 	if settings.OnlyChecked {
 		fmt.Println("  - Only checked books")
@@ -194,6 +198,7 @@ func init() {
 	// Use pointers for bool flags to detect if they were set
 	setOnlyUnread = setOptionsCmd.Flags().Bool("only-unread", false, "Only sync unread books")
 	setKeepLastRead = setOptionsCmd.Flags().Bool("keep-last-read", false, "Keep recently read books")
+	setKeepLastReadCount = setOptionsCmd.Flags().Int("keep-last-read-count", 0, "Number of recently read books to keep (default 3)")
 	setOnlyChecked = setOptionsCmd.Flags().Bool("only-checked", false, "Only sync checked books")
 	setLimit = setOptionsCmd.Flags().Int("limit", 0, "Limit number of books (0 = no limit)")
 	setOptionsCmd.Flags().StringVar(&setLimitType, "limit-type", "", "Limit type: books, mb, or gb")

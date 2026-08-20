@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/duckpuppy/comic-server/internal/library"
+	"github.com/duckpuppy/comic-server/internal/sync"
 )
 
 // ResolveDevice attempts to find a device by name or ID
@@ -145,7 +146,7 @@ func FormatSmartListConfig(list *SharedListConfig) string {
 			builder.WriteString("    - Only unread books\n")
 		}
 		if list.Settings.KeepLastRead {
-			builder.WriteString("    - Keep last read books\n")
+			builder.WriteString(fmt.Sprintf("    - Keep last read books (%d)\n", sync.EffectiveKeepLastReadCount(list.Settings)))
 		}
 		if list.Settings.OnlyChecked {
 			builder.WriteString("    - Only checked books\n")
