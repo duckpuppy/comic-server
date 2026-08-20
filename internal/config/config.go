@@ -62,6 +62,12 @@ type KomgaConfig struct {
 	// var over committing a real key to a config file.
 	APIKey string `yaml:"api_key,omitempty" toml:"api_key,omitempty"`
 
+	// SyncIntervalSec is how often each target's smart list is re-evaluated
+	// and pushed to Komga. comic-server has no way to detect ComicRack
+	// library changes while running (see comic-server-bwz), so this is a
+	// scheduled push rather than change-triggered. Default: 900 (15 min).
+	SyncIntervalSec int `yaml:"sync_interval_sec,omitempty" toml:"sync_interval_sec,omitempty"`
+
 	// Path mapping: comic-server's library paths are rooted at LocalRoot;
 	// Komga sees the same files rooted at RemoteRoot. Directory structure
 	// below the root is assumed identical, so translation is a simple
@@ -170,6 +176,9 @@ func (c *Config) ApplyDefaults() {
 	if c.Server.IgnoreDevices == nil {
 		c.Server.IgnoreDevices = []string{}
 	}
+	if c.Server.Komga.SyncIntervalSec == 0 {
+		c.Server.Komga.SyncIntervalSec = 900 // 15 minutes
+	}
 }
 
 // Validate checks the configuration for errors
@@ -229,6 +238,9 @@ func (kc *KomgaConfig) Validate() error {
 	}
 	if kc.LocalRoot == "" || kc.RemoteRoot == "" {
 		return fmt.Errorf("komga.local_root and komga.remote_root are both required when komga.enabled is true")
+	}
+	if kc.SyncIntervalSec < 0 {
+		return fmt.Errorf("komga.sync_interval_sec must be >= 0, got %d", kc.SyncIntervalSec)
 	}
 
 	seen := make(map[string]bool, len(kc.Targets))

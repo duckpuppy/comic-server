@@ -15,6 +15,7 @@ import (
 	"github.com/duckpuppy/comic-server/internal/comicvine"
 	"github.com/duckpuppy/comic-server/internal/config"
 	"github.com/duckpuppy/comic-server/internal/device"
+	"github.com/duckpuppy/comic-server/internal/komga"
 	"github.com/duckpuppy/comic-server/internal/library"
 	"github.com/duckpuppy/comic-server/internal/log"
 	"github.com/duckpuppy/comic-server/internal/protocol"
@@ -314,6 +315,13 @@ func runServer(cmd *cobra.Command, args []string) error {
 	defer cvCancel()
 	if cfg.Server.ComicVineAPIKey != "" {
 		go startComicVineSync(cvCtx, cfg.Server.ComicVineAPIKey, backend)
+	}
+
+	// Start Komga collection/read-list sync if enabled
+	komgaCtx, komgaCancel := context.WithCancel(context.Background())
+	defer komgaCancel()
+	if cfg.Server.Komga.Enabled {
+		go startKomgaSync(komgaCtx, cfg.Server.Komga, backend)
 	}
 
 	// Handle signals gracefully
@@ -979,6 +987,76 @@ func startComicVineSync(ctx context.Context, apiKey string, backend library.Back
 
 	// Final update after sync completes
 	updateCVData(backend, books, cache)
+}
+
+// startKomgaSync runs komga.Syncer for the life of ctx, pushing each
+// configured target's smart list result into Komga on cfg.SyncIntervalSec.
+// comic-server has no way to detect ComicRack library changes while
+// running (see comic-server-bwz), so this is a scheduled push, not
+// change-triggered.
+func startKomgaSync(ctx context.Context, cfg config.KomgaConfig, backend library.Backend) {
+	targets := make([]komga.Target, 0, len(cfg.Targets))
+	for _, t := range cfg.Targets {
+		if !t.Enabled {
+			continue
+		}
+		var targetType komga.TargetType
+		switch t.Type {
+		case config.KomgaTargetCollection:
+			targetType = komga.TargetCollection
+		case config.KomgaTargetReadList:
+			targetType = komga.TargetReadList
+		default:
+			log.Error().Str("list_id", t.ListID).Str("type", string(t.Type)).Msg("Komga sync: unknown target type, skipping")
+			continue
+		}
+		targets = append(targets, komga.Target{
+			ListID:    t.ListID,
+			KomgaName: t.KomgaName,
+			Type:      targetType,
+		})
+	}
+
+	if len(targets) == 0 {
+		log.Warn().Msg("Komga sync: enabled but no enabled targets configured, nothing to do")
+		return
+	}
+
+	syncer := komga.NewSyncer(backend, komga.SyncOptions{
+		BaseURL:    cfg.BaseURL,
+		APIKey:     cfg.APIKey,
+		LocalRoot:  cfg.LocalRoot,
+		RemoteRoot: cfg.RemoteRoot,
+		Targets:    targets,
+		Interval:   time.Duration(cfg.SyncIntervalSec) * time.Second,
+	})
+
+	log.Info().
+		Int("targets", len(targets)).
+		Int("interval_sec", cfg.SyncIntervalSec).
+		Str("base_url", cfg.BaseURL).
+		Msg("Komga sync: starting background sync")
+
+	syncer.Run(ctx, func(r komga.TargetResult) {
+		logger := log.With().Str("komga_name", r.Target.KomgaName).Str("list_id", r.Target.ListID).Logger()
+		if r.Err != nil {
+			logger.Error().Err(r.Err).Msg("Komga sync: target push failed")
+			return
+		}
+		event := logger.Info().Int("matched", r.MatchedCount)
+		if len(r.Unmatched) > 0 {
+			event = event.Int("unmatched", len(r.Unmatched))
+		}
+		event.Msg("Komga sync: target pushed")
+
+		for _, u := range r.Unmatched {
+			logger.Warn().
+				Str("book_id", u.Book.ID).
+				Str("file_path", u.Book.FilePath).
+				Str("reason", u.Reason).
+				Msg("Komga sync: book skipped (unmatched)")
+		}
+	})
 }
 
 func updateCVData(backend library.Backend, books []library.ComicBook, cache *comicvine.Cache) {

@@ -109,6 +109,14 @@ func TestKomgaConfigValidate(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "negative sync_interval_sec",
+			komga: KomgaConfig{
+				Enabled: true, BaseURL: "https://x", APIKey: "secret", LocalRoot: "a", RemoteRoot: "b",
+				SyncIntervalSec: -1,
+			},
+			wantErr: true,
+		},
+		{
 			name: "readlist target type is valid",
 			komga: KomgaConfig{
 				Enabled: true, BaseURL: "https://x", APIKey: "secret", LocalRoot: "a", RemoteRoot: "b",
