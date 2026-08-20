@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/duckpuppy/comic-server/internal/config"
 	"github.com/duckpuppy/comic-server/internal/device"
@@ -79,5 +80,23 @@ func TestHandleKomgaStatus_ReturnsSnapshot(t *testing.T) {
 	}
 	if len(snap.Targets[0].Unmatched) != 1 || snap.Targets[0].Unmatched[0].BookID != "1" {
 		t.Errorf("unexpected unmatched books: %+v", snap.Targets[0].Unmatched)
+	}
+}
+
+func TestInvalidateListCache(t *testing.T) {
+	cache := library.NewListCache(5 * time.Minute)
+	cache.SetCount("list-1", 42)
+
+	srv := newKomgaTestServer(t)
+	srv.listCache = cache
+
+	if _, found := cache.GetCount("list-1"); !found {
+		t.Fatal("expected cache to have a count before invalidation")
+	}
+
+	srv.InvalidateListCache()
+
+	if _, found := cache.GetCount("list-1"); found {
+		t.Error("expected InvalidateListCache to clear cached counts, but one was still present")
 	}
 }

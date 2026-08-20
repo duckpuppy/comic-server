@@ -229,3 +229,15 @@ func (c *LibraryCache) LastSaveTime() time.Time {
 	defer c.mu.RUnlock()
 	return c.lastSave
 }
+
+// SetLibrary replaces the library the cache tracks, used by
+// XMLBackend.Reload when the library file is re-read from disk. Any
+// pending dirty tracking is cleared - callers are expected to have
+// flushed before calling this, so nothing is lost.
+func (c *LibraryCache) SetLibrary(lib *ComicLibrary) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.library = lib
+	c.dirtyBooks = make(map[string]bool)
+	cacheDirtyBooksGauge.Set(0)
+}

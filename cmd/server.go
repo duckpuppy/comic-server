@@ -327,8 +327,36 @@ func runServer(cmd *cobra.Command, args []string) error {
 	// Start Komga collection/read-list sync if enabled
 	komgaCtx, komgaCancel := context.WithCancel(context.Background())
 	defer komgaCancel()
+	var komgaSyncer *komga.Syncer
 	if cfg.Server.Komga.Enabled {
-		go startKomgaSync(komgaCtx, cfg.Server.Komga, backend, komgaStatus)
+		komgaSyncer = buildKomgaSyncer(cfg.Server.Komga, backend)
+		if komgaSyncer != nil {
+			go startKomgaSync(komgaCtx, komgaSyncer, cfg.Server.Komga, komgaStatus)
+		}
+	}
+
+	// Watch the library file for external changes (e.g. ComicRack saving
+	// ComicDb.xml) and reload automatically. Only applies to the XML
+	// backend with a real file path - the SQLite backend has no file to
+	// watch, and an XMLBackend built without a path can't reload anyway.
+	if xmlBackend, ok := backend.(*library.XMLBackend); ok && cfg.Server.LibraryPath != "" {
+		watcher, err := library.NewWatcher(xmlBackend, cfg.Server.LibraryPath)
+		if err != nil {
+			log.Warn().Err(err).Msg("Failed to start library file watcher; library changes will require a restart to pick up")
+		} else {
+			watcher.OnReload(func() {
+				apiServer.InvalidateListCache()
+				wsHub.Broadcast(websocket.EventLibraryReloaded, map[string]any{
+					"book_count": xmlBackend.BookCount(),
+				})
+				if komgaSyncer != nil {
+					komgaSyncer.TriggerNow()
+				}
+			})
+			watcherCtx, watcherCancel := context.WithCancel(context.Background())
+			defer watcherCancel()
+			go watcher.Run(watcherCtx)
+		}
 	}
 
 	// Handle signals gracefully
@@ -1001,7 +1029,12 @@ func startComicVineSync(ctx context.Context, apiKey string, backend library.Back
 // comic-server has no way to detect ComicRack library changes while
 // running (see comic-server-bwz), so this is a scheduled push, not
 // change-triggered.
-func startKomgaSync(ctx context.Context, cfg config.KomgaConfig, backend library.Backend, status *komga.StatusStore) {
+// buildKomgaSyncer translates config.KomgaConfig into a *komga.Syncer,
+// skipping disabled targets. Returns nil if no targets end up enabled - the
+// caller should not start a sync goroutine in that case. Split out from
+// startKomgaSync so callers (e.g. the library watcher) can hold a reference
+// to the syncer and call TriggerNow() on it.
+func buildKomgaSyncer(cfg config.KomgaConfig, backend library.Backend) *komga.Syncer {
 	targets := make([]komga.Target, 0, len(cfg.Targets))
 	for _, t := range cfg.Targets {
 		if !t.Enabled {
@@ -1026,10 +1059,10 @@ func startKomgaSync(ctx context.Context, cfg config.KomgaConfig, backend library
 
 	if len(targets) == 0 {
 		log.Warn().Msg("Komga sync: enabled but no enabled targets configured, nothing to do")
-		return
+		return nil
 	}
 
-	syncer := komga.NewSyncer(backend, komga.SyncOptions{
+	return komga.NewSyncer(backend, komga.SyncOptions{
 		BaseURL:    cfg.BaseURL,
 		APIKey:     cfg.APIKey,
 		LocalRoot:  cfg.LocalRoot,
@@ -1037,9 +1070,12 @@ func startKomgaSync(ctx context.Context, cfg config.KomgaConfig, backend library
 		Targets:    targets,
 		Interval:   time.Duration(cfg.SyncIntervalSec) * time.Second,
 	})
+}
 
+// startKomgaSync runs syncer for the life of ctx, recording results into
+// status and logging matched/unmatched counts and errors.
+func startKomgaSync(ctx context.Context, syncer *komga.Syncer, cfg config.KomgaConfig, status *komga.StatusStore) {
 	log.Info().
-		Int("targets", len(targets)).
 		Int("interval_sec", cfg.SyncIntervalSec).
 		Str("base_url", cfg.BaseURL).
 		Msg("Komga sync: starting background sync")

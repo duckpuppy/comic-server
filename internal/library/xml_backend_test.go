@@ -203,6 +203,129 @@ func TestXMLBackend_UpdateBooksMarksDirty(t *testing.T) {
 	}
 }
 
+func TestXMLBackend_Reload_PicksUpExternalChange(t *testing.T) {
+	path := newTestXMLLibraryFile(t)
+
+	backend, err := NewXMLBackend(path, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate ComicRack (or another process) rewriting the file externally.
+	externalLib := &ComicLibrary{
+		ID: "test-library",
+		Books: []ComicBook{
+			{ID: "book-1", Series: "Batman", Title: "Externally Updated Title"},
+			{ID: "book-2", Series: "Robin", Title: "New Book"},
+		},
+	}
+	if err := SaveLibrary(path, externalLib); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := backend.Reload(); err != nil {
+		t.Fatalf("Reload() error = %v", err)
+	}
+
+	if backend.BookCount() != 2 {
+		t.Fatalf("expected 2 books after reload, got %d", backend.BookCount())
+	}
+	book, err := backend.GetBook("book-1")
+	if err != nil || book == nil || book.Title != "Externally Updated Title" {
+		t.Errorf("expected reloaded book-1 title, got %+v (err=%v)", book, err)
+	}
+}
+
+func TestXMLBackend_Reload_FlushesPendingChangesFirst(t *testing.T) {
+	path := newTestXMLLibraryFile(t)
+
+	backend, err := NewXMLBackend(path, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Dirty an in-memory change comic-server hasn't flushed yet.
+	if err := backend.UpdateBook(&ComicBook{ID: "book-1", Series: "Batman", Title: "Our Pending Edit"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := backend.Reload(); err != nil {
+		t.Fatalf("Reload() error = %v", err)
+	}
+
+	// The pending edit must have been flushed to disk before the reload
+	// read it back, not silently discarded.
+	book, err := backend.GetBook("book-1")
+	if err != nil || book == nil || book.Title != "Our Pending Edit" {
+		t.Errorf("expected pending edit to survive reload, got %+v (err=%v)", book, err)
+	}
+}
+
+func TestXMLBackend_Reload_WithLibraryCache(t *testing.T) {
+	path := newTestXMLLibraryFile(t)
+
+	backend, err := NewXMLBackend(path, time.Hour) // flushInterval > 0 configures a LibraryCache
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	externalLib := &ComicLibrary{
+		ID: "test-library",
+		Books: []ComicBook{
+			{ID: "book-1", Series: "Batman", Title: "Cache Path External Title"},
+		},
+	}
+	if err := SaveLibrary(path, externalLib); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := backend.Reload(); err != nil {
+		t.Fatalf("Reload() error = %v", err)
+	}
+
+	book, err := backend.GetBook("book-1")
+	if err != nil || book == nil || book.Title != "Cache Path External Title" {
+		t.Errorf("expected reloaded title via cache path, got %+v (err=%v)", book, err)
+	}
+
+	// The cache must have been repointed to the new library too, or a
+	// subsequent auto-flush would silently overwrite the just-reloaded
+	// external change with the stale pre-reload object.
+	if backend.Cache().GetLibrary() != backend.Library() {
+		t.Error("expected LibraryCache to be repointed to the reloaded library")
+	}
+}
+
+func TestXMLBackend_Reload_NoLibraryPathErrors(t *testing.T) {
+	lib := &ComicLibrary{Books: []ComicBook{{ID: "book-1"}}}
+	backend := NewXMLBackendFromLibrary(lib, "", nil)
+
+	if err := backend.Reload(); err == nil {
+		t.Error("expected Reload() to error when no library path is configured")
+	}
+}
+
+func TestXMLBackend_LastWriteTime_UpdatesOnFlush(t *testing.T) {
+	path := newTestXMLLibraryFile(t)
+	backend, err := NewXMLBackend(path, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	before := backend.LastWriteTime()
+
+	if err := backend.UpdateBook(&ComicBook{ID: "book-1", Series: "Batman", Title: "New"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := backend.Flush(); err != nil {
+		t.Fatal(err)
+	}
+
+	if !backend.LastWriteTime().After(before) {
+		t.Errorf("expected LastWriteTime to advance after Flush, before=%v after=%v", before, backend.LastWriteTime())
+	}
+}
+
 func TestXMLBackend_EmptyLibraryPathFlushIsNoOp(t *testing.T) {
 	lib := &ComicLibrary{Books: []ComicBook{{ID: "book-1"}}}
 	backend := NewXMLBackendFromLibrary(lib, "", nil)

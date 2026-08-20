@@ -65,6 +65,14 @@ func (s *Server) SetKomgaStatus(status *komga.StatusStore) {
 	s.komgaStatus = status
 }
 
+// InvalidateListCache clears the cached smart-list book counts. Call this
+// whenever the underlying library is reloaded from disk (see
+// library.Watcher), since the counts were computed against the pre-reload
+// data and won't self-expire for up to the cache's TTL otherwise.
+func (s *Server) InvalidateListCache() {
+	s.listCache.InvalidateAll()
+}
+
 // SetScraper wires ComicVine scraper support into the API server. Call this
 // once at startup when a ComicVine API key is configured; without it, the
 // /api/scrape endpoints respond with 503 Service Unavailable.

@@ -50,6 +50,7 @@ type Syncer struct {
 	client  *Client
 	backend library.Backend
 	opts    SyncOptions
+	trigger chan struct{}
 }
 
 // NewSyncer creates a Syncer. backend is used to evaluate each target's
@@ -62,6 +63,18 @@ func NewSyncer(backend library.Backend, opts SyncOptions) *Syncer {
 		client:  NewClient(opts.BaseURL, opts.APIKey),
 		backend: backend,
 		opts:    opts,
+		trigger: make(chan struct{}, 1),
+	}
+}
+
+// TriggerNow requests an immediate sync pass in addition to the regular
+// interval (e.g. when the library was just reloaded from an external
+// change). Safe to call before Run starts or concurrently with it; requests
+// that arrive while one is already pending are coalesced into one pass.
+func (s *Syncer) TriggerNow() {
+	select {
+	case s.trigger <- struct{}{}:
+	default:
 	}
 }
 
@@ -75,10 +88,10 @@ type TargetResult struct {
 	Err          error
 }
 
-// Run performs an immediate sync, then repeats on opts.Interval until ctx
-// is canceled. onResult is called once per target per sync pass (and once
-// with a zero Target if building the Komga index itself fails); it may be
-// nil.
+// Run performs an immediate sync, then repeats on opts.Interval - or
+// whenever TriggerNow is called - until ctx is canceled. onResult is called
+// once per target per sync pass (and once with a zero Target if building
+// the Komga index itself fails); it may be nil.
 func (s *Syncer) Run(ctx context.Context, onResult func(TargetResult)) {
 	s.syncOnce(ctx, onResult)
 
@@ -89,6 +102,8 @@ func (s *Syncer) Run(ctx context.Context, onResult func(TargetResult)) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			s.syncOnce(ctx, onResult)
+		case <-s.trigger:
 			s.syncOnce(ctx, onResult)
 		}
 	}

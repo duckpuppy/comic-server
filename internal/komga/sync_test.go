@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -231,6 +232,63 @@ func TestSyncer_Run_StopsOnContextCancel(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("Run() did not return after context cancellation")
 	}
+}
+
+func TestSyncer_TriggerNow_CausesImmediateExtraSync(t *testing.T) {
+	var syncCount int32
+
+	c, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/series" {
+			atomic.AddInt32(&syncCount, 1)
+		}
+		json.NewEncoder(w).Encode(pageResponse[Series]{Last: true})
+	})
+
+	backend := &fakeBackend{lists: map[string]*library.ComicListItem{}}
+	// Long interval - only TriggerNow should cause the second sync within the test window.
+	syncer := NewSyncer(backend, SyncOptions{Interval: time.Hour})
+	syncer.client = c
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		syncer.Run(ctx, nil)
+		close(done)
+	}()
+
+	// Wait for the initial immediate sync from Run() itself.
+	deadline := time.Now().Add(2 * time.Second)
+	for atomic.LoadInt32(&syncCount) < 1 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if atomic.LoadInt32(&syncCount) < 1 {
+		t.Fatal("expected at least 1 sync from Run()'s initial pass")
+	}
+
+	syncer.TriggerNow()
+
+	deadline = time.Now().Add(2 * time.Second)
+	for atomic.LoadInt32(&syncCount) < 2 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := atomic.LoadInt32(&syncCount); got < 2 {
+		t.Errorf("expected TriggerNow to cause a 2nd sync pass, got %d total passes", got)
+	}
+
+	<-done
+}
+
+func TestSyncer_TriggerNow_CoalescesBeforeRunStarts(t *testing.T) {
+	backend := &fakeBackend{lists: map[string]*library.ComicListItem{}}
+	syncer := NewSyncer(backend, SyncOptions{})
+
+	// Calling TriggerNow before Run starts (buffered channel of size 1)
+	// must not block or panic, and a second call should coalesce rather
+	// than block.
+	syncer.TriggerNow()
+	syncer.TriggerNow()
 }
 
 func TestNewSyncer_DefaultsInterval(t *testing.T) {
