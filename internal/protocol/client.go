@@ -3,6 +3,7 @@ package protocol
 import (
 	"fmt"
 	"net"
+	"strconv"
 	"time"
 )
 
@@ -54,7 +55,7 @@ func (c *Client) connect() (net.Conn, error) {
 	var err error
 
 	for attempt := 0; attempt <= c.retries; attempt++ {
-		address := fmt.Sprintf("%s:%d", c.deviceIP, c.devicePort)
+		address := net.JoinHostPort(c.deviceIP, strconv.Itoa(c.devicePort))
 		conn, err = net.DialTimeout("tcp", address, c.connectionTimeout)
 		if err == nil {
 			return conn, nil
