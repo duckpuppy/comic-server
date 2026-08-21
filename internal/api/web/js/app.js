@@ -98,6 +98,19 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize dashboard
     dashboard.init();
 
+    // Show build version/commit in the header for tying test observations
+    // back to a specific deploy
+    fetch('/api/version')
+        .then(res => res.json())
+        .then(info => {
+            const el = document.getElementById('build-version');
+            if (el && info.git_commit) {
+                el.textContent = info.git_commit.slice(0, 7);
+                el.title = `Version: ${info.version}\nCommit: ${info.git_commit}\nBuilt: ${info.build_date}`;
+            }
+        })
+        .catch(error => console.error('Failed to load version info:', error));
+
     // Register routes
     router.register('/', () => {
         navigation.setActive('dashboard');
