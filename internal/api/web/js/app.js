@@ -106,6 +106,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const dashboardContent = document.getElementById('dashboard-content');
         if (app && !dashboardContent && dashboardHTML) {
             app.innerHTML = dashboardHTML;
+            dashboard.updateStats();
+            // Re-render from already-cached data (kept fresh by background
+            // polling even while these panels were detached) instead of
+            // waiting for the next 5-10s interval tick to repopulate them.
+            deviceManager.render();
+            syncManager.renderActiveSyncs();
+            syncManager.renderSyncHistory();
         }
         dashboard.show();
     });
