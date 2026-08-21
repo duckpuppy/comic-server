@@ -108,34 +108,18 @@ jobs:
           echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
-  prune-old-images:
-    runs-on: ubuntu-latest
-    needs: build-and-push
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    permissions:
-      packages: write
-
-    steps:
-      - name: Prune untagged images
-        uses: actions/delete-package-versions@v5
-        with:
-          package-name: ${{ github.event.repository.name }}
-          package-type: 'container'
-          min-versions-to-keep: 0
-          delete-only-untagged-versions: 'true'
-
-      - name: Prune old dev images
-        uses: actions/delete-package-versions@v5
-        with:
-          package-name: ${{ github.event.repository.name }}
-          package-type: 'container'
-          min-versions-to-keep: 5
-          ignore-versions: '^(latest|v\\d+\\.\\d+\\.\\d+|\\d+\\.\\d+|\\d+)$'
-
-      - name: Generate cleanup summary
-        run: |
-          echo "## Image Cleanup Complete" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- Deleted all untagged images" >> $GITHUB_STEP_SUMMARY
-          echo "- Kept latest 5 dev/branch images" >> $GITHUB_STEP_SUMMARY
-          echo "- Kept all tagged releases (vX.Y.Z)" >> $GITHUB_STEP_SUMMARY
+  # Image pruning (prune-old-images job) is intentionally removed. In a
+  # multi-arch (buildx) push, the per-platform manifests (amd64/arm64) are
+  # stored as *untagged* package versions - only the top-level manifest
+  # list/index carries the tag. actions/delete-package-versions has no
+  # concept of manifest-list references, so any "delete old/untagged
+  # versions" policy risks deleting a per-platform manifest a still-tagged
+  # index points to, breaking `docker pull` for that tag (the index itself
+  # resolves fine; the platform manifest it references 404s).
+  #
+  # This was confirmed happening for every single build since this workflow
+  # existed - the "Prune untagged images" step that used to run here
+  # (delete-only-untagged-versions: true, min-versions-to-keep: 0) deleted
+  # every freshly-pushed per-platform manifest immediately after every push.
+  # See comic-server-* bead / session notes around 2026-08-21 for the full
+  # diagnosis. Re-add pruning later only with a manifest-list-aware tool.
