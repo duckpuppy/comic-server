@@ -51,6 +51,58 @@ func countUnread(books []*library.ComicBook) int {
 	return n
 }
 
+// getListCounts returns (book count, unread count) for list, preferring the
+// fresh cache, then a stale-but-last-known cached value (kicking off a
+// background recompute to refresh it), and only falling back to a
+// synchronous recompute if this list has never been evaluated before. This
+// keeps a cache invalidation (TTL expiry, or any library reload) from
+// forcing every subsequent request to block on a full recompute - see
+// comic-server-cg1.
+func (s *Server) getListCounts(list *library.ComicListItem) (count, unread int) {
+	if c, u, found := s.listCache.GetCounts(list.ID); found {
+		return c, u
+	}
+
+	if c, u, found := s.listCache.GetStaleCounts(list.ID); found {
+		s.refreshListCountAsync(list)
+		return c, u
+	}
+
+	// Never evaluated before - nothing to serve yet, must compute now.
+	count, unread = s.evaluateListCounts(list)
+	s.listCache.SetCounts(list.ID, count, unread)
+	return count, unread
+}
+
+// evaluateListCounts runs the actual (potentially expensive) list
+// evaluation. Errors are logged and treated as a zero result rather than
+// failing the caller, matching the previous inline behavior at each call
+// site.
+func (s *Server) evaluateListCounts(list *library.ComicListItem) (count, unread int) {
+	matches, err := s.backend.GetBooksForList(list)
+	if err != nil {
+		log.Warn().Err(err).Str("list_id", list.ID).Str("list_name", list.Name).Msg("Failed to get books for list")
+		return 0, 0
+	}
+	return len(matches), countUnread(matches)
+}
+
+// refreshListCountAsync recomputes list's count/unread in the background
+// and updates the cache, unless a refresh for this list is already in
+// flight (see ListCache.TryBeginRefresh). The list is copied so the
+// goroutine doesn't race with the caller's use of the original pointer.
+func (s *Server) refreshListCountAsync(list *library.ComicListItem) {
+	if !s.listCache.TryBeginRefresh(list.ID) {
+		return
+	}
+	listCopy := *list
+	go func() {
+		defer s.listCache.EndRefresh(listCopy.ID)
+		count, unread := s.evaluateListCounts(&listCopy)
+		s.listCache.SetCounts(listCopy.ID, count, unread)
+	}()
+}
+
 // buildListTree recursively builds a tree structure from ComicListItems
 func (s *Server) buildListTree(items []library.ComicListItem) []ListTreeNode {
 	nodes := make([]ListTreeNode, 0)
@@ -74,17 +126,7 @@ func (s *Server) buildListTree(items []library.ComicListItem) []ListTreeNode {
 			// Recursively build children for folders
 			node.Children = s.buildListTree(item.ChildItems)
 		} else if isSmartOrId {
-			count, unread, found := s.listCache.GetCounts(item.ID)
-			if !found {
-				matches, err := s.backend.GetBooksForList(item)
-				if err != nil {
-					count, unread = 0, 0
-				} else {
-					count = len(matches)
-					unread = countUnread(matches)
-				}
-				s.listCache.SetCounts(item.ID, count, unread)
-			}
+			count, unread := s.getListCounts(item)
 
 			node.BookCount = count
 			node.UnreadCount = unread
@@ -175,32 +217,7 @@ func (s *Server) handleGetLists(w http.ResponseWriter, r *http.Request) {
 			// Include smart lists and id lists (not folders or reading lists)
 			isSmartOrId := strings.Contains(list.Type, "SmartList") || strings.Contains(list.Type, "IdListItem")
 			if isSmartOrId {
-				count, unread, found := s.listCache.GetCounts(list.ID)
-				if !found {
-					log.Debug().
-						Str("list_name", list.Name).
-						Int("total_books", s.backend.BookCount()).
-						Int("matcher_count", len(list.Matchers)).
-						Msg("Evaluating list")
-
-					matches, err := s.backend.GetBooksForList(&list)
-					if err != nil {
-						log.Warn().Err(err).
-							Str("list_id", list.ID).
-							Str("list_name", list.Name).
-							Msg("Failed to get books for list")
-						count, unread = 0, 0
-					} else {
-						count = len(matches)
-						unread = countUnread(matches)
-						log.Debug().
-							Str("list_name", list.Name).
-							Int("matched_books", count).
-							Int("unread_books", unread).
-							Msg("List evaluation complete")
-					}
-					s.listCache.SetCounts(list.ID, count, unread)
-				}
+				count, unread := s.getListCounts(&list)
 
 				lists = append(lists, ListSummary{
 					ID:           list.ID,
@@ -342,19 +359,7 @@ func (s *Server) handleGetListDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get cached counts
-	count, unread, found := s.listCache.GetCounts(listID)
-	if !found {
-		matches, err := s.backend.GetBooksForList(targetList)
-		if err != nil {
-			log.Warn().Err(err).Str("list_id", listID).Msg("Failed to get books for list")
-			count, unread = 0, 0
-		} else {
-			count = len(matches)
-			unread = countUnread(matches)
-		}
-		s.listCache.SetCounts(listID, count, unread)
-	}
+	count, unread := s.getListCounts(targetList)
 
 	// Format matchers
 	matchers := make([]library.MatcherInfo, len(targetList.Matchers))

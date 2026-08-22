@@ -11,6 +11,60 @@ import (
 	"github.com/duckpuppy/comic-server/internal/library"
 )
 
+// TestGetListCounts_ServesStaleWhileRefreshingInBackground verifies that
+// once a list's cached count has been computed at least once, a later
+// invalidation (TTL expiry or InvalidateAll on library reload) doesn't
+// force the next request to block on a full recompute: getListCounts
+// serves the last-known (here, deliberately wrong) value immediately and
+// only the background refresh converges on the real count - see
+// comic-server-cg1.
+func TestGetListCounts_ServesStaleWhileRefreshingInBackground(t *testing.T) {
+	lib := &library.ComicLibrary{
+		Books: []library.ComicBook{
+			{ID: "book-1", Series: "Batman"},
+		},
+		ComicLists: []library.ComicListItem{
+			{
+				ID:          "list-1",
+				Name:        "Batman",
+				Type:        "ComicSmartListItem",
+				MatcherMode: "And",
+				Matchers: []library.ComicBookMatcher{
+					{Type: "Series", MatchOperator: "0", MatchValue: "Batman"},
+				},
+			},
+		},
+	}
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	cache := library.NewListCache(5 * time.Minute)
+
+	server := &Server{backend: backend, listCache: cache}
+	list := &lib.ComicLists[0]
+
+	// Seed a deliberately wrong cached value, then invalidate it - this
+	// simulates a real count having gone stale (TTL expiry or a library
+	// reload), not a first-ever computation.
+	cache.SetCounts("list-1", 999, 999)
+	cache.Invalidate("list-1")
+
+	count, unread := server.getListCounts(list)
+	if count != 999 || unread != 999 {
+		t.Fatalf("expected getListCounts to serve the stale value (999, 999) immediately, got (%d, %d)", count, unread)
+	}
+
+	// The background refresh should converge on the real count shortly.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if c, _, found := cache.GetCounts("list-1"); found && c == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for background refresh to update the cache with the real count (1)")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 func TestHandleGetLists(t *testing.T) {
 	// Create test library with smart lists
 	lib := &library.ComicLibrary{
