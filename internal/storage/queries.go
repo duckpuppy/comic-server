@@ -515,21 +515,18 @@ func (db *DB) UpdateBookFields(book *library.ComicBook) error {
 		return fmt.Errorf("update book %s: %w", book.ID, err)
 	}
 
-	// Update tags if changed
-	if book.Tags != "" {
-		// Delete existing tags
-		if _, err := db.Exec("DELETE FROM book_tags WHERE book_id = ?", book.ID); err != nil {
-			return fmt.Errorf("delete tags: %w", err)
+	// Replace tags unconditionally - book.Tags == "" must clear them, not
+	// leave stale rows behind (see comic-server-dfs).
+	if _, err := db.Exec("DELETE FROM book_tags WHERE book_id = ?", book.ID); err != nil {
+		return fmt.Errorf("delete tags: %w", err)
+	}
+	tags := splitTags(book.Tags)
+	for _, tag := range tags {
+		if tag == "" {
+			continue
 		}
-		// Insert new tags
-		tags := splitTags(book.Tags)
-		for _, tag := range tags {
-			if tag == "" {
-				continue
-			}
-			if _, err := db.Exec("INSERT INTO book_tags (book_id, tag) VALUES (?, ?)", book.ID, tag); err != nil {
-				return fmt.Errorf("insert tag: %w", err)
-			}
+		if _, err := db.Exec("INSERT INTO book_tags (book_id, tag) VALUES (?, ?)", book.ID, tag); err != nil {
+			return fmt.Errorf("insert tag: %w", err)
 		}
 	}
 

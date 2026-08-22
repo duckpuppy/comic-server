@@ -71,6 +71,60 @@ func TestGetBook(t *testing.T) {
 	}
 }
 
+// TestUpdateBookFields_ClearsTagsToEmpty verifies that reverse-syncing a
+// book with Tags == "" (device cleared all tags) actually removes the
+// existing book_tags rows, matching XMLBackend's behavior of overwriting
+// the whole book in place. See comic-server-dfs: the previous
+// `if book.Tags != ""` guard silently skipped the delete, leaving stale
+// tags behind.
+func TestUpdateBookFields_ClearsTagsToEmpty(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	db, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	defer db.Close()
+
+	lib := &library.ComicLibrary{
+		ID: "test-library-id",
+		Books: []library.ComicBook{
+			{ID: "book-1", FilePath: "/path/to/book1.cbz", Tags: "action, superhero"},
+		},
+	}
+	if _, err := db.Import(lib, ImportOptions{}); err != nil {
+		t.Fatalf("import: %v", err)
+	}
+
+	book, err := db.GetBook("book-1")
+	if err != nil || book == nil {
+		t.Fatalf("get book: book=%+v err=%v", book, err)
+	}
+	if book.Tags == "" {
+		t.Fatal("expected tags to be loaded before clearing")
+	}
+
+	book.Tags = ""
+	if err := db.UpdateBookFields(book); err != nil {
+		t.Fatalf("UpdateBookFields: %v", err)
+	}
+
+	cleared, err := db.GetBook("book-1")
+	if err != nil || cleared == nil {
+		t.Fatalf("get book after clear: book=%+v err=%v", cleared, err)
+	}
+	if cleared.Tags != "" {
+		t.Errorf("expected tags to be cleared, got %q", cleared.Tags)
+	}
+
+	var count int
+	if err := db.QueryRow("SELECT COUNT(*) FROM book_tags WHERE book_id = ?", "book-1").Scan(&count); err != nil {
+		t.Fatalf("count book_tags: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("expected 0 book_tags rows after clearing, got %d", count)
+	}
+}
+
 func TestGetBookNotFound(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 	db, err := Open(dbPath)
