@@ -186,16 +186,10 @@ func (b *SQLiteBackend) MatchBooks(list *library.ComicListItem) ([]*library.Comi
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
-	// Get all books and evaluate in memory
-	// TODO: Could optimize with SQL queries for simple matchers
-	books, err := b.db.GetAllBooks()
+	tempLib, err := b.tempLibraryLocked()
 	if err != nil {
 		return nil, err
 	}
-
-	// Create a temporary library for matching
-	tempLib := &library.ComicLibrary{Books: books}
-	tempLib.SetCVData(b.cvData)
 	return tempLib.MatchBooks(list)
 }
 
@@ -204,14 +198,33 @@ func (b *SQLiteBackend) GetBooksForList(list *library.ComicListItem) ([]*library
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
+	tempLib, err := b.tempLibraryLocked()
+	if err != nil {
+		return nil, err
+	}
+	return tempLib.GetBooksForList(list)
+}
+
+// tempLibraryLocked builds an in-memory library.ComicLibrary snapshot for
+// matcher evaluation. Includes ComicLists (not just Books) so BaseListId
+// scoping resolves via FindListByID the same way it does on XMLBackend -
+// see comic-server-hha. Caller must hold at least b.mu.RLock().
+//
+// TODO: Could optimize with SQL queries for simple matchers instead of
+// loading everything into memory (comic-server-770).
+func (b *SQLiteBackend) tempLibraryLocked() (*library.ComicLibrary, error) {
 	books, err := b.db.GetAllBooks()
 	if err != nil {
 		return nil, err
 	}
+	lists, err := b.db.GetAllLists()
+	if err != nil {
+		return nil, err
+	}
 
-	tempLib := &library.ComicLibrary{Books: books}
+	tempLib := &library.ComicLibrary{Books: books, ComicLists: lists}
 	tempLib.SetCVData(b.cvData)
-	return tempLib.GetBooksForList(list)
+	return tempLib, nil
 }
 
 // SetCVData sets ComicVine enrichment data for use by CV smart list matchers

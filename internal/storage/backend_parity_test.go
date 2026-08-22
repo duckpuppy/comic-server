@@ -22,13 +22,9 @@ import (
 //     returns nil. This is a real behavioral gap (SQLite silently no-ops),
 //     not a deliberate design choice - tracked here rather than silently
 //     assumed away.
-//   - MatchBooks/GetBooksForList with BaseListId set: XMLBackend resolves
-//     the base list against the full library tree. SQLiteBackend evaluates
-//     matchers against a temporary library built from GetAllBooks() only
-//     (no ComicLists), so a BaseListId scope silently fails to resolve
-//     (FindListByID returns nil) and the smart list evaluates as empty
-//     instead of scoped. Not covered by the shared suite; see
-//     TestSQLiteBackend_BaseListIdScopeNotSupported below.
+// BaseListId scoping (comic-server-hha) used to diverge here too - fixed by
+// including ComicLists in the temporary library MatchBooks/GetBooksForList
+// build, so it's covered by the shared suite (TestBackend_MatchBooks) now.
 
 func fixtureLibrary() *library.ComicLibrary {
 	return &library.ComicLibrary{
@@ -278,6 +274,31 @@ func TestBackend_MatchBooks(t *testing.T) {
 			if len(marvelBooks) != 1 || marvelBooks[0].ID != "book-4" {
 				t.Fatalf("expected exactly [book-4], got %+v", marvelBooks)
 			}
+
+			// BaseListId scoping (comic-server-hha): a smart list scoped to
+			// "My Reading" (book-3, book-4) filtered further to Superman
+			// should resolve the base list and match only book-3, not the
+			// unscoped Superman book-3 match against the whole library (which
+			// would be the same result here, so also scope to "Marvel" to
+			// prove the base list is actually being resolved and not just
+			// falling back to the full library).
+			scoped := &library.ComicListItem{
+				Type:        "ComicSmartListItem",
+				ID:          "list-scoped",
+				Name:        "Scoped",
+				MatcherMode: "And",
+				BaseListId:  "list-reading-1",
+				Matchers: []library.ComicBookMatcher{
+					{Type: "Publisher", MatchOperator: "0", MatchValue: "DC Comics"},
+				},
+			}
+			scopedBooks, err := backend.MatchBooks(scoped)
+			if err != nil {
+				t.Fatalf("MatchBooks(scoped): %v", err)
+			}
+			if len(scopedBooks) != 1 || scopedBooks[0].ID != "book-3" {
+				t.Fatalf("expected BaseListId scoping to resolve 'My Reading' (book-3, book-4) and match only book-3 (DC Comics), got %+v", scopedBooks)
+			}
 		})
 	}
 }
@@ -487,43 +508,6 @@ func TestBackend_MoveList(t *testing.T) {
 
 // --- Documented behavioral differences (not part of the shared suite) ---
 
-// TestSQLiteBackend_BaseListIdScopeNotSupported documents a real gap: unlike
-// XMLBackend, SQLiteBackend.MatchBooks evaluates matchers against a
-// temporary in-memory library built from GetAllBooks() only - it has no
-// ComicLists, so a smart list's BaseListId never resolves. Where XMLBackend
-// would scope to the base list's results, SQLiteBackend's FindListByID(base)
-// returns nil, MatchBooks treats that as an empty base list, and the scoped
-// list always evaluates to zero books - it silently returns nothing instead
-// of falling back to the whole library. Tracked as a known SQLiteBackend gap
-// (see comic-server-770 and comic-server-22c for related SQLite backend
-// enrichment/optimization gaps); not fixed here since this issue's scope is
-// test coverage, not backend parity fixes.
-func TestSQLiteBackend_BaseListIdScopeNotSupported(t *testing.T) {
-	backend := newSQLiteBackendFixture(t)
-
-	scoped := &library.ComicListItem{
-		Type:        "ComicSmartListItem",
-		ID:          "list-scoped",
-		Name:        "Scoped",
-		MatcherMode: "And",
-		BaseListId:  "list-reading-1",
-		Matchers: []library.ComicBookMatcher{
-			{Type: "Series", MatchOperator: "0", MatchValue: "Superman"},
-		},
-	}
-
-	books, err := backend.MatchBooks(scoped)
-	if err != nil {
-		t.Fatalf("MatchBooks: %v", err)
-	}
-	if len(books) != 0 {
-		t.Fatalf("expected BaseListId scoping to silently no-op on SQLiteBackend (0 books), got %+v - if this now passes, BaseListId support was added and this test/comment should be updated", books)
-	}
-}
-
-// TestBackend_UpdateList_MissingID documents that the two backends diverge
-// on updating a list ID that doesn't exist: XMLBackend returns an error,
-// SQLiteBackend's UPDATE affects zero rows and returns nil.
 // cvDataSetter is implemented by both XMLBackend and SQLiteBackend but is
 // deliberately not part of the library.Backend interface (it's an
 // enrichment side-channel set by the ComicVine sync orchestrator, not core
@@ -570,6 +554,9 @@ func TestBackend_CVDataMatchers(t *testing.T) {
 	}
 }
 
+// TestBackend_UpdateList_MissingID documents that the two backends diverge
+// on updating a list ID that doesn't exist: XMLBackend returns an error,
+// SQLiteBackend's UPDATE affects zero rows and returns nil.
 func TestBackend_UpdateList_MissingID(t *testing.T) {
 	xmlBackend := newXMLBackendFixture(t)
 	if err := xmlBackend.UpdateList(&library.ComicListItem{ID: "does-not-exist", Name: "X"}); err == nil {
