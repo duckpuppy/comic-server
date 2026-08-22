@@ -524,6 +524,52 @@ func TestSQLiteBackend_BaseListIdScopeNotSupported(t *testing.T) {
 // TestBackend_UpdateList_MissingID documents that the two backends diverge
 // on updating a list ID that doesn't exist: XMLBackend returns an error,
 // SQLiteBackend's UPDATE affects zero rows and returns nil.
+// cvDataSetter is implemented by both XMLBackend and SQLiteBackend but is
+// deliberately not part of the library.Backend interface (it's an
+// enrichment side-channel set by the ComicVine sync orchestrator, not core
+// library data - see cmd/server.go's updateCVData and comic-server-22c).
+type cvDataSetter interface {
+	SetCVData(map[string]*library.CVCompleteness)
+}
+
+// TestBackend_CVDataMatchers verifies SQLiteBackend now supports CV smart
+// list matchers (CVSeriesComplete/CVMissingCount/CVPercentOwned) the same
+// way XMLBackend does, via SetCVData - closing comic-server-22c.
+func TestBackend_CVDataMatchers(t *testing.T) {
+	for name, newBackend := range backendFixtures() {
+		t.Run(name, func(t *testing.T) {
+			backend := newBackend(t)
+
+			setter, ok := backend.(cvDataSetter)
+			if !ok {
+				t.Fatalf("%s backend does not implement SetCVData", name)
+			}
+			setter.SetCVData(map[string]*library.CVCompleteness{
+				"book-1": {TotalIssues: 10, OwnedIssues: 10, MissingCount: 0, PercentOwned: 100, IsComplete: "Yes"},
+				"book-2": {TotalIssues: 10, OwnedIssues: 6, MissingCount: 4, PercentOwned: 60, IsComplete: "No"},
+			})
+
+			list := &library.ComicListItem{
+				Type:        "ComicSmartListItem",
+				ID:          "list-cv-complete",
+				Name:        "Complete Series",
+				MatcherMode: "And",
+				Matchers: []library.ComicBookMatcher{
+					{Type: "ComicServerCVSeriesCompleteMatcher", MatchOperator: "0"}, // Yes
+				},
+			}
+
+			books, err := backend.MatchBooks(list)
+			if err != nil {
+				t.Fatalf("MatchBooks: %v", err)
+			}
+			if len(books) != 1 || books[0].ID != "book-1" {
+				t.Fatalf("expected CV data to be attached and match [book-1] as complete, got %+v", books)
+			}
+		})
+	}
+}
+
 func TestBackend_UpdateList_MissingID(t *testing.T) {
 	xmlBackend := newXMLBackendFixture(t)
 	if err := xmlBackend.UpdateList(&library.ComicListItem{ID: "does-not-exist", Name: "X"}); err == nil {

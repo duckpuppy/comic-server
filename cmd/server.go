@@ -1126,8 +1126,14 @@ func updateCVData(backend library.Backend, books []library.ComicBook, cache *com
 		log.Error().Err(err).Msg("ComicVine sync: failed to build completeness map")
 		return
 	}
-	if xmlBackend, ok := backend.(*library.XMLBackend); ok {
-		xmlBackend.SetCVData(cvData)
+	switch b := backend.(type) {
+	case *library.XMLBackend:
+		b.SetCVData(cvData)
 		log.Info().Int("books_with_cv_data", len(cvData)).Msg("ComicVine sync: completeness data updated")
+	case *storage.SQLiteBackend:
+		b.SetCVData(cvData)
+		log.Info().Int("books_with_cv_data", len(cvData)).Msg("ComicVine sync: completeness data updated")
+	default:
+		log.Warn().Msg("ComicVine sync: CV-based smart list matchers are unsupported on this backend type")
 	}
 }

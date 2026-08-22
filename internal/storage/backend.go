@@ -21,6 +21,10 @@ type SQLiteBackend struct {
 		id   string
 		name string
 	}
+	// cvData holds optional ComicVine enrichment data keyed by book ID, set
+	// via SetCVData and attached to the temporary library MatchBooks/
+	// GetBooksForList build for evaluation - see comic-server-22c.
+	cvData map[string]*library.CVCompleteness
 }
 
 // NewSQLiteBackend creates a new SQLite-based backend. xmlPath is the
@@ -191,6 +195,7 @@ func (b *SQLiteBackend) MatchBooks(list *library.ComicListItem) ([]*library.Comi
 
 	// Create a temporary library for matching
 	tempLib := &library.ComicLibrary{Books: books}
+	tempLib.SetCVData(b.cvData)
 	return tempLib.MatchBooks(list)
 }
 
@@ -205,7 +210,16 @@ func (b *SQLiteBackend) GetBooksForList(list *library.ComicListItem) ([]*library
 	}
 
 	tempLib := &library.ComicLibrary{Books: books}
+	tempLib.SetCVData(b.cvData)
 	return tempLib.GetBooksForList(list)
+}
+
+// SetCVData sets ComicVine enrichment data for use by CV smart list matchers
+// (CVSeriesComplete, CVMissingCount, CVPercentOwned). Mirrors XMLBackend.SetCVData.
+func (b *SQLiteBackend) SetCVData(data map[string]*library.CVCompleteness) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.cvData = data
 }
 
 // UpdateBook updates a single book in the database.
