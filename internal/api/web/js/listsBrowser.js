@@ -17,7 +17,71 @@ class ListsBrowser {
                 }
             };
         }
+        this.attachGlobalTouchHandling();
         this.render();
+    }
+
+    // Touch screens have no :hover, so the rename/move/delete overlay (shown
+    // on hover for a mouse) instead reveals via long-press, and hides again
+    // on the next tap outside it. Wired once here rather than per-render,
+    // since renderContent() replaces the row/tile elements on every
+    // navigation but the document itself persists.
+    attachGlobalTouchHandling() {
+        document.addEventListener('touchstart', (e) => {
+            document.querySelectorAll('.fb-icon-item.actions-visible, .fb-row.actions-visible').forEach(el => {
+                if (!el.contains(e.target)) el.classList.remove('actions-visible');
+            });
+        }, { passive: true, capture: true });
+    }
+
+    // Attaches long-press-to-reveal to one folder/list row or tile. A plain
+    // tap still falls through to its existing click handler (navigate); only
+    // a held touch (500ms, without significant finger movement) reveals the
+    // action buttons, and the touchend that completed the long-press is
+    // suppressed so it doesn't also fire a navigating click.
+    attachLongPress(el) {
+        const LONG_PRESS_MS = 500;
+        const MOVE_TOLERANCE_PX = 10;
+        let timer = null;
+        let longPressed = false;
+        let startX = 0;
+        let startY = 0;
+
+        const clearTimer = () => {
+            if (timer) clearTimeout(timer);
+            timer = null;
+        };
+
+        el.addEventListener('touchstart', (e) => {
+            longPressed = false;
+            const touch = e.touches[0];
+            startX = touch.clientX;
+            startY = touch.clientY;
+            timer = setTimeout(() => {
+                longPressed = true;
+                document.querySelectorAll('.fb-icon-item.actions-visible, .fb-row.actions-visible').forEach(n => {
+                    if (n !== el) n.classList.remove('actions-visible');
+                });
+                el.classList.add('actions-visible');
+                if (navigator.vibrate) navigator.vibrate(15);
+            }, LONG_PRESS_MS);
+        }, { passive: true });
+
+        el.addEventListener('touchmove', (e) => {
+            const touch = e.touches[0];
+            if (Math.abs(touch.clientX - startX) > MOVE_TOLERANCE_PX || Math.abs(touch.clientY - startY) > MOVE_TOLERANCE_PX) {
+                clearTimer();
+            }
+        }, { passive: true });
+
+        el.addEventListener('touchend', (e) => {
+            clearTimer();
+            if (longPressed) {
+                e.preventDefault(); // suppress the synthetic click this touch would otherwise fire
+            }
+        });
+
+        el.addEventListener('touchcancel', clearTimer);
     }
 
     findPathToFolder(targetId, items, currentPath) {
@@ -297,10 +361,12 @@ class ListsBrowser {
 
         document.querySelectorAll('[data-folder-id]').forEach(el => {
             el.addEventListener('click', () => this.navigateToFolder(el.dataset.folderId));
+            this.attachLongPress(el);
         });
 
         document.querySelectorAll('[data-list-id]').forEach(el => {
             el.addEventListener('click', () => router.navigate(`/lists/${el.dataset.listId}`));
+            this.attachLongPress(el);
         });
 
         document.querySelectorAll('.fb-crumb-link').forEach(crumb => {

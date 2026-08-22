@@ -1089,18 +1089,27 @@
     font-size: 0.9rem;
 }
 
-/* Folder/list action buttons (rename, delete, move) */
+/* Folder/list action buttons (rename, delete, move). Hidden state must be
+   pointer-events: none, not just opacity: 0 — an invisible-but-still-clickable
+   overlay sitting at the top of each row/tile is exactly what steals taps on
+   touch screens (no :hover to gate visibility there). Revealed via mouse
+   hover on desktop, or a long-press (see attachLongPress in listsBrowser.js)
+   toggling .actions-visible on touch. */
 .fb-item-actions,
 .fb-col-actions {
     display: flex;
     gap: 0.2rem;
     opacity: 0;
+    pointer-events: none;
     transition: opacity 0.15s;
 }
 
 .fb-icon-item:hover .fb-item-actions,
-.fb-row:hover .fb-col-actions {
+.fb-row:hover .fb-col-actions,
+.fb-icon-item.actions-visible .fb-item-actions,
+.fb-row.actions-visible .fb-col-actions {
     opacity: 1;
+    pointer-events: auto;
 }
 
 .fb-action-btn {
