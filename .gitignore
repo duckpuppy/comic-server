@@ -78,3 +78,6 @@ test.db
 
 .history/
 ComicDB-Real.xml
+
+# Session handoff notes (may reference internal infra/hosts)
+HANDOFF.md
