@@ -333,10 +333,14 @@ func runServer(cmd *cobra.Command, args []string) error {
 	defer komgaCancel()
 	var komgaSyncer *komga.Syncer
 	if cfg.Server.Komga.Enabled {
+		// Built even with zero enabled targets, so the web UI's Komga target
+		// management endpoints (comic-server-d3w) always have a live Syncer
+		// to push newly-added targets into via SetTargets/TriggerNow -
+		// otherwise the first target added after startup would need a
+		// restart to take effect.
 		komgaSyncer = buildKomgaSyncer(cfg.Server.Komga, backend)
-		if komgaSyncer != nil {
-			go startKomgaSync(komgaCtx, komgaSyncer, cfg.Server.Komga, komgaStatus)
-		}
+		apiServer.SetKomgaSyncer(komgaSyncer)
+		go startKomgaSync(komgaCtx, komgaSyncer, cfg.Server.Komga, komgaStatus)
 	}
 
 	// Watch the library source file for external changes (e.g. ComicRack
@@ -1037,13 +1041,37 @@ func startComicVineSync(ctx context.Context, apiKey string, backend library.Back
 // running (see comic-server-bwz), so this is a scheduled push, not
 // change-triggered.
 // buildKomgaSyncer translates config.KomgaConfig into a *komga.Syncer,
-// skipping disabled targets. Returns nil if no targets end up enabled - the
-// caller should not start a sync goroutine in that case. Split out from
-// startKomgaSync so callers (e.g. the library watcher) can hold a reference
-// to the syncer and call TriggerNow() on it.
+// skipping disabled targets. Always returns a non-nil Syncer when Komga
+// sync is enabled - even with zero enabled targets - so the web UI's Komga
+// target management endpoints (comic-server-d3w) always have a live Syncer
+// to call SetTargets/TriggerNow on. Syncer.syncOnce is a no-op when there
+// are no targets, so this doesn't cost any Komga API calls while idle.
+// Split out from startKomgaSync so callers (e.g. the library watcher) can
+// hold a reference to the syncer and call TriggerNow() on it.
 func buildKomgaSyncer(cfg config.KomgaConfig, backend library.Backend) *komga.Syncer {
-	targets := make([]komga.Target, 0, len(cfg.Targets))
-	for _, t := range cfg.Targets {
+	targets := komgaTargetsFromConfig(cfg.Targets)
+	if len(targets) == 0 {
+		log.Warn().Msg("Komga sync: enabled but no enabled targets configured yet")
+	}
+
+	return komga.NewSyncer(backend, komga.SyncOptions{
+		BaseURL:    cfg.BaseURL,
+		APIKey:     cfg.APIKey,
+		LocalRoot:  cfg.LocalRoot,
+		RemoteRoot: cfg.RemoteRoot,
+		Targets:    targets,
+		Interval:   time.Duration(cfg.SyncIntervalSec) * time.Second,
+	})
+}
+
+// komgaTargetsFromConfig translates enabled config.KomgaTarget entries into
+// komga.Target, skipping disabled targets and logging (then skipping) any
+// with an unrecognized Type. Used both at startup (buildKomgaSyncer) and by
+// the API server after a Komga target is added/updated/removed via the web
+// UI (comic-server-d3w) to rebuild the live Syncer's target set.
+func komgaTargetsFromConfig(cfgTargets []config.KomgaTarget) []komga.Target {
+	targets := make([]komga.Target, 0, len(cfgTargets))
+	for _, t := range cfgTargets {
 		if !t.Enabled {
 			continue
 		}
@@ -1063,20 +1091,7 @@ func buildKomgaSyncer(cfg config.KomgaConfig, backend library.Backend) *komga.Sy
 			Type:      targetType,
 		})
 	}
-
-	if len(targets) == 0 {
-		log.Warn().Msg("Komga sync: enabled but no enabled targets configured, nothing to do")
-		return nil
-	}
-
-	return komga.NewSyncer(backend, komga.SyncOptions{
-		BaseURL:    cfg.BaseURL,
-		APIKey:     cfg.APIKey,
-		LocalRoot:  cfg.LocalRoot,
-		RemoteRoot: cfg.RemoteRoot,
-		Targets:    targets,
-		Interval:   time.Duration(cfg.SyncIntervalSec) * time.Second,
-	})
+	return targets
 }
 
 // startKomgaSync runs syncer for the life of ctx, recording results into

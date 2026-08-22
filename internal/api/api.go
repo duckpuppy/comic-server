@@ -56,6 +56,7 @@ type Server struct {
 	scraper  *comicvine.Scraper
 
 	komgaStatus *komga.StatusStore
+	komgaSyncer *komga.Syncer
 }
 
 // SetKomgaStatus wires Komga sync status reporting into the API server.

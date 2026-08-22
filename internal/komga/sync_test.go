@@ -244,9 +244,20 @@ func TestSyncer_TriggerNow_CausesImmediateExtraSync(t *testing.T) {
 		json.NewEncoder(w).Encode(pageResponse[Series]{Last: true})
 	})
 
-	backend := &fakeBackend{lists: map[string]*library.ComicListItem{}}
+	backend := &fakeBackend{
+		lists: map[string]*library.ComicListItem{
+			"{GUID-1}": {ID: "{GUID-1}", Name: "Batman Comics"},
+		},
+		books: map[string][]*library.ComicBook{},
+	}
 	// Long interval - only TriggerNow should cause the second sync within the test window.
-	syncer := NewSyncer(backend, SyncOptions{Interval: time.Hour})
+	// A target must be configured, since syncOnce now skips BuildIndex
+	// entirely when there are no targets to push (avoids needless Komga API
+	// calls while idle - see comic-server-d3w).
+	syncer := NewSyncer(backend, SyncOptions{
+		Interval: time.Hour,
+		Targets:  []Target{{ListID: "{GUID-1}", KomgaName: "Batman Collection", Type: TargetCollection}},
+	})
 	syncer.client = c
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
@@ -289,6 +300,52 @@ func TestSyncer_TriggerNow_CoalescesBeforeRunStarts(t *testing.T) {
 	// than block.
 	syncer.TriggerNow()
 	syncer.TriggerNow()
+}
+
+// TestSyncer_SetTargets verifies SetTargets replaces the live target set
+// used by syncOnce, without needing a new Syncer or a config reload - the
+// mechanism the web UI's Komga target endpoints rely on (comic-server-d3w).
+func TestSyncer_SetTargets(t *testing.T) {
+	var seriesRequests int32
+	c, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/series" {
+			atomic.AddInt32(&seriesRequests, 1)
+		}
+		json.NewEncoder(w).Encode(pageResponse[Series]{Last: true})
+	})
+
+	backend := &fakeBackend{
+		lists: map[string]*library.ComicListItem{
+			"{GUID-1}": {ID: "{GUID-1}", Name: "Batman Comics"},
+		},
+		books: map[string][]*library.ComicBook{},
+	}
+
+	syncer := NewSyncer(backend, SyncOptions{})
+	syncer.client = c
+
+	// No targets configured yet - syncOnce should skip BuildIndex entirely.
+	syncer.syncOnce(context.Background(), nil)
+	if got := atomic.LoadInt32(&seriesRequests); got != 0 {
+		t.Fatalf("expected 0 requests with no targets, got %d", got)
+	}
+
+	if got := syncer.Targets(); len(got) != 0 {
+		t.Fatalf("expected Targets() to start empty, got %+v", got)
+	}
+
+	syncer.SetTargets([]Target{
+		{ListID: "{GUID-1}", KomgaName: "Batman Collection", Type: TargetCollection},
+	})
+
+	if got := syncer.Targets(); len(got) != 1 || got[0].ListID != "{GUID-1}" {
+		t.Fatalf("expected Targets() to reflect SetTargets, got %+v", got)
+	}
+
+	syncer.syncOnce(context.Background(), nil)
+	if got := atomic.LoadInt32(&seriesRequests); got != 1 {
+		t.Fatalf("expected SetTargets to take effect on the next syncOnce, got %d requests", got)
+	}
 }
 
 func TestNewSyncer_DefaultsInterval(t *testing.T) {

@@ -282,6 +282,23 @@ func (s *Server) handleListsRouter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// /api/library/lists/:listId/komga
+	if strings.HasSuffix(path, "/komga") {
+		switch r.Method {
+		case http.MethodGet:
+			s.handleGetListKomgaTarget(w, r)
+		case http.MethodPost:
+			s.handleCreateListKomgaTarget(w, r)
+		case http.MethodPut:
+			s.handleUpdateListKomgaTarget(w, r)
+		case http.MethodDelete:
+			s.handleDeleteListKomgaTarget(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+		return
+	}
+
 	http.NotFound(w, r)
 }
 

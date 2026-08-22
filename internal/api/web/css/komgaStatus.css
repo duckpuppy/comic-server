@@ -64,6 +64,16 @@
     letter-spacing: 0.025em;
 }
 
+.komga-disabled-note {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.375rem;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+}
+
 .komga-target-timestamp {
     font-size: 0.85rem;
     color: var(--text-secondary);

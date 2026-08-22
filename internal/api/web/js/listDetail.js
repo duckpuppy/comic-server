@@ -4,6 +4,7 @@ class ListDetail {
         this.listId = listId;
         this.list = null;
         this.devices = [];
+        this.komga = null; // { komga_enabled, target } - see loadKomgaTarget()
         this.preview = [];
         this.previewOffset = 0;
         this.previewLimit = 20;
@@ -33,6 +34,7 @@ class ListDetail {
         await Promise.all([
             this.loadListDetail(),
             this.loadDevices(),
+            this.loadKomgaTarget(),
             this.loadPreview(),
             this.loadSchema()
         ]);
@@ -72,6 +74,16 @@ class ListDetail {
         } catch (error) {
             console.error('Failed to load devices:', error);
             this.devices = [];
+        }
+    }
+
+    async loadKomgaTarget() {
+        try {
+            const response = await fetch(`/api/library/lists/${this.listId}/komga`);
+            this.komga = await response.json();
+        } catch (error) {
+            console.error('Failed to load Komga target:', error);
+            this.komga = { komga_enabled: false, target: null };
         }
     }
 
@@ -199,6 +211,14 @@ class ListDetail {
                     <h2>Device Assignments</h2>
                     <div class="device-assignments">
                         ${this.renderDeviceAssignments()}
+                    </div>
+                </div>
+
+                <!-- Komga Sync Panel -->
+                <div class="panel komga-panel">
+                    <h2>Komga Sync</h2>
+                    <div class="device-assignments">
+                        ${this.renderKomgaTarget()}
                     </div>
                 </div>
             </div>
@@ -390,6 +410,46 @@ class ListDetail {
                 </div>
             </div>
         `).join('');
+    }
+
+    renderKomgaTarget() {
+        const komga = this.komga || {};
+        const target = komga.target;
+
+        const disabledNote = !komga.komga_enabled
+            ? `<p class="komga-disabled-note">Komga integration is disabled in config.yaml - a target can still be saved here, but it won't sync until Komga is enabled.</p>`
+            : '';
+
+        if (!target) {
+            return `
+                ${disabledNote}
+                <p class="empty-message">This list is not synced to Komga.</p>
+                <button class="btn btn-primary" id="add-komga-target-btn">
+                    + Add Komga Target
+                </button>
+            `;
+        }
+
+        return `
+            ${disabledNote}
+            <div class="device-assignment-card" data-list-id="${this.escapeHtml(target.list_id)}">
+                <div class="device-assignment-info">
+                    <h4>${this.escapeHtml(target.komga_name)}
+                        <span class="komga-target-type">${target.type === 'readlist' ? 'Read List' : 'Collection'}</span>
+                    </h4>
+                    <span class="device-status ${target.enabled ? 'enabled' : 'disabled'}">
+                        ${target.enabled ? 'Enabled' : 'Disabled'}
+                    </span>
+                </div>
+                <div class="device-assignment-actions">
+                    <button class="btn btn-small" id="edit-komga-target-btn">Edit</button>
+                    <button class="btn btn-small btn-toggle" id="toggle-komga-target-btn" data-enabled="${target.enabled}">
+                        ${target.enabled ? 'Disable' : 'Enable'}
+                    </button>
+                    <button class="btn btn-small btn-danger" id="remove-komga-target-btn">Remove</button>
+                </div>
+            </div>
+        `;
     }
 
     renderComicsPreview() {
@@ -627,6 +687,34 @@ class ListDetail {
                 this.unassignDevice(deviceId);
             });
         });
+
+        // Komga sync target controls
+        const addKomgaBtn = document.getElementById('add-komga-target-btn');
+        if (addKomgaBtn) {
+            addKomgaBtn.addEventListener('click', () => this.showKomgaTargetModal());
+        }
+
+        const editKomgaBtn = document.getElementById('edit-komga-target-btn');
+        if (editKomgaBtn) {
+            editKomgaBtn.addEventListener('click', () => this.showKomgaTargetModal(this.komga.target));
+        }
+
+        const toggleKomgaBtn = document.getElementById('toggle-komga-target-btn');
+        if (toggleKomgaBtn) {
+            toggleKomgaBtn.addEventListener('click', () => {
+                const target = this.komga.target;
+                this.saveKomgaTarget({
+                    type: target.type,
+                    komga_name: target.komga_name,
+                    enabled: toggleKomgaBtn.dataset.enabled !== 'true'
+                }, { isUpdate: true });
+            });
+        }
+
+        const removeKomgaBtn = document.getElementById('remove-komga-target-btn');
+        if (removeKomgaBtn) {
+            removeKomgaBtn.addEventListener('click', () => this.removeKomgaTarget());
+        }
     }
 
     attachEditListeners() {
@@ -825,6 +913,95 @@ class ListDetail {
         } catch (error) {
             console.error('Failed to unassign device:', error);
             alert('Failed to remove list from device');
+        }
+    }
+
+    showKomgaTargetModal(existingTarget) {
+        const modal = document.getElementById('komga-target-modal');
+        const title = document.getElementById('komga-target-modal-title');
+        const typeSelect = document.getElementById('komga-target-type');
+        const nameInput = document.getElementById('komga-target-name');
+        const enabledCheck = document.getElementById('komga-target-enabled');
+        const saveBtn = document.getElementById('komga-target-save-btn');
+        const cancelBtn = document.getElementById('komga-target-cancel-btn');
+        const closeBtn = document.getElementById('komga-target-modal-close');
+
+        title.textContent = existingTarget ? 'Edit Komga Sync Target' : 'Add Komga Sync Target';
+        typeSelect.value = existingTarget ? existingTarget.type : 'collection';
+        nameInput.value = existingTarget ? existingTarget.komga_name : this.list.name;
+        enabledCheck.checked = existingTarget ? existingTarget.enabled : true;
+
+        const close = () => modal.classList.remove('active');
+        const onKeydown = (e) => {
+            if (e.key === 'Escape') close();
+        };
+        const onBackdropClick = (e) => {
+            if (e.target === modal) close();
+        };
+
+        closeBtn.onclick = close;
+        cancelBtn.onclick = close;
+        document.addEventListener('keydown', onKeydown, { once: true });
+        modal.addEventListener('click', onBackdropClick, { once: true });
+
+        saveBtn.onclick = async () => {
+            const komgaName = nameInput.value.trim();
+            if (!komgaName) {
+                alert('Komga name is required');
+                return;
+            }
+            saveBtn.disabled = true;
+            await this.saveKomgaTarget({
+                type: typeSelect.value,
+                komga_name: komgaName,
+                enabled: enabledCheck.checked
+            }, { isUpdate: !!existingTarget });
+            saveBtn.disabled = false;
+            close();
+        };
+
+        modal.classList.add('active');
+    }
+
+    async saveKomgaTarget(body, { isUpdate = false } = {}) {
+        try {
+            const response = await fetch(`/api/library/lists/${this.listId}/komga`, {
+                method: isUpdate ? 'PUT' : 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+
+            if (!response.ok) {
+                const text = await response.text();
+                throw new Error(text || 'Failed to save Komga target');
+            }
+
+            await this.loadKomgaTarget();
+            this.render();
+            this.attachListeners();
+        } catch (error) {
+            console.error('Failed to save Komga target:', error);
+            alert('Failed to save Komga target: ' + error.message);
+        }
+    }
+
+    async removeKomgaTarget() {
+        if (!confirm('Remove this list from Komga sync?')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/library/lists/${this.listId}/komga`, { method: 'DELETE' });
+            if (!response.ok) {
+                throw new Error('Failed to remove Komga target');
+            }
+
+            await this.loadKomgaTarget();
+            this.render();
+            this.attachListeners();
+        } catch (error) {
+            console.error('Failed to remove Komga target:', error);
+            alert('Failed to remove Komga target');
         }
     }
 

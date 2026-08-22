@@ -3,6 +3,7 @@ package komga
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/duckpuppy/comic-server/internal/library"
@@ -50,6 +51,9 @@ type Syncer struct {
 	client  *Client
 	backend library.Backend
 	opts    SyncOptions
+
+	targetsMu sync.RWMutex // protects opts.Targets specifically (see SetTargets)
+
 	trigger chan struct{}
 }
 
@@ -65,6 +69,26 @@ func NewSyncer(backend library.Backend, opts SyncOptions) *Syncer {
 		opts:    opts,
 		trigger: make(chan struct{}, 1),
 	}
+}
+
+// SetTargets replaces the set of targets pushed on each sync pass. Safe to
+// call concurrently with Run - e.g. from the web UI's Komga target
+// management endpoints (comic-server-d3w), so target changes take effect
+// without a config reload or restart. Call TriggerNow afterward to push the
+// new set immediately rather than waiting for the next interval.
+func (s *Syncer) SetTargets(targets []Target) {
+	s.targetsMu.Lock()
+	defer s.targetsMu.Unlock()
+	s.opts.Targets = targets
+}
+
+// Targets returns the current target set.
+func (s *Syncer) Targets() []Target {
+	s.targetsMu.RLock()
+	defer s.targetsMu.RUnlock()
+	targets := make([]Target, len(s.opts.Targets))
+	copy(targets, s.opts.Targets)
+	return targets
 }
 
 // TriggerNow requests an immediate sync pass in addition to the regular
@@ -110,6 +134,11 @@ func (s *Syncer) Run(ctx context.Context, onResult func(TargetResult)) {
 }
 
 func (s *Syncer) syncOnce(ctx context.Context, onResult func(TargetResult)) {
+	targets := s.Targets()
+	if len(targets) == 0 {
+		return
+	}
+
 	idx, err := BuildIndex(ctx, s.client)
 	if err != nil {
 		// BuildIndex already wraps err with context; pass it through as-is.
@@ -119,7 +148,7 @@ func (s *Syncer) syncOnce(ctx context.Context, onResult func(TargetResult)) {
 		return
 	}
 
-	for _, target := range s.opts.Targets {
+	for _, target := range targets {
 		result := s.syncTarget(ctx, idx, target)
 		if onResult != nil {
 			onResult(result)
