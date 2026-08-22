@@ -93,7 +93,7 @@ func TestUpsertCollection_CreatesWhenNotFound(t *testing.T) {
 	c, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/collections":
-			// Substring search returns no exact match.
+			// Unfiltered listing has no exact-name match.
 			json.NewEncoder(w).Encode(pageResponse[collectionDto]{
 				Content: []collectionDto{{ID: "other", Name: "Some Other Collection"}},
 				Last:    true,
@@ -126,7 +126,7 @@ func TestUpsertCollection_UpdatesWhenFoundByExactName(t *testing.T) {
 	c, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/collections":
-			// Substring search returns both an exact match and a decoy.
+			// Unfiltered listing has both an exact match and a decoy.
 			json.NewEncoder(w).Encode(pageResponse[collectionDto]{
 				Content: []collectionDto{
 					{ID: "decoy", Name: "My Collection 2"},

@@ -194,32 +194,58 @@ func (c *Client) UpsertReadList(ctx context.Context, name string, bookIDs []stri
 	return c.patch(ctx, "/api/v1/readlists/"+existing.ID, body)
 }
 
+// findCollectionByExactName lists every collection and matches the name
+// client-side, rather than using Komga's "search" query param. Komga's
+// collection search has been observed to silently return zero results for
+// collections it only just created via this same API (even for a plain
+// single-word substring of the name), well after the request that created
+// them returns — a stale-search-index quirk on Komga's side, not something
+// comic-server can fix. Relying on "search" for the exact-match lookup that
+// decides create-vs-update means a freshly-created collection looks
+// "not found" on the next sync, so the code re-POSTs a create and Komga
+// (correctly) rejects it as a duplicate name. Listing unfiltered sidesteps
+// that entirely.
 func (c *Client) findCollectionByExactName(ctx context.Context, name string) (*collectionDto, error) {
-	var resp pageResponse[collectionDto]
-	params := url.Values{"search": {name}, "size": {strconv.Itoa(pageSize)}}
-	if err := c.get(ctx, "/api/v1/collections", params, &resp); err != nil {
-		return nil, fmt.Errorf("search collections: %w", err)
-	}
-	for i := range resp.Content {
-		if resp.Content[i].Name == name {
-			return &resp.Content[i], nil
+	page := 0
+	for {
+		var resp pageResponse[collectionDto]
+		params := url.Values{"page": {strconv.Itoa(page)}, "size": {strconv.Itoa(pageSize)}}
+		if err := c.get(ctx, "/api/v1/collections", params, &resp); err != nil {
+			return nil, fmt.Errorf("list collections (page %d): %w", page, err)
 		}
+		for i := range resp.Content {
+			if resp.Content[i].Name == name {
+				return &resp.Content[i], nil
+			}
+		}
+		if resp.Last {
+			return nil, nil
+		}
+		page++
 	}
-	return nil, nil
 }
 
+// findReadListByExactName lists every read list and matches the name
+// client-side. See findCollectionByExactName for why: Komga's "search"
+// query param cannot be trusted to find recently-created entries.
 func (c *Client) findReadListByExactName(ctx context.Context, name string) (*readListDto, error) {
-	var resp pageResponse[readListDto]
-	params := url.Values{"search": {name}, "size": {strconv.Itoa(pageSize)}}
-	if err := c.get(ctx, "/api/v1/readlists", params, &resp); err != nil {
-		return nil, fmt.Errorf("search readlists: %w", err)
-	}
-	for i := range resp.Content {
-		if resp.Content[i].Name == name {
-			return &resp.Content[i], nil
+	page := 0
+	for {
+		var resp pageResponse[readListDto]
+		params := url.Values{"page": {strconv.Itoa(page)}, "size": {strconv.Itoa(pageSize)}}
+		if err := c.get(ctx, "/api/v1/readlists", params, &resp); err != nil {
+			return nil, fmt.Errorf("list readlists (page %d): %w", page, err)
 		}
+		for i := range resp.Content {
+			if resp.Content[i].Name == name {
+				return &resp.Content[i], nil
+			}
+		}
+		if resp.Last {
+			return nil, nil
+		}
+		page++
 	}
-	return nil, nil
 }
 
 func (c *Client) get(ctx context.Context, path string, params url.Values, dest any) error {
