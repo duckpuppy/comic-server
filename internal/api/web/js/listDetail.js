@@ -458,7 +458,8 @@ class ListDetail {
         }
 
         return this.preview.map(comic => `
-            <div class="comic-card">
+            <div class="comic-card${comic.unread ? '' : ' comic-read'}" title="${comic.unread ? '' : 'Read'}">
+                ${comic.unread ? '' : '<div class="comic-read-badge" title="Read">✓</div>'}
                 <div class="comic-placeholder">📖</div>
                 <div class="comic-info">
                     <div class="comic-series">${this.escapeHtml(comic.series)}</div>

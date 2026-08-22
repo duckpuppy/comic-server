@@ -349,6 +349,66 @@ func TestHandleGetListPreview(t *testing.T) {
 	}
 }
 
+// TestHandleGetListPreview_UnreadField verifies the preview endpoint
+// exposes each comic's read state (comic-server-9xg), so the list detail
+// page can visually distinguish read from unread comics.
+func TestHandleGetListPreview_UnreadField(t *testing.T) {
+	lib := &library.ComicLibrary{
+		Books: []library.ComicBook{
+			{ID: "comic-unread", Series: "Batman", Number: "1"}, // never opened
+			{ID: "comic-read", Series: "Batman", Number: "2", OpenCount: 1, PageCount: 20, LastPageRead: 19},
+			{ID: "comic-partial", Series: "Batman", Number: "3", OpenCount: 1, PageCount: 20, LastPageRead: 5},
+		},
+		ComicLists: []library.ComicListItem{
+			{
+				ID:          "list-123",
+				Name:        "Batman",
+				Type:        "ComicSmartListItem",
+				MatcherMode: "And",
+				Matchers: []library.ComicBookMatcher{
+					{Type: "Series", MatchOperator: "0", MatchValue: "Batman"},
+				},
+			},
+		},
+	}
+
+	cache := library.NewListCache(5 * time.Minute)
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	server := &Server{backend: backend, listCache: cache}
+
+	req := httptest.NewRequest("GET", "/api/library/lists/list-123/preview", nil)
+	w := httptest.NewRecorder()
+	server.handleGetListPreview(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d", w.Code)
+	}
+
+	var response struct {
+		Comics []struct {
+			ID     string `json:"id"`
+			Unread bool   `json:"unread"`
+		} `json:"comics"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	byID := make(map[string]bool)
+	for _, c := range response.Comics {
+		byID[c.ID] = c.Unread
+	}
+	if !byID["comic-unread"] {
+		t.Error("expected comic-unread to be unread")
+	}
+	if byID["comic-read"] {
+		t.Error("expected comic-read to NOT be unread")
+	}
+	if !byID["comic-partial"] {
+		t.Error("expected comic-partial (not fully read) to be unread")
+	}
+}
+
 func TestHandleGetListDevices(t *testing.T) {
 	// Create config with device assigned to list
 	cfg := &config.Config{

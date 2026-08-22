@@ -391,6 +391,7 @@ type ComicPreview struct {
 	Volume    int    `json:"volume"`
 	Publisher string `json:"publisher"`
 	Year      int    `json:"year"`
+	Unread    bool   `json:"unread"`
 }
 
 // handleGetListPreview returns a preview of comics matching the list
@@ -476,6 +477,7 @@ func (s *Server) handleGetListPreview(w http.ResponseWriter, r *http.Request) {
 			Volume:    comic.Volume,
 			Publisher: comic.Publisher,
 			Year:      comic.Year,
+			Unread:    comic.IsUnread(),
 		})
 	}
 

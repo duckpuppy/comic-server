@@ -824,6 +824,7 @@
 }
 
 .comic-card {
+    position: relative;
     background: var(--bg-primary);
     border: 1px solid var(--border-color);
     border-radius: 0.375rem;
@@ -835,6 +836,30 @@
 .comic-card:hover {
     border-color: var(--primary-color);
     box-shadow: var(--shadow-sm);
+}
+
+.comic-card.comic-read {
+    opacity: 0.55;
+}
+
+.comic-card.comic-read:hover {
+    opacity: 0.85;
+}
+
+.comic-read-badge {
+    position: absolute;
+    top: 0.4rem;
+    right: 0.4rem;
+    width: 1.25rem;
+    height: 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--primary-color);
+    color: #fff;
+    border-radius: 50%;
+    font-size: 0.75rem;
+    line-height: 1;
 }
 
 .comic-placeholder {
