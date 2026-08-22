@@ -170,8 +170,10 @@ class ListsBrowser {
         const lists = allItems.filter(n => !n.is_folder);
         const total = folders.length + lists.length;
 
+        const isAtRoot = this.pathStack.length === 0;
         const toolbar = `
             <div class="fb-toolbar">
+                <button id="fb-up-btn" class="fb-up-btn" title="Up one level" aria-label="Up one level"${isAtRoot ? ' disabled' : ''}>&#8592;</button>
                 ${this.renderBreadcrumb()}
                 <div class="fb-toolbar-actions">
                     <button id="new-list-btn" class="btn btn-primary btn-small">+ New List</button>
@@ -373,6 +375,10 @@ class ListsBrowser {
             crumb.addEventListener('click', () => {
                 this.navigateToBreadcrumb(parseInt(crumb.dataset.navIndex));
             });
+        });
+
+        document.getElementById('fb-up-btn')?.addEventListener('click', () => {
+            if (this.pathStack.length > 0) this.navigateToBreadcrumb(this.pathStack.length - 1);
         });
 
         document.querySelectorAll('.fb-view-btn').forEach(btn => {

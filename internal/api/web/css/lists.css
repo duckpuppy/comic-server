@@ -31,6 +31,35 @@
     min-height: 38px;
 }
 
+/* Up-one-level button — a thumb-sized tap target for mobile, where the
+   breadcrumb trail gets squeezed illegibly next to the toolbar's other
+   buttons (see .fb-breadcrumb below). Always present; disabled at root. */
+.fb-up-btn {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+}
+
+.fb-up-btn:hover:not(:disabled) {
+    background: var(--hover-bg);
+}
+
+.fb-up-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
 /* Breadcrumb */
 .fb-breadcrumb {
     display: flex;
@@ -67,6 +96,17 @@
     color: var(--text-secondary);
     padding: 0 1px;
     flex-shrink: 0;
+}
+
+/* Narrow screens: the .fb-up-btn now handles going up a level, so the
+   ancestor trail (which gets squeezed to unreadable next to the toolbar's
+   buttons) is dropped, leaving just the .fb-crumb-current — the current
+   folder's own name — so you still know where you are. */
+@media (max-width: 480px) {
+    .fb-breadcrumb .fb-crumb-link,
+    .fb-breadcrumb .fb-sep {
+        display: none;
+    }
 }
 
 /* View toggle buttons */
