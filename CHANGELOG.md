@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/duckpuppy/comic-server/compare/v1.2.0...v1.2.1) (2026-08-22)
+
+
+### Bug Fixes
+
+* stop relying on Komga's search filter for collection/read-list lookup ([7559dd6](https://github.com/duckpuppy/comic-server/commit/7559dd6be1c2000def1f3fe4048e80decce77070))
+
 ## [1.2.0](https://github.com/duckpuppy/comic-server/compare/v1.1.1...v1.2.0) (2026-08-22)
 
 
