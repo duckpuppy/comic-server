@@ -687,7 +687,29 @@ class ListDetail {
     }
 
     async showAssignDeviceDialog() {
-        // Fetch all registered devices
+        const modal = document.getElementById('assign-device-modal');
+        const listEl = document.getElementById('assign-device-list');
+        const confirmBtn = document.getElementById('assign-device-confirm-btn');
+        const cancelBtn = document.getElementById('assign-device-cancel-btn');
+        const closeBtn = document.getElementById('assign-device-modal-close');
+
+        const close = () => modal.classList.remove('active');
+        const onKeydown = (e) => {
+            if (e.key === 'Escape') close();
+        };
+        const onBackdropClick = (e) => {
+            if (e.target === modal) close();
+        };
+
+        closeBtn.onclick = close;
+        cancelBtn.onclick = close;
+        document.addEventListener('keydown', onKeydown, { once: true });
+        modal.addEventListener('click', onBackdropClick, { once: true });
+
+        listEl.innerHTML = '<p class="empty-message">Loading...</p>';
+        confirmBtn.disabled = true;
+        modal.classList.add('active');
+
         try {
             const response = await fetch('/api/devices');
             const data = await response.json();
@@ -698,27 +720,42 @@ class ListDetail {
             );
 
             if (availableDevices.length === 0) {
-                alert('No available devices to assign. All registered devices already have this list.');
+                listEl.innerHTML = '<p class="empty-message">All registered devices already have this list assigned.</p>';
                 return;
             }
 
-            // Simple prompt for now - could be improved with a proper modal
-            const deviceNames = availableDevices.map((d, i) => `${i + 1}. ${d.friendly_name || d.name} (${d.id})`).join('\n');
-            const selection = prompt(`Select a device to assign:\n\n${deviceNames}\n\nEnter device number:`);
+            listEl.innerHTML = availableDevices.map(d => `
+                <label class="assign-device-item">
+                    <input type="checkbox" value="${d.id}">
+                    <div>
+                        <div class="device-name">${d.friendly_name || d.name}</div>
+                        <div class="device-meta">${d.id}</div>
+                    </div>
+                </label>
+            `).join('');
+            confirmBtn.disabled = false;
 
-            if (selection) {
-                const index = parseInt(selection) - 1;
-                if (index >= 0 && index < availableDevices.length) {
-                    await this.assignDevice(availableDevices[index].id);
+            confirmBtn.onclick = async () => {
+                const selectedIds = Array.from(listEl.querySelectorAll('input[type="checkbox"]:checked'))
+                    .map(cb => cb.value);
+                if (selectedIds.length === 0) {
+                    close();
+                    return;
                 }
-            }
+                confirmBtn.disabled = true;
+                await Promise.all(selectedIds.map(id => this.assignDevice(id, { refresh: false })));
+                close();
+                await this.loadDevices();
+                this.render();
+                this.attachListeners();
+            };
         } catch (error) {
             console.error('Failed to fetch devices:', error);
-            alert('Failed to load available devices');
+            listEl.innerHTML = '<p class="empty-message">Failed to load available devices.</p>';
         }
     }
 
-    async assignDevice(deviceId) {
+    async assignDevice(deviceId, { refresh = true } = {}) {
         try {
             const response = await fetch(`/api/devices/lists/${deviceId}`, {
                 method: 'POST',
@@ -734,10 +771,11 @@ class ListDetail {
                 throw new Error('Failed to assign list');
             }
 
-            // Reload devices
-            await this.loadDevices();
-            this.render();
-            this.attachListeners();
+            if (refresh) {
+                await this.loadDevices();
+                this.render();
+                this.attachListeners();
+            }
         } catch (error) {
             console.error('Failed to assign device:', error);
             alert('Failed to assign list to device');

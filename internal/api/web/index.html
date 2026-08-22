@@ -96,6 +96,25 @@
         </div>
     </div>
 
+    <!-- Assign List to Device(s) Modal -->
+    <div id="assign-device-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Assign to Device</h2>
+                <button class="modal-close" id="assign-device-modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="assign-device-list" class="assign-device-list">
+                    <p class="empty-message">Loading...</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="assign-device-cancel-btn">Cancel</button>
+                <button class="btn btn-primary" id="assign-device-confirm-btn">Assign</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Templates -->
     <template id="device-card-template">
         <div class="device-card" data-device-id="">
