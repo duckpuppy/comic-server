@@ -68,10 +68,12 @@ func (s *Server) buildListTree(items []library.ComicListItem) []ListTreeNode {
 			IsFolder: isFolder,
 		}
 
+		isSmartOrId := strings.Contains(item.Type, "SmartList") || strings.Contains(item.Type, "IdListItem")
+
 		if isFolder {
 			// Recursively build children for folders
 			node.Children = s.buildListTree(item.ChildItems)
-		} else if strings.Contains(item.Type, "SmartList") || strings.Contains(item.Type, "IdListItem") {
+		} else if isSmartOrId {
 			count, unread, found := s.listCache.GetCounts(item.ID)
 			if !found {
 				matches, err := s.backend.GetBooksForList(item)
@@ -88,6 +90,11 @@ func (s *Server) buildListTree(items []library.ComicListItem) []ListTreeNode {
 			node.UnreadCount = unread
 			node.MatcherCount = len(item.Matchers)
 			node.MatcherMode = item.MatcherMode
+		} else {
+			// Not a folder and not a smart/id list (e.g. a plain reading
+			// list) - skip it so the tree only ever contains what
+			// handleGetLists() (the dashboard's source of truth) counts.
+			continue
 		}
 
 		nodes = append(nodes, node)

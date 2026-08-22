@@ -81,6 +81,73 @@ func TestHandleGetLists(t *testing.T) {
 	}
 }
 
+// TestHandleGetListTree_MatchesHandleGetLists guards against the nav badge
+// (backed by /api/library/list-tree) diverging from the dashboard's "Smart
+// Lists" stat (backed by /api/library/lists) - they must count the same set
+// of leaf lists. A non-smart, non-folder item (e.g. a plain reading list)
+// must be excluded from both, not just one.
+func TestHandleGetListTree_MatchesHandleGetLists(t *testing.T) {
+	lib := &library.ComicLibrary{
+		ComicLists: []library.ComicListItem{
+			{ID: "list-1", Name: "Currently Reading", Type: "ComicSmartListItem"},
+			{ID: "list-2", Name: "Some Reading List", Type: "ComicReadingListItem"},
+			{
+				ID: "folder-1", Name: "Folder", Type: "ComicListFolderItem",
+				ChildItems: []library.ComicListItem{
+					{ID: "list-3", Name: "Nested Smart List", Type: "ComicSmartListItem"},
+				},
+			},
+		},
+	}
+
+	cache := library.NewListCache(5 * time.Minute)
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	server := &Server{backend: backend, listCache: cache}
+
+	listsReq := httptest.NewRequest("GET", "/api/library/lists", nil)
+	listsW := httptest.NewRecorder()
+	server.handleGetLists(listsW, listsReq)
+
+	var listsResp struct {
+		Total int `json:"total"`
+	}
+	if err := json.NewDecoder(listsW.Body).Decode(&listsResp); err != nil {
+		t.Fatalf("Failed to decode /api/library/lists response: %v", err)
+	}
+
+	treeReq := httptest.NewRequest("GET", "/api/library/list-tree", nil)
+	treeW := httptest.NewRecorder()
+	server.handleGetListTree(treeW, treeReq)
+
+	var treeResp struct {
+		Tree []ListTreeNode `json:"tree"`
+	}
+	if err := json.NewDecoder(treeW.Body).Decode(&treeResp); err != nil {
+		t.Fatalf("Failed to decode /api/library/list-tree response: %v", err)
+	}
+
+	var countLeaves func(nodes []ListTreeNode) int
+	countLeaves = func(nodes []ListTreeNode) int {
+		n := 0
+		for _, node := range nodes {
+			if node.IsFolder {
+				n += countLeaves(node.Children)
+			} else {
+				n++
+			}
+		}
+		return n
+	}
+	treeCount := countLeaves(treeResp.Tree)
+
+	if listsResp.Total != 2 {
+		t.Errorf("Expected /api/library/lists to count 2 smart lists (excluding the reading list), got %d", listsResp.Total)
+	}
+	if treeCount != listsResp.Total {
+		t.Errorf("Nav tree leaf count (%d) diverged from /api/library/lists total (%d)", treeCount, listsResp.Total)
+	}
+}
+
 func TestHandleGetListDetail(t *testing.T) {
 	lib := &library.ComicLibrary{
 		ComicLists: []library.ComicListItem{
