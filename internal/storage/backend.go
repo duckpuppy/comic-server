@@ -9,25 +9,33 @@ import (
 
 // SQLiteBackend implements library.Backend using SQLite for persistence.
 type SQLiteBackend struct {
-	mu       sync.RWMutex
-	db       *DB
-	dbPath   string
+	mu     sync.RWMutex
+	db     *DB
+	dbPath string
+	// xmlPath is the ComicRack XML this database was imported from, if
+	// known. Empty if the database was opened standalone (e.g. via the
+	// db-info CLI command) with no known source to reimport from - Reload
+	// returns an error in that case rather than silently no-op'ing.
+	xmlPath  string
 	metadata struct {
 		id   string
 		name string
 	}
 }
 
-// NewSQLiteBackend creates a new SQLite-based backend.
-func NewSQLiteBackend(dbPath string) (*SQLiteBackend, error) {
+// NewSQLiteBackend creates a new SQLite-based backend. xmlPath is the
+// library XML this database should be kept in sync with via Reload; pass
+// "" if there's no source to reimport from (Reload will then error).
+func NewSQLiteBackend(dbPath string, xmlPath string) (*SQLiteBackend, error) {
 	db, err := Open(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
 	backend := &SQLiteBackend{
-		db:     db,
-		dbPath: dbPath,
+		db:      db,
+		dbPath:  dbPath,
+		xmlPath: xmlPath,
 	}
 
 	// Load library metadata
@@ -37,6 +45,34 @@ func NewSQLiteBackend(dbPath string) (*SQLiteBackend, error) {
 	}
 
 	return backend, nil
+}
+
+// Reload re-imports xmlPath (see NewSQLiteBackend) into the database in
+// place, picking up any external changes (books/lists added, edited, or
+// removed in ComicRack) without a process restart. The import is
+// idempotent, so this is safe to call repeatedly - only rows that actually
+// changed since the last import are touched.
+//
+// Safe to call while the server is running: reads only block for the
+// duration of the import transaction, not the whole reload.
+func (b *SQLiteBackend) Reload() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.xmlPath == "" {
+		return fmt.Errorf("reload: no XML source path configured for this database")
+	}
+
+	lib, err := library.LoadLibrary(b.xmlPath)
+	if err != nil {
+		return fmt.Errorf("reload: %w", err)
+	}
+
+	if _, err := b.db.Import(lib, ImportOptions{}); err != nil {
+		return fmt.Errorf("reload: import: %w", err)
+	}
+
+	return b.loadMetadata()
 }
 
 func (b *SQLiteBackend) loadMetadata() error {

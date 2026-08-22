@@ -24,11 +24,29 @@ const (
 	selfWriteGrace = 3 * time.Second
 )
 
-// Watcher watches a library XML file for external changes (e.g. ComicRack
-// saving the library, possibly from another machine writing to a shared/
-// synced path) and reloads it into backend automatically.
+// ReloadableBackend is implemented by any Backend that can reload its data
+// from path (an XML file, or a source re-imported into a database - see
+// storage.SQLiteBackend.Reload) in place, without a process restart.
+type ReloadableBackend interface {
+	Reload() error
+	BookCount() int
+}
+
+// lastWriteTimer is implemented by backends where comic-server's own writes
+// can touch the watched file (XMLBackend, via its periodic cache flush),
+// so the watcher needs to suppress reloading in response to its own write.
+// Backends that never write the watched path (e.g. SQLiteBackend, which
+// only ever writes to its database file, never the XML source it reimports
+// from) simply don't implement this, and self-write suppression is skipped.
+type lastWriteTimer interface {
+	LastWriteTime() time.Time
+}
+
+// Watcher watches a library source file for external changes (e.g.
+// ComicRack saving the library, possibly from another machine writing to a
+// shared/synced path) and reloads it into backend automatically.
 type Watcher struct {
-	backend  *XMLBackend
+	backend  ReloadableBackend
 	path     string
 	debounce time.Duration
 	grace    time.Duration
@@ -36,11 +54,11 @@ type Watcher struct {
 	fsw      *fsnotify.Watcher
 }
 
-// NewWatcher creates a Watcher for backend's library file. The parent
-// directory is watched (not the file directly) so that atomic
+// NewWatcher creates a Watcher for backend's source file at path. The
+// parent directory is watched (not the file directly) so that atomic
 // write-then-rename saves - which replace the file's inode - are still
 // detected.
-func NewWatcher(backend *XMLBackend, path string) (*Watcher, error) {
+func NewWatcher(backend ReloadableBackend, path string) (*Watcher, error) {
 	if path == "" {
 		return nil, fmt.Errorf("library watcher: no path configured")
 	}
@@ -129,7 +147,7 @@ func (w *Watcher) Run(ctx context.Context) {
 }
 
 func (w *Watcher) handleChange() {
-	if time.Since(w.backend.LastWriteTime()) < w.grace {
+	if lwt, ok := w.backend.(lastWriteTimer); ok && time.Since(lwt.LastWriteTime()) < w.grace {
 		log.Debug().Msg("Library watcher: change follows comic-server's own recent write, skipping reload")
 		return
 	}

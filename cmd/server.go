@@ -163,12 +163,16 @@ func runServer(cmd *cobra.Command, args []string) error {
 	if cfg.Server.DatabasePath != "" {
 		// Use SQLite backend
 		log.Info().Str("path", cfg.Server.DatabasePath).Msg("Loading library from SQLite database")
-		sqliteBackend, err := storage.NewSQLiteBackend(cfg.Server.DatabasePath)
+		sqliteBackend, err := storage.NewSQLiteBackend(cfg.Server.DatabasePath, cfg.Server.LibraryPath)
 		if err != nil {
 			return fmt.Errorf("failed to open SQLite database: %w", err)
 		}
 		backend = sqliteBackend
 		defer backend.Close()
+
+		if cfg.Server.LibraryPath == "" {
+			log.Warn().Msg("No --library path configured alongside --db - this database will not stay in sync with external ComicRack changes; reimport manually and restart to pick up updates")
+		}
 
 		log.Info().
 			Int("books", backend.BookCount()).
@@ -335,19 +339,22 @@ func runServer(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Watch the library file for external changes (e.g. ComicRack saving
-	// ComicDb.xml) and reload automatically. Only applies to the XML
-	// backend with a real file path - the SQLite backend has no file to
-	// watch, and an XMLBackend built without a path can't reload anyway.
-	if xmlBackend, ok := backend.(*library.XMLBackend); ok && cfg.Server.LibraryPath != "" {
-		watcher, err := library.NewWatcher(xmlBackend, cfg.Server.LibraryPath)
+	// Watch the library source file for external changes (e.g. ComicRack
+	// saving ComicDb.xml) and reload automatically - for the XML backend
+	// that means re-reading the file in place; for the SQLite backend it
+	// means re-importing it into the database (see SQLiteBackend.Reload).
+	// Requires both a real file path and a backend that supports reload -
+	// an XMLBackend built without a path, or a SQLiteBackend opened
+	// without a known XML source, can't reload either way.
+	if reloadable, ok := backend.(library.ReloadableBackend); ok && cfg.Server.LibraryPath != "" {
+		watcher, err := library.NewWatcher(reloadable, cfg.Server.LibraryPath)
 		if err != nil {
 			log.Warn().Err(err).Msg("Failed to start library file watcher; library changes will require a restart to pick up")
 		} else {
 			watcher.OnReload(func() {
 				apiServer.InvalidateListCache()
 				wsHub.Broadcast(websocket.EventLibraryReloaded, map[string]any{
-					"book_count": xmlBackend.BookCount(),
+					"book_count": reloadable.BookCount(),
 				})
 				if komgaSyncer != nil {
 					komgaSyncer.TriggerNow()
@@ -903,7 +910,7 @@ func init() {
 	serverCmd.Flags().IntVarP(&serverPort, "port", "p", 0, "Server control port (TCP, default: 7620)")
 	serverCmd.Flags().IntVarP(&discoveryPort, "discovery-port", "d", 0, "Device discovery port (UDP multicast, default: 7615)")
 	serverCmd.Flags().StringVarP(&libraryPath, "library", "l", "", "Path to ComicDB.xml file")
-	serverCmd.Flags().StringVar(&dbPath, "db", "", "Path to SQLite database file (experimental, alternative to --library)")
+	serverCmd.Flags().StringVar(&dbPath, "db", "", "Path to SQLite database file (experimental, alternative to --library). Combine with --library to also keep the database in sync with that XML file via the file watcher")
 	serverCmd.Flags().StringSliceVarP(&ignoreDevices, "ignore-device", "i", nil, "Devices to ignore (can be IP address, device ID, or device name)")
 	serverCmd.Flags().StringVarP(&bindAddress, "bind", "b", "", "Network interface to bind to (default: all interfaces)")
 	serverCmd.Flags().BoolVar(&autoSync, "auto-sync", false, "Automatically sync devices when they connect")

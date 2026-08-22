@@ -212,3 +212,56 @@ func TestNewWatcher_EmptyPathErrors(t *testing.T) {
 		t.Error("expected NewWatcher to error on an empty path")
 	}
 }
+
+// fakeReloadableBackend is a minimal ReloadableBackend that does NOT
+// implement lastWriteTimer, standing in for backends like
+// storage.SQLiteBackend that never write the watched path themselves and
+// so have no self-write-suppression concept.
+type fakeReloadableBackend struct {
+	mu          sync.Mutex
+	reloadCount int
+	reloadErr   error
+}
+
+func (f *fakeReloadableBackend) Reload() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.reloadCount++
+	return f.reloadErr
+}
+
+func (f *fakeReloadableBackend) BookCount() int { return 0 }
+
+func (f *fakeReloadableBackend) count() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.reloadCount
+}
+
+// TestWatcher_WorksWithNonXMLReloadableBackend guards the generalization of
+// Watcher from XMLBackend-specific to any ReloadableBackend (needed for
+// SQLiteBackend.Reload - see comic-server-7y8): a backend that doesn't
+// implement lastWriteTimer must still reload normally, with no self-write
+// suppression applied (since there's nothing to suppress against).
+func TestWatcher_WorksWithNonXMLReloadableBackend(t *testing.T) {
+	path := newTestXMLLibraryFile(t)
+	backend := &fakeReloadableBackend{}
+
+	w, err := NewWatcher(backend, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.debounce = 20 * time.Millisecond
+
+	ctx := t.Context()
+	go w.Run(ctx)
+	time.Sleep(50 * time.Millisecond) // let the watcher's fsw.Add settle
+
+	if err := SaveLibrary(path, &ComicLibrary{ID: "test-library"}); err != nil {
+		t.Fatal(err)
+	}
+
+	waitFor(t, 3*time.Second, "reload to fire on a backend with no LastWriteTime", func() bool {
+		return backend.count() == 1
+	})
+}
