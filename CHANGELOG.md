@@ -1,5 +1,45 @@
 # Changelog
 
+## [1.2.0](https://github.com/duckpuppy/comic-server/compare/v1.1.1...v1.2.0) (2026-08-22)
+
+
+### Features
+
+* add cover-image endpoint for comics ([fed6af3](https://github.com/duckpuppy/comic-server/commit/fed6af3575d6abdde1ff1c3d5fb984c7230bcad3))
+* add manual cover-cache invalidation endpoint ([ca49f00](https://github.com/duckpuppy/comic-server/commit/ca49f005ee029ffe2c423abec06fa81f73ec6b06))
+* cache resized cover thumbnails on disk ([5d1ef21](https://github.com/duckpuppy/comic-server/commit/5d1ef2186d6e167ae44c7887fcff19ff2240af01))
+* **comic-server-1c0:** surface Komga sync status and unmatched books in the web UI ([a829a4a](https://github.com/duckpuppy/comic-server/commit/a829a4a8abe9f8d2ceb171aaa96da01ace2888cf))
+* **comic-server-7n7:** resolve smart-list books to Komga IDs via path mapping ([8e06b4c](https://github.com/duckpuppy/comic-server/commit/8e06b4cd4a4bd5f66fa13359efaf3798b3dbc377))
+* **comic-server-abg:** add Komga REST API client ([27e6a1d](https://github.com/duckpuppy/comic-server/commit/27e6a1d900f3fd13cf7b23745fb33071cf456b7d))
+* **comic-server-bwz:** add real library reload via fsnotify file watcher ([efda618](https://github.com/duckpuppy/comic-server/commit/efda6186f0b62a62d160cb1b305365a3b4e2e4f1))
+* **comic-server-f9w:** wire Komga sync into a scheduled background job ([68f1356](https://github.com/duckpuppy/comic-server/commit/68f135696aa933662072c5c8cce2acaf7b8e3cfa))
+* **comic-server-wgr:** add config shape for Komga collection/read-list sync ([e83ebee](https://github.com/duckpuppy/comic-server/commit/e83ebee3b5795a341c7ad9bc87fdea7fd084c3bb))
+* **comic-server-y4i:** make KeepLastRead count configurable ([7129d9a](https://github.com/duckpuppy/comic-server/commit/7129d9ab4a8fa1dc7f3c4304d1499c7e9c77d94e))
+* manage Komga sync targets from the web UI ([320b698](https://github.com/duckpuppy/comic-server/commit/320b69803b86cff666eb230504a2e996b304903c))
+* mark read comics in the list detail preview grid ([4324d21](https://github.com/duckpuppy/comic-server/commit/4324d21ac54d303e6fa2667fe8fabe941f7a8f5c))
+* replace native browser dialog for list-to-device assignment ([5390708](https://github.com/duckpuppy/comic-server/commit/53907083323a882c8cd1576274f5898533e70088))
+* show build commit sha in dashboard header ([0349d69](https://github.com/duckpuppy/comic-server/commit/0349d69495fdb8d9a79e7e3320dc2ddc897c542c))
+* show real cover thumbnails in the list detail comics grid ([c22ec69](https://github.com/duckpuppy/comic-server/commit/c22ec69b73d62e5be97be8c2b66f43b283ce5213))
+* SQLite backend stays live-synced with its XML source ([4012ef2](https://github.com/duckpuppy/comic-server/commit/4012ef279c3945ef7dfd506af410858a4e3a3f6b))
+
+
+### Bug Fixes
+
+* ComicVine enrichment now works on the SQLite backend ([0db40a2](https://github.com/duckpuppy/comic-server/commit/0db40a248a440be93cf7e700f1fff42a9696a327))
+* nav Lists badge count diverges from dashboard Smart Lists stat ([cc6f10b](https://github.com/duckpuppy/comic-server/commit/cc6f10b16f055b010f0800b682f50b3c4b77e612))
+* remove GHCR image pruning that broke every multi-arch push ([dd6c800](https://github.com/duckpuppy/comic-server/commit/dd6c8006cdeeb42284fbd2871493c756d91f6f9e))
+* repopulate dashboard panels immediately on back-navigation ([d224382](https://github.com/duckpuppy/comic-server/commit/d2243825000e1e883ea5eccf5cd2128efd533fa7))
+* smart list edit fields render dark text on dark background ([cba2c03](https://github.com/duckpuppy/comic-server/commit/cba2c03afecd8438fc2bd320591c4ada651d1373))
+* SQLite reverse-sync now clears tags to empty ([fade8c3](https://github.com/duckpuppy/comic-server/commit/fade8c37d62cdd633f9cad0baa88365cffebd59c))
+* SQLiteBackend resolves BaseListId smart-list scoping ([85d35a4](https://github.com/duckpuppy/comic-server/commit/85d35a4c3c2977f73019ecf2de3749a1fb684e28))
+* use net.JoinHostPort for TCP dial address in protocol client ([1c7245a](https://github.com/duckpuppy/comic-server/commit/1c7245adf00736ef07ac76695a0765b67456fee1))
+
+
+### Performance Improvements
+
+* serve stale list counts while refreshing in the background ([9d32e0d](https://github.com/duckpuppy/comic-server/commit/9d32e0dfabd0eee7789ed215addd33ca2eab5b5d))
+* SQLite backend translates simple matchers to SQL and fixes N+1 loads ([f7d79e9](https://github.com/duckpuppy/comic-server/commit/f7d79e99125c2b20a43915861627470550306015))
+
 ## [1.1.1](https://github.com/duckpuppy/comic-server/compare/v1.1.0...v1.1.1) (2026-08-19)
 
 
