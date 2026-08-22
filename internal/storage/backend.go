@@ -2,6 +2,7 @@ package storage
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/duckpuppy/comic-server/internal/library"
@@ -186,7 +187,7 @@ func (b *SQLiteBackend) MatchBooks(list *library.ComicListItem) ([]*library.Comi
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
-	tempLib, err := b.tempLibraryLocked()
+	tempLib, err := b.evaluationLibraryLocked(list)
 	if err != nil {
 		return nil, err
 	}
@@ -198,20 +199,43 @@ func (b *SQLiteBackend) GetBooksForList(list *library.ComicListItem) ([]*library
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
-	tempLib, err := b.tempLibraryLocked()
+	tempLib, err := b.evaluationLibraryLocked(list)
 	if err != nil {
 		return nil, err
 	}
 	return tempLib.GetBooksForList(list)
 }
 
-// tempLibraryLocked builds an in-memory library.ComicLibrary snapshot for
-// matcher evaluation. Includes ComicLists (not just Books) so BaseListId
-// scoping resolves via FindListByID the same way it does on XMLBackend -
-// see comic-server-hha. Caller must hold at least b.mu.RLock().
-//
-// TODO: Could optimize with SQL queries for simple matchers instead of
-// loading everything into memory (comic-server-770).
+// evaluationLibraryLocked builds the library.ComicLibrary snapshot used to
+// evaluate list. When list is a smart list with no BaseListId and its
+// entire matcher tree translates to a safe SQL predicate (see
+// matcher_sql.go), only the (superset) matching rows are fetched from
+// SQLite instead of every book - the caller (library.ComicLibrary's
+// MatchBooks/GetBooksForList) still re-validates every candidate against
+// the exact in-memory matcher, so this can only reduce cost, never
+// correctness (see comic-server-770). Otherwise falls back to
+// tempLibraryLocked, loading every book (and every list, so BaseListId
+// scoping - comic-server-hha - still resolves).
+func (b *SQLiteBackend) evaluationLibraryLocked(list *library.ComicListItem) (*library.ComicLibrary, error) {
+	if list != nil && list.BaseListId == "" && strings.Contains(list.Type, "SmartList") {
+		if pred, ok := translateMatchers(list.MatcherMode, list.Matchers); ok {
+			books, err := b.db.GetBooksWhere(pred.where, pred.args...)
+			if err != nil {
+				return nil, err
+			}
+			tempLib := &library.ComicLibrary{Books: books}
+			tempLib.SetCVData(b.cvData)
+			return tempLib, nil
+		}
+	}
+	return b.tempLibraryLocked()
+}
+
+// tempLibraryLocked builds an in-memory library.ComicLibrary snapshot of
+// every book and list for matcher evaluation. Includes ComicLists (not just
+// Books) so BaseListId scoping resolves via FindListByID the same way it
+// does on XMLBackend - see comic-server-hha. Caller must hold at least
+// b.mu.RLock().
 func (b *SQLiteBackend) tempLibraryLocked() (*library.ComicLibrary, error) {
 	books, err := b.db.GetAllBooks()
 	if err != nil {

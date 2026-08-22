@@ -4,34 +4,37 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/duckpuppy/comic-server/internal/library"
 )
 
+// booksSelectColumns is the column list shared by every query that scans a
+// full ComicBook row via scanBook/scanBookFromRows.
+const booksSelectColumns = `
+	id, file_path, title, series, number, volume, year, month, day,
+	publisher, imprint, genre, format, age_rating, language_iso,
+	summary, notes, review, story_arc, series_group,
+	alternate_series, alternate_number, alternate_count, count,
+	writer, penciller, inker, colorist, letterer, cover_artist, editor, translator,
+	characters, teams, locations, main_character_or_team,
+	current_page, last_page, last_page_read, open_count, opened_time,
+	rating, community_rating,
+	checked, file_is_missing, comic_info_is_dirty,
+	page_count, web, scan_information, series_complete,
+	black_and_white, manga,
+	preferred_front_cover, added_time, released_time,
+	file_size, file_modified_time, file_creation_time,
+	isbn, book_age, book_condition, book_store, book_owner,
+	book_collection_status, book_notes, book_location,
+	book_price, new_pages,
+	enable_proposed, enable_dynamic_update, last_opened_from_list_id,
+	pages
+`
+
 // GetBook retrieves a single book by ID.
 func (db *DB) GetBook(id string) (*library.ComicBook, error) {
-	row := db.QueryRow(`
-		SELECT
-			id, file_path, title, series, number, volume, year, month, day,
-			publisher, imprint, genre, format, age_rating, language_iso,
-			summary, notes, review, story_arc, series_group,
-			alternate_series, alternate_number, alternate_count, count,
-			writer, penciller, inker, colorist, letterer, cover_artist, editor, translator,
-			characters, teams, locations, main_character_or_team,
-			current_page, last_page, last_page_read, open_count, opened_time,
-			rating, community_rating,
-			checked, file_is_missing, comic_info_is_dirty,
-			page_count, web, scan_information, series_complete,
-			black_and_white, manga,
-			preferred_front_cover, added_time, released_time,
-			file_size, file_modified_time, file_creation_time,
-			isbn, book_age, book_condition, book_store, book_owner,
-			book_collection_status, book_notes, book_location,
-			book_price, new_pages,
-			enable_proposed, enable_dynamic_update, last_opened_from_list_id,
-			pages
-		FROM books WHERE id = ?
-	`, id)
+	row := db.QueryRow("SELECT "+booksSelectColumns+" FROM books WHERE id = ?", id)
 
 	book, err := scanBook(row)
 	if err == sql.ErrNoRows {
@@ -56,28 +59,32 @@ func (db *DB) GetBook(id string) (*library.ComicBook, error) {
 
 // GetAllBooks retrieves all books from the database.
 func (db *DB) GetAllBooks() ([]library.ComicBook, error) {
-	rows, err := db.Query(`
-		SELECT
-			id, file_path, title, series, number, volume, year, month, day,
-			publisher, imprint, genre, format, age_rating, language_iso,
-			summary, notes, review, story_arc, series_group,
-			alternate_series, alternate_number, alternate_count, count,
-			writer, penciller, inker, colorist, letterer, cover_artist, editor, translator,
-			characters, teams, locations, main_character_or_team,
-			current_page, last_page, last_page_read, open_count, opened_time,
-			rating, community_rating,
-			checked, file_is_missing, comic_info_is_dirty,
-			page_count, web, scan_information, series_complete,
-			black_and_white, manga,
-			preferred_front_cover, added_time, released_time,
-			file_size, file_modified_time, file_creation_time,
-			isbn, book_age, book_condition, book_store, book_owner,
-			book_collection_status, book_notes, book_location,
-			book_price, new_pages,
-			enable_proposed, enable_dynamic_update, last_opened_from_list_id,
-			pages
-		FROM books
-	`)
+	return db.queryBooks("")
+}
+
+// GetBooksWhere retrieves books matching a raw SQL WHERE clause (no "WHERE"
+// keyword - pass "" for no filter). Used by SQLiteBackend.MatchBooks to
+// narrow the row fetch via a translated smart-list matcher predicate (see
+// internal/storage/matcher_sql.go) instead of always loading every book -
+// see comic-server-770. whereClause must only reference columns on the
+// books table; args are passed positionally to the underlying query.
+func (db *DB) GetBooksWhere(whereClause string, args ...any) ([]library.ComicBook, error) {
+	return db.queryBooks(whereClause, args...)
+}
+
+// queryBooks runs a SELECT over the books table (optionally filtered by
+// whereClause) and batch-loads tags/custom values for the result set in a
+// small, fixed number of queries rather than two extra round trips per
+// book - at real-library scale (67K+ books) the latter was the dominant
+// cost of a cold GetAllBooks(), not the Go-side matcher evaluation that
+// follows it (see comic-server-770 / comic-server-cg1).
+func (db *DB) queryBooks(whereClause string, args ...any) ([]library.ComicBook, error) {
+	query := "SELECT " + booksSelectColumns + " FROM books"
+	if whereClause != "" {
+		query += " WHERE " + whereClause
+	}
+
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query books: %w", err)
 	}
@@ -95,17 +102,110 @@ func (db *DB) GetAllBooks() ([]library.ComicBook, error) {
 		return nil, fmt.Errorf("iterate books: %w", err)
 	}
 
-	// Load custom values and tags for all books
-	for i := range books {
-		if err := db.loadBookCustomValues(&books[i]); err != nil {
-			return nil, err
-		}
-		if err := db.loadBookTags(&books[i]); err != nil {
-			return nil, err
-		}
+	if err := db.loadTagsAndCustomValuesBatch(books); err != nil {
+		return nil, err
 	}
 
 	return books, nil
+}
+
+// batchLoadChunkSize bounds how many book IDs go into a single IN (...)
+// clause in loadTagsAndCustomValuesBatch, to stay well under SQLite's host
+// parameter limit (SQLITE_MAX_VARIABLE_NUMBER, historically as low as 999)
+// regardless of how many books are being loaded.
+const batchLoadChunkSize = 500
+
+// loadTagsAndCustomValuesBatch fills in Tags/CustomValuesStore for every
+// book in books using O(len(books)/batchLoadChunkSize) queries total,
+// instead of the 2 extra queries per book that GetAllBooks used to run
+// (comic-server-770). books is mutated in place.
+func (db *DB) loadTagsAndCustomValuesBatch(books []library.ComicBook) error {
+	if len(books) == 0 {
+		return nil
+	}
+
+	idIndex := make(map[string]int, len(books))
+	ids := make([]string, len(books))
+	for i := range books {
+		idIndex[books[i].ID] = i
+		ids[i] = books[i].ID
+	}
+
+	tagsByBook := make(map[string][]string)
+	err := db.chunkedInQuery(ids, "SELECT book_id, tag FROM book_tags WHERE book_id IN (%s)", func(rows *sql.Rows) error {
+		var bookID, tag string
+		if err := rows.Scan(&bookID, &tag); err != nil {
+			return err
+		}
+		tagsByBook[bookID] = append(tagsByBook[bookID], tag)
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("batch load tags: %w", err)
+	}
+	for bookID, tags := range tagsByBook {
+		if i, ok := idIndex[bookID]; ok && len(tags) > 0 {
+			books[i].Tags = joinStrings(tags, ", ")
+		}
+	}
+
+	cvByBook := make(map[string][]string)
+	err = db.chunkedInQuery(ids, "SELECT book_id, key, value FROM book_custom_values WHERE book_id IN (%s)", func(rows *sql.Rows) error {
+		var bookID, key, value string
+		if err := rows.Scan(&bookID, &key, &value); err != nil {
+			return err
+		}
+		cvByBook[bookID] = append(cvByBook[bookID], fmt.Sprintf("%s=%s", key, value))
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("batch load custom values: %w", err)
+	}
+	for bookID, parts := range cvByBook {
+		if i, ok := idIndex[bookID]; ok && len(parts) > 0 {
+			books[i].CustomValuesStore = "," + joinStrings(parts, ",")
+		}
+	}
+
+	return nil
+}
+
+// chunkedInQuery runs queryTemplate (containing exactly one %s, filled in
+// with a "?,?,...?" placeholder list) against ids in batches of
+// batchLoadChunkSize, calling scan for every row across every batch.
+func (db *DB) chunkedInQuery(ids []string, queryTemplate string, scan func(*sql.Rows) error) error {
+	for start := 0; start < len(ids); start += batchLoadChunkSize {
+		end := start + batchLoadChunkSize
+		if end > len(ids) {
+			end = len(ids)
+		}
+		chunk := ids[start:end]
+
+		placeholders := make([]string, len(chunk))
+		args := make([]any, len(chunk))
+		for i, id := range chunk {
+			placeholders[i] = "?"
+			args[i] = id
+		}
+		query := fmt.Sprintf(queryTemplate, strings.Join(placeholders, ","))
+
+		if err := func() error {
+			rows, err := db.Query(query, args...)
+			if err != nil {
+				return err
+			}
+			defer rows.Close()
+			for rows.Next() {
+				if err := scan(rows); err != nil {
+					return err
+				}
+			}
+			return rows.Err()
+		}(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // GetBookCount returns the total number of books in the database.
