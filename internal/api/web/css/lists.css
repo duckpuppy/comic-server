@@ -862,9 +862,25 @@
     line-height: 1;
 }
 
+.comic-cover {
+    position: relative;
+    margin-bottom: 0.5rem;
+}
+
 .comic-placeholder {
     font-size: 3rem;
-    margin-bottom: 0.5rem;
+}
+
+.comic-cover-img {
+    display: none;
+    width: 100%;
+    aspect-ratio: 2 / 3;
+    object-fit: cover;
+    border-radius: 0.25rem;
+}
+
+.comic-cover-img.loaded {
+    display: block;
 }
 
 .comic-series {

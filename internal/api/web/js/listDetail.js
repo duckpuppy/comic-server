@@ -460,7 +460,14 @@ class ListDetail {
         return this.preview.map(comic => `
             <div class="comic-card${comic.unread ? '' : ' comic-read'}" title="${comic.unread ? '' : 'Read'}">
                 ${comic.unread ? '' : '<div class="comic-read-badge" title="Read">✓</div>'}
-                <div class="comic-placeholder">📖</div>
+                <div class="comic-cover">
+                    <div class="comic-placeholder">📖</div>
+                    <img class="comic-cover-img" alt=""
+                         src="/api/library/books/${encodeURIComponent(comic.id)}/cover"
+                         loading="lazy"
+                         onload="this.classList.add('loaded'); this.previousElementSibling.style.display='none';"
+                         onerror="this.style.display='none';">
+                </div>
                 <div class="comic-info">
                     <div class="comic-series">${this.escapeHtml(comic.series)}</div>
                     <div class="comic-number">#${this.escapeHtml(comic.number)}</div>
