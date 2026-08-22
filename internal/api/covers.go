@@ -13,6 +13,10 @@ func (s *Server) handleBooksRouter(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	suffix := strings.TrimPrefix(path, "/api/library/books/")
 
+	if strings.HasSuffix(suffix, "/cover/cache") {
+		s.handleDeleteBookCoverCache(w, r)
+		return
+	}
 	if strings.HasSuffix(suffix, "/cover") {
 		s.handleGetBookCover(w, r)
 		return
@@ -77,4 +81,34 @@ func (s *Server) handleGetBookCover(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "private, max-age=3600")
 	w.Write(data)
+}
+
+// handleDeleteBookCoverCache drops a book's cached cover thumbnail (if any),
+// forcing the next GET .../cover to re-extract it - for the rare case the
+// automatic mtime/size invalidation (comic-server-0y6.2) doesn't catch, or
+// for testing. Idempotent: succeeds whether or not anything was cached, and
+// is a no-op (not an error) when no cover cache is configured at all.
+// DELETE /api/library/books/:id/cover/cache
+func (s *Server) handleDeleteBookCoverCache(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	suffix := strings.TrimPrefix(r.URL.Path, "/api/library/books/")
+	bookID := strings.TrimSuffix(suffix, "/cover/cache")
+	if bookID == "" {
+		http.Error(w, "book id is required", http.StatusBadRequest)
+		return
+	}
+
+	if s.coverCache != nil {
+		if err := s.coverCache.Invalidate(bookID); err != nil {
+			log.Error().Err(err).Str("book_id", bookID).Msg("Failed to invalidate cover cache")
+			http.Error(w, "Failed to invalidate cover cache", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	s.writeJSON(w, http.StatusOK, map[string]string{"status": "success"})
 }

@@ -185,3 +185,89 @@ func TestHandleGetBookCover_UsesCoverCacheWhenConfigured(t *testing.T) {
 		t.Error("expected cached response to differ from the raw source page (re-encoded via the cache)")
 	}
 }
+
+// TestHandleDeleteBookCoverCache_ForcesReExtraction verifies that a DELETE
+// actually drops the cached entry - not just returns success - by making
+// the source archive unreadable afterward and confirming a subsequent GET
+// then fails (a real re-extraction attempt against an unreadable file must
+// fail; if the GET instead succeeded, it would mean the DELETE left the
+// stale cached copy in place). comic-server-0y6.3.
+func TestHandleDeleteBookCoverCache_ForcesReExtraction(t *testing.T) {
+	cbzPath := writeTestCBZ(t, t.TempDir(), "test.cbz", solidPNG(t))
+
+	server := newCoverTestServer(t, []library.ComicBook{
+		{ID: "book-1", FilePath: cbzPath, Series: "Batman"},
+	})
+	cache, err := covers.NewCache(t.TempDir(), 300)
+	if err != nil {
+		t.Fatalf("covers.NewCache: %v", err)
+	}
+	server.SetCoverCache(cache)
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/library/books/book-1/cover", nil)
+	getW := httptest.NewRecorder()
+	server.handleBooksRouter(getW, getReq)
+	if getW.Code != http.StatusOK {
+		t.Fatalf("GET (populate cache) expected 200, got %d: %s", getW.Code, getW.Body.String())
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/library/books/book-1/cover/cache", nil)
+	deleteW := httptest.NewRecorder()
+	server.handleBooksRouter(deleteW, deleteReq)
+	if deleteW.Code != http.StatusOK {
+		t.Fatalf("DELETE expected 200, got %d: %s", deleteW.Code, deleteW.Body.String())
+	}
+
+	if err := os.Chmod(cbzPath, 0000); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { os.Chmod(cbzPath, 0644) })
+
+	getAfterDeleteReq := httptest.NewRequest(http.MethodGet, "/api/library/books/book-1/cover", nil)
+	getAfterDeleteW := httptest.NewRecorder()
+	server.handleBooksRouter(getAfterDeleteW, getAfterDeleteReq)
+	if getAfterDeleteW.Code != http.StatusNotFound {
+		t.Errorf("expected GET after DELETE+chmod to fail (proving re-extraction was attempted, not served from a stale cache), got %d", getAfterDeleteW.Code)
+	}
+}
+
+func TestHandleDeleteBookCoverCache_NoOpWhenNothingCached(t *testing.T) {
+	server := newCoverTestServer(t, []library.ComicBook{{ID: "book-1"}})
+	cache, err := covers.NewCache(t.TempDir(), 300)
+	if err != nil {
+		t.Fatalf("covers.NewCache: %v", err)
+	}
+	server.SetCoverCache(cache)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/library/books/book-1/cover/cache", nil)
+	w := httptest.NewRecorder()
+	server.handleBooksRouter(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 (idempotent) even with nothing cached, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleDeleteBookCoverCache_NoOpWhenNoCacheConfigured(t *testing.T) {
+	server := newCoverTestServer(t, []library.ComicBook{{ID: "book-1"}})
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/library/books/book-1/cover/cache", nil)
+	w := httptest.NewRecorder()
+	server.handleBooksRouter(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 when no cover cache is configured at all, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleDeleteBookCoverCache_MethodNotAllowed(t *testing.T) {
+	server := newCoverTestServer(t, []library.ComicBook{{ID: "book-1"}})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/library/books/book-1/cover/cache", nil)
+	w := httptest.NewRecorder()
+	server.handleBooksRouter(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405, got %d", w.Code)
+	}
+}
