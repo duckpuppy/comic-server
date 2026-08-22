@@ -52,6 +52,13 @@ class Dashboard {
             set('stat-active-syncs', stats.active_syncs ?? '--');
             set('stat-uptime', this.formatUptime(stats.uptime_seconds ?? 0));
             set('stat-smart-lists', (lists.lists ?? []).length);
+
+            // Keeps the nav "Lists" count badge populated on every route, not
+            // just after visiting /lists once (listsBrowser.js only updates
+            // it from its own render). This runs on every page load/refresh
+            // regardless of current route, since dashboard.init() always
+            // runs on startup.
+            navigation.updateBadge('lists', (lists.lists ?? []).length);
         } catch (error) {
             console.error('Failed to update stats:', error);
         }
