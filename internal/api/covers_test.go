@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/duckpuppy/comic-server/internal/covers"
 	"github.com/duckpuppy/comic-server/internal/library"
 )
 
@@ -148,5 +149,39 @@ func TestHandleBooksRouter_UnknownSubPath(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected 404 for unknown sub-path, got %d", w.Code)
+	}
+}
+
+// TestHandleGetBookCover_UsesCoverCacheWhenConfigured verifies that once
+// SetCoverCache is wired up, the endpoint serves a resized JPEG thumbnail
+// (via covers.Cache) instead of the raw passthrough bytes it serves without
+// a cache configured (comic-server-0y6.2).
+func TestHandleGetBookCover_UsesCoverCacheWhenConfigured(t *testing.T) {
+	pageData := solidPNG(t)
+	cbzPath := writeTestCBZ(t, t.TempDir(), "test.cbz", pageData)
+
+	server := newCoverTestServer(t, []library.ComicBook{
+		{ID: "book-1", FilePath: cbzPath, Series: "Batman"},
+	})
+	cache, err := covers.NewCache(t.TempDir(), 300)
+	if err != nil {
+		t.Fatalf("covers.NewCache: %v", err)
+	}
+	server.SetCoverCache(cache)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/library/books/book-1/cover", nil)
+	w := httptest.NewRecorder()
+	server.handleBooksRouter(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "image/jpeg" {
+		t.Errorf("expected Content-Type image/jpeg (cache always re-encodes as JPEG), got %q", ct)
+	}
+	// The source fixture is a 4x4 PNG; the cache should have re-encoded it
+	// as JPEG rather than passing the original PNG bytes straight through.
+	if bytes.Equal(w.Body.Bytes(), pageData) {
+		t.Error("expected cached response to differ from the raw source page (re-encoded via the cache)")
 	}
 }

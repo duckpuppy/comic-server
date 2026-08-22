@@ -20,6 +20,11 @@ func (c *Config) ApplyEnvironment() error {
 		c.Server.DatabasePath = val
 	}
 
+	// Cover thumbnail cache directory
+	if val := os.Getenv("COMIC_SERVER_COVER_CACHE_DIR"); val != "" {
+		c.Server.CoverCacheDir = val
+	}
+
 	// Network settings
 	if val := os.Getenv("COMIC_SERVER_PORT"); val != "" {
 		port, err := strconv.Atoi(val)

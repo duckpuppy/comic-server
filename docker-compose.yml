@@ -13,6 +13,8 @@ services:
       - COMIC_SERVER_LOG_LEVEL=info
       - COMIC_SERVER_LOG_FORMAT=json
       - COMIC_SERVER_AUTO_SYNC=true
+      # Cover thumbnail cache dir - see the cover-cache volume below
+      - COMIC_SERVER_COVER_CACHE_DIR=/cover-cache
       # Optional: ignore specific devices
       # - COMIC_SERVER_IGNORE_DEVICES=192.168.0.24,SM-T970
 
@@ -26,6 +28,11 @@ services:
 
       # Optional: Config directory for per-device settings
       - ./config:/config
+
+      # Cover thumbnail cache - a named volume (not a bind mount) since it's
+      # pure cache: nothing worth backing up, just worth surviving a
+      # container recreate so thumbnails don't need re-extracting.
+      - cover-cache:/cover-cache
 
     # Restart policy
     restart: unless-stopped
@@ -47,3 +54,8 @@ services:
         reservations:
           cpus: '0.25'
           memory: 128M
+
+volumes:
+  # Pure cache, nothing worth backing up - a named volume (not a bind mount
+  # under a backed-up host path) so it doesn't waste backup space.
+  cover-cache:

@@ -56,6 +56,66 @@ func TestGetConfigDir(t *testing.T) {
 	}
 }
 
+func TestGetCacheDir(t *testing.T) {
+	tests := []struct {
+		name       string
+		xdgCache   string
+		wantSuffix string
+	}{
+		{
+			name:       "with XDG_CACHE_HOME set",
+			xdgCache:   "/custom/cache",
+			wantSuffix: "/custom/cache/comic-server",
+		},
+		{
+			name:       "without XDG_CACHE_HOME",
+			xdgCache:   "",
+			wantSuffix: ".cache/comic-server",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			originalXDG := os.Getenv("XDG_CACHE_HOME")
+			defer os.Setenv("XDG_CACHE_HOME", originalXDG)
+
+			if tt.xdgCache != "" {
+				os.Setenv("XDG_CACHE_HOME", tt.xdgCache)
+			} else {
+				os.Unsetenv("XDG_CACHE_HOME")
+			}
+
+			got, err := GetCacheDir()
+			if err != nil {
+				t.Fatalf("GetCacheDir() error = %v", err)
+			}
+
+			if tt.xdgCache != "" {
+				if got != tt.wantSuffix {
+					t.Errorf("GetCacheDir() = %v, want %v", got, tt.wantSuffix)
+				}
+			} else if !endsWithPath(got, tt.wantSuffix) {
+				t.Errorf("GetCacheDir() = %v, want path ending with %v", got, tt.wantSuffix)
+			}
+		})
+	}
+}
+
+func TestEnsureCacheDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	originalXDG := os.Getenv("XDG_CACHE_HOME")
+	defer os.Setenv("XDG_CACHE_HOME", originalXDG)
+	os.Setenv("XDG_CACHE_HOME", tmpDir)
+
+	dir, err := EnsureCacheDir()
+	if err != nil {
+		t.Fatalf("EnsureCacheDir() error = %v", err)
+	}
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		t.Errorf("expected EnsureCacheDir() to create %v as a directory", dir)
+	}
+}
+
 func TestGetDefaultConfigPath(t *testing.T) {
 	// Create temporary directory for testing
 	tmpDir := t.TempDir()

@@ -13,6 +13,7 @@ import (
 
 	"github.com/duckpuppy/comic-server/internal/comicvine"
 	"github.com/duckpuppy/comic-server/internal/config"
+	"github.com/duckpuppy/comic-server/internal/covers"
 	"github.com/duckpuppy/comic-server/internal/device"
 	"github.com/duckpuppy/comic-server/internal/komga"
 	"github.com/duckpuppy/comic-server/internal/library"
@@ -57,6 +58,16 @@ type Server struct {
 
 	komgaStatus *komga.StatusStore
 	komgaSyncer *komga.Syncer
+
+	coverCache *covers.Cache
+}
+
+// SetCoverCache wires a cover-thumbnail cache into the API server. Without
+// it, GET /api/library/books/:id/cover extracts (and re-extracts, on every
+// request) the cover directly from the comic archive with no resizing or
+// caching - see comic-server-0y6.2.
+func (s *Server) SetCoverCache(cache *covers.Cache) {
+	s.coverCache = cache
 }
 
 // SetKomgaStatus wires Komga sync status reporting into the API server.

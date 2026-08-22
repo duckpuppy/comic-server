@@ -14,6 +14,7 @@ import (
 	"github.com/duckpuppy/comic-server/internal/api"
 	"github.com/duckpuppy/comic-server/internal/comicvine"
 	"github.com/duckpuppy/comic-server/internal/config"
+	"github.com/duckpuppy/comic-server/internal/covers"
 	"github.com/duckpuppy/comic-server/internal/device"
 	"github.com/duckpuppy/comic-server/internal/komga"
 	"github.com/duckpuppy/comic-server/internal/library"
@@ -33,6 +34,7 @@ var (
 	discoveryPort          int
 	libraryPath            string
 	dbPath                 string
+	coverCacheDir          string
 	ignoreDevices          []string
 	bindAddress            string
 	autoSync               bool
@@ -94,6 +96,9 @@ func runServer(cmd *cobra.Command, args []string) error {
 	}
 	if dbPath != "" {
 		cfg.Server.DatabasePath = dbPath
+	}
+	if coverCacheDir != "" {
+		cfg.Server.CoverCacheDir = coverCacheDir
 	}
 	if ignoreDevicesSet {
 		cfg.Server.IgnoreDevices = ignoreDevices
@@ -286,6 +291,15 @@ func runServer(cmd *cobra.Command, args []string) error {
 		if err := wireScraperAPI(apiServer, cfg.Server.ComicVineAPIKey); err != nil {
 			log.Warn().Err(err).Msg("Failed to enable ComicVine scraper API endpoints")
 		}
+	}
+
+	if resolvedCoverCacheDir, err := resolveCoverCacheDir(cfg.Server.CoverCacheDir); err != nil {
+		log.Warn().Err(err).Msg("Failed to determine cover cache directory; cover images will be extracted on every request without caching or resizing")
+	} else if coverCache, err := covers.NewCache(resolvedCoverCacheDir, covers.DefaultThumbnailWidth); err != nil {
+		log.Warn().Err(err).Str("dir", resolvedCoverCacheDir).Msg("Failed to initialize cover thumbnail cache; cover images will be extracted on every request without caching or resizing")
+	} else {
+		apiServer.SetCoverCache(coverCache)
+		log.Info().Str("dir", resolvedCoverCacheDir).Msg("Cover thumbnail cache enabled")
 	}
 
 	var komgaStatus *komga.StatusStore
@@ -915,6 +929,7 @@ func init() {
 	serverCmd.Flags().IntVarP(&discoveryPort, "discovery-port", "d", 0, "Device discovery port (UDP multicast, default: 7615)")
 	serverCmd.Flags().StringVarP(&libraryPath, "library", "l", "", "Path to ComicDB.xml file")
 	serverCmd.Flags().StringVar(&dbPath, "db", "", "Path to SQLite database file (experimental, alternative to --library). Combine with --library to also keep the database in sync with that XML file via the file watcher")
+	serverCmd.Flags().StringVar(&coverCacheDir, "cover-cache-dir", "", "Directory to cache resized comic cover thumbnails in (default: XDG cache dir). Set this to a path under a mounted volume in Docker so the cache survives container recreates")
 	serverCmd.Flags().StringSliceVarP(&ignoreDevices, "ignore-device", "i", nil, "Devices to ignore (can be IP address, device ID, or device name)")
 	serverCmd.Flags().StringVarP(&bindAddress, "bind", "b", "", "Network interface to bind to (default: all interfaces)")
 	serverCmd.Flags().BoolVar(&autoSync, "auto-sync", false, "Automatically sync devices when they connect")
@@ -1069,6 +1084,24 @@ func buildKomgaSyncer(cfg config.KomgaConfig, backend library.Backend) *komga.Sy
 // with an unrecognized Type. Used both at startup (buildKomgaSyncer) and by
 // the API server after a Komga target is added/updated/removed via the web
 // UI (comic-server-d3w) to rebuild the live Syncer's target set.
+// resolveCoverCacheDir returns configuredDir if set, else the "covers"
+// subdirectory of the XDG cache directory. Configurable because the XDG
+// cache dir isn't one of the Docker image's declared volumes (/config,
+// /data, /comics) - Docker deployments should set cover_cache_dir (or
+// --cover-cache-dir / COMIC_SERVER_COVER_CACHE_DIR) to a path under a
+// mounted volume so the cache survives container recreates, though as a
+// cache it's fine (if slower on the next request) if it's lost.
+func resolveCoverCacheDir(configuredDir string) (string, error) {
+	if configuredDir != "" {
+		return configuredDir, nil
+	}
+	cacheDir, err := config.GetCacheDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(cacheDir, "covers"), nil
+}
+
 func komgaTargetsFromConfig(cfgTargets []config.KomgaTarget) []komga.Target {
 	targets := make([]komga.Target, 0, len(cfgTargets))
 	for _, t := range cfgTargets {

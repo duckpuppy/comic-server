@@ -59,6 +59,34 @@ func GetDataDir() (string, error) {
 	return filepath.Join(home, ".local", "share", "comic-server"), nil
 }
 
+// GetCacheDir returns the XDG-compliant cache directory for comic-server -
+// for regenerable data that's fine to lose (e.g. cover thumbnails), unlike
+// GetDataDir.
+// 1. $XDG_CACHE_HOME/comic-server if XDG_CACHE_HOME is set
+// 2. ~/.cache/comic-server otherwise
+func GetCacheDir() (string, error) {
+	if xdgCache := os.Getenv("XDG_CACHE_HOME"); xdgCache != "" {
+		return filepath.Join(xdgCache, "comic-server"), nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get user home directory: %w", err)
+	}
+	return filepath.Join(home, ".cache", "comic-server"), nil
+}
+
+// EnsureCacheDir creates the cache directory if it doesn't exist.
+func EnsureCacheDir() (string, error) {
+	dir, err := GetCacheDir()
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create cache directory: %w", err)
+	}
+	return dir, nil
+}
+
 // EnsureDataDir creates the data directory if it doesn't exist.
 func EnsureDataDir() (string, error) {
 	dir, err := GetDataDir()

@@ -19,6 +19,14 @@ type ServerConfig struct {
 	LibraryPath  string `yaml:"library_path,omitempty" toml:"library_path,omitempty"`   // Path to ComicDb.xml
 	DatabasePath string `yaml:"database_path,omitempty" toml:"database_path,omitempty"` // Path to SQLite database (alternative to library_path)
 
+	// CoverCacheDir overrides where resized cover thumbnails are cached.
+	// Empty means use the XDG cache directory (config.GetCacheDir()) -
+	// fine for a bare-metal install, but under Docker that directory isn't
+	// one of the image's declared volumes (/config, /data, /comics), so the
+	// cache is lost on every container recreate unless this is set to a
+	// path under a mounted volume (e.g. /data/cover-cache).
+	CoverCacheDir string `yaml:"cover_cache_dir,omitempty" toml:"cover_cache_dir,omitempty"`
+
 	// Network settings
 	ServerPort    int    `yaml:"server_port,omitempty" toml:"server_port,omitempty"`       // TCP control port (default: 7620)
 	DiscoveryPort int    `yaml:"discovery_port,omitempty" toml:"discovery_port,omitempty"` // UDP multicast port (default: 7615)

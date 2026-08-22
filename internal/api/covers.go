@@ -58,14 +58,23 @@ func (s *Server) handleGetBookCover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, err := comicvine.ExtractCover(book.FilePath)
+	var data []byte
+	contentType := "image/jpeg" // the cache always re-encodes thumbnails as JPEG
+	if s.coverCache != nil {
+		data, err = s.coverCache.Get(bookID, book.FilePath)
+	} else {
+		data, err = comicvine.ExtractCover(book.FilePath)
+		if err == nil {
+			contentType = http.DetectContentType(data)
+		}
+	}
 	if err != nil {
 		log.Warn().Err(err).Str("book_id", bookID).Str("file_path", book.FilePath).Msg("Failed to extract cover image")
 		http.Error(w, "Cover not available", http.StatusNotFound)
 		return
 	}
 
-	w.Header().Set("Content-Type", http.DetectContentType(data))
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "private, max-age=3600")
 	w.Write(data)
 }
