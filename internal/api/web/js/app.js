@@ -59,6 +59,10 @@ class Dashboard {
             // regardless of current route, since dashboard.init() always
             // runs on startup.
             navigation.updateBadge('lists', (lists.lists ?? []).length);
+
+            // Nothing else ever called this for "devices" - the badge was
+            // dead code, permanently hidden regardless of route.
+            navigation.updateBadge('devices', stats.registered_devices ?? 0);
         } catch (error) {
             console.error('Failed to update stats:', error);
         }
