@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.3.0](https://github.com/duckpuppy/comic-server/compare/v1.2.1...v1.3.0) (2026-08-23)
+
+
+### Features
+
+* add up-a-level button to Lists Browser for mobile thumb navigation ([f73bc5f](https://github.com/duckpuppy/comic-server/commit/f73bc5f76f7e480125f4c3a69a0919f8070844ee))
+
+
+### Bug Fixes
+
+* populate nav Devices badge (was dead code, never called) ([223d684](https://github.com/duckpuppy/comic-server/commit/223d6843eb5eec53e76175a1c20b47a6364987bb))
+* populate nav Lists badge on every page load, not just after visiting Lists ([63bbb50](https://github.com/duckpuppy/comic-server/commit/63bbb50f793f26759b86613f2e05f2c652159994))
+* stop Lists Browser action buttons from stealing taps on touch screens ([c66e667](https://github.com/duckpuppy/comic-server/commit/c66e667da3427b49ff4e63ae2fe35f8603dda36e))
+
 ## [1.2.1](https://github.com/duckpuppy/comic-server/compare/v1.2.0...v1.2.1) (2026-08-22)
 
 
