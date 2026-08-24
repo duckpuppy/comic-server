@@ -902,9 +902,19 @@
     line-height: 1;
 }
 
+/* aspect-ratio + flex reserve a real, sized box so the absolutely
+   positioned <img> below has actual layout - a lazy-loaded <img> that's
+   display:none (this box's old approach) has no size/position, so the
+   browser can never observe it entering the viewport and simply never
+   starts loading it at all. Hiding it with opacity instead keeps it in
+   layout, so native lazy-loading actually works. */
 .comic-cover {
     position: relative;
     margin-bottom: 0.5rem;
+    aspect-ratio: 2 / 3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .comic-placeholder {
@@ -912,15 +922,18 @@
 }
 
 .comic-cover-img {
-    display: none;
+    position: absolute;
+    inset: 0;
     width: 100%;
-    aspect-ratio: 2 / 3;
+    height: 100%;
     object-fit: cover;
     border-radius: 0.25rem;
+    opacity: 0;
+    transition: opacity 0.15s;
 }
 
 .comic-cover-img.loaded {
-    display: block;
+    opacity: 1;
 }
 
 .comic-series {
