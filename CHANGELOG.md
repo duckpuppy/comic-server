@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.2](https://github.com/duckpuppy/comic-server/compare/v1.3.1...v1.3.2) (2026-08-24)
+
+
+### Bug Fixes
+
+* add dedicated library path mapping, independent of Komga's ([378a836](https://github.com/duckpuppy/comic-server/commit/378a8362ffbe36f30eee29efb4107fade26e44dc))
+
 ## [1.3.1](https://github.com/duckpuppy/comic-server/compare/v1.3.0...v1.3.1) (2026-08-24)
 
 
