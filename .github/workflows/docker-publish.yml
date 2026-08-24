@@ -10,8 +10,6 @@ on:
   pull_request:
     branches:
       - main
-  release:
-    types: [published]
   workflow_dispatch:
 
 env:
@@ -60,8 +58,17 @@ jobs:
             type=match,pattern=comic-server-v(.*),group=1
             # Tag with git commit SHA (only for branch pushes, not PRs or tags)
             type=sha,prefix={{branch}}-,enable=${{ github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/') }}
-            # Always tag latest on main
-            type=raw,value=latest,enable={{is_default_branch}}
+            # "latest" tracks the most recent actual release (a version tag
+            # push), never a plain branch push. docker/metadata-action's
+            # {{is_default_branch}} considers a tag push "on the default
+            # branch" too when it points at main's current tip, so using it
+            # here let BOTH the branch-push build (always version=dev-<sha>,
+            # since it has no tag to read a real version from) and the
+            # tag-push build (correct version) race to publish "latest" -
+            # whichever finished last won, so "latest" would nondeterministically
+            # carry the wrong version string. Restricting to an actual vX.Y.Z
+            # tag ref makes it deterministic and always correctly versioned.
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/comic-server-v') }}
 
       - name: Get version info
         id: version
