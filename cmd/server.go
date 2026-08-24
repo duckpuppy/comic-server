@@ -728,6 +728,7 @@ func handleSyncRequest(
 
 	// Create syncer with backend
 	syncer := csync.NewSyncer(client, backend)
+	syncer.SetPathResolver(cfg.ResolveLibraryFilePath)
 
 	// Apply device config if exists
 	if deviceConfig, ok := cfg.Devices[deviceID]; ok {

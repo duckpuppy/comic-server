@@ -166,8 +166,23 @@ func EffectiveKeepLastReadCount(settings *SharedListSettings) int {
 // ApplySettings applies all configured options to a list of books
 // Returns the filtered, sorted, and limited list
 func ApplySettings(books []*library.ComicBook, settings *SharedListSettings) ([]*library.ComicBook, error) {
+	return ApplySettingsWithResolver(books, settings, nil)
+}
+
+// ApplySettingsWithResolver is ApplySettings, but resolvePath translates a
+// book's raw FilePath before any size-based limit needs to stat the file
+// (see Syncer.SetPathResolver) - without it, a byte-size (MB/GB) list limit
+// silently drops every book on a deployment where the library was authored
+// on a different OS/mount than this process runs on (getBookFileSize's stat
+// fails, and limitBySize just skips books it can't size - see
+// comic-server-4n9). Pass nil for no translation (identity), same as
+// ApplySettings.
+func ApplySettingsWithResolver(books []*library.ComicBook, settings *SharedListSettings, resolvePath func(string) string) ([]*library.ComicBook, error) {
 	if settings == nil {
 		settings = DefaultSettings()
+	}
+	if resolvePath == nil {
+		resolvePath = func(p string) string { return p }
 	}
 
 	result := books
@@ -204,7 +219,7 @@ func ApplySettings(books []*library.ComicBook, settings *SharedListSettings) ([]
 	// Step 5: Apply limit
 	if settings.Limit {
 		var err error
-		result, err = limitBooks(result, settings.LimitValue, settings.LimitValueType)
+		result, err = limitBooks(result, settings.LimitValue, settings.LimitValueType, resolvePath)
 		if err != nil {
 			return nil, err
 		}
@@ -374,7 +389,7 @@ func sortByAlternateSeries(books []*library.ComicBook) {
 }
 
 // limitBooks limits the book list by count or size
-func limitBooks(books []*library.ComicBook, limitValue int, limitType LimitType) ([]*library.ComicBook, error) {
+func limitBooks(books []*library.ComicBook, limitValue int, limitType LimitType, resolvePath func(string) string) ([]*library.ComicBook, error) {
 	if limitValue <= 0 {
 		return books, nil
 	}
@@ -387,9 +402,9 @@ func limitBooks(books []*library.ComicBook, limitValue int, limitType LimitType)
 	case LimitTypeBooks:
 		return limitByCount(books, limitValue), nil
 	case LimitTypeMB:
-		return limitBySize(books, int64(limitValue)*1024*1024)
+		return limitBySize(books, int64(limitValue)*1024*1024, resolvePath)
 	case LimitTypeGB:
-		return limitBySize(books, int64(limitValue)*1024*1024*1024)
+		return limitBySize(books, int64(limitValue)*1024*1024*1024, resolvePath)
 	default:
 		return nil, fmt.Errorf("unknown limit type: %v", limitType)
 	}
@@ -403,14 +418,18 @@ func limitByCount(books []*library.ComicBook, count int) []*library.ComicBook {
 	return books[:count]
 }
 
-// limitBySize returns books up to the specified total size in bytes
-func limitBySize(books []*library.ComicBook, maxBytes int64) ([]*library.ComicBook, error) {
+// limitBySize returns books up to the specified total size in bytes.
+// resolvePath may be nil (treated as identity).
+func limitBySize(books []*library.ComicBook, maxBytes int64, resolvePath func(string) string) ([]*library.ComicBook, error) {
+	if resolvePath == nil {
+		resolvePath = func(p string) string { return p }
+	}
 	var result []*library.ComicBook
 	var totalSize int64
 
 	for _, book := range books {
 		// Get file size for this book
-		size, err := getBookFileSize(book)
+		size, err := getBookFileSize(book, resolvePath)
 		if err != nil {
 			// If we can't get size, skip this book
 			continue
@@ -430,14 +449,15 @@ func limitBySize(books []*library.ComicBook, maxBytes int64) ([]*library.ComicBo
 }
 
 // getBookFileSize returns the file size in bytes for a comic book
-func getBookFileSize(book *library.ComicBook) (int64, error) {
+func getBookFileSize(book *library.ComicBook, resolvePath func(string) string) (int64, error) {
 	if book.FilePath == "" {
 		return 0, fmt.Errorf("book %s has no file path", book.ID)
 	}
 
-	fileInfo, err := os.Stat(book.FilePath)
+	resolvedPath := resolvePath(book.FilePath)
+	fileInfo, err := os.Stat(resolvedPath)
 	if err != nil {
-		return 0, fmt.Errorf("failed to stat %s: %w", book.FilePath, err)
+		return 0, fmt.Errorf("failed to stat %s: %w", resolvedPath, err)
 	}
 
 	return fileInfo.Size(), nil

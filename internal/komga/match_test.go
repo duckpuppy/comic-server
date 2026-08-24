@@ -9,79 +9,16 @@ import (
 	"github.com/duckpuppy/comic-server/internal/library"
 )
 
-func TestTranslatePath(t *testing.T) {
-	tests := []struct {
-		name       string
-		localRoot  string
-		remoteRoot string
-		localPath  string
-		want       string
-		wantErr    bool
-	}{
-		{
-			name:       "windows root, real-world example",
-			localRoot:  `G:\Comics\`,
-			remoteRoot: "/data",
-			localPath:  `G:\Comics\12-Gauge Comics\Sherwood, TX (2014 Limited Series)\Sherwood, TX Vol.2014 #01 (of 05) (July, 2014).cbz`,
-			want:       "/data/12-Gauge Comics/Sherwood, TX (2014 Limited Series)/Sherwood, TX Vol.2014 #01 (of 05) (July, 2014).cbz",
-		},
-		{
-			name:       "root without trailing separator",
-			localRoot:  `G:\Comics`,
-			remoteRoot: "/data",
-			localPath:  `G:\Comics\Batman\Batman #1.cbz`,
-			want:       "/data/Batman/Batman #1.cbz",
-		},
-		{
-			name:       "remote root with trailing slash",
-			localRoot:  `G:\Comics\`,
-			remoteRoot: "/data/",
-			localPath:  `G:\Comics\Batman\Batman #1.cbz`,
-			want:       "/data/Batman/Batman #1.cbz",
-		},
-		{
-			name:       "case-insensitive root match",
-			localRoot:  `g:\comics\`,
-			remoteRoot: "/data",
-			localPath:  `G:\Comics\Batman\Batman #1.cbz`,
-			want:       "/data/Batman/Batman #1.cbz",
-		},
-		{
-			name:       "already forward-slash path",
-			localRoot:  "/mnt/comics",
-			remoteRoot: "/data",
-			localPath:  "/mnt/comics/Batman/Batman #1.cbz",
-			want:       "/data/Batman/Batman #1.cbz",
-		},
-		{
-			name:       "path not rooted at local_root",
-			localRoot:  `G:\Comics\`,
-			remoteRoot: "/data",
-			localPath:  `D:\Other\Batman #1.cbz`,
-			wantErr:    true,
-		},
-		{
-			name:       "path shorter than root",
-			localRoot:  `G:\Comics\Long\Root\`,
-			remoteRoot: "/data",
-			localPath:  `G:\Short.cbz`,
-			wantErr:    true,
-		},
+// TranslatePath's actual logic is tested in internal/pathmap; this package
+// only re-exports a thin wrapper (see match.go), so a single delegation
+// smoke test is enough here.
+func TestTranslatePath_DelegatesToPathmap(t *testing.T) {
+	got, err := TranslatePath(`G:\Comics\`, "/data", `G:\Comics\Batman\Batman #1.cbz`)
+	if err != nil {
+		t.Fatalf("TranslatePath() error = %v", err)
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := TranslatePath(tt.localRoot, tt.remoteRoot, tt.localPath)
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("TranslatePath() error = %v, wantErr %v", err, tt.wantErr)
-			}
-			if err != nil {
-				return
-			}
-			if got != tt.want {
-				t.Errorf("TranslatePath() = %q, want %q", got, tt.want)
-			}
-		})
+	if want := "/data/Batman/Batman #1.cbz"; got != want {
+		t.Errorf("TranslatePath() = %q, want %q", got, want)
 	}
 }
 

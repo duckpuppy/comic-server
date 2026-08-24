@@ -4,38 +4,19 @@ import (
 	"context"
 	"fmt"
 	"path"
-	"strings"
 
 	"github.com/duckpuppy/comic-server/internal/library"
+	"github.com/duckpuppy/comic-server/internal/pathmap"
 )
 
-// TranslatePath converts a comic-server library path (ComicBook.FilePath,
-// using whatever separator style the ComicRack host's OS produced) into the
-// equivalent path as Komga sees it, by swapping localRoot for remoteRoot -
-// the same approach as the *Arr apps' Remote Path Mapping. Directory
-// structure below the root is assumed identical between the two.
-//
-// The localRoot prefix match is case-insensitive (Windows paths typically
-// are), but everything after the root is preserved verbatim, since Komga's
-// filesystem is usually Linux and case-sensitive.
+// TranslatePath converts a comic-server library path into the equivalent
+// path as Komga sees it. Thin wrapper kept for this package's existing call
+// sites; the actual implementation (and its tests) live in internal/pathmap
+// since covers.go and internal/sync need the identical translation for
+// comic-server's OWN filesystem view, not just Komga's - see
+// comic-server-64l/comic-server-ivq/comic-server-4n9.
 func TranslatePath(localRoot, remoteRoot, localPath string) (string, error) {
-	normPath := normalizeSlashes(localPath)
-	normRoot := strings.TrimSuffix(normalizeSlashes(localRoot), "/")
-
-	if len(normPath) < len(normRoot) || !strings.EqualFold(normPath[:len(normRoot)], normRoot) {
-		return "", fmt.Errorf("path %q is not rooted at local_root %q", localPath, localRoot)
-	}
-
-	suffix := strings.TrimPrefix(normPath[len(normRoot):], "/")
-	remote := strings.TrimSuffix(normalizeSlashes(remoteRoot), "/")
-	if suffix == "" {
-		return remote, nil
-	}
-	return remote + "/" + suffix, nil
-}
-
-func normalizeSlashes(p string) string {
-	return strings.ReplaceAll(p, "\\", "/")
+	return pathmap.TranslatePath(localRoot, remoteRoot, localPath)
 }
 
 // Index is a snapshot of Komga's library keyed by file path, used to

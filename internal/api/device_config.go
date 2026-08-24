@@ -345,7 +345,7 @@ func (s *Server) handlePreviewListBooks(w http.ResponseWriter, r *http.Request) 
 		settings = sync.DefaultSettings()
 	}
 
-	filteredBooks, err := sync.ApplySettings(books, settings)
+	filteredBooks, err := sync.ApplySettingsWithResolver(books, settings, s.resolveBookFilePath)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to apply settings: %v", err), http.StatusInternalServerError)
 		return

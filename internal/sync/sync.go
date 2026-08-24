@@ -35,16 +35,41 @@ type Syncer struct {
 	filterList  *library.ComicListItem   // Optional single smart list to filter books (deprecated, use filterLists)
 	filterLists []*library.ComicListItem // Optional multiple smart lists to filter books (union of all lists)
 	settings    *SharedListSettings      // Sync settings to apply (filtering, sorting, limiting)
+
+	// resolvePath translates a book's raw library FilePath into a path
+	// actually readable on this filesystem, before any direct file read -
+	// see SetPathResolver. Defaults to the identity function: most
+	// deployments run on the same OS/filesystem that wrote the library
+	// XML, so no translation is needed.
+	resolvePath func(string) string
 }
 
 // NewSyncer creates a new sync orchestrator
 func NewSyncer(client Client, backend library.Backend) *Syncer {
 	return &Syncer{
-		client:     client,
-		backend:    backend,
-		filterList: nil,
-		settings:   DefaultSettings(), // Use default settings
+		client:      client,
+		backend:     backend,
+		filterList:  nil,
+		settings:    DefaultSettings(), // Use default settings
+		resolvePath: func(p string) string { return p },
 	}
+}
+
+// SetPathResolver overrides how a book's raw library FilePath is translated
+// into a path this process can actually read, before every direct file
+// access (the real comic file transfer, and free-space/size estimates).
+// Needed whenever the library XML was authored on a different OS/mount than
+// this comic-server process runs on (e.g. a Windows-authored library served
+// from a Linux container) - see config.Config.ResolveLibraryFilePath, the
+// intended source of the function passed here. Without this, every direct
+// file read fails with "no such file or directory" despite the book
+// existing - see comic-server-4n9, the same class of bug as
+// comic-server-ivq (cover extraction) had before it was fixed.
+func (s *Syncer) SetPathResolver(resolve func(string) string) {
+	if resolve == nil {
+		resolve = func(p string) string { return p }
+	}
+	s.resolvePath = resolve
 }
 
 // SetFilterList sets a smart list to filter which books get synced
@@ -356,7 +381,7 @@ func (s *Syncer) ComputeSyncPlan(deviceBooks map[string]*DeviceBook) ([]SyncOper
 
 	// Apply sync settings (filtering, sorting, limiting)
 	if s.settings != nil {
-		processedBooks, err := ApplySettings(booksToSync, s.settings)
+		processedBooks, err := ApplySettingsWithResolver(booksToSync, s.settings, s.resolvePath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to apply sync settings: %w", err)
 		}

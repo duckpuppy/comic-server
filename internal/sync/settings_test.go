@@ -599,7 +599,7 @@ func TestLimitBySize(t *testing.T) {
 	books[2].FilePath = file3
 
 	// Limit to 4MB - should get books 1 and 2 (3MB total)
-	result, err := limitBySize(books, 4*1024*1024)
+	result, err := limitBySize(books, 4*1024*1024, nil)
 	if err != nil {
 		t.Fatalf("limitBySize failed: %v", err)
 	}
@@ -610,6 +610,49 @@ func TestLimitBySize(t *testing.T) {
 
 	if result[0].ID != "1" || result[1].ID != "2" {
 		t.Errorf("Expected books 1 and 2, got %s and %s", result[0].ID, result[1].ID)
+	}
+}
+
+// TestLimitBySize_UsesPathResolver covers comic-server-4n9: without path
+// translation, getBookFileSize's stat fails for every book on a deployment
+// where the library's raw FilePath isn't directly readable, and
+// limitBySize silently skips any book it can't size - a byte-size (MB/GB)
+// list limit would silently sync nothing, with no error surfaced anywhere.
+func TestLimitBySize_UsesPathResolver(t *testing.T) {
+	tmpDir := t.TempDir()
+	file1 := filepath.Join(tmpDir, "book1.cbz")
+	writeFile(t, file1, 1*1024*1024)
+
+	books := []*library.ComicBook{
+		createTestBook("1", "Batman", 2020, 1, "1", 20, 0),
+	}
+	books[0].FilePath = `G:\Comics\Batman\Batman #1.cbz`
+
+	resolvePath := func(rawPath string) string {
+		if rawPath == `G:\Comics\Batman\Batman #1.cbz` {
+			return file1
+		}
+		return rawPath
+	}
+
+	// Without the resolver, the raw Windows path doesn't exist on this
+	// filesystem and the book is silently dropped.
+	withoutResolver, err := limitBySize(books, 4*1024*1024, nil)
+	if err != nil {
+		t.Fatalf("limitBySize failed: %v", err)
+	}
+	if len(withoutResolver) != 0 {
+		t.Fatalf("expected 0 books without a resolver (raw path unreadable), got %d", len(withoutResolver))
+	}
+
+	// With the resolver, the book resolves to a real, readable file and is
+	// correctly included.
+	withResolver, err := limitBySize(books, 4*1024*1024, resolvePath)
+	if err != nil {
+		t.Fatalf("limitBySize failed: %v", err)
+	}
+	if len(withResolver) != 1 || withResolver[0].ID != "1" {
+		t.Fatalf("expected book 1 included with a resolver, got %+v", withResolver)
 	}
 }
 
@@ -630,7 +673,7 @@ func TestLimitBySize_ExactBoundary(t *testing.T) {
 	books[1].FilePath = file2
 
 	// Limit is exactly 1MB + 2MB - both books should fit.
-	result, err := limitBySize(books, 3*1024*1024)
+	result, err := limitBySize(books, 3*1024*1024, nil)
 	if err != nil {
 		t.Fatalf("limitBySize failed: %v", err)
 	}
@@ -652,7 +695,7 @@ func TestLimitBySize_FirstBookExceedsLimit(t *testing.T) {
 	}
 	books[0].FilePath = file1
 
-	result, err := limitBySize(books, 1*1024*1024)
+	result, err := limitBySize(books, 1*1024*1024, nil)
 	if err != nil {
 		t.Fatalf("limitBySize failed: %v", err)
 	}

@@ -553,9 +553,10 @@ func (s *Syncer) readComicFile(book *library.ComicBook) ([]byte, error) {
 		return nil, fmt.Errorf("book %s has no file path", book.ID)
 	}
 
-	data, err := os.ReadFile(book.FilePath)
+	resolvedPath := s.resolvePath(book.FilePath)
+	data, err := os.ReadFile(resolvedPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read comic file %s: %w", book.FilePath, err)
+		return nil, fmt.Errorf("failed to read comic file %s: %w", resolvedPath, err)
 	}
 
 	return data, nil
@@ -571,10 +572,11 @@ func (s *Syncer) calculateRequiredSpace(operations []SyncOperation) (int64, erro
 		case OperationAdd, OperationUpdate:
 			// Need space for both book file and sidecar
 			if op.Book.FilePath != "" {
-				fileInfo, err := os.Stat(op.Book.FilePath)
+				resolvedPath := s.resolvePath(op.Book.FilePath)
+				fileInfo, err := os.Stat(resolvedPath)
 				if err != nil {
 					// If we can't stat the file, estimate conservatively
-					log.Warn().Err(err).Str("path", op.Book.FilePath).Msg("Cannot stat file, using estimate")
+					log.Warn().Err(err).Str("path", resolvedPath).Msg("Cannot stat file, using estimate")
 					// Assume 50MB per book if we can't get size
 					totalBytes += 50 * 1024 * 1024
 					continue

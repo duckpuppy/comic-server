@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/duckpuppy/comic-server/internal/pathmap"
 	"github.com/duckpuppy/comic-server/internal/sync"
 )
 
@@ -11,6 +12,28 @@ import (
 type Config struct {
 	Server  ServerConfig             `yaml:"server,omitempty" toml:"server,omitempty"`
 	Devices map[string]*DeviceConfig `yaml:"devices" toml:"devices"`
+}
+
+// ResolveLibraryFilePath translates a book's raw library path (as recorded
+// by whatever OS/host wrote the XML) into a path this comic-server process
+// can actually open. Prefers Server.LibrarySourceRoot/LibraryMountRoot
+// (comic-server's own mapping); falls back to Server.Komga.LocalRoot/
+// RemoteRoot for backward compatibility with deployments where those
+// happened to also be correct for comic-server's own filesystem - true only
+// when comic-server and Komga share the exact same bind mount (see
+// comic-server-64l, the gap the dedicated mapping actually closes). Falls
+// back to the raw path unchanged if neither mapping is configured, or the
+// path isn't rooted at whichever root was tried. Used by both cover
+// extraction (internal/api) and device-sync file transfer
+// (internal/sync, via cmd/server.go) - see comic-server-4n9.
+func (c *Config) ResolveLibraryFilePath(rawPath string) string {
+	if translated, ok := pathmap.Resolve(c.Server.LibrarySourceRoot, c.Server.LibraryMountRoot, rawPath); ok {
+		return translated
+	}
+	if translated, ok := pathmap.Resolve(c.Server.Komga.LocalRoot, c.Server.Komga.RemoteRoot, rawPath); ok {
+		return translated
+	}
+	return rawPath
 }
 
 // ServerConfig contains global server settings

@@ -2,6 +2,8 @@ package sync
 
 import (
 	"encoding/xml"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/duckpuppy/comic-server/internal/library"
@@ -993,5 +995,91 @@ func TestComputeSyncPlan_SingleFilterList_BackwardCompatibility(t *testing.T) {
 
 	if operations[0].Book.ID != "book1" {
 		t.Errorf("expected book1, got %s", operations[0].Book.ID)
+	}
+}
+
+// TestReadComicFile_UsesPathResolver covers comic-server-4n9: a library
+// authored on a different OS/mount (e.g. Windows paths served from a Linux
+// container) needs its raw FilePath translated before the actual file
+// transfer reads it - the exact bug class comic-server-ivq fixed for cover
+// extraction, confirmed here for the real device-sync file read too.
+func TestReadComicFile_UsesPathResolver(t *testing.T) {
+	dir := t.TempDir()
+	realPath := filepath.Join(dir, "Batman #1.cbz")
+	want := []byte("fake cbz contents")
+	if err := os.WriteFile(realPath, want, 0o644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	syncer := NewSyncer(nil, nil)
+	syncer.SetPathResolver(func(rawPath string) string {
+		if rawPath == `G:\Comics\Batman\Batman #1.cbz` {
+			return realPath
+		}
+		return rawPath
+	})
+
+	book := &library.ComicBook{ID: "1", FilePath: `G:\Comics\Batman\Batman #1.cbz`}
+	got, err := syncer.readComicFile(book)
+	if err != nil {
+		t.Fatalf("readComicFile() error = %v", err)
+	}
+	if string(got) != string(want) {
+		t.Errorf("readComicFile() = %q, want %q", got, want)
+	}
+}
+
+// TestReadComicFile_NoResolverConfigured confirms the default (identity)
+// resolver preserves existing behavior for the common case: a library
+// whose raw FilePath is already directly readable.
+func TestReadComicFile_NoResolverConfigured(t *testing.T) {
+	dir := t.TempDir()
+	realPath := filepath.Join(dir, "Batman #1.cbz")
+	want := []byte("fake cbz contents")
+	if err := os.WriteFile(realPath, want, 0o644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	syncer := NewSyncer(nil, nil)
+	book := &library.ComicBook{ID: "1", FilePath: realPath}
+	got, err := syncer.readComicFile(book)
+	if err != nil {
+		t.Fatalf("readComicFile() error = %v", err)
+	}
+	if string(got) != string(want) {
+		t.Errorf("readComicFile() = %q, want %q", got, want)
+	}
+}
+
+// TestCalculateRequiredSpace_UsesPathResolver covers the free-space check
+// that runs before every sync - it must also translate the book's path or
+// it silently falls back to a 50MB-per-book estimate for every book,
+// masking the real sizes.
+func TestCalculateRequiredSpace_UsesPathResolver(t *testing.T) {
+	dir := t.TempDir()
+	realPath := filepath.Join(dir, "Batman #1.cbz")
+	if err := os.WriteFile(realPath, make([]byte, 12345), 0o644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	syncer := NewSyncer(nil, nil)
+	syncer.SetPathResolver(func(rawPath string) string {
+		if rawPath == `G:\Comics\Batman\Batman #1.cbz` {
+			return realPath
+		}
+		return rawPath
+	})
+
+	ops := []SyncOperation{
+		{Type: OperationAdd, Book: &library.ComicBook{ID: "1", FilePath: `G:\Comics\Batman\Batman #1.cbz`}},
+	}
+	total, err := syncer.calculateRequiredSpace(ops)
+	if err != nil {
+		t.Fatalf("calculateRequiredSpace() error = %v", err)
+	}
+	// Must reflect the real 12345-byte file, not the 50MB fallback estimate
+	// used when the path can't be resolved.
+	if total < 12345 || total > 12345+1024*1024 {
+		t.Errorf("calculateRequiredSpace() = %d, expected close to the real 12345-byte file size, not a fallback estimate", total)
 	}
 }
