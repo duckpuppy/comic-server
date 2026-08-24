@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.1](https://github.com/duckpuppy/comic-server/compare/v1.4.0...v1.4.1) (2026-08-24)
+
+
+### Bug Fixes
+
+* apply library path translation to device-sync file reads too ([acf59ae](https://github.com/duckpuppy/comic-server/commit/acf59ae9353e7ffb49ea25340d9ae77d4490cceb))
+
 ## [1.4.0](https://github.com/duckpuppy/comic-server/compare/v1.3.3...v1.4.0) (2026-08-24)
 
 
