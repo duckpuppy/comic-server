@@ -19,13 +19,14 @@ type UnmatchedBookInfo struct {
 // TargetStatus is a snapshot of one target's most recent sync pass, for the
 // web UI (comic-server-1c0).
 type TargetStatus struct {
-	ListID       string              `json:"list_id"`
-	KomgaName    string              `json:"komga_name"`
-	Type         TargetType          `json:"type"`
-	LastSyncTime time.Time           `json:"last_sync_time"`
-	MatchedCount int                 `json:"matched_count"`
-	Unmatched    []UnmatchedBookInfo `json:"unmatched,omitempty"`
-	Error        string              `json:"error,omitempty"`
+	ListID          string              `json:"list_id"`
+	KomgaName       string              `json:"komga_name"`
+	Type            TargetType          `json:"type"`
+	LastSyncTime    time.Time           `json:"last_sync_time"`
+	MatchedCount    int                 `json:"matched_count"`
+	SourceBookCount int                 `json:"source_book_count"`
+	Unmatched       []UnmatchedBookInfo `json:"unmatched,omitempty"`
+	Error           string              `json:"error,omitempty"`
 }
 
 // Snapshot is the full status payload returned by the REST API: every
@@ -72,11 +73,12 @@ func (s *StatusStore) Record(result TargetResult) {
 	}
 
 	status := TargetStatus{
-		ListID:       result.Target.ListID,
-		KomgaName:    result.Target.KomgaName,
-		Type:         result.Target.Type,
-		LastSyncTime: time.Now(),
-		MatchedCount: result.MatchedCount,
+		ListID:          result.Target.ListID,
+		KomgaName:       result.Target.KomgaName,
+		Type:            result.Target.Type,
+		LastSyncTime:    time.Now(),
+		MatchedCount:    result.MatchedCount,
+		SourceBookCount: result.SourceBookCount,
 	}
 	if result.Err != nil {
 		status.Error = result.Err.Error()

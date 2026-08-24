@@ -106,10 +106,23 @@ func (s *Syncer) TriggerNow() {
 // and later (separate, planned work) for surfacing unmatched books in the
 // web UI.
 type TargetResult struct {
-	Target       Target
+	Target Target
+
+	// MatchedCount is the number of entries pushed to Komga: distinct
+	// series for a Collection target, distinct issues for a Read List
+	// target. For a Collection this is normally much smaller than
+	// SourceBookCount (many issues per series), which is expected and not
+	// itself a sign anything went wrong - see SourceBookCount.
 	MatchedCount int
-	Unmatched    []UnmatchedBook
-	Err          error
+
+	// SourceBookCount is the number of issues the underlying smart list
+	// matched, before series deduplication. Recorded so the UI can show
+	// e.g. "42 series (1,739 issues)" for a Collection instead of a bare
+	// series count that looks like most of the list went missing.
+	SourceBookCount int
+
+	Unmatched []UnmatchedBook
+	Err       error
 }
 
 // Run performs an immediate sync, then repeats on opts.Interval - or
@@ -185,5 +198,5 @@ func (s *Syncer) syncTarget(ctx context.Context, idx *Index, target Target) Targ
 		err = fmt.Errorf("push target %q: %w", target.KomgaName, err)
 	}
 
-	return TargetResult{Target: target, MatchedCount: len(matched), Unmatched: unmatched, Err: err}
+	return TargetResult{Target: target, MatchedCount: len(matched), SourceBookCount: len(books), Unmatched: unmatched, Err: err}
 }

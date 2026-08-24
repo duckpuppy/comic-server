@@ -98,7 +98,7 @@ class KomgaStatus {
                 <div class="komga-target-stats">
                     <div class="komga-stat">
                         <span class="komga-stat-label">Matched:</span>
-                        <span class="komga-stat-value">${target.matched_count}</span>
+                        <span class="komga-stat-value">${this.formatMatchedCount(target)}</span>
                     </div>
                     <div class="komga-stat">
                         <span class="komga-stat-label">Unmatched:</span>
@@ -113,6 +113,20 @@ class KomgaStatus {
                 ${unmatched.length > 0 ? this.renderUnmatched(unmatched) : ''}
             </div>
         `;
+    }
+
+    // A Collection target's "matched" count is distinct SERIES, not issues
+    // (Komga collections group by series) - a bare number there reads like
+    // most of the list went missing when really every issue matched fine,
+    // just deduplicated down to its series. Read List targets already match
+    // 1:1 with issues, so no extra context is needed there.
+    formatMatchedCount(target) {
+        const matched = target.matched_count;
+        if (target.type === 'collection' && target.source_book_count > 0 && target.source_book_count !== matched) {
+            const issueLabel = target.source_book_count === 1 ? 'issue' : 'issues';
+            return `${matched.toLocaleString()} series (${target.source_book_count.toLocaleString()} ${issueLabel})`;
+        }
+        return matched.toLocaleString();
     }
 
     renderUnmatched(unmatched) {

@@ -115,11 +115,83 @@ func TestSyncer_SyncTarget_Collection(t *testing.T) {
 	if results[0].MatchedCount != 1 {
 		t.Errorf("expected 1 matched series, got %d", results[0].MatchedCount)
 	}
+	if results[0].SourceBookCount != 1 {
+		t.Errorf("expected SourceBookCount 1, got %d", results[0].SourceBookCount)
+	}
 	if upsertedName != "Batman Collection" {
 		t.Errorf("unexpected upserted collection name: %q", upsertedName)
 	}
 	if len(upsertedSeriesIDs) != 1 || upsertedSeriesIDs[0] != "s1" {
 		t.Errorf("unexpected upserted series IDs: %v", upsertedSeriesIDs)
+	}
+}
+
+// TestSyncer_SyncTarget_Collection_SourceBookCountTracksDedup covers the
+// user-reported case (2026-08-24): a Collection target with many issues per
+// series legitimately produces MatchedCount << SourceBookCount (series
+// dedup), which the UI needs SourceBookCount to explain clearly instead of
+// looking like most of the list failed to match.
+func TestSyncer_SyncTarget_Collection_SourceBookCountTracksDedup(t *testing.T) {
+	c, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/v1/series":
+			json.NewEncoder(w).Encode(pageResponse[Series]{
+				Content: []Series{{ID: "s1", Name: "Batman", URL: "/data/Batman"}},
+				Last:    true,
+			})
+		case r.URL.Path == "/api/v1/books":
+			json.NewEncoder(w).Encode(pageResponse[Book]{Last: true})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/collections":
+			json.NewEncoder(w).Encode(pageResponse[collectionDto]{Last: true})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/collections":
+			json.NewEncoder(w).Encode(collectionDto{ID: "new-id"})
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	})
+
+	backend := &fakeBackend{
+		lists: map[string]*library.ComicListItem{
+			"{GUID-1}": {ID: "{GUID-1}", Name: "Batman Comics"},
+		},
+		books: map[string][]*library.ComicBook{
+			"{GUID-1}": {
+				{ID: "1", FilePath: `G:\Comics\Batman\Batman #1.cbz`},
+				{ID: "2", FilePath: `G:\Comics\Batman\Batman #2.cbz`},
+				{ID: "3", FilePath: `G:\Comics\Batman\Batman #3.cbz`},
+			},
+		},
+	}
+
+	syncer := &Syncer{
+		client:  c,
+		backend: backend,
+		opts: SyncOptions{
+			LocalRoot:  `G:\Comics\`,
+			RemoteRoot: "/data",
+			Targets: []Target{
+				{ListID: "{GUID-1}", KomgaName: "Batman Collection", Type: TargetCollection},
+			},
+		},
+	}
+
+	var results []TargetResult
+	syncer.syncOnce(context.Background(), func(r TargetResult) { results = append(results, r) })
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Err != nil {
+		t.Fatalf("unexpected error: %v", results[0].Err)
+	}
+	if results[0].MatchedCount != 1 {
+		t.Errorf("expected 1 matched series, got %d", results[0].MatchedCount)
+	}
+	if results[0].SourceBookCount != 3 {
+		t.Errorf("expected SourceBookCount 3 (3 issues), got %d", results[0].SourceBookCount)
+	}
+	if len(results[0].Unmatched) != 0 {
+		t.Errorf("expected 0 unmatched, got %d", len(results[0].Unmatched))
 	}
 }
 
