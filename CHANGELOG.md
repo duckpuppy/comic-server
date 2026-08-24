@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.3](https://github.com/duckpuppy/comic-server/compare/v1.3.2...v1.3.3) (2026-08-24)
+
+
+### Bug Fixes
+
+* cover thumbnails never load - display:none blocks native lazy-loading ([7d8f254](https://github.com/duckpuppy/comic-server/commit/7d8f2541145b56ce2d569e66ac5f969d51d1daea))
+
 ## [1.3.2](https://github.com/duckpuppy/comic-server/compare/v1.3.1...v1.3.2) (2026-08-24)
 
 
