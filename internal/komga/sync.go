@@ -26,6 +26,12 @@ type Target struct {
 	ListID    string
 	KomgaName string
 	Type      TargetType
+
+	// SyncReadStatus opts this target into pushing comic-server's known
+	// read/unread status to Komga on every sync pass, independent of the
+	// collection/read-list membership push above - see
+	// resolveBookReadStatus and comic-server-bkh's design.
+	SyncReadStatus bool
 }
 
 // SyncOptions configures a Syncer.
@@ -122,7 +128,18 @@ type TargetResult struct {
 	SourceBookCount int
 
 	Unmatched []UnmatchedBook
-	Err       error
+
+	// ReadStatusPushed/ReadStatusFailed report the outcome of the
+	// independent read-status push (only attempted when
+	// Target.SyncReadStatus is set) - separate from MatchedCount/Unmatched
+	// above, which are about collection/read-list membership, not read
+	// status. A read-status push failure never sets Err; it's tracked here
+	// the same way Unmatched tracks membership failures without failing
+	// the whole target.
+	ReadStatusPushed int
+	ReadStatusFailed []UnmatchedBook
+
+	Err error
 }
 
 // Run performs an immediate sync, then repeats on opts.Interval - or
@@ -198,5 +215,31 @@ func (s *Syncer) syncTarget(ctx context.Context, idx *Index, target Target) Targ
 		err = fmt.Errorf("push target %q: %w", target.KomgaName, err)
 	}
 
-	return TargetResult{Target: target, MatchedCount: len(matched), SourceBookCount: len(books), Unmatched: unmatched, Err: err}
+	result := TargetResult{Target: target, MatchedCount: len(matched), SourceBookCount: len(books), Unmatched: unmatched, Err: err}
+
+	if target.SyncReadStatus {
+		result.ReadStatusPushed, result.ReadStatusFailed = s.pushReadStatus(ctx, idx, books)
+	}
+
+	return result
+}
+
+// pushReadStatus pushes comic-server's known read/unread status (see
+// library.ComicBook.IsUnread, the same logic already used for read/unread
+// badges elsewhere in the UI) to Komga for each book in the list, one-way.
+// Independent of the collection/read-list membership push above: even a
+// Collection target (series-level grouping) needs the underlying per-BOOK
+// Komga ID here, since read status is inherently per-issue.
+func (s *Syncer) pushReadStatus(ctx context.Context, idx *Index, books []*library.ComicBook) (pushed int, failed []UnmatchedBook) {
+	matched, unmatched := idx.ResolveBookReadStatus(books, s.opts.LocalRoot, s.opts.RemoteRoot)
+	failed = append(failed, unmatched...)
+
+	for _, rs := range matched {
+		if err := s.client.SetBookReadProgress(ctx, rs.KomgaBookID, rs.Read); err != nil {
+			failed = append(failed, UnmatchedBook{Book: rs.Book, Reason: fmt.Sprintf("push read status: %v", err)})
+			continue
+		}
+		pushed++
+	}
+	return pushed, failed
 }

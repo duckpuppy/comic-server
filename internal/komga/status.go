@@ -27,6 +27,14 @@ type TargetStatus struct {
 	SourceBookCount int                 `json:"source_book_count"`
 	Unmatched       []UnmatchedBookInfo `json:"unmatched,omitempty"`
 	Error           string              `json:"error,omitempty"`
+
+	// SyncReadStatus mirrors Target.SyncReadStatus so the UI can tell
+	// "this target never attempted a read-status push" (show nothing)
+	// apart from "it attempted one and pushed/failed zero books" (both of
+	// which report zero in the fields below).
+	SyncReadStatus   bool                `json:"sync_read_status,omitempty"`
+	ReadStatusPushed int                 `json:"read_status_pushed,omitempty"`
+	ReadStatusFailed []UnmatchedBookInfo `json:"read_status_failed,omitempty"`
 }
 
 // Snapshot is the full status payload returned by the REST API: every
@@ -55,6 +63,28 @@ func NewStatusStore() *StatusStore {
 	return &StatusStore{byID: make(map[string]TargetStatus)}
 }
 
+// toUnmatchedBookInfos converts UnmatchedBook (internal, carries a
+// *library.ComicBook) to the JSON-facing UnmatchedBookInfo shape. Shared by
+// Unmatched (membership failures) and ReadStatusFailed (read-status push
+// failures) - both are the same shape.
+func toUnmatchedBookInfos(unmatched []UnmatchedBook) []UnmatchedBookInfo {
+	if len(unmatched) == 0 {
+		return nil
+	}
+	infos := make([]UnmatchedBookInfo, 0, len(unmatched))
+	for _, u := range unmatched {
+		info := UnmatchedBookInfo{Reason: u.Reason}
+		if u.Book != nil {
+			info.BookID = u.Book.ID
+			info.Series = u.Book.Series
+			info.Number = u.Book.Number
+			info.FilePath = u.Book.FilePath
+		}
+		infos = append(infos, info)
+	}
+	return infos
+}
+
 // Record stores the outcome of one target's sync pass. A TargetResult with
 // an empty Target.ListID and a non-nil Err represents a failure to build
 // the Komga index itself (see Syncer.syncOnce) and is recorded separately,
@@ -73,25 +103,19 @@ func (s *StatusStore) Record(result TargetResult) {
 	}
 
 	status := TargetStatus{
-		ListID:          result.Target.ListID,
-		KomgaName:       result.Target.KomgaName,
-		Type:            result.Target.Type,
-		LastSyncTime:    time.Now(),
-		MatchedCount:    result.MatchedCount,
-		SourceBookCount: result.SourceBookCount,
+		ListID:           result.Target.ListID,
+		KomgaName:        result.Target.KomgaName,
+		Type:             result.Target.Type,
+		LastSyncTime:     time.Now(),
+		MatchedCount:     result.MatchedCount,
+		SourceBookCount:  result.SourceBookCount,
+		Unmatched:        toUnmatchedBookInfos(result.Unmatched),
+		SyncReadStatus:   result.Target.SyncReadStatus,
+		ReadStatusPushed: result.ReadStatusPushed,
+		ReadStatusFailed: toUnmatchedBookInfos(result.ReadStatusFailed),
 	}
 	if result.Err != nil {
 		status.Error = result.Err.Error()
-	}
-	for _, u := range result.Unmatched {
-		info := UnmatchedBookInfo{Reason: u.Reason}
-		if u.Book != nil {
-			info.BookID = u.Book.ID
-			info.Series = u.Book.Series
-			info.Number = u.Book.Number
-			info.FilePath = u.Book.FilePath
-		}
-		status.Unmatched = append(status.Unmatched, info)
 	}
 
 	if _, exists := s.byID[status.ListID]; !exists {

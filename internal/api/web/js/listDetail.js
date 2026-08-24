@@ -436,6 +436,7 @@ class ListDetail {
                 <div class="device-assignment-info">
                     <h4>${this.escapeHtml(target.komga_name)}
                         <span class="komga-target-type">${target.type === 'readlist' ? 'Read List' : 'Collection'}</span>
+                        ${target.sync_read_status ? '<span class="komga-target-type">Read status sync</span>' : ''}
                     </h4>
                     <span class="device-status ${target.enabled ? 'enabled' : 'disabled'}">
                         ${target.enabled ? 'Enabled' : 'Disabled'}
@@ -930,6 +931,7 @@ class ListDetail {
         const typeSelect = document.getElementById('komga-target-type');
         const nameInput = document.getElementById('komga-target-name');
         const enabledCheck = document.getElementById('komga-target-enabled');
+        const syncReadStatusCheck = document.getElementById('komga-target-sync-read-status');
         const saveBtn = document.getElementById('komga-target-save-btn');
         const cancelBtn = document.getElementById('komga-target-cancel-btn');
         const closeBtn = document.getElementById('komga-target-modal-close');
@@ -938,6 +940,7 @@ class ListDetail {
         typeSelect.value = existingTarget ? existingTarget.type : 'collection';
         nameInput.value = existingTarget ? existingTarget.komga_name : this.list.name;
         enabledCheck.checked = existingTarget ? existingTarget.enabled : true;
+        syncReadStatusCheck.checked = existingTarget ? !!existingTarget.sync_read_status : false;
 
         const close = () => modal.classList.remove('active');
         const onKeydown = (e) => {
@@ -962,7 +965,8 @@ class ListDetail {
             await this.saveKomgaTarget({
                 type: typeSelect.value,
                 komga_name: komgaName,
-                enabled: enabledCheck.checked
+                enabled: enabledCheck.checked,
+                sync_read_status: syncReadStatusCheck.checked
             }, { isUpdate: !!existingTarget });
             saveBtn.disabled = false;
             close();

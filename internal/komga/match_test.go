@@ -142,6 +142,43 @@ func TestResolveReadListBooks_DeduplicatesSameKomgaID(t *testing.T) {
 	}
 }
 
+func TestResolveBookReadStatus(t *testing.T) {
+	idx := &Index{
+		booksByPath: map[string]string{
+			"/data/Batman/Batman #1.cbz": "book-1",
+			"/data/Batman/Batman #2.cbz": "book-2",
+		},
+	}
+
+	books := []*library.ComicBook{
+		// Read: opened, and on/past the last page.
+		{ID: "1", FilePath: `G:\Comics\Batman\Batman #1.cbz`, OpenCount: 1, PageCount: 10, LastPageRead: 9},
+		// Unread: never opened.
+		{ID: "2", FilePath: `G:\Comics\Batman\Batman #2.cbz`, OpenCount: 0},
+		// Not in Komga's index.
+		{ID: "3", FilePath: `G:\Comics\Batman\Batman #3.cbz`},
+	}
+
+	matched, unmatched := idx.ResolveBookReadStatus(books, `G:\Comics\`, "/data")
+
+	if len(matched) != 2 {
+		t.Fatalf("expected 2 matched books, got %d: %+v", len(matched), matched)
+	}
+	if matched[0].KomgaBookID != "book-1" || !matched[0].Read {
+		t.Errorf("expected book-1 matched as Read, got %+v", matched[0])
+	}
+	if matched[1].KomgaBookID != "book-2" || matched[1].Read {
+		t.Errorf("expected book-2 matched as unread, got %+v", matched[1])
+	}
+	if matched[0].Book.ID != "1" || matched[1].Book.ID != "2" {
+		t.Errorf("expected matched entries to carry their source book, got %+v", matched)
+	}
+
+	if len(unmatched) != 1 || unmatched[0].Book.ID != "3" {
+		t.Errorf("expected book 3 unmatched, got %+v", unmatched)
+	}
+}
+
 func TestResolveCollectionSeries(t *testing.T) {
 	idx := &Index{
 		seriesByPath: map[string]string{

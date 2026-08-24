@@ -1119,9 +1119,10 @@ func komgaTargetsFromConfig(cfgTargets []config.KomgaTarget) []komga.Target {
 			continue
 		}
 		targets = append(targets, komga.Target{
-			ListID:    t.ListID,
-			KomgaName: t.KomgaName,
-			Type:      targetType,
+			ListID:         t.ListID,
+			KomgaName:      t.KomgaName,
+			Type:           targetType,
+			SyncReadStatus: t.SyncReadStatus,
 		})
 	}
 	return targets

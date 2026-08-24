@@ -207,6 +207,51 @@ func TestUpsertReadList_UpdatesWhenFoundByExactName(t *testing.T) {
 	}
 }
 
+func TestSetBookReadProgress_MarksRead(t *testing.T) {
+	var gotBody map[string]any
+	patched := false
+
+	c, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPatch && r.URL.Path == "/api/v1/books/book-1/read-progress" {
+			patched = true
+			json.NewDecoder(r.Body).Decode(&gotBody)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+	})
+
+	if err := c.SetBookReadProgress(context.Background(), "book-1", true); err != nil {
+		t.Fatalf("SetBookReadProgress() error = %v", err)
+	}
+	if !patched {
+		t.Error("expected PATCH to the book's read-progress endpoint")
+	}
+	if completed, _ := gotBody["completed"].(bool); !completed {
+		t.Errorf("expected completed:true in request body, got %v", gotBody)
+	}
+}
+
+func TestSetBookReadProgress_MarksUnread(t *testing.T) {
+	deleted := false
+
+	c, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete && r.URL.Path == "/api/v1/books/book-1/read-progress" {
+			deleted = true
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+	})
+
+	if err := c.SetBookReadProgress(context.Background(), "book-1", false); err != nil {
+		t.Fatalf("SetBookReadProgress() error = %v", err)
+	}
+	if !deleted {
+		t.Error("expected DELETE to the book's read-progress endpoint")
+	}
+}
+
 func TestClient_ErrorOnNon2xx(t *testing.T) {
 	c, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)

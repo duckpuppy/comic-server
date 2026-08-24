@@ -112,6 +112,43 @@ func (idx *Index) ResolveReadListBooks(books []*library.ComicBook, localRoot, re
 	return matched, unmatched
 }
 
+// BookReadStatus pairs a resolved Komga book ID with the source book's
+// current read state, for pushing read/unread status independent of
+// collection/read-list membership (which for a Collection target only
+// tracks distinct series, not per-issue state).
+type BookReadStatus struct {
+	Book        *library.ComicBook
+	KomgaBookID string
+	Read        bool
+}
+
+// ResolveBookReadStatus translates each book's path and looks it up in the
+// index, returning one BookReadStatus per resolved book (no deduplication -
+// unlike ResolveReadListBooks/ResolveCollectionSeries, callers need every
+// book's own read state, not just a set of Komga IDs) and any books that
+// couldn't be resolved.
+func (idx *Index) ResolveBookReadStatus(books []*library.ComicBook, localRoot, remoteRoot string) ([]BookReadStatus, []UnmatchedBook) {
+	var matched []BookReadStatus
+	var unmatched []UnmatchedBook
+
+	for _, book := range books {
+		remotePath, err := TranslatePath(localRoot, remoteRoot, book.FilePath)
+		if err != nil {
+			unmatched = append(unmatched, UnmatchedBook{Book: book, Reason: err.Error()})
+			continue
+		}
+
+		id, ok := idx.booksByPath[remotePath]
+		if !ok {
+			unmatched = append(unmatched, UnmatchedBook{Book: book, Reason: fmt.Sprintf("no Komga book at %q", remotePath)})
+			continue
+		}
+
+		matched = append(matched, BookReadStatus{Book: book, KomgaBookID: id, Read: !book.IsUnread()})
+	}
+	return matched, unmatched
+}
+
 // ResolveCollectionSeries translates each book's path, takes its parent
 // directory as the series path (comic-server's library is organized one
 // directory per series, matching Komga's own layout), and looks that up in

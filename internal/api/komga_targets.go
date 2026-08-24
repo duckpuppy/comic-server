@@ -21,11 +21,12 @@ func (s *Server) SetKomgaSyncer(syncer *komga.Syncer) {
 
 // KomgaTargetResponse is the JSON representation of a config.KomgaTarget.
 type KomgaTargetResponse struct {
-	ListID    string `json:"list_id"`
-	ListName  string `json:"list_name"`
-	Type      string `json:"type"`
-	KomgaName string `json:"komga_name"`
-	Enabled   bool   `json:"enabled"`
+	ListID         string `json:"list_id"`
+	ListName       string `json:"list_name"`
+	Type           string `json:"type"`
+	KomgaName      string `json:"komga_name"`
+	Enabled        bool   `json:"enabled"`
+	SyncReadStatus bool   `json:"sync_read_status"`
 }
 
 // KomgaTargetForListResponse is the response for GET .../komga.
@@ -40,18 +41,20 @@ type KomgaTargetForListResponse struct {
 
 // KomgaTargetWriteRequest is the body for create/update requests.
 type KomgaTargetWriteRequest struct {
-	Type      string `json:"type"`
-	KomgaName string `json:"komga_name"`
-	Enabled   bool   `json:"enabled"`
+	Type           string `json:"type"`
+	KomgaName      string `json:"komga_name"`
+	Enabled        bool   `json:"enabled"`
+	SyncReadStatus bool   `json:"sync_read_status"`
 }
 
 func toKomgaTargetResponse(t config.KomgaTarget) *KomgaTargetResponse {
 	return &KomgaTargetResponse{
-		ListID:    t.ListID,
-		ListName:  t.ListName,
-		Type:      string(t.Type),
-		KomgaName: t.KomgaName,
-		Enabled:   t.Enabled,
+		ListID:         t.ListID,
+		ListName:       t.ListName,
+		Type:           string(t.Type),
+		KomgaName:      t.KomgaName,
+		Enabled:        t.Enabled,
+		SyncReadStatus: t.SyncReadStatus,
 	}
 }
 
@@ -133,11 +136,12 @@ func (s *Server) handleCreateListKomgaTarget(w http.ResponseWriter, r *http.Requ
 		}
 	}
 	newTarget := config.KomgaTarget{
-		ListID:    listID,
-		ListName:  list.Name,
-		Type:      targetType,
-		KomgaName: req.KomgaName,
-		Enabled:   req.Enabled,
+		ListID:         listID,
+		ListName:       list.Name,
+		Type:           targetType,
+		KomgaName:      req.KomgaName,
+		Enabled:        req.Enabled,
+		SyncReadStatus: req.SyncReadStatus,
 	}
 	s.config.Server.Komga.Targets = append(s.config.Server.Komga.Targets, newTarget)
 	saveErr := config.Save(s.config, s.configPath)
@@ -181,6 +185,7 @@ func (s *Server) handleUpdateListKomgaTarget(w http.ResponseWriter, r *http.Requ
 			targets[i].Type = targetType
 			targets[i].KomgaName = req.KomgaName
 			targets[i].Enabled = req.Enabled
+			targets[i].SyncReadStatus = req.SyncReadStatus
 			updated = &targets[i]
 			break
 		}
@@ -266,9 +271,10 @@ func (s *Server) applyKomgaTargets() {
 			continue
 		}
 		targets = append(targets, komga.Target{
-			ListID:    t.ListID,
-			KomgaName: t.KomgaName,
-			Type:      targetType,
+			ListID:         t.ListID,
+			KomgaName:      t.KomgaName,
+			Type:           targetType,
+			SyncReadStatus: t.SyncReadStatus,
 		})
 	}
 

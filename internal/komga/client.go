@@ -205,6 +205,18 @@ func (c *Client) UpsertReadList(ctx context.Context, name string, bookIDs []stri
 // "not found" on the next sync, so the code re-POSTs a create and Komga
 // (correctly) rejects it as a duplicate name. Listing unfiltered sidesteps
 // that entirely.
+// SetBookReadProgress marks a Komga book as read (completed) or unread to
+// match comic-server's own known read state - one-way, comic-server is
+// authoritative (see comic-server-bkh). Komga has no partial/page-level
+// concept needed here: PATCH .../read-progress with completed:true marks
+// read, DELETE .../read-progress marks unread.
+func (c *Client) SetBookReadProgress(ctx context.Context, komgaBookID string, read bool) error {
+	if read {
+		return c.patch(ctx, "/api/v1/books/"+komgaBookID+"/read-progress", map[string]any{"completed": true})
+	}
+	return c.delete(ctx, "/api/v1/books/"+komgaBookID+"/read-progress")
+}
+
 func (c *Client) findCollectionByExactName(ctx context.Context, name string) (*collectionDto, error) {
 	page := 0
 	for {
@@ -263,6 +275,14 @@ func (c *Client) post(ctx context.Context, path string, body any, dest any) erro
 
 func (c *Client) patch(ctx context.Context, path string, body any) error {
 	return c.send(ctx, http.MethodPatch, path, body, nil)
+}
+
+func (c *Client) delete(ctx context.Context, path string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.baseURL+path, nil)
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	return c.do(req, nil)
 }
 
 func (c *Client) send(ctx context.Context, method, path string, body any, dest any) error {

@@ -122,6 +122,13 @@ type KomgaTarget struct {
 	Type      KomgaTargetType `yaml:"type" toml:"type"`
 	KomgaName string          `yaml:"komga_name" toml:"komga_name"` // Name of the collection/read list in Komga
 	Enabled   bool            `yaml:"enabled" toml:"enabled"`       // Allow disable without deleting
+
+	// SyncReadStatus opts this target into pushing comic-server's known
+	// read/unread status (from ComicRack device sync) to Komga on every
+	// sync pass - one-way only, comic-server is authoritative. Off by
+	// default: most targets just want list membership synced. See
+	// comic-server-bkh.
+	SyncReadStatus bool `yaml:"sync_read_status,omitempty" toml:"sync_read_status,omitempty"`
 }
 
 // DeviceConfig contains sync configuration for a specific device

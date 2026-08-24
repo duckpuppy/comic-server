@@ -86,12 +86,15 @@ class KomgaStatus {
 
     renderTarget(target) {
         const unmatched = target.unmatched || [];
+        const readStatusFailed = target.read_status_failed || [];
+        const syncsReadStatus = !!target.sync_read_status;
         return `
             <div class="komga-target-card">
                 <div class="komga-target-header">
                     <div>
                         <strong>${this.escapeHtml(target.komga_name)}</strong>
                         <span class="komga-target-type">${target.type === 'collection' ? 'Collection' : 'Read List'}</span>
+                        ${syncsReadStatus ? '<span class="komga-target-type">Read status sync</span>' : ''}
                     </div>
                     <div class="komga-target-timestamp">${this.formatTimestamp(target.last_sync_time)}</div>
                 </div>
@@ -104,6 +107,16 @@ class KomgaStatus {
                         <span class="komga-stat-label">Unmatched:</span>
                         <span class="komga-stat-value ${unmatched.length > 0 ? 'komga-stat-warning' : ''}">${unmatched.length}</span>
                     </div>
+                    ${syncsReadStatus ? `
+                        <div class="komga-stat">
+                            <span class="komga-stat-label">Read status pushed:</span>
+                            <span class="komga-stat-value">${(target.read_status_pushed || 0).toLocaleString()}</span>
+                        </div>
+                        <div class="komga-stat">
+                            <span class="komga-stat-label">Read status failed:</span>
+                            <span class="komga-stat-value ${readStatusFailed.length > 0 ? 'komga-stat-warning' : ''}">${readStatusFailed.length}</span>
+                        </div>
+                    ` : ''}
                 </div>
                 ${target.error ? `
                     <div class="komga-target-error">
@@ -111,6 +124,7 @@ class KomgaStatus {
                     </div>
                 ` : ''}
                 ${unmatched.length > 0 ? this.renderUnmatched(unmatched) : ''}
+                ${readStatusFailed.length > 0 ? this.renderUnmatched(readStatusFailed, 'read status failure') : ''}
             </div>
         `;
     }
@@ -129,10 +143,10 @@ class KomgaStatus {
         return matched.toLocaleString();
     }
 
-    renderUnmatched(unmatched) {
+    renderUnmatched(unmatched, label = 'unmatched book') {
         return `
             <details class="komga-unmatched">
-                <summary>${unmatched.length} unmatched book${unmatched.length !== 1 ? 's' : ''}</summary>
+                <summary>${unmatched.length} ${label}${unmatched.length !== 1 ? 's' : ''}</summary>
                 <table class="komga-unmatched-table">
                     <thead>
                         <tr>

@@ -255,6 +255,144 @@ func TestSyncer_SyncTarget_ReadList(t *testing.T) {
 	}
 }
 
+// TestSyncer_SyncTarget_PushesReadStatus covers comic-server-bkh: when a
+// target has SyncReadStatus enabled, each resolved book's read/unread state
+// (per library.ComicBook.IsUnread) is pushed to Komga independently of the
+// read-list/collection membership push - one PATCH per read book, one
+// DELETE per unread book.
+func TestSyncer_SyncTarget_PushesReadStatus(t *testing.T) {
+	var patchedIDs, deletedIDs []string
+
+	c, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/v1/series":
+			json.NewEncoder(w).Encode(pageResponse[Series]{Last: true})
+		case r.URL.Path == "/api/v1/books":
+			json.NewEncoder(w).Encode(pageResponse[Book]{
+				Content: []Book{
+					{ID: "b1", URL: "/data/Batman/Batman #1.cbz"},
+					{ID: "b2", URL: "/data/Batman/Batman #2.cbz"},
+				},
+				Last: true,
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/readlists":
+			json.NewEncoder(w).Encode(pageResponse[readListDto]{Last: true})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/readlists":
+			json.NewEncoder(w).Encode(readListDto{ID: "new-id"})
+		case r.Method == http.MethodPatch && r.URL.Path == "/api/v1/books/b1/read-progress":
+			patchedIDs = append(patchedIDs, "b1")
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/books/b2/read-progress":
+			deletedIDs = append(deletedIDs, "b2")
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	})
+
+	backend := &fakeBackend{
+		lists: map[string]*library.ComicListItem{
+			"{GUID-3}": {ID: "{GUID-3}", Name: "Currently Reading"},
+		},
+		books: map[string][]*library.ComicBook{
+			"{GUID-3}": {
+				// Read: opened, on the last page.
+				{ID: "1", FilePath: `G:\Comics\Batman\Batman #1.cbz`, OpenCount: 1, PageCount: 10, LastPageRead: 9},
+				// Unread: never opened.
+				{ID: "2", FilePath: `G:\Comics\Batman\Batman #2.cbz`, OpenCount: 0},
+			},
+		},
+	}
+
+	syncer := &Syncer{
+		client:  c,
+		backend: backend,
+		opts: SyncOptions{
+			LocalRoot:  `G:\Comics\`,
+			RemoteRoot: "/data",
+			Targets: []Target{
+				{ListID: "{GUID-3}", KomgaName: "Currently Reading", Type: TargetReadList, SyncReadStatus: true},
+			},
+		},
+	}
+
+	var results []TargetResult
+	syncer.syncOnce(context.Background(), func(r TargetResult) { results = append(results, r) })
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Err != nil {
+		t.Fatalf("unexpected error: %v", results[0].Err)
+	}
+	if results[0].ReadStatusPushed != 2 {
+		t.Errorf("expected 2 read-status pushes, got %d (failed: %+v)", results[0].ReadStatusPushed, results[0].ReadStatusFailed)
+	}
+	if len(results[0].ReadStatusFailed) != 0 {
+		t.Errorf("expected no read-status failures, got %+v", results[0].ReadStatusFailed)
+	}
+	if len(patchedIDs) != 1 || patchedIDs[0] != "b1" {
+		t.Errorf("expected exactly one PATCH for b1 (read), got %v", patchedIDs)
+	}
+	if len(deletedIDs) != 1 || deletedIDs[0] != "b2" {
+		t.Errorf("expected exactly one DELETE for b2 (unread), got %v", deletedIDs)
+	}
+}
+
+// TestSyncer_SyncTarget_ReadStatusDisabledByDefault confirms a target
+// without SyncReadStatus set never touches the read-progress endpoints,
+// even though every book resolves fine - the toggle must be opt-in.
+func TestSyncer_SyncTarget_ReadStatusDisabledByDefault(t *testing.T) {
+	c, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/v1/series":
+			json.NewEncoder(w).Encode(pageResponse[Series]{Last: true})
+		case r.URL.Path == "/api/v1/books":
+			json.NewEncoder(w).Encode(pageResponse[Book]{
+				Content: []Book{{ID: "b1", URL: "/data/Batman/Batman #1.cbz"}},
+				Last:    true,
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/readlists":
+			json.NewEncoder(w).Encode(pageResponse[readListDto]{Last: true})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/readlists":
+			json.NewEncoder(w).Encode(readListDto{ID: "new-id"})
+		default:
+			t.Errorf("unexpected request (read-progress should never be called): %s %s", r.Method, r.URL.Path)
+		}
+	})
+
+	backend := &fakeBackend{
+		lists: map[string]*library.ComicListItem{
+			"{GUID-4}": {ID: "{GUID-4}", Name: "Currently Reading"},
+		},
+		books: map[string][]*library.ComicBook{
+			"{GUID-4}": {{ID: "1", FilePath: `G:\Comics\Batman\Batman #1.cbz`, OpenCount: 1, PageCount: 10, LastPageRead: 9}},
+		},
+	}
+
+	syncer := &Syncer{
+		client:  c,
+		backend: backend,
+		opts: SyncOptions{
+			LocalRoot:  `G:\Comics\`,
+			RemoteRoot: "/data",
+			Targets: []Target{
+				{ListID: "{GUID-4}", KomgaName: "Currently Reading", Type: TargetReadList},
+			},
+		},
+	}
+
+	var results []TargetResult
+	syncer.syncOnce(context.Background(), func(r TargetResult) { results = append(results, r) })
+
+	if len(results) != 1 || results[0].Err != nil {
+		t.Fatalf("unexpected result: %+v", results)
+	}
+	if results[0].ReadStatusPushed != 0 || len(results[0].ReadStatusFailed) != 0 {
+		t.Errorf("expected no read-status activity when SyncReadStatus is unset, got pushed=%d failed=%+v", results[0].ReadStatusPushed, results[0].ReadStatusFailed)
+	}
+}
+
 func TestSyncer_UnknownListID(t *testing.T) {
 	c, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
