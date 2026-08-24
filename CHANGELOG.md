@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.1](https://github.com/duckpuppy/comic-server/compare/v1.3.0...v1.3.1) (2026-08-24)
+
+
+### Bug Fixes
+
+* apply Komga's local_root/remote_root path mapping to cover extraction ([f16236a](https://github.com/duckpuppy/comic-server/commit/f16236a04f84ebd9bf8aef4b8e5f28dff9b3ee29))
+* clarify Komga Collection "Matched" count is series, not issues ([4bbf999](https://github.com/duckpuppy/comic-server/commit/4bbf999249aae8a8321433308b54b427fdd93680))
+
 ## [1.3.0](https://github.com/duckpuppy/comic-server/compare/v1.2.1...v1.3.0) (2026-08-23)
 
 
