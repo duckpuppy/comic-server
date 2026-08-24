@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/duckpuppy/comic-server/compare/v1.3.3...v1.4.0) (2026-08-24)
+
+
+### Features
+
+* one-way push of read/unread status to Komga, opt-in per target ([f42b6c0](https://github.com/duckpuppy/comic-server/commit/f42b6c02c3aa3b716b919d8c71738302397d890d))
+
 ## [1.3.3](https://github.com/duckpuppy/comic-server/compare/v1.3.2...v1.3.3) (2026-08-24)
 
 
