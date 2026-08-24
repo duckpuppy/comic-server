@@ -110,13 +110,18 @@ document.addEventListener('DOMContentLoaded', () => {
     dashboard.init();
 
     // Show build version/commit in the header for tying test observations
-    // back to a specific deploy
+    // back to a specific deploy. Release builds (GoReleaser injects the real
+    // tag via -X cmd.version) show that tag; local/dev builds default to
+    // "dev" (see cmd/version.go), which isn't useful to display, so those
+    // fall back to the short commit SHA instead.
     fetch('/api/version')
         .then(res => res.json())
         .then(info => {
             const el = document.getElementById('build-version');
             if (el && info.git_commit) {
-                el.textContent = info.git_commit.slice(0, 7);
+                el.textContent = info.version && info.version !== 'dev'
+                    ? `v${info.version}`
+                    : info.git_commit.slice(0, 7);
                 el.title = `Version: ${info.version}\nCommit: ${info.git_commit}\nBuilt: ${info.build_date}`;
             }
         })

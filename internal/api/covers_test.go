@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/duckpuppy/comic-server/internal/config"
 	"github.com/duckpuppy/comic-server/internal/covers"
 	"github.com/duckpuppy/comic-server/internal/library"
 )
@@ -80,6 +81,46 @@ func TestHandleGetBookCover_ReturnsCoverImage(t *testing.T) {
 	}
 	if ct := w.Header().Get("Content-Type"); ct != "image/png" {
 		t.Errorf("expected Content-Type image/png, got %q", ct)
+	}
+	if !bytes.Equal(w.Body.Bytes(), pageData) {
+		t.Error("expected response body to be the cover page's exact bytes")
+	}
+}
+
+// TestHandleGetBookCover_TranslatesPathViaKomgaRootMapping covers the
+// mediaserver scenario found 2026-08-24: a library authored on Windows
+// records paths like "G:\Comics\...", but comic-server runs in a Linux
+// container where the same files are bind-mounted at a different root
+// (e.g. "/data"). Cover extraction must apply the same local_root/
+// remote_root translation Komga sync already uses, or it 404s on every
+// single cover.
+func TestHandleGetBookCover_TranslatesPathViaKomgaRootMapping(t *testing.T) {
+	pageData := solidPNG(t)
+	realDir := t.TempDir()
+	cbzPath := writeTestCBZ(t, realDir, "test.cbz", pageData)
+
+	// The book's recorded path is rooted at a Windows-style path that does
+	// not exist on this machine; local_root/remote_root maps it to realDir.
+	rawPath := `G:\Comics\` + filepath.Base(cbzPath)
+
+	server := newCoverTestServer(t, []library.ComicBook{
+		{ID: "book-1", FilePath: rawPath, Series: "Batman"},
+	})
+	server.config = &config.Config{
+		Server: config.ServerConfig{
+			Komga: config.KomgaConfig{
+				LocalRoot:  `G:\Comics`,
+				RemoteRoot: realDir,
+			},
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/library/books/book-1/cover", nil)
+	w := httptest.NewRecorder()
+	server.handleBooksRouter(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 	if !bytes.Equal(w.Body.Bytes(), pageData) {
 		t.Error("expected response body to be the cover page's exact bytes")

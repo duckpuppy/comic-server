@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/duckpuppy/comic-server/internal/comicvine"
+	"github.com/duckpuppy/comic-server/internal/komga"
 	"github.com/duckpuppy/comic-server/internal/log"
 )
 
@@ -23,6 +24,36 @@ func (s *Server) handleBooksRouter(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.NotFound(w, r)
+}
+
+// resolveBookFilePath translates a book's raw library path (as recorded by
+// whatever OS the ComicRack host that wrote the XML runs on) into a path
+// this comic-server process can actually open. Reuses the Komga
+// local_root/remote_root mapping (internal/config: "comic-server's library
+// paths are rooted at LocalRoot; Komga sees the same files rooted at
+// RemoteRoot") - e.g. a library authored on Windows (G:\Comics\...) served
+// from a Linux container that bind-mounts the same files at /data needs
+// this translation for ANY direct file read, not just Komga's own sync.
+// Falls back to the raw path unchanged when local_root/remote_root aren't
+// both configured, or the path isn't rooted at local_root.
+func (s *Server) resolveBookFilePath(rawPath string) string {
+	s.configMu.RLock()
+	cfg := s.config
+	s.configMu.RUnlock()
+	if cfg == nil {
+		return rawPath
+	}
+
+	localRoot := cfg.Server.Komga.LocalRoot
+	remoteRoot := cfg.Server.Komga.RemoteRoot
+	if localRoot == "" || remoteRoot == "" {
+		return rawPath
+	}
+	translated, err := komga.TranslatePath(localRoot, remoteRoot, rawPath)
+	if err != nil {
+		return rawPath
+	}
+	return translated
 }
 
 // handleGetBookCover serves a comic's cover image, extracted from its
@@ -62,18 +93,20 @@ func (s *Server) handleGetBookCover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	filePath := s.resolveBookFilePath(book.FilePath)
+
 	var data []byte
 	contentType := "image/jpeg" // the cache always re-encodes thumbnails as JPEG
 	if s.coverCache != nil {
-		data, err = s.coverCache.Get(bookID, book.FilePath)
+		data, err = s.coverCache.Get(bookID, filePath)
 	} else {
-		data, err = comicvine.ExtractCover(book.FilePath)
+		data, err = comicvine.ExtractCover(filePath)
 		if err == nil {
 			contentType = http.DetectContentType(data)
 		}
 	}
 	if err != nil {
-		log.Warn().Err(err).Str("book_id", bookID).Str("file_path", book.FilePath).Msg("Failed to extract cover image")
+		log.Warn().Err(err).Str("book_id", bookID).Str("file_path", filePath).Msg("Failed to extract cover image")
 		http.Error(w, "Cover not available", http.StatusNotFound)
 		return
 	}
