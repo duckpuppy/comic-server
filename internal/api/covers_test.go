@@ -127,6 +127,49 @@ func TestHandleGetBookCover_TranslatesPathViaKomgaRootMapping(t *testing.T) {
 	}
 }
 
+// TestHandleGetBookCover_PrefersDedicatedLibraryRootMapping covers the
+// mediaserver scenario found 2026-08-24: comic-server and Komga run in
+// separate containers with SEPARATE bind mounts of the comic library (not
+// the same one), so Komga's local_root/remote_root cannot be reused for
+// comic-server's own file access (see comic-server-64l) - a dedicated
+// LibrarySourceRoot/LibraryMountRoot mapping is required and must take
+// priority over the Komga fallback when both happen to be configured.
+func TestHandleGetBookCover_PrefersDedicatedLibraryRootMapping(t *testing.T) {
+	pageData := solidPNG(t)
+	realDir := t.TempDir()
+	cbzPath := writeTestCBZ(t, realDir, "test.cbz", pageData)
+
+	rawPath := `G:\Comics\` + filepath.Base(cbzPath)
+
+	server := newCoverTestServer(t, []library.ComicBook{
+		{ID: "book-1", FilePath: rawPath, Series: "Batman"},
+	})
+	server.config = &config.Config{
+		Server: config.ServerConfig{
+			LibrarySourceRoot: `G:\Comics`,
+			LibraryMountRoot:  realDir,
+			// Deliberately wrong/unreachable, to prove this is NOT what
+			// resolved the path - if the code fell back to this instead
+			// of the dedicated mapping above, the request would 404.
+			Komga: config.KomgaConfig{
+				LocalRoot:  `G:\Comics`,
+				RemoteRoot: "/nonexistent",
+			},
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/library/books/book-1/cover", nil)
+	w := httptest.NewRecorder()
+	server.handleBooksRouter(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !bytes.Equal(w.Body.Bytes(), pageData) {
+		t.Error("expected response body to be the cover page's exact bytes")
+	}
+}
+
 func TestHandleGetBookCover_UnknownBookID(t *testing.T) {
 	server := newCoverTestServer(t, nil)
 

@@ -25,6 +25,14 @@ func (c *Config) ApplyEnvironment() error {
 		c.Server.CoverCacheDir = val
 	}
 
+	// comic-server's own library file path mapping (see ServerConfig doc)
+	if val := os.Getenv("COMIC_SERVER_LIBRARY_SOURCE_ROOT"); val != "" {
+		c.Server.LibrarySourceRoot = val
+	}
+	if val := os.Getenv("COMIC_SERVER_LIBRARY_MOUNT_ROOT"); val != "" {
+		c.Server.LibraryMountRoot = val
+	}
+
 	// Network settings
 	if val := os.Getenv("COMIC_SERVER_PORT"); val != "" {
 		port, err := strconv.Atoi(val)

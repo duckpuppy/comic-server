@@ -19,6 +19,21 @@ type ServerConfig struct {
 	LibraryPath  string `yaml:"library_path,omitempty" toml:"library_path,omitempty"`   // Path to ComicDb.xml
 	DatabasePath string `yaml:"database_path,omitempty" toml:"database_path,omitempty"` // Path to SQLite database (alternative to library_path)
 
+	// LibrarySourceRoot/LibraryMountRoot: comic-server's OWN path mapping
+	// for reading library files directly (cover extraction; other direct
+	// reads later) - independent of Komga's LocalRoot/RemoteRoot below,
+	// which maps to KOMGA's filesystem view and cannot be assumed to match
+	// comic-server's own (they may be entirely different mounts/hosts -
+	// see comic-server-64l). LibrarySourceRoot is the path prefix as
+	// recorded in the library XML (e.g. a Windows path from whatever
+	// ComicRack host wrote it, "G:\Comics"); LibraryMountRoot is where
+	// comic-server can actually read the same files on ITS OWN filesystem
+	// (e.g. "/comics" under Docker). Leave both empty when comic-server
+	// runs on the same OS/filesystem that wrote the library XML, so the
+	// raw path is already directly readable - the common case.
+	LibrarySourceRoot string `yaml:"library_source_root,omitempty" toml:"library_source_root,omitempty"`
+	LibraryMountRoot  string `yaml:"library_mount_root,omitempty" toml:"library_mount_root,omitempty"`
+
 	// CoverCacheDir overrides where resized cover thumbnails are cached.
 	// Empty means use the XDG cache directory (config.GetCacheDir()) -
 	// fine for a bare-metal install, but under Docker that directory isn't

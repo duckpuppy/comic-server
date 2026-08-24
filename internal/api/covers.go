@@ -27,15 +27,15 @@ func (s *Server) handleBooksRouter(w http.ResponseWriter, r *http.Request) {
 }
 
 // resolveBookFilePath translates a book's raw library path (as recorded by
-// whatever OS the ComicRack host that wrote the XML runs on) into a path
-// this comic-server process can actually open. Reuses the Komga
-// local_root/remote_root mapping (internal/config: "comic-server's library
-// paths are rooted at LocalRoot; Komga sees the same files rooted at
-// RemoteRoot") - e.g. a library authored on Windows (G:\Comics\...) served
-// from a Linux container that bind-mounts the same files at /data needs
-// this translation for ANY direct file read, not just Komga's own sync.
-// Falls back to the raw path unchanged when local_root/remote_root aren't
-// both configured, or the path isn't rooted at local_root.
+// whatever OS/host wrote the XML) into a path this comic-server process can
+// actually open. Prefers comic-server's own LibrarySourceRoot/
+// LibraryMountRoot mapping; falls back to Komga's LocalRoot/RemoteRoot for
+// backward compatibility with deployments where those happened to also be
+// correct for comic-server's own filesystem (true only when comic-server
+// and Komga share the exact same bind mount - see comic-server-64l, the gap
+// this dedicated mapping actually closes). Falls back to the raw path
+// unchanged if neither mapping is configured, or the path isn't rooted at
+// whichever root was tried.
 func (s *Server) resolveBookFilePath(rawPath string) string {
 	s.configMu.RLock()
 	cfg := s.config
@@ -44,16 +44,27 @@ func (s *Server) resolveBookFilePath(rawPath string) string {
 		return rawPath
 	}
 
-	localRoot := cfg.Server.Komga.LocalRoot
-	remoteRoot := cfg.Server.Komga.RemoteRoot
+	if translated, ok := translateIfConfigured(cfg.Server.LibrarySourceRoot, cfg.Server.LibraryMountRoot, rawPath); ok {
+		return translated
+	}
+	if translated, ok := translateIfConfigured(cfg.Server.Komga.LocalRoot, cfg.Server.Komga.RemoteRoot, rawPath); ok {
+		return translated
+	}
+	return rawPath
+}
+
+// translateIfConfigured applies komga.TranslatePath when both roots are
+// set, returning ok=false (never rawPath) when either root is empty or the
+// path doesn't match, so the caller can try its next fallback.
+func translateIfConfigured(localRoot, remoteRoot, rawPath string) (string, bool) {
 	if localRoot == "" || remoteRoot == "" {
-		return rawPath
+		return "", false
 	}
 	translated, err := komga.TranslatePath(localRoot, remoteRoot, rawPath)
 	if err != nil {
-		return rawPath
+		return "", false
 	}
-	return translated
+	return translated, true
 }
 
 // handleGetBookCover serves a comic's cover image, extracted from its
