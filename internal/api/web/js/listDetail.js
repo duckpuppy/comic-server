@@ -229,6 +229,14 @@ class ListDetail {
                     <button class="btn btn-primary" id="run-scan-info-btn">Run on this list</button>
                     <div id="scan-info-result"></div>
                 </div>
+
+                <!-- Convert to CBZ Panel -->
+                <div class="panel cbzconvert-panel">
+                    <h2>Convert to CBZ</h2>
+                    <p class="empty-message">Repacks each book's archive as CBZ and embeds ComicInfo.xml. Replaces the original file (comic-server-43b) - the original is moved to the server's trash folder, not deleted.</p>
+                    <button class="btn btn-primary" id="run-cbz-convert-btn">Convert this list</button>
+                    <div id="cbz-convert-result"></div>
+                </div>
             </div>
 
             <!-- Comics Preview -->
@@ -737,6 +745,11 @@ class ListDetail {
         if (runScanInfoBtn) {
             runScanInfoBtn.addEventListener('click', () => this.runScanInfo());
         }
+
+        const runCBZConvertBtn = document.getElementById('run-cbz-convert-btn');
+        if (runCBZConvertBtn) {
+            runCBZConvertBtn.addEventListener('click', () => this.runCBZConvert());
+        }
     }
 
     async runScanInfo() {
@@ -757,6 +770,33 @@ class ListDetail {
             }
         } catch (error) {
             console.error('Failed to run scan info detection:', error);
+            resultEl.textContent = `Failed: ${error.message}`;
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    async runCBZConvert() {
+        if (!confirm('Convert every book in this list to CBZ? Original files are replaced (moved to the server\'s trash folder, not deleted). This cannot be undone from this page.')) {
+            return;
+        }
+        const btn = document.getElementById('run-cbz-convert-btn');
+        const resultEl = document.getElementById('cbz-convert-result');
+        btn.disabled = true;
+        resultEl.textContent = 'Converting…';
+        try {
+            const response = await fetch(`/api/library/lists/${this.listId}/convert-cbz`, { method: 'POST' });
+            const text = await response.text();
+            if (!response.ok) {
+                throw new Error(text || 'Failed to run CBZ conversion');
+            }
+            const result = JSON.parse(text);
+            resultEl.textContent = `Processed ${result.processed}, converted ${result.converted}.`;
+            if (result.errors && result.errors.length > 0) {
+                resultEl.textContent += ` Errors: ${result.errors.join('; ')}`;
+            }
+        } catch (error) {
+            console.error('Failed to run CBZ conversion:', error);
             resultEl.textContent = `Failed: ${error.message}`;
         } finally {
             btn.disabled = false;

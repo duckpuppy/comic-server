@@ -99,14 +99,20 @@ type ServerConfig struct {
 	// filename and writing it to the book's ScanInformation field.
 	ScanInfo ScanInfoConfig `yaml:"scan_info,omitempty" toml:"scan_info,omitempty"`
 
+	// CBZConvert configures the Convert-to-CBZ port (comic-server-43b):
+	// repacking a comic archive's pages into a new CBZ and embedding
+	// ComicInfo.xml. comic-server's first feature that writes to and
+	// retires a comic archive file, so - like ScanInfo - off by default
+	// and requires TrashPath to be configured (see comic-server-1up).
+	CBZConvert CBZConvertConfig `yaml:"cbz_convert,omitempty" toml:"cbz_convert,omitempty"`
+
 	// TrashPath is the quarantine directory used by internal/trash for any
-	// feature that replaces a comic archive file on disk (currently none -
-	// this is foundation infra for the CBZ-conversion feature,
-	// comic-server-43b). Files being replaced are moved here rather than
+	// feature that replaces a comic archive file on disk (currently
+	// CBZConvert below). Files being replaced are moved here rather than
 	// deleted, since Linux has no Recycle Bin equivalent for a bad
 	// conversion to be recovered from. See comic-server-1up for the design
-	// record. Empty disables any feature that would need it - a required
-	// setting is not assumed, since nothing ships using it yet.
+	// record. Empty disables any feature that needs it - CBZConvert.Enabled
+	// is rejected by Validate if TrashPath isn't also set.
 	//
 	// Should be set to a path under a mounted volume in Docker deployments
 	// (mirroring CoverCacheDir's reasoning above), so quarantined files
@@ -142,6 +148,25 @@ type ScanInfoConfig struct {
 	// Unknown is the tag used when detection fails outright. Empty means
 	// skip the book instead of tagging it Unknown.
 	Unknown string `yaml:"unknown,omitempty" toml:"unknown,omitempty"`
+}
+
+// CBZConvertConfig configures the Convert-to-CBZ port (comic-server-43b):
+// repacking a comic archive's pages into a new CBZ and embedding
+// ComicInfo.xml.
+type CBZConvertConfig struct {
+	Enabled bool `yaml:"enabled,omitempty" toml:"enabled,omitempty"`
+}
+
+// Validate checks CBZConvertConfig against the rest of ServerConfig -
+// specifically, that TrashPath is set whenever CBZConvert is enabled,
+// since this is comic-server's first feature that writes to and retires a
+// comic archive file and internal/trash's quarantine mechanism (see
+// comic-server-1up) is not optional for it.
+func (cc *CBZConvertConfig) Validate(trashPath string) error {
+	if cc.Enabled && trashPath == "" {
+		return fmt.Errorf("cbz_convert.enabled requires server.trash_path to be set")
+	}
+	return nil
 }
 
 // KomgaConfig configures pushing comic-server smart lists into Komga
@@ -338,6 +363,10 @@ func (c *Config) Validate() error {
 
 	if c.Server.TrashRetentionDays < 0 {
 		return fmt.Errorf("trash_retention_days must be >= 0, got %d", c.Server.TrashRetentionDays)
+	}
+
+	if err := c.Server.CBZConvert.Validate(c.Server.TrashPath); err != nil {
+		return err
 	}
 
 	return nil

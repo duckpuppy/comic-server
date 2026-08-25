@@ -120,6 +120,88 @@ func ExtractCover(path string) ([]byte, error) {
 	}
 }
 
+// Page is one image file read from a comic archive, in reading order.
+type Page struct {
+	Name string // original entry name/path inside the archive
+	Data []byte
+}
+
+// ReadAllPages returns every image file in a comic archive, sorted the same
+// way ExtractCover picks its single cover (alphabetical by entry name).
+// Supports CBZ (zip), CBR (RAR), and CB7 (7-Zip), dispatched by file
+// extension - shares the per-format listing/reading helpers ExtractCover
+// already uses. Non-image entries (ComicInfo.xml, thumbs.db, etc.) are
+// skipped. Used by internal/cbzconvert (comic-server-43b) to repack an
+// archive's pages into a new CBZ.
+func ReadAllPages(path string) ([]Page, error) {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".cbz", ".zip":
+		return readAllPagesFromCBZ(path)
+	case ".cbr", ".rar":
+		return readAllPagesFromCBR(path)
+	case ".cb7", ".7z":
+		return readAllPagesFromCB7(path)
+	default:
+		return nil, fmt.Errorf("unsupported archive format: %s", path)
+	}
+}
+
+func readAllPagesFromCBZ(path string) ([]Page, error) {
+	zr, err := zip.OpenReader(path)
+	if err != nil {
+		return nil, fmt.Errorf("open cbz: %w", err)
+	}
+	defer zr.Close()
+
+	images := sortedImageFiles(zr.File)
+	pages := make([]Page, 0, len(images))
+	for _, f := range images {
+		data, err := readZipFile(f)
+		if err != nil {
+			return nil, fmt.Errorf("read %q: %w", f.Name, err)
+		}
+		pages = append(pages, Page{Name: f.Name, Data: data})
+	}
+	return pages, nil
+}
+
+func readAllPagesFromCBR(path string) ([]Page, error) {
+	files, err := rardecode.List(path)
+	if err != nil {
+		return nil, fmt.Errorf("open cbr: %w", err)
+	}
+
+	images := sortedRARFiles(files)
+	pages := make([]Page, 0, len(images))
+	for _, f := range images {
+		data, err := readRARFile(f)
+		if err != nil {
+			return nil, fmt.Errorf("read %q: %w", f.Name, err)
+		}
+		pages = append(pages, Page{Name: f.Name, Data: data})
+	}
+	return pages, nil
+}
+
+func readAllPagesFromCB7(path string) ([]Page, error) {
+	rc, err := sevenzip.OpenReader(path)
+	if err != nil {
+		return nil, fmt.Errorf("open cb7: %w", err)
+	}
+	defer rc.Close()
+
+	images := sortedSevenZipFiles(rc.File)
+	pages := make([]Page, 0, len(images))
+	for _, f := range images {
+		data, err := readSevenZipFile(f)
+		if err != nil {
+			return nil, fmt.Errorf("read %q: %w", f.Name, err)
+		}
+		pages = append(pages, Page{Name: f.Name, Data: data})
+	}
+	return pages, nil
+}
+
 // chooseCoverIndex picks which of numImages sorted image entries is the
 // cover: the ComicInfo.xml FrontCover index if it's valid, else the first
 // image.

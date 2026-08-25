@@ -24,6 +24,7 @@ import (
 	"github.com/duckpuppy/comic-server/internal/storage"
 	csync "github.com/duckpuppy/comic-server/internal/sync"
 	"github.com/duckpuppy/comic-server/internal/syncstate"
+	"github.com/duckpuppy/comic-server/internal/trash"
 	"github.com/duckpuppy/comic-server/internal/websocket"
 	"github.com/spf13/cobra"
 )
@@ -355,6 +356,29 @@ func runServer(cmd *cobra.Command, args []string) error {
 		komgaSyncer = buildKomgaSyncer(cfg.Server.Komga, backend)
 		apiServer.SetKomgaSyncer(komgaSyncer)
 		go startKomgaSync(komgaCtx, komgaSyncer, cfg.Server.Komga, komgaStatus)
+	}
+
+	// Start the trash background sweep if a quarantine directory is
+	// configured - independent of any specific feature being enabled,
+	// since internal/trash is generic infra (currently used by
+	// comic-server-43b's CBZ conversion, potentially others later). Purges
+	// quarantined files older than TrashRetentionDays; see comic-server-1up.
+	trashCtx, trashCancel := context.WithCancel(context.Background())
+	defer trashCancel()
+	if cfg.Server.TrashPath != "" {
+		tr, err := trash.New(cfg.Server.TrashPath, cfg.Server.TrashRetentionDays)
+		if err != nil {
+			log.Error().Err(err).Msg("Invalid trash configuration, background sweep not started")
+		} else {
+			go tr.Run(trashCtx, trash.DefaultSweepInterval, func(result trash.SweepResult) {
+				if result.Removed > 0 || len(result.Errs) > 0 {
+					log.Info().Int("removed", result.Removed).Int("errors", len(result.Errs)).Msg("Trash sweep completed")
+				}
+				for _, e := range result.Errs {
+					log.Warn().Err(e).Msg("Trash sweep error")
+				}
+			})
+		}
 	}
 
 	// Watch the library source file for external changes (e.g. ComicRack

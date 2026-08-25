@@ -322,6 +322,12 @@ func (s *Server) handleListsRouter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// /api/library/lists/:listId/convert-cbz
+	if strings.HasSuffix(path, "/convert-cbz") {
+		s.handleRunCBZConvert(w, r)
+		return
+	}
+
 	http.NotFound(w, r)
 }
 

@@ -149,6 +149,135 @@ func TestReplace_WriteFailureLeavesOriginalUntouched(t *testing.T) {
 	}
 }
 
+func TestWriteNew_Success(t *testing.T) {
+	libDir := t.TempDir()
+	trashDir := t.TempDir()
+	target := filepath.Join(libDir, "book.cbz")
+
+	tr := &Trash{Root: trashDir, RetentionDays: 30}
+	err := tr.WriteNew(target,
+		func(tmpPath string) error { return os.WriteFile(tmpPath, []byte("new content"), 0o644) },
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("WriteNew failed: %v", err)
+	}
+
+	data, err := os.ReadFile(target)
+	if err != nil || string(data) != "new content" {
+		t.Errorf("target has wrong content: data=%q err=%v", data, err)
+	}
+
+	entries, _ := os.ReadDir(libDir)
+	if len(entries) != 1 {
+		t.Errorf("unexpected leftover files in library dir: %v", entries)
+	}
+}
+
+func TestWriteNew_ErrorsIfTargetAlreadyExists(t *testing.T) {
+	libDir := t.TempDir()
+	trashDir := t.TempDir()
+	target := filepath.Join(libDir, "book.cbz")
+	if err := os.WriteFile(target, []byte("already here"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	tr := &Trash{Root: trashDir, RetentionDays: 30}
+	err := tr.WriteNew(target,
+		func(tmpPath string) error { return os.WriteFile(tmpPath, []byte("new content"), 0o644) },
+		nil,
+	)
+	if err == nil {
+		t.Fatal("expected error when target already exists")
+	}
+
+	data, err := os.ReadFile(target)
+	if err != nil || string(data) != "already here" {
+		t.Errorf("existing target was disturbed: data=%q err=%v", data, err)
+	}
+}
+
+func TestWriteNew_ValidateFailureLeavesNoFile(t *testing.T) {
+	libDir := t.TempDir()
+	trashDir := t.TempDir()
+	target := filepath.Join(libDir, "book.cbz")
+
+	tr := &Trash{Root: trashDir, RetentionDays: 30}
+	err := tr.WriteNew(target,
+		func(tmpPath string) error { return os.WriteFile(tmpPath, []byte("bad"), 0o644) },
+		func(tmpPath string) error { return errors.New("simulated validation failure") },
+	)
+	if err == nil {
+		t.Fatal("expected error from failed validation")
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Errorf("target should not exist after failed WriteNew, stat err: %v", err)
+	}
+	entries, _ := os.ReadDir(libDir)
+	if len(entries) != 0 {
+		t.Errorf("temp file was not cleaned up: %v", entries)
+	}
+}
+
+func TestQuarantine_MovesFileAndPreservesContent(t *testing.T) {
+	libDir := t.TempDir()
+	trashDir := t.TempDir()
+	target := filepath.Join(libDir, "old.cbr")
+	if err := os.WriteFile(target, []byte("old format content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	tr := &Trash{Root: trashDir, RetentionDays: 30}
+	if err := tr.Quarantine(target); err != nil {
+		t.Fatalf("Quarantine failed: %v", err)
+	}
+
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Errorf("original should be gone from its source path, stat err: %v", err)
+	}
+	found := findFileContaining(t, trashDir, "old format content")
+	if found == "" {
+		t.Fatal("quarantined content not found under trash root")
+	}
+}
+
+// TestWriteNewThenQuarantine_FormatConversion exercises the actual pattern
+// comic-server-43b needs: writing a NEW file at a different path (e.g.
+// .cbr -> .cbz) than the one being retired, since Replace's single-path
+// swap doesn't fit a format conversion where source and target extensions
+// differ.
+func TestWriteNewThenQuarantine_FormatConversion(t *testing.T) {
+	libDir := t.TempDir()
+	trashDir := t.TempDir()
+	src := filepath.Join(libDir, "book.cbr")
+	dst := filepath.Join(libDir, "book.cbz")
+	if err := os.WriteFile(src, []byte("original cbr bytes"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	tr := &Trash{Root: trashDir, RetentionDays: 30}
+	if err := tr.WriteNew(dst,
+		func(tmpPath string) error { return os.WriteFile(tmpPath, []byte("converted cbz bytes"), 0o644) },
+		nil,
+	); err != nil {
+		t.Fatalf("WriteNew failed: %v", err)
+	}
+	if err := tr.Quarantine(src); err != nil {
+		t.Fatalf("Quarantine failed: %v", err)
+	}
+
+	data, err := os.ReadFile(dst)
+	if err != nil || string(data) != "converted cbz bytes" {
+		t.Errorf("new file wrong: data=%q err=%v", data, err)
+	}
+	if _, err := os.Stat(src); !os.IsNotExist(err) {
+		t.Errorf("old-format source should be gone, stat err: %v", err)
+	}
+	if found := findFileContaining(t, trashDir, "original cbr bytes"); found == "" {
+		t.Error("original cbr bytes not found in quarantine")
+	}
+}
+
 func TestReplace_CrossFilesystemQuarantineFallsBackToCopy(t *testing.T) {
 	// Same as TestReplace_Success but exercises moveFile's copy+remove
 	// fallback path directly, since t.TempDir() dirs are typically on the

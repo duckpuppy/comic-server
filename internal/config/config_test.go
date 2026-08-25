@@ -136,6 +136,33 @@ func TestKomgaConfigValidate(t *testing.T) {
 	}
 }
 
+func TestConfigValidate_CBZConvertRequiresTrashPath(t *testing.T) {
+	cfg := NewConfig()
+	cfg.ApplyDefaults()
+	cfg.Server.CBZConvert.Enabled = true
+	cfg.Server.TrashPath = ""
+
+	if err := cfg.Validate(); err == nil {
+		t.Error("Config.Validate() should reject cbz_convert.enabled without trash_path set")
+	}
+
+	cfg.Server.TrashPath = "/data/trash"
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("Config.Validate() should accept cbz_convert.enabled with trash_path set, got: %v", err)
+	}
+}
+
+func TestConfigValidate_CBZConvertDisabledDoesNotRequireTrashPath(t *testing.T) {
+	cfg := NewConfig()
+	cfg.ApplyDefaults()
+	cfg.Server.CBZConvert.Enabled = false
+	cfg.Server.TrashPath = ""
+
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("Config.Validate() should not require trash_path when cbz_convert is disabled, got: %v", err)
+	}
+}
+
 func TestConfigValidate_KomgaWiredIn(t *testing.T) {
 	cfg := NewConfig()
 	cfg.Server.Komga = KomgaConfig{Enabled: true} // missing everything else

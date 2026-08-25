@@ -78,27 +78,23 @@ func New(root string, retentionDays int) (*Trash, error) {
 // If step 4 fails after step 3 succeeded, Replace makes a best-effort
 // attempt to move the quarantined original back before returning the
 // error, so a mid-operation failure never leaves targetPath missing.
+//
+// Replace assumes the new content belongs at the SAME path as the
+// original (e.g. rewriting a file's contents in place). A caller that
+// writes its replacement to a DIFFERENT path - e.g. a format conversion
+// that changes the file extension, where the original and the new file
+// are never actually the same path - can't use a single-path swap; use
+// WriteNew for the new file plus a separate Quarantine call for the old
+// one instead. See comic-server-43b, the feature that surfaced this.
 func (t *Trash) Replace(targetPath string, write func(tmpPath string) error, validate func(tmpPath string) error) error {
-	dir := filepath.Dir(targetPath)
-	tmpPath, err := tempPathIn(dir, filepath.Base(targetPath))
-	if err != nil {
-		return fmt.Errorf("trash: create temp path: %w", err)
-	}
-	tmpConsumed := false
+	tmpPath, tmpConsumed, err := t.writeValidated(targetPath, write, validate)
 	defer func() {
-		if !tmpConsumed {
+		if !*tmpConsumed {
 			os.Remove(tmpPath)
 		}
 	}()
-
-	if err := write(tmpPath); err != nil {
-		return fmt.Errorf("trash: write new content: %w", err)
-	}
-
-	if validate != nil {
-		if err := validate(tmpPath); err != nil {
-			return fmt.Errorf("trash: validate new content: %w", err)
-		}
+	if err != nil {
+		return err
 	}
 
 	quarantinePath := t.quarantinePathFor(targetPath, time.Now())
@@ -118,9 +114,86 @@ func (t *Trash) Replace(targetPath string, write func(tmpPath string) error, val
 		}
 		return fmt.Errorf("trash: swap in new content: %w (rolled back, original restored)", err)
 	}
-	tmpConsumed = true
+	*tmpConsumed = true
 
 	return nil
+}
+
+// WriteNew atomically creates a brand-new file at targetPath - crash-safe
+// (temp file + atomic rename), same as Replace's write/validate/swap
+// mechanics, but with no quarantine step, since there's nothing at
+// targetPath to protect. Returns an error if targetPath already exists,
+// so callers never silently clobber an existing file this way - use
+// Replace instead when overwriting an existing file at the same path is
+// the intent.
+func (t *Trash) WriteNew(targetPath string, write func(tmpPath string) error, validate func(tmpPath string) error) error {
+	if _, err := os.Stat(targetPath); err == nil {
+		return fmt.Errorf("trash: WriteNew: %s already exists", targetPath)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("trash: WriteNew: stat %s: %w", targetPath, err)
+	}
+
+	tmpPath, tmpConsumed, err := t.writeValidated(targetPath, write, validate)
+	defer func() {
+		if !*tmpConsumed {
+			os.Remove(tmpPath)
+		}
+	}()
+	if err != nil {
+		return err
+	}
+
+	if err := os.Rename(tmpPath, targetPath); err != nil {
+		return fmt.Errorf("trash: create new file: %w", err)
+	}
+	*tmpConsumed = true
+
+	return nil
+}
+
+// Quarantine moves an existing file into the quarantine directory (not
+// deleting it) without writing any replacement - for callers pairing it
+// with WriteNew at a different path (see Replace's doc comment for why
+// that split exists). Sweep/RetentionDays apply the same as any file
+// quarantined via Replace.
+func (t *Trash) Quarantine(path string) error {
+	quarantinePath := t.quarantinePathFor(path, time.Now())
+	if err := os.MkdirAll(filepath.Dir(quarantinePath), 0o755); err != nil {
+		return fmt.Errorf("trash: create quarantine dir: %w", err)
+	}
+	if err := moveFile(path, quarantinePath); err != nil {
+		return fmt.Errorf("trash: quarantine: %w", err)
+	}
+	return nil
+}
+
+// writeValidated writes new content to a temp file in targetPath's own
+// directory (guaranteeing a later same-filesystem atomic rename) and runs
+// validate on it, returning the temp path ready to be renamed into place.
+// The returned consumed flag starts false; the caller must defer removing
+// tmpPath unless consumed, and set *consumed = true once it successfully
+// renames tmpPath away (a plain closure captured by defer at this point
+// would freeze the pre-rename function value, not observe a later
+// reassignment - the pointer is what lets the caller flip it afterward).
+func (t *Trash) writeValidated(targetPath string, write func(tmpPath string) error, validate func(tmpPath string) error) (tmpPath string, consumed *bool, err error) {
+	consumed = new(bool)
+	dir := filepath.Dir(targetPath)
+	tmpPath, err = tempPathIn(dir, filepath.Base(targetPath))
+	if err != nil {
+		return "", consumed, fmt.Errorf("trash: create temp path: %w", err)
+	}
+
+	if err := write(tmpPath); err != nil {
+		return tmpPath, consumed, fmt.Errorf("trash: write new content: %w", err)
+	}
+
+	if validate != nil {
+		if err := validate(tmpPath); err != nil {
+			return tmpPath, consumed, fmt.Errorf("trash: validate new content: %w", err)
+		}
+	}
+
+	return tmpPath, consumed, nil
 }
 
 // quarantinePathFor computes where targetPath's original content is

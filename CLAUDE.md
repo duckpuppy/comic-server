@@ -281,21 +281,40 @@ comic-server db info --db /path/to/library.db
 
 ### Safe File Replace (internal/trash/)
 
-Foundation infra (comic-server-rhe) for any future feature that needs to overwrite or delete a comic archive file on disk - currently unused by any shipped feature, built ahead of the CBZ-conversion feature (comic-server-43b) that will be its first caller. See comic-server-1up for the full design record.
+Foundation infra (comic-server-rhe) for any feature that overwrites or deletes a comic archive file on disk. First (and currently only) caller is CBZ conversion (comic-server-43b, see below). See comic-server-1up for the full design record.
 
-**Why this exists**: comic-server has never written to or deleted a comic file before - only read them. ComicRack's own "Convert to CBZ" replaces files in place, but on Windows the deleted original goes to the Recycle Bin and is recoverable. Linux (comic-server's actual deployment target) has no equivalent, so a plain `os.Remove` would be strictly riskier than what ComicRack already does.
+**Why this exists**: comic-server had never written to or deleted a comic file before CBZ conversion - only read them. ComicRack's own "Convert to CBZ" replaces files in place, but on Windows the deleted original goes to the Recycle Bin and is recoverable. Linux (comic-server's actual deployment target) has no equivalent, so a plain `os.Remove` would be strictly riskier than what ComicRack already does.
 
-**How it works** (`Trash.Replace`):
-1. New content is written to a temp file in the *same directory* as the target, guaranteeing the final swap is on the same filesystem (required for an atomic rename).
-2. An optional caller-supplied validation step runs on the temp file before anything about the original is touched.
-3. The original file is moved into a quarantine directory (`Trash.Root`) - not deleted - mirroring its absolute path under the quarantine root with a trashed-at timestamp appended, so repeated replacements never collide.
-4. The temp file is renamed into the original's place (atomic on the same filesystem). If this last step fails, `Replace` makes a best-effort attempt to move the quarantined original back before returning an error.
+**Three primitives**, all on `*Trash`:
+- `Replace(targetPath, write, validate)` - same-path swap: write to a temp file in `targetPath`'s own directory (guarantees a same-filesystem atomic rename), validate it, quarantine whatever's currently at `targetPath` (not deleted), then atomically rename the temp file into place. On a failed final rename, best-effort moves the quarantined original back rather than leaving `targetPath` missing.
+- `WriteNew(targetPath, write, validate)` - same write/validate/atomic-rename mechanics as `Replace`, but for a path with nothing at it yet; errors if `targetPath` already exists rather than silently overwriting.
+- `Quarantine(path)` - moves an existing file into quarantine on its own, no replacement written.
 
-**Cleanup** (`Trash.Sweep` / `Trash.Run`): a background sweep (hourly by default, `trash.DefaultSweepInterval`) permanently deletes quarantined files older than `TrashRetentionDays`, then prunes any directories left empty. Not currently started anywhere in `cmd/server.go` - wiring it into server startup is part of the feature that actually produces trash (comic-server-43b), since running an empty sweep is pointless.
+`Replace` alone isn't enough for a format conversion where the new file's path differs from the old one's (e.g. `.cbr` -> `.cbz` - see comic-server-43b below for why this split exists): that case pairs `WriteNew` for the new path with a separate `Quarantine` for the old one.
+
+**Cleanup** (`Trash.Sweep` / `Trash.Run`): a background sweep (hourly by default, `trash.DefaultSweepInterval`) permanently deletes quarantined files older than `TrashRetentionDays`, then prunes any directories left empty. Started in `cmd/server.go` whenever `trash_path` is configured, independent of which specific feature is enabled.
 
 **Configuration** (`ServerConfig`):
-- `trash_path` / `COMIC_SERVER_TRASH_PATH` - quarantine directory. Empty disables any feature that needs it. Should be under a mounted volume in Docker deployments, same reasoning as `cover_cache_dir`.
+- `trash_path` / `COMIC_SERVER_TRASH_PATH` - quarantine directory. Empty disables any feature that needs it (checked by `CBZConvertConfig.Validate`). Should be under a mounted volume in Docker deployments, same reasoning as `cover_cache_dir`.
 - `trash_retention_days` / `COMIC_SERVER_TRASH_RETENTION_DAYS` - default 30.
+
+### Convert to CBZ (internal/cbzconvert/)
+
+Port of ComicRack's native "Convert to CBZ" feature (comic-server-43b, researched in comic-server-pkk.2): repacks a comic archive's pages as-is into a new CBZ and embeds a `ComicInfo.xml` built from the book's current library metadata. comic-server's first feature that writes to and retires a comic archive file - built on `internal/trash` above.
+
+**What it does** (`cbzconvert.Convert`):
+1. Reads every image page from the source archive (`comicvine.ReadAllPages` - CBZ/CBR/CB7, shares the format-dispatch machinery `ExtractCover` already used for cover thumbnails).
+2. Drops any page the library marks `PageTypeDeleted` (matches ComicRack's own `RemovePages`/`RemovePageFilter` defaults - confirmed from `StorageProvider.GetImages` in ComicRackCE's real source, not assumed). Remaining pages are **not** reordered - export sorts strictly by original page index (`IndexedPageResult.CompareTo` in ComicRackCE), never by page `Type`; a front cover that isn't page 0 stays wherever it is. (An earlier read of this feature assumed front covers get sorted to the top on export - checked directly against the source and that's not real; the "front cover jumps to the top" behavior only exists in ComicRack's page-editor UI, not the export pipeline.)
+3. Builds `ComicInfo.xml` from the book's current metadata (`BuildComicInfoXML`) with `PageCount` reflecting the post-filter page count.
+4. Writes the new CBZ (`archive/zip`, `zip.Store` for image entries since they're already-compressed formats) and retires the original via `internal/trash` - `Replace` if the new file lands at the same path (source was already `.cbz`), or `WriteNew` + `Quarantine` if the extension changed.
+5. Returns the new raw `FilePath` and page count for the caller to apply to the library record - `Convert` itself never touches the backend, same division of responsibility as `internal/scaninfo.DetectTag`.
+
+**Explicitly out of scope** (matches ComicRack's own defaults, not built): page re-encoding/resizing/rotation, `ComicBook.xml` embedding (`EmbedComicBook`, off by default in ComicRack too), combining multiple books into one archive.
+
+**Trigger**: `POST /api/library/lists/:listId/convert-cbz` - runs over every book currently matched by one smart list, mirroring the user's real ComicRack workflow (multi-select a smart list's results, invoke Convert to CBZ) and comic-server-pkk.1's own scan-info endpoint pattern. A "Convert this list" button on the list detail page calls it, behind a `confirm()` prompt (destructive-adjacent, unlike scan-info's metadata-only write).
+
+**Configuration** (`ServerConfig.CBZConvert`):
+- `cbz_convert.enabled` - off by default, same precedent as `scan_info.enabled`. `Config.Validate` rejects `enabled: true` without `server.trash_path` also set - this feature cannot run without a quarantine directory.
 
 ### Configuration Management (internal/config/)
 
@@ -393,8 +412,10 @@ server:
   max_concurrent_sync: 0  # 0 = unlimited
   log_level: info
   log_format: text
-  trash_path: ""  # Empty = disabled; required by future archive-writing features (see internal/trash)
+  trash_path: ""  # Empty = disabled; required if cbz_convert.enabled (see internal/trash)
   trash_retention_days: 30
+  cbz_convert:
+    enabled: false  # Requires trash_path to be set
 
 # Per-device configurations
 devices:
