@@ -221,6 +221,14 @@ class ListDetail {
                         ${this.renderKomgaTarget()}
                     </div>
                 </div>
+
+                <!-- Scan Info Panel -->
+                <div class="panel scaninfo-panel">
+                    <h2>Scan Info Detection</h2>
+                    <p class="empty-message">Detects a scan-group tag from each book's filename and writes it to ScanInformation (comic-server-pkk.1).</p>
+                    <button class="btn btn-primary" id="run-scan-info-btn">Run on this list</button>
+                    <div id="scan-info-result"></div>
+                </div>
             </div>
 
             <!-- Comics Preview -->
@@ -723,6 +731,35 @@ class ListDetail {
         const removeKomgaBtn = document.getElementById('remove-komga-target-btn');
         if (removeKomgaBtn) {
             removeKomgaBtn.addEventListener('click', () => this.removeKomgaTarget());
+        }
+
+        const runScanInfoBtn = document.getElementById('run-scan-info-btn');
+        if (runScanInfoBtn) {
+            runScanInfoBtn.addEventListener('click', () => this.runScanInfo());
+        }
+    }
+
+    async runScanInfo() {
+        const btn = document.getElementById('run-scan-info-btn');
+        const resultEl = document.getElementById('scan-info-result');
+        btn.disabled = true;
+        resultEl.textContent = 'Running…';
+        try {
+            const response = await fetch(`/api/library/lists/${this.listId}/scan-info`, { method: 'POST' });
+            const text = await response.text();
+            if (!response.ok) {
+                throw new Error(text || 'Failed to run scan info detection');
+            }
+            const result = JSON.parse(text);
+            resultEl.textContent = `Processed ${result.processed}, updated ${result.updated}, skipped ${result.skipped}.`;
+            if (result.errors && result.errors.length > 0) {
+                resultEl.textContent += ` Errors: ${result.errors.join('; ')}`;
+            }
+        } catch (error) {
+            console.error('Failed to run scan info detection:', error);
+            resultEl.textContent = `Failed: ${error.message}`;
+        } finally {
+            btn.disabled = false;
         }
     }
 

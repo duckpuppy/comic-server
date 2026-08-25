@@ -93,6 +93,37 @@ type ServerConfig struct {
 
 	// Komga integration
 	Komga KomgaConfig `yaml:"komga,omitempty" toml:"komga,omitempty"`
+
+	// ScanInfo configures the ScanInformationFromFilename port
+	// (comic-server-pkk.1): detecting a scan-group tag from a comic's
+	// filename and writing it to the book's ScanInformation field.
+	ScanInfo ScanInfoConfig `yaml:"scan_info,omitempty" toml:"scan_info,omitempty"`
+}
+
+// ScanInfoConfig holds the reference data and settings for scan-tag
+// detection - comic-server's equivalent of ComicRack's
+// scanners.txt/blacklist.txt/settings.dat, since this data has no home in
+// the library XML itself (same reasoning as Komga's config-only targets).
+type ScanInfoConfig struct {
+	Enabled bool `yaml:"enabled,omitempty" toml:"enabled,omitempty"`
+
+	// Scanners is a list of known scan-group/release-team names, checked
+	// literally against the filename when the bracket-heuristic pattern
+	// finds nothing (see internal/scaninfo.Detector).
+	Scanners []string `yaml:"scanners,omitempty" toml:"scanners,omitempty"`
+
+	// Blacklist is a list of regex fragments (NOT plain words) describing
+	// generic filename noise to ignore (languages, "annual", ratings,
+	// etc.) when extracting a bracketed tag - ported directly from
+	// ComicRack's blacklist.txt format.
+	Blacklist []string `yaml:"blacklist,omitempty" toml:"blacklist,omitempty"`
+
+	// Prefix is prepended to every detected tag (e.g. "Scanner:").
+	Prefix string `yaml:"prefix,omitempty" toml:"prefix,omitempty"`
+
+	// Unknown is the tag used when detection fails outright. Empty means
+	// skip the book instead of tagging it Unknown.
+	Unknown string `yaml:"unknown,omitempty" toml:"unknown,omitempty"`
 }
 
 // KomgaConfig configures pushing comic-server smart lists into Komga
@@ -232,6 +263,12 @@ func (c *Config) ApplyDefaults() {
 	if c.Server.Komga.SyncIntervalSec == 0 {
 		c.Server.Komga.SyncIntervalSec = 900 // 15 minutes
 	}
+	if c.Server.ScanInfo.Prefix == "" {
+		c.Server.ScanInfo.Prefix = "Scanner:"
+	}
+	if c.Server.ScanInfo.Unknown == "" {
+		c.Server.ScanInfo.Unknown = "Unknown"
+	}
 }
 
 // Validate checks the configuration for errors
@@ -274,6 +311,22 @@ func (c *Config) Validate() error {
 		return err
 	}
 
+	if err := c.Server.ScanInfo.Validate(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Validate checks the ScanInfo configuration for errors. A no-op when
+// disabled.
+func (sc *ScanInfoConfig) Validate() error {
+	if !sc.Enabled {
+		return nil
+	}
+	if len(sc.Scanners) == 0 {
+		return fmt.Errorf("scan_info.scanners must have at least one entry when scan_info.enabled is true")
+	}
 	return nil
 }
 

@@ -316,6 +316,12 @@ func (s *Server) handleListsRouter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// /api/library/lists/:listId/scan-info
+	if strings.HasSuffix(path, "/scan-info") {
+		s.handleRunScanInfo(w, r)
+		return
+	}
+
 	http.NotFound(w, r)
 }
 

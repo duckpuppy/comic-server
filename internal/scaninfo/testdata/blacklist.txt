@@ -1,0 +1,6 @@
+digital
+webrip
+(?:english|eng?|french|fr[ea]?|german|de|ger)
+annual
+variant
+\d+(?:[\s_\-]?px)?
