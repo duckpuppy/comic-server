@@ -33,6 +33,18 @@ func (c *Config) ApplyEnvironment() error {
 		c.Server.LibraryMountRoot = val
 	}
 
+	// internal/trash quarantine directory (see ServerConfig doc)
+	if val := os.Getenv("COMIC_SERVER_TRASH_PATH"); val != "" {
+		c.Server.TrashPath = val
+	}
+	if val := os.Getenv("COMIC_SERVER_TRASH_RETENTION_DAYS"); val != "" {
+		days, err := strconv.Atoi(val)
+		if err != nil {
+			return err
+		}
+		c.Server.TrashRetentionDays = days
+	}
+
 	// Network settings
 	if val := os.Getenv("COMIC_SERVER_PORT"); val != "" {
 		port, err := strconv.Atoi(val)

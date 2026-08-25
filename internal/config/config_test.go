@@ -145,6 +145,25 @@ func TestConfigValidate_KomgaWiredIn(t *testing.T) {
 	}
 }
 
+func TestApplyDefaults_TrashRetentionDays(t *testing.T) {
+	cfg := NewConfig()
+	cfg.ApplyDefaults()
+
+	if cfg.Server.TrashRetentionDays != 30 {
+		t.Errorf("TrashRetentionDays default = %d, want 30", cfg.Server.TrashRetentionDays)
+	}
+}
+
+func TestConfigValidate_TrashRetentionDaysNegative(t *testing.T) {
+	cfg := NewConfig()
+	cfg.ApplyDefaults()
+	cfg.Server.TrashRetentionDays = -1
+
+	if err := cfg.Validate(); err == nil {
+		t.Error("Config.Validate() should reject a negative trash_retention_days")
+	}
+}
+
 func TestConfigAddDevice(t *testing.T) {
 	cfg := NewConfig()
 

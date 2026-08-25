@@ -98,6 +98,24 @@ type ServerConfig struct {
 	// (comic-server-pkk.1): detecting a scan-group tag from a comic's
 	// filename and writing it to the book's ScanInformation field.
 	ScanInfo ScanInfoConfig `yaml:"scan_info,omitempty" toml:"scan_info,omitempty"`
+
+	// TrashPath is the quarantine directory used by internal/trash for any
+	// feature that replaces a comic archive file on disk (currently none -
+	// this is foundation infra for the CBZ-conversion feature,
+	// comic-server-43b). Files being replaced are moved here rather than
+	// deleted, since Linux has no Recycle Bin equivalent for a bad
+	// conversion to be recovered from. See comic-server-1up for the design
+	// record. Empty disables any feature that would need it - a required
+	// setting is not assumed, since nothing ships using it yet.
+	//
+	// Should be set to a path under a mounted volume in Docker deployments
+	// (mirroring CoverCacheDir's reasoning above), so quarantined files
+	// survive container recreates.
+	TrashPath string `yaml:"trash_path,omitempty" toml:"trash_path,omitempty"`
+
+	// TrashRetentionDays is how long a quarantined file is kept before
+	// being permanently deleted. Default: 30 (see comic-server-1up).
+	TrashRetentionDays int `yaml:"trash_retention_days,omitempty" toml:"trash_retention_days,omitempty"`
 }
 
 // ScanInfoConfig holds the reference data and settings for scan-tag
@@ -269,6 +287,9 @@ func (c *Config) ApplyDefaults() {
 	if c.Server.ScanInfo.Unknown == "" {
 		c.Server.ScanInfo.Unknown = "Unknown"
 	}
+	if c.Server.TrashRetentionDays == 0 {
+		c.Server.TrashRetentionDays = 30
+	}
 }
 
 // Validate checks the configuration for errors
@@ -313,6 +334,10 @@ func (c *Config) Validate() error {
 
 	if err := c.Server.ScanInfo.Validate(); err != nil {
 		return err
+	}
+
+	if c.Server.TrashRetentionDays < 0 {
+		return fmt.Errorf("trash_retention_days must be >= 0, got %d", c.Server.TrashRetentionDays)
 	}
 
 	return nil

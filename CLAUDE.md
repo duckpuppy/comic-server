@@ -279,6 +279,24 @@ comic-server db info --db /path/to/library.db
 
 **Note**: This feature is experimental. The server currently still uses the in-memory XML library for sync operations. Future versions will add the option to read directly from SQLite.
 
+### Safe File Replace (internal/trash/)
+
+Foundation infra (comic-server-rhe) for any future feature that needs to overwrite or delete a comic archive file on disk - currently unused by any shipped feature, built ahead of the CBZ-conversion feature (comic-server-43b) that will be its first caller. See comic-server-1up for the full design record.
+
+**Why this exists**: comic-server has never written to or deleted a comic file before - only read them. ComicRack's own "Convert to CBZ" replaces files in place, but on Windows the deleted original goes to the Recycle Bin and is recoverable. Linux (comic-server's actual deployment target) has no equivalent, so a plain `os.Remove` would be strictly riskier than what ComicRack already does.
+
+**How it works** (`Trash.Replace`):
+1. New content is written to a temp file in the *same directory* as the target, guaranteeing the final swap is on the same filesystem (required for an atomic rename).
+2. An optional caller-supplied validation step runs on the temp file before anything about the original is touched.
+3. The original file is moved into a quarantine directory (`Trash.Root`) - not deleted - mirroring its absolute path under the quarantine root with a trashed-at timestamp appended, so repeated replacements never collide.
+4. The temp file is renamed into the original's place (atomic on the same filesystem). If this last step fails, `Replace` makes a best-effort attempt to move the quarantined original back before returning an error.
+
+**Cleanup** (`Trash.Sweep` / `Trash.Run`): a background sweep (hourly by default, `trash.DefaultSweepInterval`) permanently deletes quarantined files older than `TrashRetentionDays`, then prunes any directories left empty. Not currently started anywhere in `cmd/server.go` - wiring it into server startup is part of the feature that actually produces trash (comic-server-43b), since running an empty sweep is pointless.
+
+**Configuration** (`ServerConfig`):
+- `trash_path` / `COMIC_SERVER_TRASH_PATH` - quarantine directory. Empty disables any feature that needs it. Should be under a mounted volume in Docker deployments, same reasoning as `cover_cache_dir`.
+- `trash_retention_days` / `COMIC_SERVER_TRASH_RETENTION_DAYS` - default 30.
+
 ### Configuration Management (internal/config/)
 
 **XDG-Compliant Configuration**:
@@ -357,6 +375,8 @@ All server settings can be configured via environment variables:
 - `COMIC_SERVER_MAX_CONCURRENT_SYNC` - Max concurrent syncs
 - `COMIC_SERVER_LOG_LEVEL` - Log level (debug/info/warn/error)
 - `COMIC_SERVER_LOG_FORMAT` - Log format (text/json)
+- `COMIC_SERVER_TRASH_PATH` - Quarantine directory for internal/trash (see below)
+- `COMIC_SERVER_TRASH_RETENTION_DAYS` - Days a quarantined file is kept before permanent deletion (default: 30)
 
 **Example Configuration File**:
 
@@ -373,6 +393,8 @@ server:
   max_concurrent_sync: 0  # 0 = unlimited
   log_level: info
   log_format: text
+  trash_path: ""  # Empty = disabled; required by future archive-writing features (see internal/trash)
+  trash_retention_days: 30
 
 # Per-device configurations
 devices:
