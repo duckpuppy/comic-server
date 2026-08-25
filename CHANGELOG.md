@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.5.0](https://github.com/duckpuppy/comic-server/compare/v1.4.1...v1.5.0) (2026-08-25)
+
+
+### Features
+
+* port ScanInformationFromFilename - detect scan-group tag from filename ([0da72f5](https://github.com/duckpuppy/comic-server/commit/0da72f5ec09a8937bc0f62594fb02d75d8401b9a))
+
+
+### Bug Fixes
+
+* **ci:** stop branch-push builds from racing to publish :latest ([e3d5512](https://github.com/duckpuppy/comic-server/commit/e3d5512358da7f0b0683b66205195197079ee53c))
+
 ## [1.4.1](https://github.com/duckpuppy/comic-server/compare/v1.4.0...v1.4.1) (2026-08-24)
 
 
