@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.0](https://github.com/duckpuppy/comic-server/compare/v1.5.0...v1.6.0) (2026-08-25)
+
+
+### Features
+
+* add internal/trash, safe atomic file-replace + quarantine helper ([cc4fd5c](https://github.com/duckpuppy/comic-server/commit/cc4fd5c4a48b2e768cbd6c20843bcf1bb2379f1a))
+* implement Convert-to-CBZ feature (comic-server-43b) ([c8452f8](https://github.com/duckpuppy/comic-server/commit/c8452f8057433a1f0cd9da1a46f9252c2b7ad005))
+
 ## [1.5.0](https://github.com/duckpuppy/comic-server/compare/v1.4.1...v1.5.0) (2026-08-25)
 
 
