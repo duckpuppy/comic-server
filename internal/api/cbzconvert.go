@@ -102,3 +102,35 @@ func listIDFromCBZConvertSubPath(path string) string {
 	suffix := strings.TrimPrefix(path, "/api/library/lists/")
 	return strings.TrimSuffix(suffix, "/convert-cbz")
 }
+
+// needsConvertCount returns how many of list's currently-matched books
+// would actually be touched by cbzconvert.Convert (see
+// cbzconvert.NeedsConversion), or nil if server.cbz_convert isn't
+// enabled - see ListDetail.NeedsConvertCount's doc comment for why this
+// is gated. Uses the same MatchBooks call handleRunCBZConvert itself
+// uses, so the count always matches what an actual conversion run would
+// do; errors are logged and treated as "unknown" (nil) rather than
+// failing the list-detail page over what's just a UI nicety.
+func (s *Server) needsConvertCount(list *library.ComicListItem) *int {
+	s.configMu.RLock()
+	cfg := s.config
+	s.configMu.RUnlock()
+
+	if cfg == nil || !cfg.Server.CBZConvert.Enabled || s.backend == nil {
+		return nil
+	}
+
+	books, err := s.backend.MatchBooks(list)
+	if err != nil {
+		log.Warn().Err(err).Str("list_id", list.ID).Msg("Failed to evaluate needs-convert count")
+		return nil
+	}
+
+	count := 0
+	for _, book := range books {
+		if cbzconvert.NeedsConversion(book) {
+			count++
+		}
+	}
+	return &count
+}

@@ -354,6 +354,29 @@ func TestDropDeletedPages(t *testing.T) {
 	}
 }
 
+func TestNeedsConversion(t *testing.T) {
+	cases := []struct {
+		name     string
+		filePath string
+		want     bool
+	}{
+		{"cbr needs conversion", `G:\Comics\book.cbr`, true},
+		{"cb7 needs conversion", "/comics/book.cb7", true},
+		{"cbz does not", "/comics/book.cbz", false},
+		{"zip does not", "/comics/book.zip", false},
+		{"uppercase extension still matches", "/comics/BOOK.CBZ", false},
+		{"no file at all does not", "", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			book := &library.ComicBook{FilePath: c.filePath}
+			if got := NeedsConversion(book); got != c.want {
+				t.Errorf("NeedsConversion(%q) = %v, want %v", c.filePath, got, c.want)
+			}
+		})
+	}
+}
+
 func TestChangeExt(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{`G:\Comics\book.cbr`, `G:\Comics\book.cbz`},

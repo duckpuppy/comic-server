@@ -262,6 +262,86 @@ func TestHandleGetListDetail(t *testing.T) {
 	}
 }
 
+func TestHandleGetListDetail_NeedsConvertCountOmittedWhenDisabled(t *testing.T) {
+	lib := &library.ComicLibrary{
+		Books: []library.ComicBook{
+			{ID: "1", Series: "Batman", FilePath: "/comics/batman.cbr"},
+		},
+		ComicLists: []library.ComicListItem{
+			{
+				ID:          "list-123",
+				Name:        "Batman",
+				Type:        "ComicSmartListItem",
+				MatcherMode: "And",
+				Matchers: []library.ComicBookMatcher{
+					{Type: "Series", MatchOperator: "0", MatchValue: "Batman"},
+				},
+			},
+		},
+	}
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	server := &Server{
+		backend:   backend,
+		listCache: library.NewListCache(5 * time.Minute),
+		config:    &config.Config{Server: config.ServerConfig{CBZConvert: config.CBZConvertConfig{Enabled: false}}},
+	}
+
+	req := httptest.NewRequest("GET", "/api/library/lists/list-123", nil)
+	w := httptest.NewRecorder()
+	server.handleGetListDetail(w, req)
+
+	var response ListDetail
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+	if response.NeedsConvertCount != nil {
+		t.Errorf("expected NeedsConvertCount to be omitted when cbz_convert is disabled, got %v", *response.NeedsConvertCount)
+	}
+}
+
+func TestHandleGetListDetail_NeedsConvertCountComputedWhenEnabled(t *testing.T) {
+	lib := &library.ComicLibrary{
+		Books: []library.ComicBook{
+			{ID: "1", Series: "Batman", FilePath: "/comics/batman-1.cbr"},
+			{ID: "2", Series: "Batman", FilePath: "/comics/batman-2.cbz"},
+			{ID: "3", Series: "Batman", FilePath: "/comics/batman-3.cb7"},
+			{ID: "4", Series: "Batman", FilePath: ""}, // no file - shouldn't count
+		},
+		ComicLists: []library.ComicListItem{
+			{
+				ID:          "list-123",
+				Name:        "Batman",
+				Type:        "ComicSmartListItem",
+				MatcherMode: "And",
+				Matchers: []library.ComicBookMatcher{
+					{Type: "Series", MatchOperator: "0", MatchValue: "Batman"},
+				},
+			},
+		},
+	}
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	server := &Server{
+		backend:   backend,
+		listCache: library.NewListCache(5 * time.Minute),
+		config:    &config.Config{Server: config.ServerConfig{CBZConvert: config.CBZConvertConfig{Enabled: true}}},
+	}
+
+	req := httptest.NewRequest("GET", "/api/library/lists/list-123", nil)
+	w := httptest.NewRecorder()
+	server.handleGetListDetail(w, req)
+
+	var response ListDetail
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+	if response.NeedsConvertCount == nil {
+		t.Fatal("expected NeedsConvertCount to be set when cbz_convert is enabled")
+	}
+	if *response.NeedsConvertCount != 2 {
+		t.Errorf("NeedsConvertCount = %d, want 2 (cbr + cb7, not cbz or the fileless entry)", *response.NeedsConvertCount)
+	}
+}
+
 func TestHandleGetListDetail_NotFound(t *testing.T) {
 	lib := &library.ComicLibrary{
 		ComicLists: []library.ComicListItem{},

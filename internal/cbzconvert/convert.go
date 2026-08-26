@@ -138,6 +138,23 @@ func dropDeletedPages(pages []comicvine.Page, bookPages []library.ComicPageInfo)
 	return kept
 }
 
+// NeedsConversion reports whether book would actually be touched by
+// Convert: it has a real file, and that file isn't already a CBZ (a
+// same-format "conversion" would just repack it for no benefit worth
+// forcing on someone browsing a list - see the list-detail "Convert this
+// list" button, which uses this to disable itself when nothing in the
+// list would change). Books with no file at all (an empty FilePath - a
+// metadata-only placeholder entry, e.g. comic-server-pkk's "web comics
+// without a real file" case) never need conversion; Convert itself would
+// just fail reading them anyway.
+func NeedsConversion(book *library.ComicBook) bool {
+	if book.FilePath == "" {
+		return false
+	}
+	ext := strings.ToLower(filepath.Ext(book.FilePath))
+	return ext != ".cbz" && ext != ".zip"
+}
+
 // changeExt returns rawPath with its extension replaced by newExt.
 // filepath.Ext works correctly even on a foreign-OS raw path (e.g. a
 // Windows path read on Linux) as long as it contains no '/' - it looks

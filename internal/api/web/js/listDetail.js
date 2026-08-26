@@ -234,7 +234,7 @@ class ListDetail {
                 <div class="panel cbzconvert-panel">
                     <h2>Convert to CBZ</h2>
                     <p class="empty-message">Repacks each book's archive as CBZ and embeds ComicInfo.xml. Replaces the original file (comic-server-43b) - the original is moved to the server's trash folder, not deleted.</p>
-                    <button class="btn btn-primary" id="run-cbz-convert-btn">Convert this list</button>
+                    ${this.renderCBZConvertButton()}
                     <div id="cbz-convert-result"></div>
                 </div>
             </div>
@@ -467,6 +467,24 @@ class ListDetail {
                 </div>
             </div>
         `;
+    }
+
+    // renderCBZConvertButton reflects this.list.needs_convert_count (set by
+    // the server only when server.cbz_convert is enabled - see
+    // ListDetail.NeedsConvertCount in internal/api/lists.go): disabled with
+    // an explanatory label when there's nothing to convert (count is 0, or
+    // the field is entirely absent because the feature is off), otherwise
+    // enabled and labeled with how many books would actually change.
+    renderCBZConvertButton() {
+        const count = this.list.needs_convert_count;
+        if (count === undefined || count === null) {
+            return '<button class="btn btn-primary" id="run-cbz-convert-btn">Convert this list</button>';
+        }
+        if (count === 0) {
+            return '<button class="btn btn-primary" id="run-cbz-convert-btn" disabled>Already all CBZ</button>';
+        }
+        const label = count === 1 ? '1 comic' : `${count.toLocaleString()} comics`;
+        return `<button class="btn btn-primary" id="run-cbz-convert-btn">Convert ${label} to CBZ</button>`;
     }
 
     renderComicsPreview() {
@@ -795,10 +813,16 @@ class ListDetail {
             if (result.errors && result.errors.length > 0) {
                 resultEl.textContent += ` Errors: ${result.errors.join('; ')}`;
             }
+            // Refresh needs_convert_count and swap in a fresh button (e.g.
+            // disabling it once nothing's left to convert) without a full
+            // page re-render, which would wipe the result message above.
+            await this.loadListDetail();
+            btn.outerHTML = this.renderCBZConvertButton();
+            const newBtn = document.getElementById('run-cbz-convert-btn');
+            if (newBtn) newBtn.addEventListener('click', () => this.runCBZConvert());
         } catch (error) {
             console.error('Failed to run CBZ conversion:', error);
             resultEl.textContent = `Failed: ${error.message}`;
-        } finally {
             btn.disabled = false;
         }
     }

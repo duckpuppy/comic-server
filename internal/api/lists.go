@@ -341,6 +341,15 @@ type ListDetail struct {
 	BookCount            int                   `json:"book_count"`
 	UnreadCount          int                   `json:"unread_count"`
 	Matchers             []library.MatcherInfo `json:"matchers"`
+
+	// NeedsConvertCount is how many of this list's books aren't already
+	// CBZ (see cbzconvert.NeedsConversion) - lets the "Convert this list"
+	// button disable itself when there's nothing to do. Only computed
+	// when server.cbz_convert is enabled (nil/omitted otherwise) - it
+	// costs a full list evaluation via the same MatchBooks call the
+	// convert action itself uses, so it's not worth paying for on every
+	// list-detail page load when the feature isn't even on.
+	NeedsConvertCount *int `json:"needs_convert_count,omitempty"`
 }
 
 // handleGetListDetail returns details for a specific list
@@ -388,6 +397,7 @@ func (s *Server) handleGetListDetail(w http.ResponseWriter, r *http.Request) {
 		BookCount:            count,
 		UnreadCount:          unread,
 		Matchers:             matchers,
+		NeedsConvertCount:    s.needsConvertCount(targetList),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
