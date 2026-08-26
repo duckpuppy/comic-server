@@ -14,6 +14,7 @@ import (
 	"github.com/duckpuppy/comic-server/internal/api"
 	"github.com/duckpuppy/comic-server/internal/comicvine"
 	"github.com/duckpuppy/comic-server/internal/config"
+	"github.com/duckpuppy/comic-server/internal/configdb"
 	"github.com/duckpuppy/comic-server/internal/covers"
 	"github.com/duckpuppy/comic-server/internal/device"
 	"github.com/duckpuppy/comic-server/internal/komga"
@@ -163,6 +164,23 @@ func runServer(cmd *cobra.Command, args []string) error {
 		Str("config_path", configPath).
 		Int("configured_devices", len(cfg.Devices)).
 		Msg("Server configuration loaded")
+
+	// Open config.db - a small, always-open database for record-shaped
+	// config (device registrations, list assignments, Komga targets),
+	// independent of which library backend is active below. See
+	// comic-server-745 for the design record and comic-server-ihb for
+	// this foundation issue; nothing reads/writes it yet.
+	configDir, err := config.GetConfigDir()
+	if err != nil {
+		return fmt.Errorf("failed to determine config directory: %w", err)
+	}
+	configDBPath := filepath.Join(configDir, "config.db")
+	configDB, err := configdb.Open(configDBPath)
+	if err != nil {
+		return fmt.Errorf("failed to open config database: %w", err)
+	}
+	defer configDB.Close()
+	log.Info().Str("path", configDBPath).Msg("Config database opened")
 
 	// Load library using appropriate backend
 	var backend library.Backend
