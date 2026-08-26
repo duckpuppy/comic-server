@@ -36,12 +36,16 @@ class Dashboard {
 
     async updateStats() {
         try {
-            const [statsRes, listsRes] = await Promise.all([
+            const [statsRes, listsRes, trashRes] = await Promise.all([
                 fetch('/api/stats'),
-                fetch('/api/library/lists')
+                fetch('/api/library/lists'),
+                fetch('/api/trash')
             ]);
             const stats = await statsRes.json();
             const lists = await listsRes.json();
+            // /api/trash 503s when trash isn't configured - not an error,
+            // just means there's nothing to show a count for.
+            const trashData = trashRes.ok ? await trashRes.json() : { entries: [] };
 
             const set = (id, val) => {
                 const el = document.getElementById(id);
@@ -63,6 +67,8 @@ class Dashboard {
             // Nothing else ever called this for "devices" - the badge was
             // dead code, permanently hidden regardless of route.
             navigation.updateBadge('devices', stats.registered_devices ?? 0);
+
+            navigation.updateBadge('trash', (trashData.entries ?? []).length);
         } catch (error) {
             console.error('Failed to update stats:', error);
         }
@@ -87,6 +93,7 @@ let listsBrowser = null;
 let devicesBrowser = null;
 let syncHistoryBrowser = null;
 let komgaStatus = null;
+let trashBrowser = null;
 let deviceDetail = null; // Current device detail view
 let listsTree = null; // Shared tree instance for lists pages
 
@@ -197,6 +204,15 @@ document.addEventListener('DOMContentLoaded', () => {
             komgaStatus = new KomgaStatus();
         }
         await komgaStatus.init(ctx);
+    });
+
+    router.register('/trash', async (params, ctx) => {
+        navigation.setActive('trash');
+        dashboard.hide();
+        if (!trashBrowser) {
+            trashBrowser = new TrashBrowser();
+        }
+        await trashBrowser.init(ctx);
     });
 
     router.register('/devices/:deviceId', async (params, ctx) => {

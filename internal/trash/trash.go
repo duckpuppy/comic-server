@@ -21,6 +21,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -217,6 +218,153 @@ func (t *Trash) quarantinePathFor(targetPath string, at time.Time) string {
 	dir := filepath.Dir(mirrored)
 	base := filepath.Base(mirrored) + trashSuffixSep + strconv.FormatInt(at.Unix(), 10)
 	return filepath.Join(t.Root, dir, base)
+}
+
+// Entry describes one quarantined file, for List/Restore callers (e.g. the
+// web UI's trash browser, comic-server-tfs).
+type Entry struct {
+	// ID identifies this entry for a later Restore call: its path relative
+	// to Root, using forward slashes regardless of OS (so it round-trips
+	// safely through a URL/JSON API). Not guaranteed stable across a
+	// restore-then-requarantine of the same original file, since a new
+	// quarantine gets a new trashed-at timestamp.
+	ID string
+
+	// OriginalPath is the absolute path this file was quarantined from,
+	// recovered from ID the same way quarantinePathFor derived it.
+	OriginalPath string
+
+	// QuarantinedAt is when this file was moved into quarantine, parsed
+	// from its "~<unixSeconds>" suffix - the same source Sweep uses to
+	// decide what's old enough to purge.
+	QuarantinedAt time.Time
+
+	// Size is the quarantined file's size in bytes.
+	Size int64
+}
+
+// List returns every quarantined file under Root, newest first. Entries
+// whose name doesn't match the "name~unixSeconds" quarantine format are
+// skipped, same as Sweep.
+func (t *Trash) List() ([]Entry, error) {
+	var entries []Entry
+	walkErr := filepath.WalkDir(t.Root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			if os.IsNotExist(err) && path == t.Root {
+				return filepath.SkipDir // trash root doesn't exist yet - nothing to list
+			}
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		trashedAt, ok := parseTrashedAt(d.Name())
+		if !ok {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		id, err := filepath.Rel(t.Root, path)
+		if err != nil {
+			return err
+		}
+		entries = append(entries, Entry{
+			ID:            filepath.ToSlash(id),
+			OriginalPath:  t.originalPathFor(id),
+			QuarantinedAt: trashedAt,
+			Size:          info.Size(),
+		})
+		return nil
+	})
+	if walkErr != nil {
+		return nil, fmt.Errorf("trash: list: %w", walkErr)
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].QuarantinedAt.After(entries[j].QuarantinedAt)
+	})
+	return entries, nil
+}
+
+// Restore moves a quarantined entry (by the ID returned from List) back to
+// its original path. If that path is currently occupied by a different
+// file (e.g. the CBZ a book was converted to), the occupant is quarantined
+// first - a fresh Entry, restorable the same way - before the original is
+// moved back, so a restore is itself always undoable and nothing already
+// on disk is ever deleted as a side effect of restoring something else.
+func (t *Trash) Restore(id string) error {
+	quarantinePath, err := t.resolveID(id)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(quarantinePath); err != nil {
+		return fmt.Errorf("trash: restore: %w", err)
+	}
+
+	originalPath := t.originalPathFor(id)
+
+	if _, err := os.Stat(originalPath); err == nil {
+		// Something's occupying the original path - quarantine it first
+		// (same two steps Quarantine itself performs) so restoring never
+		// clobbers or deletes it. quarantinePathFor only has second
+		// resolution, so within a fast restore-then-requarantine sequence
+		// (or just bad luck) "now" can collide with the entry being
+		// restored's own timestamp - walk the clock forward a second at a
+		// time until the path is actually free.
+		now := time.Now()
+		occupantQuarantinePath := t.quarantinePathFor(originalPath, now)
+		for n := int64(1); occupantQuarantinePath == quarantinePath; n++ {
+			occupantQuarantinePath = t.quarantinePathFor(originalPath, now.Add(time.Duration(n)*time.Second))
+		}
+		if err := os.MkdirAll(filepath.Dir(occupantQuarantinePath), 0o755); err != nil {
+			return fmt.Errorf("trash: restore: quarantine current occupant: %w", err)
+		}
+		if err := moveFile(originalPath, occupantQuarantinePath); err != nil {
+			return fmt.Errorf("trash: restore: quarantine current occupant: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("trash: restore: stat original path: %w", err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(originalPath), 0o755); err != nil {
+		return fmt.Errorf("trash: restore: %w", err)
+	}
+	if err := moveFile(quarantinePath, originalPath); err != nil {
+		return fmt.Errorf("trash: restore: %w", err)
+	}
+	return nil
+}
+
+// resolveID converts an Entry.ID back to an absolute quarantine path,
+// rejecting anything that would resolve outside Root (a malformed or
+// tampered-with ID from an API caller).
+func (t *Trash) resolveID(id string) (string, error) {
+	if id == "" || strings.Contains(id, "..") {
+		return "", fmt.Errorf("trash: invalid entry id %q", id)
+	}
+	full := filepath.Join(t.Root, filepath.FromSlash(id))
+	rel, err := filepath.Rel(t.Root, full)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return "", fmt.Errorf("trash: invalid entry id %q", id)
+	}
+	return full, nil
+}
+
+// originalPathFor recovers the absolute path an entry (by ID, relative to
+// Root) was quarantined from - the inverse of quarantinePathFor: strip the
+// trailing "~<unixSeconds>" suffix from the basename, then treat the rest
+// as an absolute path rooted at "/" (quarantinePathFor stripped the
+// leading separator and any Windows drive letter when it built this same
+// relative path).
+func (t *Trash) originalPathFor(id string) string {
+	slashID := filepath.ToSlash(id)
+	idx := strings.LastIndex(slashID, trashSuffixSep)
+	if idx != -1 {
+		slashID = slashID[:idx]
+	}
+	return filepath.FromSlash("/" + slashID)
 }
 
 // SweepResult reports the outcome of one Sweep pass.

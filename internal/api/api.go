@@ -143,6 +143,10 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/library/lists/tree", s.handleGetListTree)
 	s.mux.HandleFunc("/api/library/lists", s.handleGetLists)
 	s.mux.HandleFunc("/api/library/lists/", s.handleListsRouter)
+
+	// Trash browser endpoints (comic-server-tfs)
+	s.mux.HandleFunc("/api/trash", s.handleListTrash)
+	s.mux.HandleFunc("/api/trash/restore", s.handlePostTrashRestore)
 	s.mux.HandleFunc("/api/library/folders", s.handleFolders)
 	s.mux.HandleFunc("/api/library/books/", s.handleBooksRouter)
 

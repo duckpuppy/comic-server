@@ -419,6 +419,154 @@ func TestRun_StopsOnContextCancel(t *testing.T) {
 	}
 }
 
+func TestList_EmptyRoot(t *testing.T) {
+	tr := &Trash{Root: filepath.Join(t.TempDir(), "does-not-exist"), RetentionDays: 30}
+	entries, err := tr.List()
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("expected no entries, got %d", len(entries))
+	}
+}
+
+func TestList_ReturnsEntriesNewestFirst(t *testing.T) {
+	libDir := t.TempDir()
+	trashDir := t.TempDir()
+	tr := &Trash{Root: trashDir, RetentionDays: 30}
+
+	older := filepath.Join(libDir, "older.cbz")
+	newer := filepath.Join(libDir, "newer.cbz")
+	mustWrite(t, older, "older content")
+	mustWrite(t, newer, "newer content")
+
+	now := time.Now()
+	if err := os.MkdirAll(filepath.Dir(tr.quarantinePathFor(older, now.Add(-time.Hour))), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(older, tr.quarantinePathFor(older, now.Add(-time.Hour))); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(tr.quarantinePathFor(newer, now)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(newer, tr.quarantinePathFor(newer, now)); err != nil {
+		t.Fatal(err)
+	}
+
+	// An unrecognized file (no "~unixSeconds" suffix) should be skipped,
+	// same as Sweep.
+	mustWrite(t, filepath.Join(trashDir, "not-a-quarantine-entry.txt"), "ignore me")
+
+	entries, err := tr.List()
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d: %+v", len(entries), entries)
+	}
+	if entries[0].OriginalPath != newer || entries[1].OriginalPath != older {
+		t.Errorf("expected newest first, got %+v", entries)
+	}
+	if entries[0].Size != int64(len("newer content")) {
+		t.Errorf("expected size %d, got %d", len("newer content"), entries[0].Size)
+	}
+}
+
+func TestRestore_PathFree(t *testing.T) {
+	libDir := t.TempDir()
+	trashDir := t.TempDir()
+	tr := &Trash{Root: trashDir, RetentionDays: 30}
+
+	target := filepath.Join(libDir, "book.cbz")
+	mustWrite(t, target, "original content")
+	if err := tr.Quarantine(target); err != nil {
+		t.Fatalf("Quarantine failed: %v", err)
+	}
+
+	entries, err := tr.List()
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d, err=%v", len(entries), err)
+	}
+
+	if err := tr.Restore(entries[0].ID); err != nil {
+		t.Fatalf("Restore failed: %v", err)
+	}
+	assertExists(t, target)
+	data, err := os.ReadFile(target)
+	if err != nil || string(data) != "original content" {
+		t.Errorf("restored content wrong: data=%q err=%v", data, err)
+	}
+
+	entries, err = tr.List()
+	if err != nil || len(entries) != 0 {
+		t.Errorf("expected trash empty after restore, got %d entries, err=%v", len(entries), err)
+	}
+}
+
+func TestRestore_PathOccupied(t *testing.T) {
+	libDir := t.TempDir()
+	trashDir := t.TempDir()
+	tr := &Trash{Root: trashDir, RetentionDays: 30}
+
+	target := filepath.Join(libDir, "book.cbz")
+	mustWrite(t, target, "original content")
+	if err := tr.Quarantine(target); err != nil {
+		t.Fatalf("Quarantine failed: %v", err)
+	}
+	entries, err := tr.List()
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d, err=%v", len(entries), err)
+	}
+	originalID := entries[0].ID
+
+	// Something new now occupies the original path (e.g. the CBZ a book
+	// was converted to).
+	mustWrite(t, target, "converted content")
+
+	if err := tr.Restore(originalID); err != nil {
+		t.Fatalf("Restore failed: %v", err)
+	}
+
+	data, err := os.ReadFile(target)
+	if err != nil || string(data) != "original content" {
+		t.Errorf("restored content wrong: data=%q err=%v", data, err)
+	}
+
+	entries, err = tr.List()
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected the occupant to be freshly quarantined, got %d entries: %+v", len(entries), entries)
+	}
+	if entries[0].ID == originalID {
+		t.Error("expected the occupant's quarantine entry to be a NEW entry, not the restored one")
+	}
+	if entries[0].OriginalPath != target {
+		t.Errorf("expected occupant's OriginalPath to be %s, got %s", target, entries[0].OriginalPath)
+	}
+	if found := findFileContaining(t, trashDir, "converted content"); found == "" {
+		t.Error("occupant's content not found in quarantine")
+	}
+}
+
+func TestRestore_UnknownID(t *testing.T) {
+	tr := &Trash{Root: t.TempDir(), RetentionDays: 30}
+	if err := tr.Restore("does/not/exist.cbz~123"); err == nil {
+		t.Error("expected error restoring an unknown ID")
+	}
+}
+
+func TestRestore_RejectsPathEscapingRoot(t *testing.T) {
+	tr := &Trash{Root: t.TempDir(), RetentionDays: 30}
+	for _, id := range []string{"../outside.cbz~123", "", "..", "a/../../outside.cbz~123"} {
+		if err := tr.Restore(id); err == nil {
+			t.Errorf("expected error restoring id %q", id)
+		}
+	}
+}
+
 // --- test helpers ---
 
 func mustWrite(t *testing.T, path, content string) {

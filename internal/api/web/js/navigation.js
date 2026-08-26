@@ -37,6 +37,11 @@ class Navigation {
                     <span class="nav-icon">📖</span>
                     <span class="nav-label">Komga</span>
                 </a>
+                <a href="/trash" class="nav-tab" data-tab="trash">
+                    <span class="nav-icon">🗑️</span>
+                    <span class="nav-label">Trash</span>
+                    <span class="nav-badge" id="trash-count">0</span>
+                </a>
             </div>
         `;
     }

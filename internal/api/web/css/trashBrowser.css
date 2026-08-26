@@ -1,0 +1,80 @@
+/* Trash Browser Page */
+.trash-browser-page {
+    padding: 1rem;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.trash-header {
+    margin-bottom: 1.5rem;
+}
+
+.trash-header h1 {
+    margin: 0 0 0.5rem 0;
+    color: var(--text-primary);
+}
+
+.trash-subtitle {
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+.trash-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    margin-bottom: 1rem;
+    opacity: 0.5;
+}
+
+.trash-toolbar.active {
+    opacity: 1;
+}
+
+.trash-selection-count {
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.trash-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    overflow: hidden;
+}
+
+.trash-table th,
+.trash-table td {
+    padding: 0.75rem 1rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.trash-table th {
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 0.875rem;
+}
+
+.trash-table tr:last-child td {
+    border-bottom: none;
+}
+
+.trash-col-checkbox {
+    width: 2.5rem;
+}
+
+.trash-original-path {
+    font-family: monospace;
+    font-size: 0.875rem;
+    max-width: 32rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
