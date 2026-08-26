@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/duckpuppy/comic-server/internal/comicvine"
 	"github.com/duckpuppy/comic-server/internal/library"
@@ -148,7 +149,13 @@ func changeExt(rawPath, newExt string) string {
 
 // writeCBZ creates a new zip at tmpPath containing pages (as-is, no
 // re-encoding - matches ComicRack's default repack behavior) plus a
-// ComicInfo.xml entry.
+// ComicInfo.xml entry. Every entry is timestamped with the moment of
+// conversion, matching ComicRackCE's own CbzStorageProvider.AddEntry -
+// which stamps DateTime.Now on every entry it writes, not the original
+// page's date (confirmed from its real source; a Go zip.FileHeader left
+// without an explicit Modified time defaults to zero, which displays as
+// the nonsensical "1980-00-00" rather than either a real date or
+// ComicRack's own "now" behavior - the bug this fixes).
 func writeCBZ(tmpPath string, pages []comicvine.Page, comicInfoBytes []byte) error {
 	f, err := os.Create(tmpPath)
 	if err != nil {
@@ -157,13 +164,15 @@ func writeCBZ(tmpPath string, pages []comicvine.Page, comicInfoBytes []byte) err
 	defer f.Close()
 
 	zw := zip.NewWriter(f)
+	now := time.Now()
 
 	for _, page := range pages {
 		// Images are already compressed formats (jpg/png/gif/webp); Store
 		// avoids paying deflate's CPU cost for essentially no size benefit.
 		w, err := zw.CreateHeader(&zip.FileHeader{
-			Name:   filepath.Base(page.Name),
-			Method: zip.Store,
+			Name:     filepath.Base(page.Name),
+			Method:   zip.Store,
+			Modified: now,
 		})
 		if err != nil {
 			zw.Close()
@@ -175,7 +184,11 @@ func writeCBZ(tmpPath string, pages []comicvine.Page, comicInfoBytes []byte) err
 		}
 	}
 
-	ciw, err := zw.Create(comicInfoEntryName)
+	ciw, err := zw.CreateHeader(&zip.FileHeader{
+		Name:     comicInfoEntryName,
+		Method:   zip.Deflate,
+		Modified: now,
+	})
 	if err != nil {
 		zw.Close()
 		return err

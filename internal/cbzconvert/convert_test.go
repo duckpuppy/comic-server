@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/duckpuppy/comic-server/internal/comicvine"
 	"github.com/duckpuppy/comic-server/internal/library"
@@ -116,6 +117,37 @@ func TestConvert_RepacksPagesByteIdenticalAndEmbedsComicInfo(t *testing.T) {
 	}
 	if ci.PageCount != 2 {
 		t.Errorf("ComicInfo.xml PageCount = %d, want 2", ci.PageCount)
+	}
+}
+
+func TestConvert_EntryTimestampsAreConversionTimeNotZero(t *testing.T) {
+	libDir := t.TempDir()
+	trashDir := t.TempDir()
+	src := filepath.Join(libDir, "book.cbz")
+	writeTestCBZ(t, src, map[string][]byte{"page001.jpg": []byte("data")})
+
+	before := time.Now().Add(-time.Minute)
+	book := &library.ComicBook{FilePath: src}
+	tr := &trash.Trash{Root: trashDir, RetentionDays: 30}
+	if _, err := Convert(book, nil, tr); err != nil {
+		t.Fatalf("Convert failed: %v", err)
+	}
+	after := time.Now().Add(time.Minute)
+
+	zr, err := zip.OpenReader(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer zr.Close()
+
+	if len(zr.File) == 0 {
+		t.Fatal("no entries in converted archive")
+	}
+	for _, f := range zr.File {
+		mt := f.Modified
+		if mt.Before(before) || mt.After(after) {
+			t.Errorf("entry %q has implausible timestamp %v (want between %v and %v) - looks like the Go zip zero-value default (1980-00-00), not a real conversion-time stamp", f.Name, mt, before, after)
+		}
 	}
 }
 
