@@ -210,6 +210,30 @@ func runServer(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// One-time migration: import any Komga targets still sitting in
+	// config.yaml (the pre-comic-server-cde storage) into config.db, then
+	// stop config.yaml from carrying them going forward. Same guard
+	// rationale as the device migration above: only runs when config.db's
+	// komga_targets table is empty, safe to leave in permanently.
+	if len(cfg.Server.Komga.Targets) > 0 {
+		existing, err := configDB.ListKomgaTargets()
+		if err != nil {
+			return fmt.Errorf("failed to check config database for existing komga targets: %w", err)
+		}
+		if len(existing) == 0 {
+			migrated, err := migrateKomgaTargetsToConfigDB(cfg, configDB)
+			if err != nil {
+				return fmt.Errorf("failed to migrate komga targets to config database: %w", err)
+			}
+			log.Info().Int("targets", migrated).Msg("Migrated Komga targets from config.yaml to config.db")
+
+			cfg.Server.Komga.Targets = nil
+			if err := config.Save(cfg, configPath); err != nil {
+				log.Error().Err(err).Msg("Failed to save config.yaml after migrating komga targets to config.db")
+			}
+		}
+	}
+
 	// Load library using appropriate backend
 	var backend library.Backend
 	if cfg.Server.DatabasePath != "" {
@@ -399,7 +423,10 @@ func runServer(cmd *cobra.Command, args []string) error {
 		// to push newly-added targets into via SetTargets/TriggerNow -
 		// otherwise the first target added after startup would need a
 		// restart to take effect.
-		komgaSyncer = buildKomgaSyncer(cfg.Server.Komga, backend)
+		komgaSyncer, err = buildKomgaSyncer(cfg.Server.Komga, configDB, backend)
+		if err != nil {
+			return err
+		}
 		apiServer.SetKomgaSyncer(komgaSyncer)
 		go startKomgaSync(komgaCtx, komgaSyncer, cfg.Server.Komga, komgaStatus)
 	}
@@ -707,6 +734,27 @@ func migrateDevicesToConfigDB(cfg *config.Config, configDB *configdb.DB) (int, e
 			if err := configDB.AddDeviceList(deviceID, dl); err != nil {
 				return count, fmt.Errorf("migrate device %s list %s: %w", deviceID, lc.ListID, err)
 			}
+		}
+		count++
+	}
+	return count, nil
+}
+
+// migrateKomgaTargetsToConfigDB copies every Komga target from
+// cfg.Server.Komga.Targets into config.db's komga_targets table.
+func migrateKomgaTargetsToConfigDB(cfg *config.Config, configDB *configdb.DB) (int, error) {
+	count := 0
+	for _, t := range cfg.Server.Komga.Targets {
+		target := configdb.KomgaTarget{
+			ListID:         t.ListID,
+			ListName:       t.ListName,
+			Type:           string(t.Type),
+			KomgaName:      t.KomgaName,
+			Enabled:        t.Enabled,
+			SyncReadStatus: t.SyncReadStatus,
+		}
+		if err := configDB.CreateKomgaTarget(target); err != nil {
+			return count, fmt.Errorf("migrate komga target %s: %w", t.ListID, err)
 		}
 		count++
 	}
@@ -1178,16 +1226,21 @@ func startComicVineSync(ctx context.Context, apiKey string, backend library.Back
 // comic-server has no way to detect ComicRack library changes while
 // running (see comic-server-bwz), so this is a scheduled push, not
 // change-triggered.
-// buildKomgaSyncer translates config.KomgaConfig into a *komga.Syncer,
-// skipping disabled targets. Always returns a non-nil Syncer when Komga
-// sync is enabled - even with zero enabled targets - so the web UI's Komga
-// target management endpoints (comic-server-d3w) always have a live Syncer
-// to call SetTargets/TriggerNow on. Syncer.syncOnce is a no-op when there
-// are no targets, so this doesn't cost any Komga API calls while idle.
-// Split out from startKomgaSync so callers (e.g. the library watcher) can
-// hold a reference to the syncer and call TriggerNow() on it.
-func buildKomgaSyncer(cfg config.KomgaConfig, backend library.Backend) *komga.Syncer {
-	targets := komgaTargetsFromConfig(cfg.Targets)
+// buildKomgaSyncer translates config.KomgaConfig plus config.db's
+// komga_targets table into a *komga.Syncer, skipping disabled targets.
+// Always returns a non-nil Syncer when Komga sync is enabled - even with
+// zero enabled targets - so the web UI's Komga target management
+// endpoints (comic-server-d3w) always have a live Syncer to call
+// SetTargets/TriggerNow on. Syncer.syncOnce is a no-op when there are no
+// targets, so this doesn't cost any Komga API calls while idle. Split out
+// from startKomgaSync so callers (e.g. the library watcher) can hold a
+// reference to the syncer and call TriggerNow() on it.
+func buildKomgaSyncer(cfg config.KomgaConfig, configDB *configdb.DB, backend library.Backend) (*komga.Syncer, error) {
+	dbTargets, err := configDB.ListKomgaTargets()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load komga targets from config database: %w", err)
+	}
+	targets := komgaTargetsFromConfigDB(dbTargets)
 	if len(targets) == 0 {
 		log.Warn().Msg("Komga sync: enabled but no enabled targets configured yet")
 	}
@@ -1199,14 +1252,14 @@ func buildKomgaSyncer(cfg config.KomgaConfig, backend library.Backend) *komga.Sy
 		RemoteRoot: cfg.RemoteRoot,
 		Targets:    targets,
 		Interval:   time.Duration(cfg.SyncIntervalSec) * time.Second,
-	})
+	}), nil
 }
 
-// komgaTargetsFromConfig translates enabled config.KomgaTarget entries into
-// komga.Target, skipping disabled targets and logging (then skipping) any
-// with an unrecognized Type. Used both at startup (buildKomgaSyncer) and by
-// the API server after a Komga target is added/updated/removed via the web
-// UI (comic-server-d3w) to rebuild the live Syncer's target set.
+// komgaTargetsFromConfigDB translates enabled configdb.KomgaTarget entries
+// into komga.Target, skipping disabled targets and logging (then skipping)
+// any with an unrecognized Type. Used both at startup (buildKomgaSyncer)
+// and by the API server after a Komga target is added/updated/removed via
+// the web UI (comic-server-d3w) to rebuild the live Syncer's target set.
 // resolveCoverCacheDir returns configuredDir if set, else the "covers"
 // subdirectory of the XDG cache directory. Configurable because the XDG
 // cache dir isn't one of the Docker image's declared volumes (/config,
@@ -1225,20 +1278,20 @@ func resolveCoverCacheDir(configuredDir string) (string, error) {
 	return filepath.Join(cacheDir, "covers"), nil
 }
 
-func komgaTargetsFromConfig(cfgTargets []config.KomgaTarget) []komga.Target {
-	targets := make([]komga.Target, 0, len(cfgTargets))
-	for _, t := range cfgTargets {
+func komgaTargetsFromConfigDB(dbTargets []configdb.KomgaTarget) []komga.Target {
+	targets := make([]komga.Target, 0, len(dbTargets))
+	for _, t := range dbTargets {
 		if !t.Enabled {
 			continue
 		}
 		var targetType komga.TargetType
-		switch t.Type {
+		switch config.KomgaTargetType(t.Type) {
 		case config.KomgaTargetCollection:
 			targetType = komga.TargetCollection
 		case config.KomgaTargetReadList:
 			targetType = komga.TargetReadList
 		default:
-			log.Error().Str("list_id", t.ListID).Str("type", string(t.Type)).Msg("Komga sync: unknown target type, skipping")
+			log.Error().Str("list_id", t.ListID).Str("type", t.Type).Msg("Komga sync: unknown target type, skipping")
 			continue
 		}
 		targets = append(targets, komga.Target{

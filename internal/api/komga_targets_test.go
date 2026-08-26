@@ -33,6 +33,7 @@ func newKomgaTargetTestServer(t *testing.T) *Server {
 		backend:    backend,
 		config:     &config.Config{},
 		configPath: filepath.Join(t.TempDir(), "config.yaml"),
+		configDB:   newTestConfigDB(t),
 	}
 }
 
@@ -126,13 +127,13 @@ func TestKomgaTarget_CreateGetUpdateDelete(t *testing.T) {
 		t.Errorf("unexpected update response: %+v", updated)
 	}
 
-	// Config on disk reflects the update
-	loaded, err := config.Load(s.configPath)
+	// config.db reflects the update
+	saved, err := s.configDB.GetKomgaTarget("list-1")
 	if err != nil {
-		t.Fatalf("config.Load: %v", err)
+		t.Fatalf("GetKomgaTarget: %v", err)
 	}
-	if len(loaded.Server.Komga.Targets) != 1 || loaded.Server.Komga.Targets[0].KomgaName != "Batman Read List" {
-		t.Errorf("expected saved config to reflect update, got %+v", loaded.Server.Komga.Targets)
+	if saved == nil || saved.KomgaName != "Batman Read List" {
+		t.Errorf("expected config.db to reflect update, got %+v", saved)
 	}
 
 	// Delete
@@ -192,6 +193,7 @@ func TestKomgaTarget_CreateAcceptsNonSmartLists(t *testing.T) {
 		backend:    backend,
 		config:     &config.Config{},
 		configPath: filepath.Join(t.TempDir(), "config.yaml"),
+		configDB:   newTestConfigDB(t),
 	}
 
 	if w := doKomgaRequest(t, s, http.MethodPost, "/api/library/lists/idlist-1/komga", KomgaTargetWriteRequest{Type: "collection", KomgaName: "To Read", Enabled: true}); w.Code != http.StatusCreated && w.Code != http.StatusOK {

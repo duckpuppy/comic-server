@@ -1,11 +1,14 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/duckpuppy/comic-server/internal/config"
+	"github.com/duckpuppy/comic-server/internal/configdb"
 	"github.com/duckpuppy/comic-server/internal/komga"
 	"github.com/duckpuppy/comic-server/internal/log"
 )
@@ -47,11 +50,11 @@ type KomgaTargetWriteRequest struct {
 	SyncReadStatus bool   `json:"sync_read_status"`
 }
 
-func toKomgaTargetResponse(t config.KomgaTarget) *KomgaTargetResponse {
+func toKomgaTargetResponse(t configdb.KomgaTarget) *KomgaTargetResponse {
 	return &KomgaTargetResponse{
 		ListID:         t.ListID,
 		ListName:       t.ListName,
-		Type:           string(t.Type),
+		Type:           t.Type,
 		KomgaName:      t.KomgaName,
 		Enabled:        t.Enabled,
 		SyncReadStatus: t.SyncReadStatus,
@@ -75,14 +78,17 @@ func (s *Server) handleGetListKomgaTarget(w http.ResponseWriter, r *http.Request
 	listID := listIDFromKomgaSubPath(r.URL.Path)
 
 	s.configMu.RLock()
-	defer s.configMu.RUnlock()
-
 	resp := KomgaTargetForListResponse{KomgaEnabled: s.config.Server.Komga.Enabled}
-	for _, t := range s.config.Server.Komga.Targets {
-		if t.ListID == listID {
-			resp.Target = toKomgaTargetResponse(t)
-			break
-		}
+	s.configMu.RUnlock()
+
+	target, err := s.configDB.GetKomgaTarget(listID)
+	if err != nil {
+		log.Error().Err(err).Str("list_id", listID).Msg("Error looking up Komga target")
+		http.Error(w, "Error looking up Komga target", http.StatusInternalServerError)
+		return
+	}
+	if target != nil {
+		resp.Target = toKomgaTargetResponse(*target)
 	}
 	s.writeJSON(w, http.StatusOK, resp)
 }
@@ -135,28 +141,29 @@ func (s *Server) handleCreateListKomgaTarget(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	s.configMu.Lock()
-	for _, t := range s.config.Server.Komga.Targets {
-		if t.ListID == listID {
-			s.configMu.Unlock()
-			http.Error(w, "Komga target already exists for this list", http.StatusConflict)
-			return
-		}
+	existing, err := s.configDB.GetKomgaTarget(listID)
+	if err != nil {
+		log.Error().Err(err).Str("list_id", listID).Msg("Error checking for existing Komga target")
+		http.Error(w, "Error checking for existing Komga target", http.StatusInternalServerError)
+		return
 	}
-	newTarget := config.KomgaTarget{
+	if existing != nil {
+		http.Error(w, "Komga target already exists for this list", http.StatusConflict)
+		return
+	}
+
+	newTarget := configdb.KomgaTarget{
 		ListID:         listID,
 		ListName:       list.Name,
-		Type:           targetType,
+		Type:           string(targetType),
 		KomgaName:      req.KomgaName,
 		Enabled:        req.Enabled,
 		SyncReadStatus: req.SyncReadStatus,
 	}
-	s.config.Server.Komga.Targets = append(s.config.Server.Komga.Targets, newTarget)
-	saveErr := config.Save(s.config, s.configPath)
-	s.configMu.Unlock()
-
-	if saveErr != nil {
-		log.Error().Err(saveErr).Msg("Failed to save config after adding Komga target")
+	if err := s.configDB.CreateKomgaTarget(newTarget); err != nil {
+		log.Error().Err(err).Str("list_id", listID).Msg("Failed to save Komga target")
+		http.Error(w, "Failed to save Komga target", http.StatusInternalServerError)
+		return
 	}
 	s.applyKomgaTargets()
 
@@ -185,35 +192,26 @@ func (s *Server) handleUpdateListKomgaTarget(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	s.configMu.Lock()
-	var updated *config.KomgaTarget
-	targets := s.config.Server.Komga.Targets
-	for i := range targets {
-		if targets[i].ListID == listID {
-			targets[i].Type = targetType
-			targets[i].KomgaName = req.KomgaName
-			targets[i].Enabled = req.Enabled
-			targets[i].SyncReadStatus = req.SyncReadStatus
-			updated = &targets[i]
-			break
+	if err := s.configDB.UpdateKomgaTarget(listID, string(targetType), req.KomgaName, req.Enabled, req.SyncReadStatus); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "No Komga target configured for this list", http.StatusNotFound)
+			return
 		}
-	}
-	if updated == nil {
-		s.configMu.Unlock()
-		http.Error(w, "No Komga target configured for this list", http.StatusNotFound)
+		log.Error().Err(err).Str("list_id", listID).Msg("Failed to update Komga target")
+		http.Error(w, "Failed to update Komga target", http.StatusInternalServerError)
 		return
 	}
-	result := *updated
-	saveErr := config.Save(s.config, s.configPath)
-	s.configMu.Unlock()
 
-	if saveErr != nil {
-		log.Error().Err(saveErr).Msg("Failed to save config after updating Komga target")
+	result, err := s.configDB.GetKomgaTarget(listID)
+	if err != nil || result == nil {
+		log.Error().Err(err).Str("list_id", listID).Msg("Failed to reload Komga target after update")
+		http.Error(w, "Failed to reload Komga target after update", http.StatusInternalServerError)
+		return
 	}
 	s.applyKomgaTargets()
 
 	log.Info().Str("list_id", listID).Str("komga_name", req.KomgaName).Bool("enabled", req.Enabled).Msg("Komga target updated")
-	s.writeJSON(w, http.StatusOK, toKomgaTargetResponse(result))
+	s.writeJSON(w, http.StatusOK, toKomgaTargetResponse(*result))
 }
 
 // handleDeleteListKomgaTarget removes the Komga target for one list.
@@ -221,26 +219,20 @@ func (s *Server) handleUpdateListKomgaTarget(w http.ResponseWriter, r *http.Requ
 func (s *Server) handleDeleteListKomgaTarget(w http.ResponseWriter, r *http.Request) {
 	listID := listIDFromKomgaSubPath(r.URL.Path)
 
-	s.configMu.Lock()
-	targets := s.config.Server.Komga.Targets
-	idx := -1
-	for i := range targets {
-		if targets[i].ListID == listID {
-			idx = i
-			break
-		}
+	existing, err := s.configDB.GetKomgaTarget(listID)
+	if err != nil {
+		log.Error().Err(err).Str("list_id", listID).Msg("Error looking up Komga target")
+		http.Error(w, "Error looking up Komga target", http.StatusInternalServerError)
+		return
 	}
-	if idx == -1 {
-		s.configMu.Unlock()
+	if existing == nil {
 		http.Error(w, "No Komga target configured for this list", http.StatusNotFound)
 		return
 	}
-	s.config.Server.Komga.Targets = append(targets[:idx], targets[idx+1:]...)
-	saveErr := config.Save(s.config, s.configPath)
-	s.configMu.Unlock()
-
-	if saveErr != nil {
-		log.Error().Err(saveErr).Msg("Failed to save config after removing Komga target")
+	if err := s.configDB.DeleteKomgaTarget(listID); err != nil {
+		log.Error().Err(err).Str("list_id", listID).Msg("Failed to remove Komga target")
+		http.Error(w, "Failed to remove Komga target", http.StatusInternalServerError)
+		return
 	}
 	s.applyKomgaTargets()
 
@@ -249,28 +241,30 @@ func (s *Server) handleDeleteListKomgaTarget(w http.ResponseWriter, r *http.Requ
 }
 
 // applyKomgaTargets pushes the current set of enabled Komga targets from
-// config into the live Syncer (if one is wired up via SetKomgaSyncer) and
-// triggers an immediate sync pass, so a target add/update/remove made
+// config.db into the live Syncer (if one is wired up via SetKomgaSyncer)
+// and triggers an immediate sync pass, so a target add/update/remove made
 // through the web UI takes effect right away instead of waiting for the
-// next scheduled interval or a restart. A no-op if Komga sync isn't running
-// (komgaSyncer is nil) - the change is still persisted to config for when it
+// next scheduled interval or a restart. A no-op if Komga sync isn't
+// running (komgaSyncer is nil) - the change is still persisted for when it
 // next starts.
 func (s *Server) applyKomgaTargets() {
 	if s.komgaSyncer == nil {
 		return
 	}
 
-	s.configMu.RLock()
-	cfgTargets := append([]config.KomgaTarget(nil), s.config.Server.Komga.Targets...)
-	s.configMu.RUnlock()
+	dbTargets, err := s.configDB.ListKomgaTargets()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to load Komga targets from config database")
+		return
+	}
 
-	targets := make([]komga.Target, 0, len(cfgTargets))
-	for _, t := range cfgTargets {
+	targets := make([]komga.Target, 0, len(dbTargets))
+	for _, t := range dbTargets {
 		if !t.Enabled {
 			continue
 		}
 		var targetType komga.TargetType
-		switch t.Type {
+		switch config.KomgaTargetType(t.Type) {
 		case config.KomgaTargetCollection:
 			targetType = komga.TargetCollection
 		case config.KomgaTargetReadList:
