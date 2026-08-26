@@ -70,7 +70,7 @@ class DeviceSettings {
                     <div class="panel-header">
                         <h2>Smart Lists</h2>
                         <button class="btn btn-primary" onclick="deviceSettings.showAddListModal()">
-                            + Add List
+                            + Assign List
                         </button>
                     </div>
                     ${this.renderListsManagement()}
@@ -125,7 +125,7 @@ class DeviceSettings {
             return `
                 <div class="empty-state">
                     <p>No smart lists configured for this device.</p>
-                    <p class="help-text">Click "Add List" to configure smart lists for syncing.</p>
+                    <p class="help-text">Click "Assign List" to configure smart lists for syncing.</p>
                 </div>
             `;
         }
@@ -503,7 +503,7 @@ class DeviceSettings {
     showAddListModal() {
         const excludeListIds = (this.device.lists || []).map(l => l.list_id);
         listPicker.open({
-            title: 'Add Smart List',
+            title: 'Assign Smart List',
             excludeListIds,
             onSelect: (listId, listName) => this.addList(listId, listName)
         });
