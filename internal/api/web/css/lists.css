@@ -677,18 +677,50 @@
     font-weight: 600;
 }
 
-/* Detail Content */
-.list-detail-content {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1.5rem;
+/* Detail Tabs - one management panel visible at a time (comic-server-030),
+   visual language matches .nav-tabs/.nav-tab in navigation.css but scoped
+   to this page. */
+.list-detail-tabs {
+    display: flex;
+    gap: 0.5rem;
+    overflow-x: auto;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 1.5rem;
+}
+
+.list-detail-tab {
+    flex: 0 0 auto;
+    padding: 0.75rem 1.25rem;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-secondary);
+    font-weight: 500;
+    font-size: 0.9375rem;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.list-detail-tab:hover {
+    color: var(--text-primary);
+}
+
+.list-detail-tab.active {
+    color: var(--primary-color);
+    border-bottom-color: var(--primary-color);
+}
+
+.list-detail-tab-panels {
     margin-bottom: 2rem;
 }
 
-@media (max-width: 768px) {
-    .list-detail-content {
-        grid-template-columns: 1fr;
-    }
+.list-detail-tab-panels .panel {
+    display: none;
+}
+
+.list-detail-tab-panels .panel.active {
+    display: block;
 }
 
 /* Panel */

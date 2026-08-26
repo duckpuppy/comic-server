@@ -13,6 +13,7 @@ class ListDetail {
         this.editMode = false;
         this.editState = null;
         this.schema = null;
+        this.activeTab = 'matchers';
     }
 
     async init(ctx) {
@@ -193,11 +194,8 @@ class ListDetail {
                 </p>
             </div>
 
-            <!-- Comics Preview - moved above the management panels below
-                 so the list's actual contents are visible on page load
-                 instead of pushed off-screen by 5 stacked action cards.
-                 Quick fix; see comic-server-030 for the bigger
-                 tabs/sidebar restructure this doesn't replace. -->
+            <!-- Comics Preview - above the tabbed management panels below
+                 so the list's actual contents are visible on page load. -->
             <div class="panel preview-panel">
                 <h2>Comics Preview</h2>
                 <p class="preview-info">Showing ${this.preview.length} of ${this.previewTotal.toLocaleString()}</p>
@@ -207,10 +205,20 @@ class ListDetail {
                 ${this.renderLoadMore()}
             </div>
 
-            <!-- Main Content -->
-            <div class="list-detail-content">
+            <!-- Management Panels - one visible at a time via tabs, so the
+                 page doesn't grow linearly as more list features are added
+                 (comic-server-030). -->
+            <div class="list-detail-tabs">
+                ${this.renderTabButton('matchers', 'Details')}
+                ${this.renderTabButton('devices', 'Devices')}
+                ${this.renderTabButton('komga', 'Komga')}
+                ${this.renderTabButton('scaninfo', 'Scan Info')}
+                ${this.renderTabButton('convert', 'Convert')}
+            </div>
+
+            <div class="list-detail-tab-panels">
                 <!-- Matchers Panel -->
-                <div class="panel matchers-panel">
+                <div class="panel matchers-panel${this.tabPanelActiveClass('matchers')}" data-tab-panel="matchers">
                     <h2>Matchers</h2>
                     <div class="matcher-mode">
                         ${this.list.matcher_mode_formatted}
@@ -221,7 +229,7 @@ class ListDetail {
                 </div>
 
                 <!-- Device Assignments Panel -->
-                <div class="panel devices-panel">
+                <div class="panel devices-panel${this.tabPanelActiveClass('devices')}" data-tab-panel="devices">
                     <h2>Device Assignments</h2>
                     <div class="device-assignments">
                         ${this.renderDeviceAssignments()}
@@ -229,7 +237,7 @@ class ListDetail {
                 </div>
 
                 <!-- Komga Sync Panel -->
-                <div class="panel komga-panel">
+                <div class="panel komga-panel${this.tabPanelActiveClass('komga')}" data-tab-panel="komga">
                     <h2>Komga Sync</h2>
                     <div class="device-assignments">
                         ${this.renderKomgaTarget()}
@@ -237,7 +245,7 @@ class ListDetail {
                 </div>
 
                 <!-- Scan Info Panel -->
-                <div class="panel scaninfo-panel">
+                <div class="panel scaninfo-panel${this.tabPanelActiveClass('scaninfo')}" data-tab-panel="scaninfo">
                     <h2>Scan Info Detection</h2>
                     <p class="empty-message">Detects a scan-group tag from each book's filename and writes it to ScanInformation (comic-server-pkk.1).</p>
                     <button class="btn btn-primary" id="run-scan-info-btn">Run on this list</button>
@@ -245,7 +253,7 @@ class ListDetail {
                 </div>
 
                 <!-- Convert to CBZ Panel -->
-                <div class="panel cbzconvert-panel">
+                <div class="panel cbzconvert-panel${this.tabPanelActiveClass('convert')}" data-tab-panel="convert">
                     <h2>Convert to CBZ</h2>
                     <p class="empty-message">Repacks each book's archive as CBZ and embeds ComicInfo.xml. Replaces the original file (comic-server-43b) - the original is moved to the server's trash folder, not deleted.</p>
                     ${this.renderCBZConvertButton()}
@@ -253,6 +261,28 @@ class ListDetail {
                 </div>
             </div>
         `;
+    }
+
+    renderTabButton(tabId, label) {
+        const active = this.activeTab === tabId ? ' active' : '';
+        return `<button class="list-detail-tab${active}" data-tab="${tabId}">${label}</button>`;
+    }
+
+    tabPanelActiveClass(tabId) {
+        return this.activeTab === tabId ? ' active' : '';
+    }
+
+    // switchTab toggles which management panel is visible via a class swap
+    // on elements already in the DOM, not a full render() - so it doesn't
+    // reset scroll position or interrupt any in-progress panel action.
+    switchTab(tabId) {
+        this.activeTab = tabId;
+        document.querySelectorAll('.list-detail-tab').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.tab === tabId);
+        });
+        document.querySelectorAll('[data-tab-panel]').forEach(panel => {
+            panel.classList.toggle('active', panel.dataset.tabPanel === tabId);
+        });
     }
 
     renderEditView() {
@@ -690,6 +720,10 @@ class ListDetail {
     }
 
     attachReadListeners() {
+        document.querySelectorAll('.list-detail-tab').forEach(btn => {
+            btn.addEventListener('click', () => this.switchTab(btn.dataset.tab));
+        });
+
         const loadMoreBtn = document.getElementById('load-more-btn');
         if (loadMoreBtn) {
             loadMoreBtn.addEventListener('click', async () => {
