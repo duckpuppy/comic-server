@@ -3,7 +3,7 @@ package storage
 import "fmt"
 
 // Schema version for migrations
-const schemaVersion = 2
+const schemaVersion = 3
 
 // initSchema creates the database tables if they don't exist.
 func (db *DB) initSchema() error {
@@ -28,6 +28,11 @@ func (db *DB) initSchema() error {
 		if version < 2 {
 			if err := db.migrateV1ToV2(); err != nil {
 				return fmt.Errorf("migrate v1→v2: %w", err)
+			}
+		}
+		if version < 3 {
+			if err := db.migrateV2ToV3(); err != nil {
+				return fmt.Errorf("migrate v2→v3: %w", err)
 			}
 		}
 	}
@@ -63,6 +68,30 @@ func (db *DB) migrateV1ToV2() error {
 		"ALTER TABLE books ADD COLUMN new_pages INTEGER DEFAULT 0",
 	}
 	for _, stmt := range alters {
+		if _, err := db.Exec(stmt); err != nil {
+			return fmt.Errorf("%s: %w", stmt, err)
+		}
+	}
+	return nil
+}
+
+// migrateV2ToV3 adds soft-delete support (comic-server-b53): a book/list
+// removed from an XML import is marked deleted_at instead of being
+// DELETEd outright, so it's recoverable if it reappears in a later
+// import and doesn't vanish with no trace if it was removed by mistake -
+// same "quarantine, don't destroy" reasoning as internal/trash
+// (comic-server-1up). NULL means not deleted; every read query needs a
+// "WHERE deleted_at IS NULL" (or equivalent) filter to keep soft-deleted
+// rows invisible to normal use - see queryBooks/GetBook/GetList/
+// GetAllLists/GetBookCount.
+func (db *DB) migrateV2ToV3() error {
+	stmts := []string{
+		"ALTER TABLE books ADD COLUMN deleted_at TEXT",
+		"ALTER TABLE lists ADD COLUMN deleted_at TEXT",
+		"CREATE INDEX IF NOT EXISTS idx_books_not_deleted ON books(id) WHERE deleted_at IS NULL",
+		"CREATE INDEX IF NOT EXISTS idx_lists_not_deleted ON lists(id) WHERE deleted_at IS NULL",
+	}
+	for _, stmt := range stmts {
 		if _, err := db.Exec(stmt); err != nil {
 			return fmt.Errorf("%s: %w", stmt, err)
 		}
@@ -188,7 +217,10 @@ func (db *DB) createTables() error {
 
 			-- Import tracking
 			import_hash TEXT,
-			updated_at TEXT
+			updated_at TEXT,
+
+			-- Soft delete (comic-server-b53): NULL = not deleted
+			deleted_at TEXT
 		)
 	`)
 	if err != nil {
@@ -206,6 +238,12 @@ func (db *DB) createTables() error {
 		"CREATE INDEX IF NOT EXISTS idx_books_format ON books(format)",
 		"CREATE INDEX IF NOT EXISTS idx_books_writer ON books(writer)",
 		"CREATE INDEX IF NOT EXISTS idx_books_file_path ON books(file_path)",
+		// Partial index: every read query filters "WHERE deleted_at IS
+		// NULL" (or the reverse, to find soft-deleted rows), and the huge
+		// majority of rows are never deleted - a partial index keeps this
+		// small instead of indexing (mostly-NULL) deleted_at across the
+		// whole table.
+		"CREATE INDEX IF NOT EXISTS idx_books_not_deleted ON books(id) WHERE deleted_at IS NULL",
 	}
 	for _, idx := range indexes {
 		if _, err := db.Exec(idx); err != nil {
@@ -267,7 +305,10 @@ func (db *DB) createTables() error {
 			matchers TEXT,
 			book_count INTEGER DEFAULT 0,
 			import_hash TEXT,
-			updated_at TEXT
+			updated_at TEXT,
+
+			-- Soft delete (comic-server-b53): NULL = not deleted
+			deleted_at TEXT
 		)
 	`)
 	if err != nil {
@@ -279,6 +320,13 @@ func (db *DB) createTables() error {
 	`)
 	if err != nil {
 		return fmt.Errorf("create lists parent index: %w", err)
+	}
+
+	_, err = db.Exec(`
+		CREATE INDEX IF NOT EXISTS idx_lists_not_deleted ON lists(id) WHERE deleted_at IS NULL
+	`)
+	if err != nil {
+		return fmt.Errorf("create lists not-deleted index: %w", err)
 	}
 
 	// Reading list items (junction table)

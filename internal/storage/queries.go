@@ -34,7 +34,7 @@ const booksSelectColumns = `
 
 // GetBook retrieves a single book by ID.
 func (db *DB) GetBook(id string) (*library.ComicBook, error) {
-	row := db.QueryRow("SELECT "+booksSelectColumns+" FROM books WHERE id = ?", id)
+	row := db.QueryRow("SELECT "+booksSelectColumns+" FROM books WHERE id = ? AND deleted_at IS NULL", id)
 
 	book, err := scanBook(row)
 	if err == sql.ErrNoRows {
@@ -73,15 +73,16 @@ func (db *DB) GetBooksWhere(whereClause string, args ...any) ([]library.ComicBoo
 }
 
 // queryBooks runs a SELECT over the books table (optionally filtered by
-// whereClause) and batch-loads tags/custom values for the result set in a
-// small, fixed number of queries rather than two extra round trips per
-// book - at real-library scale (67K+ books) the latter was the dominant
-// cost of a cold GetAllBooks(), not the Go-side matcher evaluation that
-// follows it (see comic-server-770 / comic-server-cg1).
+// whereClause, always excluding soft-deleted rows - see comic-server-b53)
+// and batch-loads tags/custom values for the result set in a small, fixed
+// number of queries rather than two extra round trips per book - at
+// real-library scale (67K+ books) the latter was the dominant cost of a
+// cold GetAllBooks(), not the Go-side matcher evaluation that follows it
+// (see comic-server-770 / comic-server-cg1).
 func (db *DB) queryBooks(whereClause string, args ...any) ([]library.ComicBook, error) {
-	query := "SELECT " + booksSelectColumns + " FROM books"
+	query := "SELECT " + booksSelectColumns + " FROM books WHERE deleted_at IS NULL"
 	if whereClause != "" {
-		query += " WHERE " + whereClause
+		query += " AND (" + whereClause + ")"
 	}
 
 	rows, err := db.Query(query, args...)
@@ -211,7 +212,7 @@ func (db *DB) chunkedInQuery(ids []string, queryTemplate string, scan func(*sql.
 // GetBookCount returns the total number of books in the database.
 func (db *DB) GetBookCount() (int, error) {
 	var count int
-	err := db.QueryRow("SELECT COUNT(*) FROM books").Scan(&count)
+	err := db.QueryRow("SELECT COUNT(*) FROM books WHERE deleted_at IS NULL").Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("count books: %w", err)
 	}
@@ -222,7 +223,7 @@ func (db *DB) GetBookCount() (int, error) {
 func (db *DB) GetList(id string) (*library.ComicListItem, error) {
 	row := db.QueryRow(`
 		SELECT id, name, type, description, favorite, collapsed, matcher_mode, matchers, book_count
-		FROM lists WHERE id = ?
+		FROM lists WHERE id = ? AND deleted_at IS NULL
 	`, id)
 
 	list, err := scanList(row)
@@ -248,6 +249,7 @@ func (db *DB) GetAllLists() ([]library.ComicListItem, error) {
 	rows, err := db.Query(`
 		SELECT id, name, type, parent_id, description, favorite, collapsed, matcher_mode, matchers, book_count
 		FROM lists
+		WHERE deleted_at IS NULL
 		ORDER BY name
 	`)
 	if err != nil {

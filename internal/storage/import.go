@@ -75,9 +75,12 @@ func (db *DB) Import(lib *library.ComicLibrary, opts ImportOptions) (*ImportStat
 }
 
 func (db *DB) importBooks(tx *sql.Tx, books []library.ComicBook, stats *ImportStats, opts ImportOptions) error {
-	// Get existing book IDs and hashes
-	existing := make(map[string]string) // id -> hash
-	rows, err := tx.Query("SELECT id, import_hash FROM books")
+	// Get existing book IDs, hashes, and soft-delete state (comic-server-b53
+	// - a soft-deleted row still needs to be found here so it can be
+	// revived if its ID reappears in the import, rather than colliding
+	// with insertBook's INSERT or staying invisibly marked deleted).
+	existing := make(map[string]existingRow)
+	rows, err := tx.Query("SELECT id, import_hash, deleted_at IS NOT NULL FROM books")
 	if err != nil {
 		return fmt.Errorf("query existing books: %w", err)
 	}
@@ -85,10 +88,11 @@ func (db *DB) importBooks(tx *sql.Tx, books []library.ComicBook, stats *ImportSt
 
 	for rows.Next() {
 		var id, hash string
-		if err := rows.Scan(&id, &hash); err != nil {
+		var deleted int
+		if err := rows.Scan(&id, &hash, &deleted); err != nil {
 			return fmt.Errorf("scan book: %w", err)
 		}
-		existing[id] = hash
+		existing[id] = existingRow{hash: hash, deleted: deleted != 0}
 	}
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterate books: %w", err)
@@ -103,7 +107,7 @@ func (db *DB) importBooks(tx *sql.Tx, books []library.ComicBook, stats *ImportSt
 		imported[book.ID] = true
 
 		hash := computeBookHash(book)
-		existingHash, exists := existing[book.ID]
+		prior, exists := existing[book.ID]
 
 		if !exists {
 			// New book - insert
@@ -113,8 +117,10 @@ func (db *DB) importBooks(tx *sql.Tx, books []library.ComicBook, stats *ImportSt
 				}
 			}
 			stats.BooksAdded++
-		} else if hash != existingHash {
-			// Changed book - update
+		} else if prior.deleted || hash != prior.hash {
+			// Changed book, or a soft-deleted one reappearing - either way
+			// a full overwrite via updateBook, which also clears
+			// deleted_at unconditionally (see updateBook's own comment).
 			if !opts.DryRun {
 				if err := db.updateBook(tx, book, hash); err != nil {
 					return fmt.Errorf("update book %s: %w", book.ID, err)
@@ -127,19 +133,30 @@ func (db *DB) importBooks(tx *sql.Tx, books []library.ComicBook, stats *ImportSt
 		}
 	}
 
-	// Delete books not in import
-	for id := range existing {
-		if !imported[id] {
-			if !opts.DryRun {
-				if _, err := tx.Exec("DELETE FROM books WHERE id = ?", id); err != nil {
-					return fmt.Errorf("delete book %s: %w", id, err)
-				}
-			}
-			stats.BooksDeleted++
+	// Soft-delete books not in import (comic-server-b53) - skip ones
+	// already marked deleted so deleted_at reflects the first time a book
+	// was removed, not every reimport after that.
+	for id, prior := range existing {
+		if imported[id] || prior.deleted {
+			continue
 		}
+		if !opts.DryRun {
+			if _, err := tx.Exec("UPDATE books SET deleted_at = datetime('now') WHERE id = ?", id); err != nil {
+				return fmt.Errorf("soft-delete book %s: %w", id, err)
+			}
+		}
+		stats.BooksDeleted++
 	}
 
 	return nil
+}
+
+// existingRow is what importBooks/importLists need to know about a
+// currently-stored row to decide insert/update/skip/soft-delete: its last
+// import hash, and whether it's currently soft-deleted (comic-server-b53).
+type existingRow struct {
+	hash    string
+	deleted bool
 }
 
 func (db *DB) insertBook(tx *sql.Tx, book *library.ComicBook, hash string) error {
@@ -228,6 +245,12 @@ func (db *DB) insertBook(tx *sql.Tx, book *library.ComicBook, hash string) error
 	return nil
 }
 
+// updateBook overwrites every column of an existing book row from the
+// freshly-parsed XML struct. Always clears deleted_at unconditionally
+// (comic-server-b53): a book present in the import is by definition not
+// deleted, so this doubles as the revival path for a soft-deleted book
+// whose ID reappears - no separate "is this a revival" branch needed,
+// importBooks just routes here whenever prior.deleted is true.
 func (db *DB) updateBook(tx *sql.Tx, book *library.ComicBook, hash string) error {
 	// Convert pages to JSON
 	pagesJSON, err := json.Marshal(book.Pages)
@@ -256,7 +279,7 @@ func (db *DB) updateBook(tx *sql.Tx, book *library.ComicBook, hash string) error
 			book_collection_status = ?, book_notes = ?, book_location = ?,
 			book_price = ?, new_pages = ?,
 			enable_proposed = ?, enable_dynamic_update = ?, last_opened_from_list_id = ?,
-			pages = ?, import_hash = ?, updated_at = ?
+			pages = ?, import_hash = ?, updated_at = ?, deleted_at = NULL
 		WHERE id = ?
 	`,
 		book.FilePath, book.Title, book.Series, book.Number, book.Volume, book.Year, book.Month, book.Day,
@@ -348,9 +371,11 @@ func (db *DB) insertBookTags(tx *sql.Tx, book *library.ComicBook) error {
 }
 
 func (db *DB) importLists(tx *sql.Tx, lists []library.ComicListItem, parentID string, stats *ImportStats, opts ImportOptions) error {
-	// Get existing lists and hashes
-	existing := make(map[string]string) // id -> hash
-	rows, err := tx.Query("SELECT id, import_hash FROM lists")
+	// Get existing lists, hashes, and soft-delete state (comic-server-b53 -
+	// see importBooks' identical treatment for why deleted state matters
+	// here too).
+	existing := make(map[string]existingRow)
+	rows, err := tx.Query("SELECT id, import_hash, deleted_at IS NOT NULL FROM lists")
 	if err != nil {
 		return fmt.Errorf("query existing lists: %w", err)
 	}
@@ -358,10 +383,11 @@ func (db *DB) importLists(tx *sql.Tx, lists []library.ComicListItem, parentID st
 
 	for rows.Next() {
 		var id, hash string
-		if err := rows.Scan(&id, &hash); err != nil {
+		var deleted int
+		if err := rows.Scan(&id, &hash, &deleted); err != nil {
 			return fmt.Errorf("scan list: %w", err)
 		}
-		existing[id] = hash
+		existing[id] = existingRow{hash: hash, deleted: deleted != 0}
 	}
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterate lists: %w", err)
@@ -375,30 +401,32 @@ func (db *DB) importLists(tx *sql.Tx, lists []library.ComicListItem, parentID st
 		return err
 	}
 
-	// Delete lists not in import (only on first call, when parentID is empty)
+	// Soft-delete lists not in import (only on first call, when parentID is
+	// empty) - comic-server-b53, same reasoning as importBooks.
 	if parentID == "" {
-		for id := range existing {
-			if !imported[id] {
-				if !opts.DryRun {
-					if _, err := tx.Exec("DELETE FROM lists WHERE id = ?", id); err != nil {
-						return fmt.Errorf("delete list %s: %w", id, err)
-					}
-				}
-				stats.ListsDeleted++
+		for id, prior := range existing {
+			if imported[id] || prior.deleted {
+				continue
 			}
+			if !opts.DryRun {
+				if _, err := tx.Exec("UPDATE lists SET deleted_at = datetime('now') WHERE id = ?", id); err != nil {
+					return fmt.Errorf("soft-delete list %s: %w", id, err)
+				}
+			}
+			stats.ListsDeleted++
 		}
 	}
 
 	return nil
 }
 
-func (db *DB) importListsRecursive(tx *sql.Tx, lists []library.ComicListItem, parentID string, existing map[string]string, imported map[string]bool, stats *ImportStats, opts ImportOptions) error {
+func (db *DB) importListsRecursive(tx *sql.Tx, lists []library.ComicListItem, parentID string, existing map[string]existingRow, imported map[string]bool, stats *ImportStats, opts ImportOptions) error {
 	for i := range lists {
 		list := &lists[i]
 		imported[list.ID] = true
 
 		hash := computeListHash(list)
-		existingHash, exists := existing[list.ID]
+		prior, exists := existing[list.ID]
 
 		if !exists {
 			// New list - insert
@@ -408,8 +436,9 @@ func (db *DB) importListsRecursive(tx *sql.Tx, lists []library.ComicListItem, pa
 				}
 			}
 			stats.ListsAdded++
-		} else if hash != existingHash {
-			// Changed list - update
+		} else if prior.deleted || hash != prior.hash {
+			// Changed list, or a soft-deleted one reappearing (see
+			// importBooks' identical branch).
 			if !opts.DryRun {
 				if err := db.updateList(tx, list, parentID, hash); err != nil {
 					return fmt.Errorf("update list %s: %w", list.ID, err)
@@ -493,7 +522,7 @@ func (db *DB) updateList(tx *sql.Tx, list *library.ComicListItem, parentID strin
 	_, err = tx.Exec(`
 		UPDATE lists SET
 			name = ?, type = ?, parent_id = ?, description = ?, favorite = ?, collapsed = ?,
-			matcher_mode = ?, matchers = ?, book_count = ?, import_hash = ?, updated_at = ?
+			matcher_mode = ?, matchers = ?, book_count = ?, import_hash = ?, updated_at = ?, deleted_at = NULL
 		WHERE id = ?
 	`,
 		list.Name, list.Type, parentIDValue, list.Description,
