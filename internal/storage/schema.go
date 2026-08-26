@@ -3,7 +3,7 @@ package storage
 import "fmt"
 
 // Schema version for migrations
-const schemaVersion = 3
+const schemaVersion = 4
 
 // initSchema creates the database tables if they don't exist.
 func (db *DB) initSchema() error {
@@ -33,6 +33,11 @@ func (db *DB) initSchema() error {
 		if version < 3 {
 			if err := db.migrateV2ToV3(); err != nil {
 				return fmt.Errorf("migrate v2→v3: %w", err)
+			}
+		}
+		if version < 4 {
+			if err := db.migrateV3ToV4(); err != nil {
+				return fmt.Errorf("migrate v3→v4: %w", err)
 			}
 		}
 	}
@@ -95,6 +100,29 @@ func (db *DB) migrateV2ToV3() error {
 		if _, err := db.Exec(stmt); err != nil {
 			return fmt.Errorf("%s: %w", stmt, err)
 		}
+	}
+	return nil
+}
+
+// migrateV3ToV4 adds xml_snapshot (comic-server-aio): a JSON snapshot of
+// the book exactly as it was parsed from the XML at the time it was last
+// imported, kept alongside import_hash. A reimport whose hash differs no
+// longer overwrites every column from the new XML wholesale - it diffs
+// the new XML struct against this snapshot field-by-field and only
+// touches columns that genuinely changed in the XML, so a live write
+// comic-server itself made to some other field (ScanInformation via
+// scan-info, FilePath via CBZ-convert, reading progress via reverse sync)
+// survives a reimport triggered by an unrelated XML edit. See
+// diffBookColumns/mergeUpdateBook in import.go.
+//
+// Existing rows get xml_snapshot NULL after this migration - there's no
+// prior XML parse available to backfill from. The
+// first reimport after upgrading degrades to a full overwrite for each
+// changed row (same as today's pre-fix behavior, not worse), and from
+// then on a real snapshot exists and future reimports merge properly.
+func (db *DB) migrateV3ToV4() error {
+	if _, err := db.Exec("ALTER TABLE books ADD COLUMN xml_snapshot TEXT"); err != nil {
+		return fmt.Errorf("add xml_snapshot column: %w", err)
 	}
 	return nil
 }
@@ -220,7 +248,11 @@ func (db *DB) createTables() error {
 			updated_at TEXT,
 
 			-- Soft delete (comic-server-b53): NULL = not deleted
-			deleted_at TEXT
+			deleted_at TEXT,
+
+			-- Reimport merge (comic-server-aio): JSON snapshot of the book
+			-- as last parsed from XML, for field-level diffing on reimport
+			xml_snapshot TEXT
 		)
 	`)
 	if err != nil {

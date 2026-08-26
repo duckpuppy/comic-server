@@ -80,7 +80,7 @@ func (db *DB) importBooks(tx *sql.Tx, books []library.ComicBook, stats *ImportSt
 	// revived if its ID reappears in the import, rather than colliding
 	// with insertBook's INSERT or staying invisibly marked deleted).
 	existing := make(map[string]existingRow)
-	rows, err := tx.Query("SELECT id, import_hash, deleted_at IS NOT NULL FROM books")
+	rows, err := tx.Query("SELECT id, import_hash, deleted_at IS NOT NULL, xml_snapshot FROM books")
 	if err != nil {
 		return fmt.Errorf("query existing books: %w", err)
 	}
@@ -89,10 +89,11 @@ func (db *DB) importBooks(tx *sql.Tx, books []library.ComicBook, stats *ImportSt
 	for rows.Next() {
 		var id, hash string
 		var deleted int
-		if err := rows.Scan(&id, &hash, &deleted); err != nil {
+		var snapshot sql.NullString
+		if err := rows.Scan(&id, &hash, &deleted, &snapshot); err != nil {
 			return fmt.Errorf("scan book: %w", err)
 		}
-		existing[id] = existingRow{hash: hash, deleted: deleted != 0}
+		existing[id] = existingRow{hash: hash, deleted: deleted != 0, snapshot: snapshot.String}
 	}
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterate books: %w", err)
@@ -117,13 +118,37 @@ func (db *DB) importBooks(tx *sql.Tx, books []library.ComicBook, stats *ImportSt
 				}
 			}
 			stats.BooksAdded++
-		} else if prior.deleted || hash != prior.hash {
-			// Changed book, or a soft-deleted one reappearing - either way
-			// a full overwrite via updateBook, which also clears
-			// deleted_at unconditionally (see updateBook's own comment).
+		} else if prior.deleted {
+			// A soft-deleted book reappearing - full overwrite via
+			// updateBook (which also clears deleted_at), not a merge:
+			// nothing could have live-edited a soft-deleted row (it's
+			// invisible to every read path), so there's no local state to
+			// protect and a clean resync is simplest.
 			if !opts.DryRun {
 				if err := db.updateBook(tx, book, hash); err != nil {
 					return fmt.Errorf("update book %s: %w", book.ID, err)
+				}
+			}
+			stats.BooksUpdated++
+		} else if hash != prior.hash {
+			// Changed since last import - merge (comic-server-aio): apply
+			// only the columns that actually differ between the new XML
+			// and the last-imported snapshot, so a comic-server-side edit
+			// to some OTHER field on this same book survives.
+			if !opts.DryRun {
+				oldSnapshot := &library.ComicBook{}
+				// A row migrated from pre-v4 (no snapshot yet, see
+				// migrateV3ToV4) has no prior snapshot to diff against -
+				// oldSnapshot stays zero-valued, so diffBookColumns finds
+				// everything "changed" and this degrades to a full
+				// overwrite for this one row, same as before the fix.
+				if prior.snapshot != "" {
+					if err := json.Unmarshal([]byte(prior.snapshot), oldSnapshot); err != nil {
+						return fmt.Errorf("unmarshal xml snapshot for book %s: %w", book.ID, err)
+					}
+				}
+				if err := db.mergeUpdateBook(tx, oldSnapshot, book, hash); err != nil {
+					return fmt.Errorf("merge-update book %s: %w", book.ID, err)
 				}
 			}
 			stats.BooksUpdated++
@@ -157,6 +182,10 @@ func (db *DB) importBooks(tx *sql.Tx, books []library.ComicBook, stats *ImportSt
 type existingRow struct {
 	hash    string
 	deleted bool
+	// snapshot is the book's xml_snapshot column (comic-server-aio) - only
+	// populated/used for books, lists don't have this column. Empty for
+	// rows migrated from pre-v4 with nothing to backfill from.
+	snapshot string
 }
 
 func (db *DB) insertBook(tx *sql.Tx, book *library.ComicBook, hash string) error {
@@ -164,6 +193,13 @@ func (db *DB) insertBook(tx *sql.Tx, book *library.ComicBook, hash string) error
 	pagesJSON, err := json.Marshal(book.Pages)
 	if err != nil {
 		return fmt.Errorf("marshal pages: %w", err)
+	}
+
+	// xml_snapshot (comic-server-aio): the book exactly as parsed from XML
+	// right now, so a future reimport has something to diff against.
+	snapshotJSON, err := json.Marshal(book)
+	if err != nil {
+		return fmt.Errorf("marshal xml snapshot: %w", err)
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -187,7 +223,7 @@ func (db *DB) insertBook(tx *sql.Tx, book *library.ComicBook, hash string) error
 			book_collection_status, book_notes, book_location,
 			book_price, new_pages,
 			enable_proposed, enable_dynamic_update, last_opened_from_list_id,
-			pages, import_hash, updated_at
+			pages, import_hash, updated_at, xml_snapshot
 		) VALUES (
 			?, ?, ?, ?, ?, ?, ?, ?, ?,
 			?, ?, ?, ?, ?, ?,
@@ -206,7 +242,7 @@ func (db *DB) insertBook(tx *sql.Tx, book *library.ComicBook, hash string) error
 			?, ?, ?,
 			?, ?,
 			?, ?, ?,
-			?, ?, ?
+			?, ?, ?, ?
 		)
 	`,
 		book.ID, book.FilePath, book.Title, book.Series, book.Number, book.Volume, book.Year, book.Month, book.Day,
@@ -226,7 +262,7 @@ func (db *DB) insertBook(tx *sql.Tx, book *library.ComicBook, hash string) error
 		book.BookCollectionStatus, book.BookNotes, book.BookLocation,
 		book.BookPrice, book.NewPages,
 		boolToInt(book.EnableProposed), boolToInt(book.EnableDynamicUpdate), book.LastOpenedFromListID,
-		string(pagesJSON), hash, now,
+		string(pagesJSON), hash, now, string(snapshotJSON),
 	)
 	if err != nil {
 		return err
@@ -258,6 +294,11 @@ func (db *DB) updateBook(tx *sql.Tx, book *library.ComicBook, hash string) error
 		return fmt.Errorf("marshal pages: %w", err)
 	}
 
+	snapshotJSON, err := json.Marshal(book)
+	if err != nil {
+		return fmt.Errorf("marshal xml snapshot: %w", err)
+	}
+
 	now := time.Now().UTC().Format(time.RFC3339)
 
 	_, err = tx.Exec(`
@@ -279,7 +320,7 @@ func (db *DB) updateBook(tx *sql.Tx, book *library.ComicBook, hash string) error
 			book_collection_status = ?, book_notes = ?, book_location = ?,
 			book_price = ?, new_pages = ?,
 			enable_proposed = ?, enable_dynamic_update = ?, last_opened_from_list_id = ?,
-			pages = ?, import_hash = ?, updated_at = ?, deleted_at = NULL
+			pages = ?, import_hash = ?, updated_at = ?, deleted_at = NULL, xml_snapshot = ?
 		WHERE id = ?
 	`,
 		book.FilePath, book.Title, book.Series, book.Number, book.Volume, book.Year, book.Month, book.Day,
@@ -299,7 +340,7 @@ func (db *DB) updateBook(tx *sql.Tx, book *library.ComicBook, hash string) error
 		book.BookCollectionStatus, book.BookNotes, book.BookLocation,
 		book.BookPrice, book.NewPages,
 		boolToInt(book.EnableProposed), boolToInt(book.EnableDynamicUpdate), book.LastOpenedFromListID,
-		string(pagesJSON), hash, now,
+		string(pagesJSON), hash, now, string(snapshotJSON),
 		book.ID,
 	)
 	if err != nil {

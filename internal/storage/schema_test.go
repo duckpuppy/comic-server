@@ -4,8 +4,6 @@ import (
 	"database/sql"
 	"path/filepath"
 	"testing"
-
-	"github.com/duckpuppy/comic-server/internal/library"
 )
 
 // TestMigrateV2ToV3_AddsSoftDeleteColumns simulates an existing database
@@ -98,23 +96,41 @@ func TestMigrateV2ToV3_AddsSoftDeleteColumns(t *testing.T) {
 			t.Fatalf("exec %q: %v", stmt, err)
 		}
 	}
-	// Seed via the real insertBook production code (not a hand-written
-	// INSERT) so every column gets the same Go-zero-value defaults a real
-	// import would produce - avoids hand-maintaining a second copy of the
-	// full column list that could silently drift from insertBook's own.
-	// A bare *DB wrapping raw (no Open/initSchema call) lets insertBook run
-	// against the hand-built v2 table before any migration happens.
-	v2DB := &DB{DB: raw, path: dbPath}
-	tx, err := v2DB.Begin()
-	if err != nil {
-		t.Fatalf("begin tx: %v", err)
-	}
-	seedBook := &library.ComicBook{ID: "book-1", FilePath: "/comics/a.cbz", Title: "A"}
-	if err := v2DB.insertBook(tx, seedBook, "seed-hash"); err != nil {
+	// Seed via a raw INSERT matching the v2 fixture's own column list -
+	// can't reuse production insertBook here since it now also targets
+	// xml_snapshot (comic-server-aio, schema v4), which doesn't exist on
+	// this deliberately-v2-shaped table yet. Every TEXT column needs an
+	// explicit value (not omitted) since scanBook can't handle NULL in a
+	// non-nullable Go string field - real inserts always supply every
+	// column, this fixture needs to match that, not just the DDL.
+	if _, err := raw.Exec(`
+		INSERT INTO books (
+			id, file_path, title, series, number, volume, year, month, day,
+			alternate_series, alternate_number, alternate_count, count,
+			publisher, imprint, genre, format, age_rating, language_iso,
+			summary, notes, review, story_arc, series_group,
+			writer, penciller, inker, colorist, letterer, cover_artist, editor, translator,
+			characters, teams, locations, main_character_or_team,
+			opened_time, web, scan_information, series_complete, black_and_white, manga,
+			preferred_front_cover, added_time, released_time, file_modified_time, file_creation_time,
+			isbn, book_age, book_condition, book_store, book_owner,
+			book_collection_status, book_notes, book_location, last_opened_from_list_id,
+			pages, import_hash, updated_at
+		) VALUES (
+			?, ?, ?, '', '', 0, 0, 0, 0,
+			'', '', 0, 0,
+			'', '', '', '', '', '',
+			'', '', '', '', '',
+			'', '', '', '', '', '', '', '',
+			'', '', '', '',
+			'', '', '', '', '', '',
+			0, '', '', '', '',
+			'', '', '', '', '',
+			'', '', '', '',
+			'[]', '', datetime('now')
+		)
+	`, "book-1", "/comics/a.cbz", "A"); err != nil {
 		t.Fatalf("seed book: %v", err)
-	}
-	if err := tx.Commit(); err != nil {
-		t.Fatalf("commit seed: %v", err)
 	}
 	if err := raw.Close(); err != nil {
 		t.Fatalf("close raw db: %v", err)
