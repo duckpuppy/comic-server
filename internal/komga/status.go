@@ -98,6 +98,9 @@ func (s *StatusStore) Record(result TargetResult) {
 			now := time.Now()
 			s.lastIndexError = result.Err.Error()
 			s.lastIndexErrorTime = &now
+		} else {
+			s.lastIndexError = ""
+			s.lastIndexErrorTime = nil
 		}
 		return
 	}

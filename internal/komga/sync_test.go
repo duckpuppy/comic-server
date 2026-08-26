@@ -115,7 +115,12 @@ func TestSyncer_SyncTarget_Collection(t *testing.T) {
 	}
 
 	var results []TargetResult
-	syncer.syncOnce(context.Background(), func(r TargetResult) { results = append(results, r) })
+	syncer.syncOnce(context.Background(), func(r TargetResult) {
+		if r.Target.ListID == "" && r.Err == nil {
+			return
+		}
+		results = append(results, r)
+	})
 
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
@@ -189,7 +194,12 @@ func TestSyncer_SyncTarget_UsesGetBooksForList_NotMatchBooksOnly(t *testing.T) {
 	}
 
 	var results []TargetResult
-	syncer.syncOnce(context.Background(), func(r TargetResult) { results = append(results, r) })
+	syncer.syncOnce(context.Background(), func(r TargetResult) {
+		if r.Target.ListID == "" && r.Err == nil {
+			return
+		}
+		results = append(results, r)
+	})
 
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
@@ -255,7 +265,12 @@ func TestSyncer_SyncTarget_Collection_SourceBookCountTracksDedup(t *testing.T) {
 	}
 
 	var results []TargetResult
-	syncer.syncOnce(context.Background(), func(r TargetResult) { results = append(results, r) })
+	syncer.syncOnce(context.Background(), func(r TargetResult) {
+		if r.Target.ListID == "" && r.Err == nil {
+			return
+		}
+		results = append(results, r)
+	})
 
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
@@ -318,7 +333,12 @@ func TestSyncer_SyncTarget_ReadList(t *testing.T) {
 	}
 
 	var results []TargetResult
-	syncer.syncOnce(context.Background(), func(r TargetResult) { results = append(results, r) })
+	syncer.syncOnce(context.Background(), func(r TargetResult) {
+		if r.Target.ListID == "" && r.Err == nil {
+			return
+		}
+		results = append(results, r)
+	})
 
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
@@ -396,7 +416,12 @@ func TestSyncer_SyncTarget_PushesReadStatus(t *testing.T) {
 	}
 
 	var results []TargetResult
-	syncer.syncOnce(context.Background(), func(r TargetResult) { results = append(results, r) })
+	syncer.syncOnce(context.Background(), func(r TargetResult) {
+		if r.Target.ListID == "" && r.Err == nil {
+			return
+		}
+		results = append(results, r)
+	})
 
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
@@ -462,7 +487,12 @@ func TestSyncer_SyncTarget_ReadStatusDisabledByDefault(t *testing.T) {
 	}
 
 	var results []TargetResult
-	syncer.syncOnce(context.Background(), func(r TargetResult) { results = append(results, r) })
+	syncer.syncOnce(context.Background(), func(r TargetResult) {
+		if r.Target.ListID == "" && r.Err == nil {
+			return
+		}
+		results = append(results, r)
+	})
 
 	if len(results) != 1 || results[0].Err != nil {
 		t.Fatalf("unexpected result: %+v", results)
@@ -490,7 +520,12 @@ func TestSyncer_UnknownListID(t *testing.T) {
 	}
 
 	var results []TargetResult
-	syncer.syncOnce(context.Background(), func(r TargetResult) { results = append(results, r) })
+	syncer.syncOnce(context.Background(), func(r TargetResult) {
+		if r.Target.ListID == "" && r.Err == nil {
+			return
+		}
+		results = append(results, r)
+	})
 
 	if len(results) != 1 || results[0].Err == nil {
 		t.Fatalf("expected an error result for unknown list ID, got %+v", results)

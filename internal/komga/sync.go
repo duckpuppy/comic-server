@@ -144,8 +144,9 @@ type TargetResult struct {
 
 // Run performs an immediate sync, then repeats on opts.Interval - or
 // whenever TriggerNow is called - until ctx is canceled. onResult is called
-// once per target per sync pass (and once with a zero Target if building
-// the Komga index itself fails); it may be nil.
+// once per target per sync pass, plus once with a zero Target and a nil Err
+// if building the Komga index succeeds, or a non-nil Err if it fails; it
+// may be nil.
 func (s *Syncer) Run(ctx context.Context, onResult func(TargetResult)) {
 	s.syncOnce(ctx, onResult)
 
@@ -176,6 +177,14 @@ func (s *Syncer) syncOnce(ctx context.Context, onResult func(TargetResult)) {
 			onResult(TargetResult{Err: err})
 		}
 		return
+	}
+
+	// A zero Target with a nil Err signals a successful index build, so
+	// StatusStore can clear a previously recorded index error - otherwise
+	// a one-off failure (e.g. a transient Komga error) stays displayed
+	// forever even after a later sync pass succeeds.
+	if onResult != nil {
+		onResult(TargetResult{})
 	}
 
 	for _, target := range targets {

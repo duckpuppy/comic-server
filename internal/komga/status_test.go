@@ -96,6 +96,26 @@ func TestStatusStore_IndexBuildErrorRecordedSeparately(t *testing.T) {
 	}
 }
 
+func TestStatusStore_IndexBuildSuccessClearsPriorError(t *testing.T) {
+	s := NewStatusStore()
+
+	s.Record(TargetResult{Err: errors.New("build komga index: request failed")})
+	if s.Snapshot().LastIndexError == "" {
+		t.Fatal("expected LastIndexError to be recorded before the success signal")
+	}
+
+	// Zero Target with a nil Err, as syncOnce emits when BuildIndex succeeds.
+	s.Record(TargetResult{})
+
+	snap := s.Snapshot()
+	if snap.LastIndexError != "" {
+		t.Errorf("expected LastIndexError to be cleared, got %q", snap.LastIndexError)
+	}
+	if snap.LastIndexErrorTime != nil {
+		t.Error("expected LastIndexErrorTime to be cleared")
+	}
+}
+
 func TestStatusStore_EmptySnapshot(t *testing.T) {
 	s := NewStatusStore()
 	snap := s.Snapshot()
