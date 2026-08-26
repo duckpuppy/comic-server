@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.2](https://github.com/duckpuppy/comic-server/compare/v1.8.1...v1.8.2) (2026-08-26)
+
+
+### Bug Fixes
+
+* registered devices stay visible when offline, not just discovered ([8ba134b](https://github.com/duckpuppy/comic-server/commit/8ba134be564bb0586c2459a91d9938d5272802ed))
+
 ## [1.8.1](https://github.com/duckpuppy/comic-server/compare/v1.8.0...v1.8.1) (2026-08-26)
 
 
