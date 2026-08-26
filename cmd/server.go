@@ -168,8 +168,8 @@ func runServer(cmd *cobra.Command, args []string) error {
 	// Open config.db - a small, always-open database for record-shaped
 	// config (device registrations, list assignments, Komga targets),
 	// independent of which library backend is active below. See
-	// comic-server-745 for the design record and comic-server-ihb for
-	// this foundation issue; nothing reads/writes it yet.
+	// comic-server-745 for the design record, comic-server-ihb for this
+	// foundation issue, and comic-server-3ek for the device/list tables.
 	configDir, err := config.GetConfigDir()
 	if err != nil {
 		return fmt.Errorf("failed to determine config directory: %w", err)
@@ -181,6 +181,34 @@ func runServer(cmd *cobra.Command, args []string) error {
 	}
 	defer configDB.Close()
 	log.Info().Str("path", configDBPath).Msg("Config database opened")
+
+	// One-time migration: import any devices/list assignments still sitting
+	// in config.yaml (the pre-comic-server-3ek storage) into config.db, then
+	// stop config.yaml from carrying them going forward. Only runs when
+	// config.db's devices table is empty, so it's safe to leave in
+	// permanently rather than a one-shot flag - a fresh install with no
+	// config.yaml devices just skips it, and it never re-imports once
+	// config.db has at least one device (even if that device was later
+	// unregistered, leaving config.db empty again - re-importing stale
+	// config.yaml data at that point would be wrong, not helpful).
+	if len(cfg.Devices) > 0 {
+		existing, err := configDB.ListDevices()
+		if err != nil {
+			return fmt.Errorf("failed to check config database for existing devices: %w", err)
+		}
+		if len(existing) == 0 {
+			migrated, err := migrateDevicesToConfigDB(cfg, configDB)
+			if err != nil {
+				return fmt.Errorf("failed to migrate devices to config database: %w", err)
+			}
+			log.Info().Int("devices", migrated).Msg("Migrated device registrations and list assignments from config.yaml to config.db")
+
+			cfg.Devices = nil
+			if err := config.Save(cfg, configPath); err != nil {
+				log.Error().Err(err).Msg("Failed to save config.yaml after migrating devices to config.db")
+			}
+		}
+	}
 
 	// Load library using appropriate backend
 	var backend library.Backend
@@ -290,7 +318,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 
 	// Send direct ping to device if specified (useful for WSL2, VPNs, complex networks)
 	if pingDeviceSet && pingDevice != "" {
-		go sendDirectPingAndRegister(pingCtx, pingDevice, registry, syncManager, cfg, backend, ipLimiter, deviceLimiter, syncSemaphore)
+		go sendDirectPingAndRegister(pingCtx, pingDevice, registry, syncManager, cfg, backend, configDB, ipLimiter, deviceLimiter, syncSemaphore)
 	}
 
 	// Create and start WebSocket hub
@@ -304,7 +332,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 		GitCommit: GitCommit,
 		BuildDate: BuildDate,
 	}
-	apiServer := api.NewServer(syncManager, registry, backend, cfg, configPath, apiVersion, wsHub)
+	apiServer := api.NewServer(syncManager, registry, backend, cfg, configPath, apiVersion, wsHub, configDB)
 
 	if cfg.Server.ComicVineAPIKey != "" {
 		if err := wireScraperAPI(apiServer, cfg.Server.ComicVineAPIKey); err != nil {
@@ -517,7 +545,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 			log.Error().Err(err).Msg("Discovery listener error")
 
 		case discovered := <-deviceChan:
-			handleDiscoveredDevice(discovered, registry, syncManager, cfg, backend, ipLimiter, deviceLimiter, syncSemaphore)
+			handleDiscoveredDevice(discovered, registry, syncManager, cfg, backend, configDB, ipLimiter, deviceLimiter, syncSemaphore)
 		}
 	}
 }
@@ -537,6 +565,7 @@ func handleDiscoveredDevice(
 	syncManager *syncstate.Manager,
 	cfg *config.Config,
 	backend library.Backend,
+	configDB *configdb.DB,
 	ipLimiter *ratelimit.IPLimiter,
 	deviceLimiter *ratelimit.DeviceLimiter,
 	syncSemaphore chan struct{},
@@ -569,14 +598,18 @@ func handleDiscoveredDevice(
 		// Handle sync request if device wants sync (manual button press on device)
 		if discovered.WantsSync {
 			logger.Info().Msg("Known device requesting sync (user pressed sync button)")
-			if err := handleSyncRequest(dev.Info, discovered.IPAddress, cfg, backend, syncManager, deviceLimiter, syncSemaphore); err != nil {
+			if err := handleSyncRequest(dev.Info, discovered.IPAddress, cfg, backend, configDB, syncManager, deviceLimiter, syncSemaphore); err != nil {
 				logger.Error().Err(err).Msg("Sync failed")
 			}
 			return
 		}
 
 		// If device is registered and not requesting sync, send pong to make sync button appear
-		if _, isRegistered := cfg.Devices[dev.Info.ID]; isRegistered {
+		registeredDevice, err := configDB.GetDevice(dev.Info.ID)
+		if err != nil {
+			logger.Error().Err(err).Msg("Failed to look up device registration in config database")
+		}
+		if registeredDevice != nil {
 			logger.Debug().Msg("Sending ClientPong to registered device")
 			client := protocol.NewClient(discovered.IPAddress, device.DevicePort)
 			if err := client.SendClientPong(); err != nil {
@@ -645,7 +678,7 @@ func handleDiscoveredDevice(
 	// Handle sync request if device wants sync and auto-sync is enabled
 	if discovered.WantsSync && cfg.Server.AutoSync {
 		logger.Info().Msg("Device requested sync, starting automatic sync")
-		if err := handleSyncRequest(info, discovered.IPAddress, cfg, backend, syncManager, deviceLimiter, syncSemaphore); err != nil {
+		if err := handleSyncRequest(info, discovered.IPAddress, cfg, backend, configDB, syncManager, deviceLimiter, syncSemaphore); err != nil {
 			logger.Error().Err(err).Msg("Sync failed")
 		}
 	} else if discovered.WantsSync && !cfg.Server.AutoSync {
@@ -653,9 +686,36 @@ func handleDiscoveredDevice(
 	}
 }
 
+// migrateDevicesToConfigDB imports every device registration and list
+// assignment from cfg.Devices (the pre-comic-server-3ek config.yaml
+// storage) into configDB. Called once at startup, only when configDB has
+// no devices yet - see runServer's call site for why that guard makes
+// this safe to leave in permanently.
+func migrateDevicesToConfigDB(cfg *config.Config, configDB *configdb.DB) (int, error) {
+	count := 0
+	for deviceID, dc := range cfg.Devices {
+		if err := configDB.UpsertDevice(deviceID, dc.FriendlyName, dc.LastSeen, dc.DefaultSettings); err != nil {
+			return count, fmt.Errorf("migrate device %s: %w", deviceID, err)
+		}
+		for _, lc := range dc.Lists {
+			dl := configdb.DeviceList{
+				ListID:   lc.ListID,
+				ListName: lc.ListName,
+				Enabled:  lc.Enabled,
+				Settings: lc.Settings,
+			}
+			if err := configDB.AddDeviceList(deviceID, dl); err != nil {
+				return count, fmt.Errorf("migrate device %s list %s: %w", deviceID, lc.ListID, err)
+			}
+		}
+		count++
+	}
+	return count, nil
+}
+
 // applyDeviceConfig applies a device's sync configuration to a syncer
 // This configures which lists to sync and their settings
-func applyDeviceConfig(syncer *csync.Syncer, deviceConfig *config.DeviceConfig, backend library.Backend) error {
+func applyDeviceConfig(syncer *csync.Syncer, deviceConfig *configdb.Device, backend library.Backend) error {
 	logger := log.With().Str("device_id", deviceConfig.DeviceID).Logger()
 
 	// Collect all enabled lists - any list type with real book membership
@@ -720,6 +780,7 @@ func handleSyncRequest(
 	deviceIP string,
 	cfg *config.Config,
 	backend library.Backend,
+	configDB *configdb.DB,
 	syncManager *syncstate.Manager,
 	deviceLimiter *ratelimit.DeviceLimiter,
 	syncSemaphore chan struct{},
@@ -783,7 +844,11 @@ func handleSyncRequest(
 	syncer.SetPathResolver(cfg.ResolveLibraryFilePath)
 
 	// Apply device config if exists
-	if deviceConfig, ok := cfg.Devices[deviceID]; ok {
+	deviceConfig, err := configDB.GetDevice(deviceID)
+	if err != nil {
+		return fmt.Errorf("failed to look up device config: %w", err)
+	}
+	if deviceConfig != nil {
 		if err := applyDeviceConfig(syncer, deviceConfig, backend); err != nil {
 			return fmt.Errorf("failed to apply device config: %w", err)
 		}
@@ -846,6 +911,7 @@ func sendDirectPingAndRegister(
 	syncManager *syncstate.Manager,
 	cfg *config.Config,
 	backend library.Backend,
+	configDB *configdb.DB,
 	ipLimiter *ratelimit.IPLimiter,
 	deviceLimiter *ratelimit.DeviceLimiter,
 	syncSemaphore chan struct{},
@@ -921,17 +987,21 @@ func sendDirectPingAndRegister(
 					Str("device_name", deviceInfo.Name).
 					Msg("Registering device from direct ping")
 
-				handleDiscoveredDevice(discovered, registry, syncManager, cfg, backend, ipLimiter, deviceLimiter, syncSemaphore)
+				handleDiscoveredDevice(discovered, registry, syncManager, cfg, backend, configDB, ipLimiter, deviceLimiter, syncSemaphore)
 
 				// In direct-ping mode, automatically trigger sync since device can't signal back via UDP
 				// Check if device is configured for sync (has smart lists assigned)
-				if deviceCfg, exists := cfg.Devices[deviceInfo.ID]; exists && len(deviceCfg.Lists) > 0 {
+				deviceCfg, err := configDB.GetDevice(deviceInfo.ID)
+				if err != nil {
+					log.Error().Err(err).Str("device_id", deviceInfo.ID).Msg("Failed to look up device config")
+				}
+				if deviceCfg != nil && len(deviceCfg.Lists) > 0 {
 					log.Info().
 						Str("device_id", deviceInfo.ID).
 						Int("lists", len(deviceCfg.Lists)).
 						Msg("Device has smart lists configured, triggering automatic sync")
 
-					if err := handleSyncRequest(deviceInfo, deviceIP, cfg, backend, syncManager, deviceLimiter, syncSemaphore); err != nil {
+					if err := handleSyncRequest(deviceInfo, deviceIP, cfg, backend, configDB, syncManager, deviceLimiter, syncSemaphore); err != nil {
 						log.Error().
 							Err(err).
 							Str("device_id", deviceInfo.ID).

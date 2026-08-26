@@ -8,18 +8,25 @@ import (
 	"time"
 
 	"github.com/duckpuppy/comic-server/internal/config"
+	"github.com/duckpuppy/comic-server/internal/configdb"
 	"github.com/duckpuppy/comic-server/internal/device"
 	"github.com/duckpuppy/comic-server/internal/komga"
 	"github.com/duckpuppy/comic-server/internal/library"
 	"github.com/duckpuppy/comic-server/internal/syncstate"
 	"github.com/duckpuppy/comic-server/internal/websocket"
+	"path/filepath"
 )
 
 func newKomgaTestServer(t *testing.T) *Server {
 	t.Helper()
 	lib := &library.ComicLibrary{}
 	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
-	return NewServer(syncstate.NewManager(10), device.NewRegistry(), backend, &config.Config{}, "", VersionInfo{}, websocket.NewHub())
+	configDB, err := configdb.Open(filepath.Join(t.TempDir(), "config.db"))
+	if err != nil {
+		t.Fatalf("failed to open test config db: %v", err)
+	}
+	t.Cleanup(func() { configDB.Close() })
+	return NewServer(syncstate.NewManager(10), device.NewRegistry(), backend, &config.Config{}, "", VersionInfo{}, websocket.NewHub(), configDB)
 }
 
 func TestHandleKomgaStatus_NotConfigured(t *testing.T) {

@@ -537,24 +537,24 @@ func (s *Server) handleGetListDevices(w http.ResponseWriter, r *http.Request) {
 
 	assignments := []DeviceAssignment{}
 
-	// Scan all devices for this list
-	// Note: Using the existing server mutex pattern from api.go
-	s.mu.RLock()
-	if s.config != nil && s.config.Devices != nil {
-		for _, device := range s.config.Devices {
-			for _, list := range device.Lists {
-				if list.ListID == listID {
-					assignments = append(assignments, DeviceAssignment{
-						DeviceID:     device.DeviceID,
-						FriendlyName: device.FriendlyName,
-						Enabled:      list.Enabled,
-					})
-					break
-				}
+	// Scan all devices for this list. No Go-level locking needed here -
+	// config.db serializes concurrent writes itself.
+	devices, err := s.configDB.ListDevices()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to list devices from config.db")
+	}
+	for _, device := range devices {
+		for _, list := range device.Lists {
+			if list.ListID == listID {
+				assignments = append(assignments, DeviceAssignment{
+					DeviceID:     device.DeviceID,
+					FriendlyName: device.FriendlyName,
+					Enabled:      list.Enabled,
+				})
+				break
 			}
 		}
 	}
-	s.mu.RUnlock()
 
 	response := map[string]interface{}{
 		"devices": assignments,

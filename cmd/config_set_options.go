@@ -39,19 +39,14 @@ func runSetOptions(cmd *cobra.Command, args []string) error {
 	deviceNameOrID := args[0]
 	listName := args[1]
 
-	// Load config
-	configPath, err := GetConfigPath()
+	db, err := openConfigDB()
 	if err != nil {
 		return err
 	}
-
-	cfg, err := config.Load(configPath)
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
-	}
+	defer db.Close()
 
 	// Resolve device
-	deviceID, device, err := config.ResolveDevice(cfg, deviceNameOrID)
+	device, err := resolveConfigDBDevice(db, deviceNameOrID)
 	if err != nil {
 		return err
 	}
@@ -84,13 +79,21 @@ func runSetOptions(cmd *cobra.Command, args []string) error {
 	}
 
 	// Get current list config
-	listConfig := device.GetList(listID)
-	if listConfig == nil {
+	var current *sync.SharedListSettings
+	found := false
+	for i := range device.Lists {
+		if device.Lists[i].ListID == listID {
+			current = device.Lists[i].Settings
+			found = true
+			break
+		}
+	}
+	if !found {
 		return fmt.Errorf("list %q not found in device configuration", listName)
 	}
 
 	// Get or create settings
-	settings := listConfig.Settings
+	settings := current
 	if settings == nil {
 		settings = sync.DefaultSettings()
 	}
@@ -154,38 +157,19 @@ func runSetOptions(cmd *cobra.Command, args []string) error {
 	}
 
 	// Update list settings
-	if err := device.UpdateListSettings(listID, settings); err != nil {
-		return err
-	}
-
-	// Save config
-	if err := config.Save(cfg, configPath); err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
+	if err := db.UpdateDeviceList(device.DeviceID, listID, nil, settings); err != nil {
+		return fmt.Errorf("failed to update list settings: %w", err)
 	}
 
 	deviceName := device.FriendlyName
 	if deviceName == "" {
-		deviceName = deviceID
+		deviceName = device.DeviceID
 	}
 
 	fmt.Printf("✓ Updated sync options for %q on device %q\n", listName, deviceName)
 
 	fmt.Println("\nCurrent settings:")
-	if settings.OnlyUnread {
-		fmt.Println("  - Only unread books")
-	}
-	if settings.KeepLastRead {
-		fmt.Printf("  - Keep last read books (%d)\n", sync.EffectiveKeepLastReadCount(settings))
-	}
-	if settings.OnlyChecked {
-		fmt.Println("  - Only checked books")
-	}
-	if settings.Limit {
-		fmt.Printf("  - Limit: %d %s\n", settings.LimitValue, settings.LimitValueType)
-	}
-	if settings.Sort {
-		fmt.Printf("  - Sort: %s\n", settings.ListSortType)
-	}
+	printSettingsSummary(settings)
 
 	return nil
 }

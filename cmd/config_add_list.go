@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/duckpuppy/comic-server/internal/config"
+	"github.com/duckpuppy/comic-server/internal/configdb"
 	"github.com/duckpuppy/comic-server/internal/library"
 	"github.com/duckpuppy/comic-server/internal/sync"
 	"github.com/spf13/cobra"
@@ -51,24 +53,25 @@ func runAddList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Load config
-	configPath, err := GetConfigPath()
+	db, err := openConfigDB()
 	if err != nil {
 		return err
 	}
-
-	cfg, err := config.Load(configPath)
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
-	}
+	defer db.Close()
 
 	// Resolve device (or create if doesn't exist)
-	deviceID, device, err := config.ResolveDevice(cfg, deviceNameOrID)
+	device, err := resolveConfigDBDevice(db, deviceNameOrID)
 	if err != nil {
-		// Device not found - create new device entry
-		// Assume the input is a device ID
-		deviceID = deviceNameOrID
-		device = cfg.AddDevice(deviceID, "")
+		// Device not found - create new device entry.
+		// Assume the input is a device ID.
+		deviceID := deviceNameOrID
+		if err := db.UpsertDevice(deviceID, "", time.Time{}, nil); err != nil {
+			return fmt.Errorf("failed to create device: %w", err)
+		}
+		device, err = db.GetDevice(deviceID)
+		if err != nil {
+			return fmt.Errorf("failed to load new device: %w", err)
+		}
 		fmt.Printf("Created new device configuration for: %s\n", deviceID)
 	}
 
@@ -78,40 +81,31 @@ func runAddList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Add list to device
-	if err := device.AddList(listID, resolvedName, settings); err != nil {
-		return err
+	for _, l := range device.Lists {
+		if l.ListID == listID {
+			return fmt.Errorf("list %q is already configured for this device", resolvedName)
+		}
 	}
 
-	// Save config
-	if err := config.Save(cfg, configPath); err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
+	if err := db.AddDeviceList(device.DeviceID, configdb.DeviceList{
+		ListID:   listID,
+		ListName: resolvedName,
+		Enabled:  true,
+		Settings: settings,
+	}); err != nil {
+		return fmt.Errorf("failed to add list to device: %w", err)
 	}
 
 	deviceName := device.FriendlyName
 	if deviceName == "" {
-		deviceName = deviceID
+		deviceName = device.DeviceID
 	}
 
 	fmt.Printf("✓ Added smart list %q to device %q\n", resolvedName, deviceName)
 
 	if settings != nil {
 		fmt.Println("\nWith settings:")
-		if settings.OnlyUnread {
-			fmt.Println("  - Only unread books")
-		}
-		if settings.KeepLastRead {
-			fmt.Printf("  - Keep last read books (%d)\n", sync.EffectiveKeepLastReadCount(settings))
-		}
-		if settings.OnlyChecked {
-			fmt.Println("  - Only checked books")
-		}
-		if settings.Limit {
-			fmt.Printf("  - Limit: %d %s\n", settings.LimitValue, settings.LimitValueType)
-		}
-		if settings.Sort {
-			fmt.Printf("  - Sort: %s\n", settings.ListSortType)
-		}
+		printSettingsSummary(settings)
 	} else {
 		fmt.Println("\n(Using device default settings)")
 	}

@@ -511,14 +511,15 @@ class DeviceSettings {
 
     async addList(listId, listName) {
         try {
-            const response = await fetch(`/api/devices/${this.deviceId}/lists`, {
+            const response = await fetch(`/api/devices/lists/${this.deviceId}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
                     list_id: listId,
-                    list_name: listName
+                    list_name: listName,
+                    enabled: true
                 })
             });
 
@@ -541,8 +542,8 @@ class DeviceSettings {
 
     async toggleListEnabled(listId, enabled) {
         try {
-            const response = await fetch(`/api/devices/${this.deviceId}/lists/${listId}`, {
-                method: 'PATCH',
+            const response = await fetch(`/api/devices/lists/${this.deviceId}/${listId}`, {
+                method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json'
                 },
@@ -580,7 +581,7 @@ class DeviceSettings {
         }
 
         try {
-            const response = await fetch(`/api/devices/${this.deviceId}/lists/${listId}`, {
+            const response = await fetch(`/api/devices/lists/${this.deviceId}/${listId}`, {
                 method: 'DELETE'
             });
 
@@ -732,8 +733,8 @@ class DeviceSettings {
         try {
             const settings = this.getSettingsFromForm();
 
-            const response = await fetch(`/api/devices/${this.deviceId}/lists/${this.editingListId}`, {
-                method: 'PATCH',
+            const response = await fetch(`/api/devices/lists/${this.deviceId}/${this.editingListId}`, {
+                method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json'
                 },

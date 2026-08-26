@@ -26,19 +26,14 @@ func runRemoveList(cmd *cobra.Command, args []string) error {
 	deviceNameOrID := args[0]
 	listName := args[1]
 
-	// Load config
-	configPath, err := GetConfigPath()
+	db, err := openConfigDB()
 	if err != nil {
 		return err
 	}
-
-	cfg, err := config.Load(configPath)
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
-	}
+	defer db.Close()
 
 	// Resolve device
-	deviceID, device, err := config.ResolveDevice(cfg, deviceNameOrID)
+	device, err := resolveConfigDBDevice(db, deviceNameOrID)
 	if err != nil {
 		return err
 	}
@@ -71,18 +66,13 @@ func runRemoveList(cmd *cobra.Command, args []string) error {
 	}
 
 	// Remove list
-	if err := device.RemoveList(listID); err != nil {
-		return err
-	}
-
-	// Save config
-	if err := config.Save(cfg, configPath); err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
+	if err := db.RemoveDeviceList(device.DeviceID, listID); err != nil {
+		return fmt.Errorf("failed to remove list: %w", err)
 	}
 
 	deviceName := device.FriendlyName
 	if deviceName == "" {
-		deviceName = deviceID
+		deviceName = device.DeviceID
 	}
 
 	fmt.Printf("✓ Removed smart list %q from device %q\n", listName, deviceName)

@@ -13,6 +13,7 @@ import (
 
 	"github.com/duckpuppy/comic-server/internal/comicvine"
 	"github.com/duckpuppy/comic-server/internal/config"
+	"github.com/duckpuppy/comic-server/internal/configdb"
 	"github.com/duckpuppy/comic-server/internal/covers"
 	"github.com/duckpuppy/comic-server/internal/device"
 	"github.com/duckpuppy/comic-server/internal/komga"
@@ -44,6 +45,7 @@ type Server struct {
 	config            *config.Config
 	configPath        string       // Path to config file for saving
 	configMu          sync.RWMutex // Protects config modifications
+	configDB          *configdb.DB // Device registrations + list assignments (comic-server-3ek)
 	version           VersionInfo
 	mux               *http.ServeMux
 	startTime         time.Time
@@ -95,7 +97,7 @@ func (s *Server) SetScraper(client *comicvine.Client, cache *comicvine.Cache) {
 }
 
 // NewServer creates a new API server with version information
-func NewServer(syncManager *syncstate.Manager, registry *device.Registry, backend library.Backend, cfg *config.Config, configPath string, version VersionInfo, wsHub *ws.Hub) *Server {
+func NewServer(syncManager *syncstate.Manager, registry *device.Registry, backend library.Backend, cfg *config.Config, configPath string, version VersionInfo, wsHub *ws.Hub, configDB *configdb.DB) *Server {
 	s := &Server{
 		syncManager:       syncManager,
 		registry:          registry,
@@ -103,6 +105,7 @@ func NewServer(syncManager *syncstate.Manager, registry *device.Registry, backen
 		listCache:         library.NewListCache(15 * time.Minute), // 15 min TTL
 		config:            cfg,
 		configPath:        configPath,
+		configDB:          configDB,
 		version:           version,
 		mux:               http.NewServeMux(),
 		startTime:         time.Now(),
@@ -116,9 +119,14 @@ func NewServer(syncManager *syncstate.Manager, registry *device.Registry, backen
 		},
 	}
 
-	// Load initial registration state from config
-	for deviceID := range cfg.Devices {
-		s.registeredDevices[deviceID] = true
+	// Load initial registration state from config.db - every device with a
+	// row there is registered (comic-server-3ek).
+	if devices, err := configDB.ListDevices(); err == nil {
+		for _, d := range devices {
+			s.registeredDevices[d.DeviceID] = true
+		}
+	} else {
+		log.Error().Err(err).Msg("Failed to load registered devices from config.db")
 	}
 
 	s.registerRoutes()
@@ -376,24 +384,29 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 		deviceInfos = append(deviceInfos, info)
 	}
 
-	// Also include devices that are registered (have a saved config entry)
-	// but aren't currently in the live discovery registry - e.g. asleep,
-	// or the server restarted and they haven't re-broadcast yet. Without
+	// Also include devices that are registered (have a config.db row) but
+	// aren't currently in the live discovery registry - e.g. asleep, or
+	// the server restarted and they haven't re-broadcast yet. Without
 	// this, a registered device vanishes from this list entirely instead
 	// of showing as offline, even though its list assignments are safely
-	// persisted in config.yaml and will resume syncing once it reconnects.
+	// persisted in config.db and will resume syncing once it reconnects.
 	// handleGetDeviceDetail (the single-device view) already does this
 	// same registry+config merge; this list view didn't.
-	for deviceID, deviceConfig := range s.config.Devices {
-		if _, inRegistry := s.registry.Get(deviceID); inRegistry {
+	registeredDevices, err := s.configDB.ListDevices()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to list registered devices from config.db")
+		registeredDevices = nil
+	}
+	for _, deviceConfig := range registeredDevices {
+		if _, inRegistry := s.registry.Get(deviceConfig.DeviceID); inRegistry {
 			continue // already added above from the live registry
 		}
 
 		info := DeviceInfo{
-			ID:           deviceID,
+			ID:           deviceConfig.DeviceID,
 			Name:         deviceConfig.FriendlyName,
 			LastSeen:     deviceConfig.LastSeen,
-			IsSyncing:    s.syncManager.IsDeviceSyncing(deviceID),
+			IsSyncing:    s.syncManager.IsDeviceSyncing(deviceConfig.DeviceID),
 			IsRegistered: true,
 		}
 
@@ -536,24 +549,19 @@ func (s *Server) handleDeviceRegister(w http.ResponseWriter, r *http.Request) {
 	s.registeredDevices[req.DeviceID] = true
 	s.mu.Unlock()
 
-	// Create device config entry if it doesn't exist
-	if s.config.Devices == nil {
-		s.config.Devices = make(map[string]*config.DeviceConfig)
+	// Create device config.db entry if it doesn't exist - UpsertDevice
+	// leaves an existing device's fields alone if it already has a row
+	// (re-registering shouldn't clobber a previously-set friendly name),
+	// so only insert when GetDevice finds nothing yet.
+	existing, err := s.configDB.GetDevice(req.DeviceID)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to look up device in config.db during registration")
 	}
-
-	if _, exists := s.config.Devices[req.DeviceID]; !exists {
-		s.config.Devices[req.DeviceID] = &config.DeviceConfig{
-			DeviceID:     req.DeviceID,
-			FriendlyName: dev.Info.Name,
-			LastSeen:     dev.LastSeen,
-			Lists:        []config.SharedListConfig{},
+	if existing == nil {
+		if err := s.configDB.UpsertDevice(req.DeviceID, dev.Info.Name, dev.LastSeen, nil); err != nil {
+			log.Error().Err(err).Msg("Failed to save device to config.db after registration")
+			// Don't fail the request - registration is still in memory
 		}
-	}
-
-	// Save config to disk
-	if err := config.Save(s.config, s.configPath); err != nil {
-		log.Error().Err(err).Msg("Failed to save config after device registration")
-		// Don't fail the request - registration is still in memory
 	}
 
 	log.Info().
@@ -603,15 +611,10 @@ func (s *Server) handleDeviceUnregister(w http.ResponseWriter, r *http.Request) 
 	delete(s.registeredDevices, req.DeviceID)
 	s.mu.Unlock()
 
-	// Remove from config
-	if s.config.Devices != nil {
-		delete(s.config.Devices, req.DeviceID)
-
-		// Save config to disk
-		if err := config.Save(s.config, s.configPath); err != nil {
-			log.Error().Err(err).Msg("Failed to save config after device unregistration")
-			// Don't fail the request - unregistration is still in memory
-		}
+	// Remove from config.db - cascades to its list assignments.
+	if err := s.configDB.DeleteDevice(req.DeviceID); err != nil {
+		log.Error().Err(err).Msg("Failed to delete device from config.db after unregistration")
+		// Don't fail the request - unregistration is still in memory
 	}
 
 	log.Info().
@@ -641,7 +644,7 @@ type DeviceConfigResponse struct {
 	DeviceID     string                    `json:"device_id"`
 	FriendlyName string                    `json:"friendly_name"`
 	LastSeen     time.Time                 `json:"last_seen"`
-	Lists        []config.SharedListConfig `json:"lists"`
+	Lists        []configdb.DeviceList     `json:"lists"`
 	Settings     *csync.SharedListSettings `json:"default_settings,omitempty"`
 }
 
@@ -659,8 +662,13 @@ func (s *Server) handleDeviceConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get device config
-	deviceConfig, exists := s.config.Devices[deviceID]
-	if !exists {
+	deviceConfig, err := s.configDB.GetDevice(deviceID)
+	if err != nil {
+		log.Error().Err(err).Str("device_id", deviceID).Msg("Failed to look up device config")
+		http.Error(w, "Failed to look up device config", http.StatusInternalServerError)
+		return
+	}
+	if deviceConfig == nil {
 		http.Error(w, "Device configuration not found", http.StatusNotFound)
 		return
 	}
@@ -773,55 +781,51 @@ func (s *Server) handleDeviceListAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get or create device config
-	if s.config.Devices == nil {
-		s.config.Devices = make(map[string]*config.DeviceConfig)
+	// Get or create device config.db entry
+	deviceConfig, err := s.configDB.GetDevice(deviceID)
+	if err != nil {
+		log.Error().Err(err).Str("device_id", deviceID).Msg("Failed to look up device config")
+		http.Error(w, "Failed to look up device config", http.StatusInternalServerError)
+		return
 	}
-
-	deviceConfig, exists := s.config.Devices[deviceID]
-	if !exists {
-		// Device is registered but config entry missing - create it
+	if deviceConfig == nil {
+		// Device is registered but config.db entry missing - create it
 		dev, devExists := s.registry.Get(deviceID)
 		if !devExists {
 			http.Error(w, "Device not found in registry", http.StatusNotFound)
 			return
 		}
 
-		deviceConfig = &config.DeviceConfig{
-			DeviceID:     deviceID,
-			FriendlyName: dev.Info.Name,
-			LastSeen:     dev.LastSeen,
-			Lists:        []config.SharedListConfig{},
+		if err := s.configDB.UpsertDevice(deviceID, dev.Info.Name, dev.LastSeen, nil); err != nil {
+			log.Error().Err(err).Str("device_id", deviceID).Msg("Failed to create device config.db entry")
+			http.Error(w, "Failed to create device config", http.StatusInternalServerError)
+			return
 		}
-		s.config.Devices[deviceID] = deviceConfig
 
 		log.Info().
 			Str("device_id", deviceID).
 			Msg("Created missing device config entry during list assignment")
-	}
-
-	// Check if list is already added
-	for _, listConfig := range deviceConfig.Lists {
-		if listConfig.ListID == req.ListID {
-			http.Error(w, "List already assigned to device", http.StatusConflict)
-			return
+	} else {
+		// Check if list is already added
+		for _, listConfig := range deviceConfig.Lists {
+			if listConfig.ListID == req.ListID {
+				http.Error(w, "List already assigned to device", http.StatusConflict)
+				return
+			}
 		}
 	}
 
 	// Add list to device config
-	newList := config.SharedListConfig{
+	newList := configdb.DeviceList{
 		ListID:   req.ListID,
 		ListName: req.ListName,
 		Enabled:  req.Enabled,
 		Settings: req.Settings,
 	}
-
-	deviceConfig.Lists = append(deviceConfig.Lists, newList)
-
-	// Save config to disk
-	if err := config.Save(s.config, s.configPath); err != nil {
-		log.Error().Err(err).Msg("Failed to save config after adding list to device")
-		// Don't fail the request - list is still in memory
+	if err := s.configDB.AddDeviceList(deviceID, newList); err != nil {
+		log.Error().Err(err).Str("device_id", deviceID).Str("list_id", req.ListID).Msg("Failed to add list to device")
+		http.Error(w, "Failed to add list to device", http.StatusInternalServerError)
+		return
 	}
 
 	log.Info().
@@ -859,35 +863,36 @@ func (s *Server) handleDeviceListRemove(w http.ResponseWriter, r *http.Request) 
 	listID := parts[1]
 
 	// Get device config
-	deviceConfig, exists := s.config.Devices[deviceID]
-	if !exists {
+	deviceConfig, err := s.configDB.GetDevice(deviceID)
+	if err != nil {
+		log.Error().Err(err).Str("device_id", deviceID).Msg("Failed to look up device config")
+		http.Error(w, "Failed to look up device config", http.StatusInternalServerError)
+		return
+	}
+	if deviceConfig == nil {
 		http.Error(w, "Device configuration not found", http.StatusNotFound)
 		return
 	}
 
-	// Find and remove the list
-	listIndex := -1
+	// Find the list (just for the name, used in logging/broadcast below)
 	var removedListName string
-	for i, listConfig := range deviceConfig.Lists {
+	found := false
+	for _, listConfig := range deviceConfig.Lists {
 		if listConfig.ListID == listID {
-			listIndex = i
 			removedListName = listConfig.ListName
+			found = true
 			break
 		}
 	}
-
-	if listIndex == -1 {
+	if !found {
 		http.Error(w, "List not found in device configuration", http.StatusNotFound)
 		return
 	}
 
-	// Remove list from slice
-	deviceConfig.Lists = append(deviceConfig.Lists[:listIndex], deviceConfig.Lists[listIndex+1:]...)
-
-	// Save config to disk
-	if err := config.Save(s.config, s.configPath); err != nil {
-		log.Error().Err(err).Msg("Failed to save config after removing list from device")
-		// Don't fail the request - list is still removed in memory
+	if err := s.configDB.RemoveDeviceList(deviceID, listID); err != nil {
+		log.Error().Err(err).Str("device_id", deviceID).Str("list_id", listID).Msg("Failed to remove list from device")
+		http.Error(w, "Failed to remove list from device", http.StatusInternalServerError)
+		return
 	}
 
 	log.Info().
@@ -937,51 +942,49 @@ func (s *Server) handleDeviceListUpdate(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Get device config
-	deviceConfig, exists := s.config.Devices[deviceID]
-	if !exists {
+	deviceConfig, err := s.configDB.GetDevice(deviceID)
+	if err != nil {
+		log.Error().Err(err).Str("device_id", deviceID).Msg("Failed to look up device config")
+		http.Error(w, "Failed to look up device config", http.StatusInternalServerError)
+		return
+	}
+	if deviceConfig == nil {
 		http.Error(w, "Device configuration not found", http.StatusNotFound)
 		return
 	}
 
-	// Find the list
-	listIndex := -1
-	for i, listConfig := range deviceConfig.Lists {
+	// Find the list (just for the name, used in logging/broadcast below)
+	var listName string
+	found := false
+	for _, listConfig := range deviceConfig.Lists {
 		if listConfig.ListID == listID {
-			listIndex = i
+			listName = listConfig.ListName
+			found = true
 			break
 		}
 	}
-
-	if listIndex == -1 {
+	if !found {
 		http.Error(w, "List not found in device configuration", http.StatusNotFound)
 		return
 	}
 
-	// Update fields
-	if req.Enabled != nil {
-		deviceConfig.Lists[listIndex].Enabled = *req.Enabled
-	}
-	if req.Settings != nil {
-		deviceConfig.Lists[listIndex].Settings = req.Settings
-	}
-
-	// Save config to disk
-	if err := config.Save(s.config, s.configPath); err != nil {
-		log.Error().Err(err).Msg("Failed to save config after updating list settings")
-		// Don't fail the request - settings are still updated in memory
+	if err := s.configDB.UpdateDeviceList(deviceID, listID, req.Enabled, req.Settings); err != nil {
+		log.Error().Err(err).Str("device_id", deviceID).Str("list_id", listID).Msg("Failed to update list settings")
+		http.Error(w, "Failed to update list settings", http.StatusInternalServerError)
+		return
 	}
 
 	log.Info().
 		Str("device_id", deviceID).
 		Str("list_id", listID).
-		Str("list_name", deviceConfig.Lists[listIndex].ListName).
+		Str("list_name", listName).
 		Msg("Smart list settings updated for device")
 
 	// Broadcast list updated event
 	s.wsHub.Broadcast(ws.EventDeviceUpdated, map[string]interface{}{
 		"device_id": deviceID,
 		"list_id":   listID,
-		"list_name": deviceConfig.Lists[listIndex].ListName,
+		"list_name": listName,
 		"action":    "list_updated",
 	})
 

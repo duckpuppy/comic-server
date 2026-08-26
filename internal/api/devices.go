@@ -60,9 +60,14 @@ func (s *Server) handleGetDeviceDetail(w http.ResponseWriter, r *http.Request) {
 	var detail DeviceDetail
 	device, exists := s.registry.Get(deviceID)
 
-	// Look up device in config (may include offline devices)
-	// Note: s.config is not protected by mutex - config access is read-only after server start
-	deviceConfig, inConfig := s.config.Devices[deviceID]
+	// Look up device in config.db (may include offline devices)
+	deviceConfig, err := s.configDB.GetDevice(deviceID)
+	if err != nil {
+		log.Error().Err(err).Str("device_id", deviceID).Msg("Failed to look up device config")
+		http.Error(w, "Failed to look up device config", http.StatusInternalServerError)
+		return
+	}
+	inConfig := deviceConfig != nil
 
 	// Device must be in registry OR config
 	if !exists && !inConfig {
@@ -187,42 +192,15 @@ func (s *Server) handleDevicesRouter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Handle list management endpoints
-	// URL: /api/devices/:deviceId/lists
-	// URL: /api/devices/:deviceId/lists/:listId
-	// URL: /api/devices/:deviceId/lists/:listId/preview
-	if strings.Contains(remainder, "/lists") {
-		// Check if this is a preview request
-		if strings.HasSuffix(path, "/preview") {
-			s.handlePreviewListBooks(w, r)
-			return
-		}
-
-		// Extract device ID and check if list ID is present
-		parts := strings.Split(remainder, "/")
-		// parts[0] = deviceID, parts[1] = "lists", parts[2] = listID (if present)
-
-		if len(parts) == 2 {
-			// /api/devices/:deviceId/lists - add list to device
-			if r.Method == http.MethodPost {
-				s.handleAddListToDevice(w, r)
-			} else {
-				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			}
-			return
-		}
-
-		if len(parts) >= 3 {
-			// /api/devices/:deviceId/lists/:listId
-			if r.Method == http.MethodDelete {
-				s.handleRemoveListFromDevice(w, r)
-			} else if r.Method == http.MethodPatch {
-				s.handleUpdateListSettings(w, r)
-			} else {
-				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			}
-			return
-		}
+	// URL: /api/devices/:deviceId/lists/:listId/preview - the only
+	// /api/devices/:deviceId/lists... route left on this shape.
+	// Add/remove/update-settings for a device's lists all live on
+	// /api/devices/lists/:deviceId[/:listId] instead (handled above via
+	// handleDeviceLists) - comic-server-3ek consolidated what used to be
+	// two independent route trees for the same data onto that one.
+	if strings.HasSuffix(path, "/preview") && strings.Contains(remainder, "/lists/") {
+		s.handlePreviewListBooks(w, r)
+		return
 	}
 
 	http.NotFound(w, r)

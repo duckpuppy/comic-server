@@ -185,13 +185,19 @@ func TestSaveYAML(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "config.yaml")
 
 	cfg := NewConfig()
-	device := cfg.AddDevice("device-789", "Save Test")
 	settings := &sync.SharedListSettings{
 		OnlyUnread: true,
 		Limit:      true,
 		LimitValue: 50,
 	}
-	device.AddList("list-guid-3", "Save List", settings)
+	device := &DeviceConfig{
+		DeviceID:     "device-789",
+		FriendlyName: "Save Test",
+		Lists: []SharedListConfig{
+			{ListID: "list-guid-3", ListName: "Save List", Enabled: true, Settings: settings},
+		},
+	}
+	cfg.Devices["device-789"] = device
 
 	err := Save(cfg, configPath)
 	if err != nil {
@@ -237,7 +243,10 @@ func TestSaveTOML(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "config.toml")
 
 	cfg := NewConfig()
-	cfg.AddDevice("device-toml", "TOML Save")
+	cfg.Devices["device-toml"] = &DeviceConfig{
+		DeviceID:     "device-toml",
+		FriendlyName: "TOML Save",
+	}
 
 	err := Save(cfg, configPath)
 	if err != nil {

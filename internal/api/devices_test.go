@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/duckpuppy/comic-server/internal/config"
+	"github.com/duckpuppy/comic-server/internal/configdb"
 	"github.com/duckpuppy/comic-server/internal/device"
 	"github.com/duckpuppy/comic-server/internal/library"
 	"github.com/duckpuppy/comic-server/internal/syncstate"
@@ -28,22 +29,7 @@ func TestHandleGetDeviceDetail(t *testing.T) {
 	}
 	registry.Add(deviceInfo, "192.168.1.100")
 
-	// Create test config with assigned lists
-	cfg := &config.Config{
-		Devices: map[string]*config.DeviceConfig{
-			"device-123": {
-				DeviceID:     "device-123",
-				FriendlyName: "My Tablet",
-				Lists: []config.SharedListConfig{
-					{
-						ListID:   "list-1",
-						ListName: "Currently Reading",
-						Enabled:  true,
-					},
-				},
-			},
-		},
-	}
+	cfg := &config.Config{}
 
 	// Create test library with lists
 	lib := &library.ComicLibrary{
@@ -61,9 +47,22 @@ func TestHandleGetDeviceDetail(t *testing.T) {
 	cache := library.NewListCache(5 * time.Minute)
 	cache.SetCount("list-1", 45)
 
+	configDB, err := configdb.Open(filepath.Join(t.TempDir(), "config.db"))
+	if err != nil {
+		t.Fatalf("failed to open test config db: %v", err)
+	}
+	t.Cleanup(func() { configDB.Close() })
+	if err := configDB.UpsertDevice("device-123", "My Tablet", time.Time{}, nil); err != nil {
+		t.Fatalf("failed to seed test device: %v", err)
+	}
+	if err := configDB.AddDeviceList("device-123", configdb.DeviceList{ListID: "list-1", ListName: "Currently Reading", Enabled: true}); err != nil {
+		t.Fatalf("failed to seed test device list: %v", err)
+	}
+
 	server := &Server{
 		registry:    registry,
 		config:      cfg,
+		configDB:    configDB,
 		backend:     backend,
 		listCache:   cache,
 		syncManager: syncstate.NewManager(100),
@@ -113,13 +112,18 @@ func TestHandleGetDeviceDetail(t *testing.T) {
 
 func TestHandleGetDeviceDetail_NotFound(t *testing.T) {
 	registry := device.NewRegistry()
-	cfg := &config.Config{
-		Devices: map[string]*config.DeviceConfig{},
+	cfg := &config.Config{}
+
+	configDB, err := configdb.Open(filepath.Join(t.TempDir(), "config.db"))
+	if err != nil {
+		t.Fatalf("failed to open test config db: %v", err)
 	}
+	t.Cleanup(func() { configDB.Close() })
 
 	server := &Server{
 		registry:    registry,
 		config:      cfg,
+		configDB:    configDB,
 		syncManager: syncstate.NewManager(100),
 	}
 
@@ -136,19 +140,21 @@ func TestHandleGetDeviceDetail_NotFound(t *testing.T) {
 func TestHandleGetDeviceDetail_OfflineDevice(t *testing.T) {
 	// Device in config but not in registry (offline)
 	registry := device.NewRegistry()
-	cfg := &config.Config{
-		Devices: map[string]*config.DeviceConfig{
-			"device-123": {
-				DeviceID:     "device-123",
-				FriendlyName: "Offline Tablet",
-				Lists:        []config.SharedListConfig{},
-			},
-		},
+	cfg := &config.Config{}
+
+	configDB, err := configdb.Open(filepath.Join(t.TempDir(), "config.db"))
+	if err != nil {
+		t.Fatalf("failed to open test config db: %v", err)
+	}
+	t.Cleanup(func() { configDB.Close() })
+	if err := configDB.UpsertDevice("device-123", "Offline Tablet", time.Time{}, nil); err != nil {
+		t.Fatalf("failed to seed test device: %v", err)
 	}
 
 	server := &Server{
 		registry:    registry,
 		config:      cfg,
+		configDB:    configDB,
 		backend:     library.NewXMLBackendFromLibrary(&library.ComicLibrary{}, "", nil),
 		listCache:   library.NewListCache(5 * time.Minute),
 		syncManager: syncstate.NewManager(100),
@@ -178,13 +184,18 @@ func TestHandleGetDeviceDetail_OfflineDevice(t *testing.T) {
 func TestHandleDevicesRouter(t *testing.T) {
 	// Setup server with minimal config
 	registry := device.NewRegistry()
-	cfg := &config.Config{
-		Devices: map[string]*config.DeviceConfig{},
+	cfg := &config.Config{}
+
+	configDB, err := configdb.Open(filepath.Join(t.TempDir(), "config.db"))
+	if err != nil {
+		t.Fatalf("failed to open test config db: %v", err)
 	}
+	t.Cleanup(func() { configDB.Close() })
 
 	server := &Server{
 		registry:    registry,
 		config:      cfg,
+		configDB:    configDB,
 		backend:     library.NewXMLBackendFromLibrary(&library.ComicLibrary{}, "", nil),
 		listCache:   library.NewListCache(5 * time.Minute),
 		syncManager: syncstate.NewManager(100),
@@ -391,11 +402,18 @@ func TestHandleDeviceListAdd_AcceptsNonSmartLists(t *testing.T) {
 		}
 		backend := library.NewXMLBackendFromLibrary(lib, "", nil)
 
+		configDB, err := configdb.Open(filepath.Join(t.TempDir(), "config.db"))
+		if err != nil {
+			t.Fatalf("failed to open test config db: %v", err)
+		}
+		t.Cleanup(func() { configDB.Close() })
+
 		s := &Server{
 			backend:           backend,
 			registry:          registry,
 			registeredDevices: map[string]bool{"device-1": true},
 			config:            &config.Config{},
+			configDB:          configDB,
 			configPath:        filepath.Join(t.TempDir(), "config.yaml"),
 			wsHub:             ws.NewHub(),
 		}

@@ -3,9 +3,9 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/duckpuppy/comic-server/internal/config"
-	"github.com/duckpuppy/comic-server/internal/sync"
 	"github.com/spf13/cobra"
+
+	"github.com/duckpuppy/comic-server/internal/sync"
 )
 
 var showDeviceCmd = &cobra.Command{
@@ -24,19 +24,13 @@ var (
 func runShowDevice(cmd *cobra.Command, args []string) error {
 	deviceNameOrID := args[0]
 
-	// Load config
-	configPath, err := GetConfigPath()
+	db, err := openConfigDB()
 	if err != nil {
 		return err
 	}
+	defer db.Close()
 
-	cfg, err := config.Load(configPath)
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
-	}
-
-	// Resolve device
-	deviceID, device, err := config.ResolveDevice(cfg, deviceNameOrID)
+	device, err := resolveConfigDBDevice(db, deviceNameOrID)
 	if err != nil {
 		return err
 	}
@@ -49,7 +43,7 @@ func runShowDevice(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Device: %s\n", name)
 	if verboseFlag || device.FriendlyName == "" {
-		fmt.Printf("ID: %s\n", deviceID)
+		fmt.Printf("ID: %s\n", device.DeviceID)
 	}
 	if !device.LastSeen.IsZero() {
 		fmt.Printf("Last seen: %s\n", device.LastSeen.Format("2006-01-02 15:04:05"))
@@ -59,21 +53,7 @@ func runShowDevice(cmd *cobra.Command, args []string) error {
 	// Display default settings
 	if device.DefaultSettings != nil {
 		fmt.Println("Default Settings:")
-		if device.DefaultSettings.OnlyUnread {
-			fmt.Println("  - Only unread books")
-		}
-		if device.DefaultSettings.KeepLastRead {
-			fmt.Printf("  - Keep last read books (%d)\n", sync.EffectiveKeepLastReadCount(device.DefaultSettings))
-		}
-		if device.DefaultSettings.OnlyChecked {
-			fmt.Println("  - Only checked books")
-		}
-		if device.DefaultSettings.Limit {
-			fmt.Printf("  - Limit: %d %s\n", device.DefaultSettings.LimitValue, device.DefaultSettings.LimitValueType)
-		}
-		if device.DefaultSettings.Sort {
-			fmt.Printf("  - Sort: %s\n", device.DefaultSettings.ListSortType)
-		}
+		printSettingsSummary(device.DefaultSettings)
 		fmt.Println()
 	}
 
@@ -86,11 +66,29 @@ func runShowDevice(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Configured Smart Lists (%d):\n\n", len(device.Lists))
 
 	for _, list := range device.Lists {
-		fmt.Print(config.FormatSmartListConfig(&list))
+		fmt.Print(formatConfigDBList(list))
 		fmt.Println()
 	}
 
 	return nil
+}
+
+func printSettingsSummary(settings *sync.SharedListSettings) {
+	if settings.OnlyUnread {
+		fmt.Println("  - Only unread books")
+	}
+	if settings.KeepLastRead {
+		fmt.Printf("  - Keep last read books (%d)\n", sync.EffectiveKeepLastReadCount(settings))
+	}
+	if settings.OnlyChecked {
+		fmt.Println("  - Only checked books")
+	}
+	if settings.Limit {
+		fmt.Printf("  - Limit: %d %s\n", settings.LimitValue, settings.LimitValueType)
+	}
+	if settings.Sort {
+		fmt.Printf("  - Sort: %s\n", settings.ListSortType)
+	}
 }
 
 func init() {

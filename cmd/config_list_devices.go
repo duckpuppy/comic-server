@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/duckpuppy/comic-server/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -16,19 +15,18 @@ Shows device ID, friendly name, and basic sync information.`,
 }
 
 func runListDevices(cmd *cobra.Command, args []string) error {
-	// Load config
-	configPath, err := GetConfigPath()
+	db, err := openConfigDB()
 	if err != nil {
 		return err
 	}
+	defer db.Close()
 
-	cfg, err := config.Load(configPath)
+	devices, err := db.ListDevices()
 	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
+		return fmt.Errorf("failed to list devices: %w", err)
 	}
 
-	// Display devices
-	fmt.Println(config.FormatDeviceList(cfg.Devices))
+	fmt.Println(formatConfigDBDeviceList(devices))
 
 	return nil
 }

@@ -3,7 +3,7 @@ package cmd
 import (
 	"testing"
 
-	"github.com/duckpuppy/comic-server/internal/config"
+	"github.com/duckpuppy/comic-server/internal/configdb"
 	"github.com/duckpuppy/comic-server/internal/library"
 	csync "github.com/duckpuppy/comic-server/internal/sync"
 )
@@ -30,9 +30,9 @@ func TestApplyDeviceConfig_AcceptsIdList(t *testing.T) {
 	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
 	syncer := csync.NewSyncer(nil, backend)
 
-	deviceConfig := &config.DeviceConfig{
+	deviceConfig := &configdb.Device{
 		DeviceID: "device-1",
-		Lists: []config.SharedListConfig{
+		Lists: []configdb.DeviceList{
 			{ListID: "idlist-1", ListName: "To Read", Enabled: true},
 		},
 	}
@@ -54,9 +54,9 @@ func TestApplyDeviceConfig_RejectsFolder(t *testing.T) {
 	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
 	syncer := csync.NewSyncer(nil, backend)
 
-	deviceConfig := &config.DeviceConfig{
+	deviceConfig := &configdb.Device{
 		DeviceID: "device-1",
-		Lists: []config.SharedListConfig{
+		Lists: []configdb.DeviceList{
 			{ListID: "folder-1", ListName: "A Folder", Enabled: true},
 		},
 	}

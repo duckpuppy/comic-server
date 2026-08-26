@@ -13,11 +13,22 @@ import (
 
 	"github.com/duckpuppy/comic-server/internal/comicvine"
 	"github.com/duckpuppy/comic-server/internal/config"
+	"github.com/duckpuppy/comic-server/internal/configdb"
 	"github.com/duckpuppy/comic-server/internal/device"
 	"github.com/duckpuppy/comic-server/internal/library"
 	"github.com/duckpuppy/comic-server/internal/syncstate"
 	"github.com/duckpuppy/comic-server/internal/websocket"
 )
+
+func newTestConfigDB(t *testing.T) *configdb.DB {
+	t.Helper()
+	db, err := configdb.Open(t.TempDir() + "/config.db")
+	if err != nil {
+		t.Fatalf("failed to open test config db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	return db
+}
 
 // scrapeAPIFixture is an in-memory ComicVine API fixture, mirroring the one
 // used by internal/comicvine's scraper tests.
@@ -89,7 +100,7 @@ func newScrapeAPITestServer(t *testing.T, books []library.ComicBook, fx *scrapeA
 	cfg := &config.Config{}
 	wsHub := websocket.NewHub()
 
-	srv := NewServer(syncManager, registry, backend, cfg, "", VersionInfo{Version: "test"}, wsHub)
+	srv := NewServer(syncManager, registry, backend, cfg, "", VersionInfo{Version: "test"}, wsHub, newTestConfigDB(t))
 
 	cache, err := comicvine.OpenCache(t.TempDir() + "/cv_cache.db")
 	if err != nil {
@@ -105,7 +116,7 @@ func newScrapeAPITestServer(t *testing.T, books []library.ComicBook, fx *scrapeA
 func TestHandleScrapeStart_NotConfigured(t *testing.T) {
 	lib := &library.ComicLibrary{}
 	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
-	srv := NewServer(syncstate.NewManager(10), device.NewRegistry(), backend, &config.Config{}, "", VersionInfo{}, websocket.NewHub())
+	srv := NewServer(syncstate.NewManager(10), device.NewRegistry(), backend, &config.Config{}, "", VersionInfo{}, websocket.NewHub(), newTestConfigDB(t))
 
 	req := httptest.NewRequest(http.MethodPost, "/api/scrape", nil)
 	w := httptest.NewRecorder()

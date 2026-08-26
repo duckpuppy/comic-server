@@ -4,19 +4,23 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/duckpuppy/comic-server/internal/config"
+	"github.com/duckpuppy/comic-server/internal/configdb"
 	"github.com/duckpuppy/comic-server/internal/device"
 	"github.com/duckpuppy/comic-server/internal/library"
 	"github.com/duckpuppy/comic-server/internal/syncstate"
 	"github.com/duckpuppy/comic-server/internal/websocket"
 )
 
-// createTestServer creates a test server with a WebSocket hub
-func createTestServer(syncManager *syncstate.Manager, registry *device.Registry, cfg *config.Config, version VersionInfo) *Server {
+// createTestServer creates a test server with a WebSocket hub and a
+// scratch configdb.DB (t.TempDir()-based, auto-cleaned up).
+func createTestServer(t *testing.T, syncManager *syncstate.Manager, registry *device.Registry, cfg *config.Config, version VersionInfo) *Server {
+	t.Helper()
 	// Create empty library for tests
 	lib := &library.ComicLibrary{
 		Books:      []library.ComicBook{},
@@ -24,7 +28,12 @@ func createTestServer(syncManager *syncstate.Manager, registry *device.Registry,
 	}
 	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
 	wsHub := websocket.NewHub()
-	return NewServer(syncManager, registry, backend, cfg, "", version, wsHub) // Empty config path for tests
+	configDB, err := configdb.Open(filepath.Join(t.TempDir(), "config.db"))
+	if err != nil {
+		t.Fatalf("failed to open test config db: %v", err)
+	}
+	t.Cleanup(func() { configDB.Close() })
+	return NewServer(syncManager, registry, backend, cfg, "", version, wsHub, configDB) // Empty config path for tests
 }
 
 func TestNewServer(t *testing.T) {
@@ -33,7 +42,7 @@ func TestNewServer(t *testing.T) {
 	cfg := &config.Config{}
 	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
 
-	server := createTestServer(syncManager, registry, cfg, version)
+	server := createTestServer(t, syncManager, registry, cfg, version)
 	if server == nil {
 		t.Fatal("NewServer returned nil")
 	}
@@ -56,7 +65,7 @@ func TestHandleHealth(t *testing.T) {
 	registry := device.NewRegistry()
 	cfg := &config.Config{}
 	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
-	server := createTestServer(syncManager, registry, cfg, version)
+	server := createTestServer(t, syncManager, registry, cfg, version)
 
 	// Wait a bit to ensure uptime is > 0
 	time.Sleep(10 * time.Millisecond)
@@ -97,7 +106,7 @@ func TestHandleVersion(t *testing.T) {
 	registry := device.NewRegistry()
 	cfg := &config.Config{}
 	version := VersionInfo{Version: "v1.2.3", GitCommit: "def456", BuildDate: "2024-02-01"}
-	server := createTestServer(syncManager, registry, cfg, version)
+	server := createTestServer(t, syncManager, registry, cfg, version)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/version", nil)
 	w := httptest.NewRecorder()
@@ -129,7 +138,7 @@ func TestHandleHealthMethodNotAllowed(t *testing.T) {
 	registry := device.NewRegistry()
 	cfg := &config.Config{}
 	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
-	server := createTestServer(syncManager, registry, cfg, version)
+	server := createTestServer(t, syncManager, registry, cfg, version)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/health", nil)
 	w := httptest.NewRecorder()
@@ -146,7 +155,7 @@ func TestHandleSyncStatus(t *testing.T) {
 	registry := device.NewRegistry()
 	cfg := &config.Config{}
 	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
-	server := createTestServer(syncManager, registry, cfg, version)
+	server := createTestServer(t, syncManager, registry, cfg, version)
 
 	// Start some syncs
 	syncManager.StartSync("device1", "192.168.1.100", "Tablet 1")
@@ -179,7 +188,7 @@ func TestHandleSyncHistory(t *testing.T) {
 	registry := device.NewRegistry()
 	cfg := &config.Config{}
 	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
-	server := createTestServer(syncManager, registry, cfg, version)
+	server := createTestServer(t, syncManager, registry, cfg, version)
 
 	// Complete some syncs
 	syncManager.StartSync("device1", "192.168.1.100", "Tablet 1")
@@ -215,7 +224,7 @@ func TestHandleSyncHistoryWithLimit(t *testing.T) {
 	registry := device.NewRegistry()
 	cfg := &config.Config{}
 	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
-	server := createTestServer(syncManager, registry, cfg, version)
+	server := createTestServer(t, syncManager, registry, cfg, version)
 
 	// Complete 10 syncs
 	for i := 1; i <= 10; i++ {
@@ -250,7 +259,7 @@ func TestHandleDevices(t *testing.T) {
 	registry := device.NewRegistry()
 	cfg := &config.Config{}
 	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
-	server := createTestServer(syncManager, registry, cfg, version)
+	server := createTestServer(t, syncManager, registry, cfg, version)
 
 	// Add devices to registry
 	info1 := &device.Info{
@@ -332,17 +341,16 @@ func TestHandleDevices(t *testing.T) {
 func TestHandleDevices_IncludesRegisteredButOfflineDevice(t *testing.T) {
 	syncManager := syncstate.NewManager(10)
 	registry := device.NewRegistry()
-	cfg := &config.Config{
-		Devices: map[string]*config.DeviceConfig{
-			"offline-device": {DeviceID: "offline-device", FriendlyName: "Sleeping Tablet"},
-		},
-	}
+	cfg := &config.Config{}
 	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
-	server := createTestServer(syncManager, registry, cfg, version)
+	server := createTestServer(t, syncManager, registry, cfg, version)
 
 	// Note: "offline-device" is deliberately NOT added to the live
-	// discovery registry - it only exists in config, simulating a
+	// discovery registry - it only exists in config.db, simulating a
 	// registered device that isn't currently broadcasting.
+	if err := server.configDB.UpsertDevice("offline-device", "Sleeping Tablet", time.Time{}, nil); err != nil {
+		t.Fatalf("failed to seed test device: %v", err)
+	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/devices", nil)
 	w := httptest.NewRecorder()
@@ -387,16 +395,26 @@ func TestHandleStats(t *testing.T) {
 			MaxConnectionsPerIP:      10,
 			MaxRequestsPerDevice:     100,
 		},
-		// RegisteredDevices now counts durable registrations (seeded from
-		// this at server construction), not just who's currently in the
-		// live discovery registry - see the fix for the "device vanishes
-		// from the Devices tab while asleep or after a restart" bug.
-		Devices: map[string]*config.DeviceConfig{
-			"device1": {DeviceID: "device1", FriendlyName: "Tablet 1"},
-		},
 	}
 	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
-	server := createTestServer(syncManager, registry, cfg, version)
+
+	// RegisteredDevices counts durable registrations in config.db (seeded
+	// at server construction), not just who's currently in the live
+	// discovery registry - see the fix for the "device vanishes from the
+	// Devices tab while asleep or after a restart" bug. Pre-populate
+	// config.db before constructing the server so that seed picks it up.
+	lib := &library.ComicLibrary{}
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	wsHub := websocket.NewHub()
+	configDB, err := configdb.Open(filepath.Join(t.TempDir(), "config.db"))
+	if err != nil {
+		t.Fatalf("failed to open test config db: %v", err)
+	}
+	t.Cleanup(func() { configDB.Close() })
+	if err := configDB.UpsertDevice("device1", "Tablet 1", time.Time{}, nil); err != nil {
+		t.Fatalf("failed to seed test device: %v", err)
+	}
+	server := NewServer(syncManager, registry, backend, cfg, "", version, wsHub, configDB)
 
 	// Add a device
 	info := &device.Info{
@@ -451,7 +469,7 @@ func TestHandleMetrics(t *testing.T) {
 	registry := device.NewRegistry()
 	cfg := &config.Config{}
 	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
-	server := createTestServer(syncManager, registry, cfg, version)
+	server := createTestServer(t, syncManager, registry, cfg, version)
 
 	// Simulate some sync activity to generate metrics
 	syncManager.StartSync("device1", "192.168.1.100", "Tablet 1")
@@ -515,7 +533,7 @@ func TestServeHTTP(t *testing.T) {
 	registry := device.NewRegistry()
 	cfg := &config.Config{}
 	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
-	server := createTestServer(syncManager, registry, cfg, version)
+	server := createTestServer(t, syncManager, registry, cfg, version)
 
 	// Test that routes are registered correctly
 	tests := []struct {
@@ -552,7 +570,7 @@ func TestHandleSyncHistoryPaginated(t *testing.T) {
 	registry := device.NewRegistry()
 	cfg := &config.Config{}
 	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
-	server := createTestServer(syncManager, registry, cfg, version)
+	server := createTestServer(t, syncManager, registry, cfg, version)
 
 	// Create 25 sync entries
 	for i := 1; i <= 25; i++ {
@@ -646,7 +664,7 @@ func TestHandleSyncHistoryLegacyFormat(t *testing.T) {
 	registry := device.NewRegistry()
 	cfg := &config.Config{}
 	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
-	server := createTestServer(syncManager, registry, cfg, version)
+	server := createTestServer(t, syncManager, registry, cfg, version)
 
 	// Create 10 sync entries
 	for i := 1; i <= 10; i++ {
@@ -682,7 +700,7 @@ func TestHandleDevicesFilterByEdition(t *testing.T) {
 	registry := device.NewRegistry()
 	cfg := &config.Config{}
 	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
-	server := createTestServer(syncManager, registry, cfg, version)
+	server := createTestServer(t, syncManager, registry, cfg, version)
 
 	// Add devices with different editions
 	androidFull := &device.Info{
@@ -744,7 +762,7 @@ func TestHandleDevicesFilterBySyncing(t *testing.T) {
 	registry := device.NewRegistry()
 	cfg := &config.Config{}
 	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
-	server := createTestServer(syncManager, registry, cfg, version)
+	server := createTestServer(t, syncManager, registry, cfg, version)
 
 	// Add devices
 	dev1 := &device.Info{
@@ -823,7 +841,7 @@ func TestHandleDevicesFilterByLastSeenAfter(t *testing.T) {
 	registry := device.NewRegistry()
 	cfg := &config.Config{}
 	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
-	server := createTestServer(syncManager, registry, cfg, version)
+	server := createTestServer(t, syncManager, registry, cfg, version)
 
 	// Add devices with manipulated LastSeen times
 	dev1 := &device.Info{
@@ -887,7 +905,7 @@ func TestHandleDevicesFilterCombined(t *testing.T) {
 	registry := device.NewRegistry()
 	cfg := &config.Config{}
 	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
-	server := createTestServer(syncManager, registry, cfg, version)
+	server := createTestServer(t, syncManager, registry, cfg, version)
 
 	// Add devices
 	android1 := &device.Info{
@@ -953,7 +971,7 @@ func TestHandleDevicesInvalidTimestampFormat(t *testing.T) {
 	registry := device.NewRegistry()
 	cfg := &config.Config{}
 	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
-	server := createTestServer(syncManager, registry, cfg, version)
+	server := createTestServer(t, syncManager, registry, cfg, version)
 
 	// Try invalid timestamp format
 	req := httptest.NewRequest(http.MethodGet, "/api/devices?last_seen_after=invalid", nil)

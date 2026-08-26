@@ -8,7 +8,9 @@ import (
 	"time"
 
 	"github.com/duckpuppy/comic-server/internal/config"
+	"github.com/duckpuppy/comic-server/internal/configdb"
 	"github.com/duckpuppy/comic-server/internal/library"
+	"path/filepath"
 )
 
 // TestGetListCounts_ServesStaleWhileRefreshingInBackground verifies that
@@ -490,28 +492,29 @@ func TestHandleGetListPreview_UnreadField(t *testing.T) {
 }
 
 func TestHandleGetListDevices(t *testing.T) {
-	// Create config with device assigned to list
-	cfg := &config.Config{
-		Devices: map[string]*config.DeviceConfig{
-			"device-1": {
-				DeviceID:     "device-1",
-				FriendlyName: "Samsung Tablet",
-				Lists: []config.SharedListConfig{
-					{ListID: "list-123", ListName: "Batman", Enabled: true},
-				},
-			},
-			"device-2": {
-				DeviceID:     "device-2",
-				FriendlyName: "iPad Pro",
-				Lists: []config.SharedListConfig{
-					{ListID: "list-456", ListName: "Superman", Enabled: true},
-				},
-			},
-		},
+	// Create config.db with devices assigned to lists
+	configDB, err := configdb.Open(filepath.Join(t.TempDir(), "config.db"))
+	if err != nil {
+		t.Fatalf("failed to open test config db: %v", err)
+	}
+	t.Cleanup(func() { configDB.Close() })
+
+	if err := configDB.UpsertDevice("device-1", "Samsung Tablet", time.Time{}, nil); err != nil {
+		t.Fatalf("failed to seed device-1: %v", err)
+	}
+	if err := configDB.AddDeviceList("device-1", configdb.DeviceList{ListID: "list-123", ListName: "Batman", Enabled: true}); err != nil {
+		t.Fatalf("failed to seed device-1 list: %v", err)
+	}
+	if err := configDB.UpsertDevice("device-2", "iPad Pro", time.Time{}, nil); err != nil {
+		t.Fatalf("failed to seed device-2: %v", err)
+	}
+	if err := configDB.AddDeviceList("device-2", configdb.DeviceList{ListID: "list-456", ListName: "Superman", Enabled: true}); err != nil {
+		t.Fatalf("failed to seed device-2 list: %v", err)
 	}
 
 	server := &Server{
-		config: cfg,
+		config:   &config.Config{},
+		configDB: configDB,
 	}
 
 	req := httptest.NewRequest("GET", "/api/library/lists/list-123/devices", nil)
