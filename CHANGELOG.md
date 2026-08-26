@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1](https://github.com/duckpuppy/comic-server/compare/v1.6.0...v1.6.1) (2026-08-26)
+
+
+### Bug Fixes
+
+* stamp CBZ entries with conversion time, not the zip zero-value ([2fe1bd6](https://github.com/duckpuppy/comic-server/commit/2fe1bd60e41b466452bf3ffcdb05cf0ca6a7a7a2))
+
 ## [1.6.0](https://github.com/duckpuppy/comic-server/compare/v1.5.0...v1.6.0) (2026-08-25)
 
 
