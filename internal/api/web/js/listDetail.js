@@ -193,6 +193,20 @@ class ListDetail {
                 </p>
             </div>
 
+            <!-- Comics Preview - moved above the management panels below
+                 so the list's actual contents are visible on page load
+                 instead of pushed off-screen by 5 stacked action cards.
+                 Quick fix; see comic-server-030 for the bigger
+                 tabs/sidebar restructure this doesn't replace. -->
+            <div class="panel preview-panel">
+                <h2>Comics Preview</h2>
+                <p class="preview-info">Showing ${this.preview.length} of ${this.previewTotal.toLocaleString()}</p>
+                <div class="comics-grid">
+                    ${this.renderComicsPreview()}
+                </div>
+                ${this.renderLoadMore()}
+            </div>
+
             <!-- Main Content -->
             <div class="list-detail-content">
                 <!-- Matchers Panel -->
@@ -237,16 +251,6 @@ class ListDetail {
                     ${this.renderCBZConvertButton()}
                     <div id="cbz-convert-result"></div>
                 </div>
-            </div>
-
-            <!-- Comics Preview -->
-            <div class="panel preview-panel">
-                <h2>Comics Preview</h2>
-                <p class="preview-info">Showing ${this.preview.length} of ${this.previewTotal.toLocaleString()}</p>
-                <div class="comics-grid">
-                    ${this.renderComicsPreview()}
-                </div>
-                ${this.renderLoadMore()}
             </div>
         `;
     }
