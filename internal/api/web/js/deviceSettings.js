@@ -3,16 +3,12 @@ class DeviceSettings {
     constructor(deviceId) {
         this.deviceId = deviceId;
         this.device = null;
-        this.lists = []; // All available smart lists
         this.editingListId = null; // Currently editing list
         this.settingsPreview = null; // Preview data for current settings
     }
 
     async init(ctx) {
-        await Promise.all([
-            this.loadDeviceInfo(),
-            this.loadAllLists()
-        ]);
+        await this.loadDeviceInfo();
 
         if (ctx && ctx.aborted) return;
         if (this.device) {
@@ -38,20 +34,6 @@ class DeviceSettings {
         } catch (error) {
             console.error('Failed to load device:', error);
             this.showError("Failed to load device information. Please try again.");
-        }
-    }
-
-    async loadAllLists() {
-        try {
-            const response = await fetch('/api/library/lists');
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
-            const data = await response.json();
-            this.lists = data.lists || [];
-        } catch (error) {
-            console.error('Failed to load smart lists:', error);
-            this.lists = [];
         }
     }
 
@@ -518,56 +500,16 @@ class DeviceSettings {
     }
 
     // List Management Methods
-    async showAddListModal() {
-        // Filter out already assigned lists
-        const assignedListIds = (this.device.lists || []).map(l => l.list_id);
-        const availableLists = this.lists.filter(l => !assignedListIds.includes(l.id));
-
-        if (availableLists.length === 0) {
-            alert('All available smart lists are already assigned to this device.');
-            return;
-        }
-
-        // Create modal
-        const modalHTML = `
-            <div class="modal-overlay" id="add-list-modal" onclick="deviceSettings.closeAddListModal(event)">
-                <div class="modal-content" onclick="event.stopPropagation()">
-                    <div class="modal-header">
-                        <h2>Add Smart List</h2>
-                        <button class="modal-close" onclick="deviceSettings.closeAddListModal()">×</button>
-                    </div>
-                    <div class="modal-body">
-                        <p>Select a smart list to add to this device:</p>
-                        <div class="list-selection">
-                            ${availableLists.map(list => `
-                                <div class="list-option" onclick="deviceSettings.addList('${list.id}', '${this.escapeHtml(list.name)}')">
-                                    <div class="list-option-name">${this.escapeHtml(list.name)}</div>
-                                    <div class="list-option-count">${list.book_count || 0} books</div>
-                                </div>
-                            `).join('')}
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        document.body.insertAdjacentHTML('beforeend', modalHTML);
-    }
-
-    closeAddListModal(event) {
-        if (event && event.target !== event.currentTarget) {
-            return; // Clicked inside modal
-        }
-
-        const modal = document.getElementById('add-list-modal');
-        if (modal) {
-            modal.remove();
-        }
+    showAddListModal() {
+        const excludeListIds = (this.device.lists || []).map(l => l.list_id);
+        listPicker.open({
+            title: 'Add Smart List',
+            excludeListIds,
+            onSelect: (listId, listName) => this.addList(listId, listName)
+        });
     }
 
     async addList(listId, listName) {
-        this.closeAddListModal();
-
         try {
             const response = await fetch(`/api/devices/${this.deviceId}/lists`, {
                 method: 'POST',

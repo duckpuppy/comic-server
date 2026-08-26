@@ -435,74 +435,16 @@ class DeviceDetail {
     }
 
     // List assignment methods
-    async showAssignListModal() {
-        // Load available lists
-        const lists = await this.loadAvailableLists();
-        if (!lists || lists.length === 0) {
-            alert('No smart lists available in the library.');
-            return;
-        }
-
-        // Filter out already assigned lists
-        const assignedListIds = (this.device.lists || []).map(l => l.list_id);
-        const availableLists = lists.filter(l => !assignedListIds.includes(l.id));
-
-        if (availableLists.length === 0) {
-            alert('All available smart lists are already assigned to this device.');
-            return;
-        }
-
-        // Create modal
-        const modalHTML = `
-            <div class="modal-overlay" id="assign-list-modal">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h2>Assign Smart List</h2>
-                        <button class="modal-close" onclick="deviceDetail.closeAssignListModal()">×</button>
-                    </div>
-                    <div class="modal-body">
-                        <p>Select a smart list to assign to this device:</p>
-                        <div class="list-selection">
-                            ${availableLists.map(list => `
-                                <div class="list-option" onclick="deviceDetail.assignList('${list.id}', '${this.escapeHtml(list.name)}')">
-                                    <div class="list-option-name">${this.escapeHtml(list.name)}</div>
-                                    <div class="list-option-count">${list.book_count || 0} books</div>
-                                </div>
-                            `).join('')}
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        document.body.insertAdjacentHTML('beforeend', modalHTML);
-    }
-
-    closeAssignListModal() {
-        const modal = document.getElementById('assign-list-modal');
-        if (modal) {
-            modal.remove();
-        }
-    }
-
-    async loadAvailableLists() {
-        try {
-            const response = await fetch('/api/library/lists');
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
-            const data = await response.json();
-            return data.lists || [];
-        } catch (error) {
-            console.error('Failed to load smart lists:', error);
-            alert('Failed to load smart lists. Please try again.');
-            return [];
-        }
+    showAssignListModal() {
+        const excludeListIds = (this.device.lists || []).map(l => l.list_id);
+        listPicker.open({
+            title: 'Assign Smart List',
+            excludeListIds,
+            onSelect: (listId, listName) => this.assignList(listId, listName)
+        });
     }
 
     async assignList(listId, listName) {
-        this.closeAssignListModal();
-
         try {
             const response = await fetch(`/api/devices/lists/${this.deviceId}`, {
                 method: 'POST',

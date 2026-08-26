@@ -95,6 +95,7 @@ let syncHistoryBrowser = null;
 let komgaStatus = null;
 let trashBrowser = null;
 let deviceDetail = null; // Current device detail view
+let deviceSettings = null; // Current device settings view
 let listsTree = null; // Shared tree instance for lists pages
 
 // Store original dashboard HTML
@@ -225,7 +226,7 @@ document.addEventListener('DOMContentLoaded', () => {
     router.register('/devices/:deviceId/settings', async (params, ctx) => {
         navigation.setActive('devices');
         dashboard.hide();
-        const deviceSettings = new DeviceSettings(params.deviceId);
+        deviceSettings = new DeviceSettings(params.deviceId);
         await deviceSettings.init(ctx);
     });
 
