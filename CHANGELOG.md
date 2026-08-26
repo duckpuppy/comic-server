@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.3](https://github.com/duckpuppy/comic-server/compare/v1.8.2...v1.8.3) (2026-08-26)
+
+
+### Bug Fixes
+
+* device settings '+ Add List' button, add shared searchable list picker ([06e85cc](https://github.com/duckpuppy/comic-server/commit/06e85cc242e1d559b3047afa86ad1fabb718b6a0))
+
 ## [1.8.2](https://github.com/duckpuppy/comic-server/compare/v1.8.1...v1.8.2) (2026-08-26)
 
 
