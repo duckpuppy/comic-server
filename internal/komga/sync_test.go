@@ -17,7 +17,15 @@ import (
 // Syncer; everything else is unused stubs.
 type fakeBackend struct {
 	lists map[string]*library.ComicListItem
-	books map[string][]*library.ComicBook // keyed by list ID
+	books map[string][]*library.ComicBook // keyed by list ID, used by MatchBooks
+
+	// getBooksForListOnly, when set for a list ID, is what GetBooksForList
+	// returns instead of falling back to books - lets a test prove
+	// syncTarget calls GetBooksForList (not MatchBooks) for non-smart-list
+	// targets, since real smart-list matcher evaluation has no rules for
+	// an ID/reading list to diverge on otherwise. See
+	// TestSyncer_SyncTarget_UsesGetBooksForList_NotMatchBooksOnly.
+	getBooksForListOnly map[string][]*library.ComicBook
 }
 
 func (f *fakeBackend) GetBook(id string) (*library.ComicBook, error) { return nil, nil }
@@ -39,6 +47,9 @@ func (f *fakeBackend) MatchBooks(list *library.ComicListItem) ([]*library.ComicB
 	return f.books[list.ID], nil
 }
 func (f *fakeBackend) GetBooksForList(list *library.ComicListItem) ([]*library.ComicBook, error) {
+	if books, ok := f.getBooksForListOnly[list.ID]; ok {
+		return books, nil
+	}
 	return f.books[list.ID], nil
 }
 func (f *fakeBackend) UpdateBook(book *library.ComicBook) error     { return nil }
@@ -123,6 +134,74 @@ func TestSyncer_SyncTarget_Collection(t *testing.T) {
 	}
 	if len(upsertedSeriesIDs) != 1 || upsertedSeriesIDs[0] != "s1" {
 		t.Errorf("unexpected upserted series IDs: %v", upsertedSeriesIDs)
+	}
+}
+
+// TestSyncer_SyncTarget_UsesGetBooksForList_NotMatchBooksOnly is the
+// regression test for the "Failed to save Komga target: Smart list not
+// found in library" bug (2026-08-26): a Komga target can now point at a
+// non-smart-list (e.g. an ID list), and syncTarget must actually resolve
+// its books via GetBooksForList - not MatchBooks, which only understands
+// matcher rules and would silently sync zero books for a list that has
+// none.
+func TestSyncer_SyncTarget_UsesGetBooksForList_NotMatchBooksOnly(t *testing.T) {
+	c, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/v1/series":
+			json.NewEncoder(w).Encode(pageResponse[Series]{
+				Content: []Series{{ID: "s1", Name: "Batman", URL: "/data/Batman"}},
+				Last:    true,
+			})
+		case r.URL.Path == "/api/v1/books":
+			json.NewEncoder(w).Encode(pageResponse[Book]{Last: true})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/collections":
+			json.NewEncoder(w).Encode(pageResponse[collectionDto]{Last: true})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/collections":
+			json.NewEncoder(w).Encode(collectionDto{ID: "new-id"})
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	})
+
+	backend := &fakeBackend{
+		lists: map[string]*library.ComicListItem{
+			"{ID-LIST}": {ID: "{ID-LIST}", Name: "To Read", Type: "ComicIdListItem"},
+		},
+		// Deliberately empty - if syncTarget calls MatchBooks (matcher
+		// evaluation), it finds nothing here and the test would see 0
+		// books, not the real content only GetBooksForList knows about.
+		books: map[string][]*library.ComicBook{},
+		getBooksForListOnly: map[string][]*library.ComicBook{
+			"{ID-LIST}": {{ID: "1", FilePath: `G:\Comics\Batman\Batman #1.cbz`}},
+		},
+	}
+
+	syncer := &Syncer{
+		client:  c,
+		backend: backend,
+		opts: SyncOptions{
+			LocalRoot:  `G:\Comics\`,
+			RemoteRoot: "/data",
+			Targets: []Target{
+				{ListID: "{ID-LIST}", KomgaName: "To Read", Type: TargetCollection},
+			},
+		},
+	}
+
+	var results []TargetResult
+	syncer.syncOnce(context.Background(), func(r TargetResult) { results = append(results, r) })
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Err != nil {
+		t.Fatalf("unexpected error: %v", results[0].Err)
+	}
+	if results[0].SourceBookCount != 1 {
+		t.Errorf("expected SourceBookCount 1 (from GetBooksForList), got %d - syncTarget may still be calling MatchBooks", results[0].SourceBookCount)
+	}
+	if results[0].MatchedCount != 1 {
+		t.Errorf("expected 1 matched series, got %d", results[0].MatchedCount)
 	}
 }
 

@@ -192,7 +192,11 @@ func (s *Syncer) syncTarget(ctx context.Context, idx *Index, target Target) Targ
 		return TargetResult{Target: target, Err: fmt.Errorf("find list %s: %w", target.ListID, err)}
 	}
 
-	books, err := s.backend.MatchBooks(list)
+	// GetBooksForList (not MatchBooks) so this works for every list type a
+	// target can point at - smart lists, ID lists, and reading lists (see
+	// comic-server-a09's audit follow-up, 2026-08-26). MatchBooks only
+	// evaluates matcher rules, which an ID/reading list doesn't have.
+	books, err := s.backend.GetBooksForList(list)
 	if err != nil {
 		return TargetResult{Target: target, Err: fmt.Errorf("evaluate list %s: %w", target.ListID, err)}
 	}

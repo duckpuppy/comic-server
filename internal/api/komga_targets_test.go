@@ -171,6 +171,40 @@ func TestKomgaTarget_CreateRejectsInvalidInput(t *testing.T) {
 	}
 }
 
+// TestKomgaTarget_CreateAcceptsNonSmartLists is the regression test for the
+// "Failed to save Komga target: Smart list not found in library" bug
+// reported 2026-08-26 against a real ID list ("To Read", ComicIdListItem) -
+// the list existed but was rejected purely for not being a smart list, with
+// a misleading "not found" error. Any list with real book membership
+// (smart list, ID list, reading list) should be acceptable; only folders
+// (a grouping of other lists, not a set of books) should still be
+// rejected.
+func TestKomgaTarget_CreateAcceptsNonSmartLists(t *testing.T) {
+	lib := &library.ComicLibrary{
+		ComicLists: []library.ComicListItem{
+			{ID: "idlist-1", Name: "To Read", Type: "ComicIdListItem", BookIds: []string{"book-1"}},
+			{ID: "readinglist-1", Name: "My Reading List", Type: "ComicReadingList"},
+			{ID: "folder-1", Name: "A Folder", Type: "ComicListItemFolder"},
+		},
+	}
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	s := &Server{
+		backend:    backend,
+		config:     &config.Config{},
+		configPath: filepath.Join(t.TempDir(), "config.yaml"),
+	}
+
+	if w := doKomgaRequest(t, s, http.MethodPost, "/api/library/lists/idlist-1/komga", KomgaTargetWriteRequest{Type: "collection", KomgaName: "To Read", Enabled: true}); w.Code != http.StatusCreated && w.Code != http.StatusOK {
+		t.Errorf("expected an ID list to be accepted as a Komga target, got %d: %s", w.Code, w.Body.String())
+	}
+	if w := doKomgaRequest(t, s, http.MethodPost, "/api/library/lists/readinglist-1/komga", KomgaTargetWriteRequest{Type: "readlist", KomgaName: "My Reading List", Enabled: true}); w.Code != http.StatusCreated && w.Code != http.StatusOK {
+		t.Errorf("expected a reading list to be accepted as a Komga target, got %d: %s", w.Code, w.Body.String())
+	}
+	if w := doKomgaRequest(t, s, http.MethodPost, "/api/library/lists/folder-1/komga", KomgaTargetWriteRequest{Type: "collection", KomgaName: "A Folder", Enabled: true}); w.Code != http.StatusNotFound {
+		t.Errorf("expected a folder to still be rejected, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 // TestKomgaTarget_ApplyPushesToLiveSyncer verifies that creating, updating,
 // and deleting a target through the API immediately reflects in the live
 // komga.Syncer's target set (via SetTargets) - the mechanism that lets the

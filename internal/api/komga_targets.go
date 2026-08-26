@@ -118,12 +118,20 @@ func (s *Server) handleCreateListKomgaTarget(w http.ResponseWriter, r *http.Requ
 	}
 	list, err := s.backend.FindListByID(listID)
 	if err != nil {
-		log.Error().Err(err).Str("list_id", listID).Msg("Error looking up smart list for Komga target")
-		http.Error(w, "Error looking up smart list", http.StatusInternalServerError)
+		log.Error().Err(err).Str("list_id", listID).Msg("Error looking up list for Komga target")
+		http.Error(w, "Error looking up list", http.StatusInternalServerError)
 		return
 	}
-	if list == nil || !strings.Contains(list.Type, "SmartList") {
-		http.Error(w, "Smart list not found in library", http.StatusNotFound)
+	// Any list type with real book membership can sync to Komga - smart
+	// lists, ID lists, and reading lists all evaluate via
+	// backend.GetBooksForList (see komga.Syncer.syncTarget). Folders don't:
+	// they're a grouping of other lists, not a set of books themselves.
+	// Originally restricted to smart lists only (a leftover from before
+	// GetBooksForList existed) - relaxed 2026-08-26 after a real "To Read"
+	// ID list hit this and got the confusing "not found" error even though
+	// the list existed.
+	if list == nil || strings.Contains(list.Type, "Folder") {
+		http.Error(w, "List not found, or is a folder (folders can't sync to Komga)", http.StatusNotFound)
 		return
 	}
 
