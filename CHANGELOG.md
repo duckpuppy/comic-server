@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.1](https://github.com/duckpuppy/comic-server/compare/v1.8.0...v1.8.1) (2026-08-26)
+
+
+### Bug Fixes
+
+* device wireless sync now accepts ID lists and reading lists ([f1564d2](https://github.com/duckpuppy/comic-server/commit/f1564d2f7a4c508629047550106fa66963136387))
+
 ## [1.8.0](https://github.com/duckpuppy/comic-server/compare/v1.7.0...v1.8.0) (2026-08-26)
 
 
