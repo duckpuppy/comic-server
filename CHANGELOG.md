@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.8.0](https://github.com/duckpuppy/comic-server/compare/v1.7.0...v1.8.0) (2026-08-26)
+
+
+### Features
+
+* add trash browser UI with restore (per-item and multi-select) ([27751b9](https://github.com/duckpuppy/comic-server/commit/27751b98a09606a2e87b192adafe4a645803970d))
+* restructure list-detail management panels into tabs ([92b852c](https://github.com/duckpuppy/comic-server/commit/92b852c50b9dcb0ac2ef34bc32396b6c4639a815))
+
+
+### Bug Fixes
+
+* clear Komga last_index_error after a later successful sync ([2819574](https://github.com/duckpuppy/comic-server/commit/2819574daaf136013291b60fd0584527c9177b0a))
+
 ## [1.7.0](https://github.com/duckpuppy/comic-server/compare/v1.6.1...v1.7.0) (2026-08-26)
 
 
