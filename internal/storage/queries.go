@@ -574,40 +574,77 @@ func joinStrings(parts []string, sep string) string {
 	return result
 }
 
-// UpdateBookFields updates the mutable fields of a book (for reverse sync).
-// This only updates reading state, user metadata, and ratings - not content metadata.
+// UpdateBookFields persists every mutable field of book - used by
+// everything that writes to a live book outside of an XML import: reverse
+// sync (reading progress, rating, notes, review, summary, checked, tags),
+// scan-info (ScanInformation), and CBZ-convert (FilePath, PageCount).
+//
+// Originally covered only the reverse-sync subset; comic-server-4vq found
+// that gap by way of scan-info and CBZ-convert silently no-op'ing on the
+// SQLite backend - ScanInformation/FilePath/PageCount (and everything
+// else) weren't in the UPDATE statement at all, so a caller-side change to
+// those fields never reached the database. Now mirrors the full column
+// list insertBook/updateBook (import.go) write, so any field a future
+// feature sets on a *library.ComicBook and passes to
+// Backend.UpdateBook(s) actually persists - there's no longer a second,
+// narrower list to remember to extend.
+//
+// Deliberately does NOT touch import_hash: that column is compared only
+// against a hash computed from freshly-parsed XML during Import()/Reload,
+// never against live DB content, so a live-write path touching it would
+// be meaningless (see comic-server-aio for the reimport-merge work that
+// actually depends on import_hash's semantics staying exactly that).
 func (db *DB) UpdateBookFields(book *library.ComicBook) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
 	pagesJSON, err := json.Marshal(book.Pages)
 	if err != nil {
 		return fmt.Errorf("marshal pages: %w", err)
 	}
 
-	_, err = db.Exec(`
+	_, err = tx.Exec(`
 		UPDATE books SET
-			current_page = ?,
-			last_page = ?,
-			last_page_read = ?,
-			open_count = ?,
-			opened_time = ?,
-			rating = ?,
-			notes = ?,
-			review = ?,
-			summary = ?,
-			checked = ?,
-			pages = ?,
-			updated_at = datetime('now')
+			file_path = ?, title = ?, series = ?, number = ?, volume = ?, year = ?, month = ?, day = ?,
+			publisher = ?, imprint = ?, genre = ?, format = ?, age_rating = ?, language_iso = ?,
+			summary = ?, notes = ?, review = ?, story_arc = ?, series_group = ?,
+			alternate_series = ?, alternate_number = ?, alternate_count = ?, count = ?,
+			writer = ?, penciller = ?, inker = ?, colorist = ?, letterer = ?, cover_artist = ?, editor = ?, translator = ?,
+			characters = ?, teams = ?, locations = ?, main_character_or_team = ?,
+			current_page = ?, last_page = ?, last_page_read = ?, open_count = ?, opened_time = ?,
+			rating = ?, community_rating = ?,
+			checked = ?, file_is_missing = ?, comic_info_is_dirty = ?,
+			page_count = ?, web = ?, scan_information = ?, series_complete = ?,
+			black_and_white = ?, manga = ?,
+			preferred_front_cover = ?, added_time = ?, released_time = ?,
+			file_size = ?, file_modified_time = ?, file_creation_time = ?,
+			isbn = ?, book_age = ?, book_condition = ?, book_store = ?, book_owner = ?,
+			book_collection_status = ?, book_notes = ?, book_location = ?,
+			book_price = ?, new_pages = ?,
+			enable_proposed = ?, enable_dynamic_update = ?, last_opened_from_list_id = ?,
+			pages = ?, updated_at = datetime('now')
 		WHERE id = ?
 	`,
-		book.CurrentPage,
-		book.LastPage,
-		book.LastPageRead,
-		book.OpenCount,
-		formatComicTime(book.OpenedTime),
-		book.Rating,
-		book.Notes,
-		book.Review,
-		book.Summary,
-		boolToInt(book.Checked),
+		book.FilePath, book.Title, book.Series, book.Number, book.Volume, book.Year, book.Month, book.Day,
+		book.Publisher, book.Imprint, book.Genre, book.Format, book.AgeRating, book.LanguageISO,
+		book.Summary, book.Notes, book.Review, book.StoryArc, book.SeriesGroup,
+		book.AlternateSeries, book.AlternateNumber, book.AlternateCount, book.Count,
+		book.Writer, book.Penciller, book.Inker, book.Colorist, book.Letterer, book.CoverArtist, book.Editor, book.Translator,
+		book.Characters, book.Teams, book.Locations, book.MainCharacterOrTeam,
+		book.CurrentPage, book.LastPage, book.LastPageRead, book.OpenCount, formatComicTime(book.OpenedTime),
+		book.Rating, book.CommunityRating,
+		boolToInt(book.Checked), boolToInt(book.FileIsMissing), boolToInt(book.ComicInfoIsDirty),
+		book.PageCount, book.Web, book.ScanInformation, book.SeriesComplete,
+		book.BlackAndWhite, book.Manga,
+		book.PreferredFrontCover, formatComicTime(book.AddedTime), formatComicTime(book.ReleasedTime),
+		book.FileSize, formatComicTime(book.FileModifiedTime), formatComicTime(book.FileCreationTime),
+		book.ISBN, book.BookAge, book.BookCondition, book.BookStore, book.BookOwner,
+		book.BookCollectionStatus, book.BookNotes, book.BookLocation,
+		book.BookPrice, book.NewPages,
+		boolToInt(book.EnableProposed), boolToInt(book.EnableDynamicUpdate), book.LastOpenedFromListID,
 		string(pagesJSON),
 		book.ID,
 	)
@@ -617,7 +654,7 @@ func (db *DB) UpdateBookFields(book *library.ComicBook) error {
 
 	// Replace tags unconditionally - book.Tags == "" must clear them, not
 	// leave stale rows behind (see comic-server-dfs).
-	if _, err := db.Exec("DELETE FROM book_tags WHERE book_id = ?", book.ID); err != nil {
+	if _, err := tx.Exec("DELETE FROM book_tags WHERE book_id = ?", book.ID); err != nil {
 		return fmt.Errorf("delete tags: %w", err)
 	}
 	tags := splitTags(book.Tags)
@@ -625,12 +662,22 @@ func (db *DB) UpdateBookFields(book *library.ComicBook) error {
 		if tag == "" {
 			continue
 		}
-		if _, err := db.Exec("INSERT INTO book_tags (book_id, tag) VALUES (?, ?)", book.ID, tag); err != nil {
+		if _, err := tx.Exec("INSERT INTO book_tags (book_id, tag) VALUES (?, ?)", book.ID, tag); err != nil {
 			return fmt.Errorf("insert tag: %w", err)
 		}
 	}
 
-	return nil
+	// Replace custom values unconditionally, same reasoning as tags -
+	// matches insertBook/updateBook's own delete+reinsert pattern
+	// (import.go) rather than leaving stale keys behind.
+	if _, err := tx.Exec("DELETE FROM book_custom_values WHERE book_id = ?", book.ID); err != nil {
+		return fmt.Errorf("delete custom values: %w", err)
+	}
+	if err := db.insertBookCustomValues(tx, book); err != nil {
+		return fmt.Errorf("insert custom values: %w", err)
+	}
+
+	return tx.Commit()
 }
 
 func formatComicTime(t library.ComicTime) string {

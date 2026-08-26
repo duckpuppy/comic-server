@@ -125,6 +125,126 @@ func TestUpdateBookFields_ClearsTagsToEmpty(t *testing.T) {
 	}
 }
 
+// TestUpdateBookFields_PersistsFieldsPreviouslyDropped is the regression
+// test for comic-server-4vq: UpdateBookFields used to only write 11 of the
+// books table's 70+ columns, so scan-info (ScanInformation) and
+// CBZ-convert (FilePath, PageCount) silently no-op'd on the SQLite
+// backend. Covers those three specifically, plus a broader sample of
+// fields that were equally dropped before the fix, to catch a future
+// regression that only re-narrows the column list rather than fully
+// reverting it.
+func TestUpdateBookFields_PersistsFieldsPreviouslyDropped(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	db, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	defer db.Close()
+
+	lib := &library.ComicLibrary{
+		ID: "test-library-id",
+		Books: []library.ComicBook{
+			{ID: "book-1", FilePath: "/comics/original.cbr", Series: "Original Series"},
+		},
+	}
+	if _, err := db.Import(lib, ImportOptions{}); err != nil {
+		t.Fatalf("import: %v", err)
+	}
+
+	book, err := db.GetBook("book-1")
+	if err != nil || book == nil {
+		t.Fatalf("get book: book=%+v err=%v", book, err)
+	}
+
+	// The three fields that directly triggered finding this bug (scan-info
+	// sets ScanInformation; CBZ-convert sets FilePath and PageCount) plus a
+	// spread of other previously-dropped fields (publisher, a credit
+	// field, a physical-property field, a custom value).
+	book.ScanInformation = "Scanner:TestGroup"
+	book.FilePath = "/comics/converted.cbz"
+	book.PageCount = 42
+	book.Publisher = "Test Publisher"
+	book.Writer = "Test Writer"
+	book.BlackAndWhite = "Yes"
+	book.CustomValuesStore = ",comicvine_volume=12345"
+
+	if err := db.UpdateBookFields(book); err != nil {
+		t.Fatalf("UpdateBookFields: %v", err)
+	}
+
+	got, err := db.GetBook("book-1")
+	if err != nil || got == nil {
+		t.Fatalf("get book after update: book=%+v err=%v", got, err)
+	}
+
+	if got.ScanInformation != "Scanner:TestGroup" {
+		t.Errorf("ScanInformation = %q, want %q", got.ScanInformation, "Scanner:TestGroup")
+	}
+	if got.FilePath != "/comics/converted.cbz" {
+		t.Errorf("FilePath = %q, want %q", got.FilePath, "/comics/converted.cbz")
+	}
+	if got.PageCount != 42 {
+		t.Errorf("PageCount = %d, want 42", got.PageCount)
+	}
+	if got.Publisher != "Test Publisher" {
+		t.Errorf("Publisher = %q, want %q", got.Publisher, "Test Publisher")
+	}
+	if got.Writer != "Test Writer" {
+		t.Errorf("Writer = %q, want %q", got.Writer, "Test Writer")
+	}
+	if got.BlackAndWhite != "Yes" {
+		t.Errorf("BlackAndWhite = %q, want %q", got.BlackAndWhite, "Yes")
+	}
+	if got.CustomValuesStore != ",comicvine_volume=12345" {
+		t.Errorf("CustomValuesStore = %q, want %q", got.CustomValuesStore, ",comicvine_volume=12345")
+	}
+}
+
+func TestUpdateBookFields_CustomValuesReplaceNotAccumulate(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	db, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	defer db.Close()
+
+	lib := &library.ComicLibrary{
+		ID: "test-library-id",
+		Books: []library.ComicBook{
+			{ID: "book-1", FilePath: "/comics/book.cbz", CustomValuesStore: ",key1=value1"},
+		},
+	}
+	if _, err := db.Import(lib, ImportOptions{}); err != nil {
+		t.Fatalf("import: %v", err)
+	}
+
+	book, err := db.GetBook("book-1")
+	if err != nil || book == nil {
+		t.Fatalf("get book: book=%+v err=%v", book, err)
+	}
+
+	book.CustomValuesStore = ",key2=value2"
+	if err := db.UpdateBookFields(book); err != nil {
+		t.Fatalf("UpdateBookFields: %v", err)
+	}
+
+	var count int
+	if err := db.QueryRow("SELECT COUNT(*) FROM book_custom_values WHERE book_id = ?", "book-1").Scan(&count); err != nil {
+		t.Fatalf("count book_custom_values: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected 1 custom value row after replace, got %d (old key1 should be gone, not accumulated)", count)
+	}
+
+	got, err := db.GetBook("book-1")
+	if err != nil || got == nil {
+		t.Fatalf("get book after update: book=%+v err=%v", got, err)
+	}
+	if got.CustomValuesStore != ",key2=value2" {
+		t.Errorf("CustomValuesStore = %q, want %q", got.CustomValuesStore, ",key2=value2")
+	}
+}
+
 func TestGetBookNotFound(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 	db, err := Open(dbPath)
