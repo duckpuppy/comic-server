@@ -636,12 +636,22 @@ func handleDiscoveredDevice(
 }
 
 // applyDeviceConfig applies a device's sync configuration to a syncer
-// This configures which smart lists to sync and their settings
+// This configures which lists to sync and their settings
 func applyDeviceConfig(syncer *csync.Syncer, deviceConfig *config.DeviceConfig, backend library.Backend) error {
 	logger := log.With().Str("device_id", deviceConfig.DeviceID).Logger()
 
-	// Collect all enabled smart lists
-	var smartLists []*library.ComicListItem
+	// Collect all enabled lists - any list type with real book membership
+	// works (smart list, ID list, reading list; see
+	// (*csync.Syncer).SetFilterLists / ComputeSyncPlan's use of
+	// GetBooksForList), not just smart lists. Originally restricted to
+	// smart lists only under the mistaken belief that this reflected a
+	// real ComicRack wireless-sync protocol constraint; confirmed against
+	// ComicRackCE's own source that no such restriction exists - relaxed
+	// 2026-08-26 after a real "To Read" ID list assigned to a device made
+	// the device's ENTIRE sync fail outright (not just that one list -
+	// this error aborts handleSyncRequest), same class of bug as
+	// comic-server-vwl's Komga-target fix.
+	var lists []*library.ComicListItem
 	var listNames []string
 
 	for _, listConfig := range deviceConfig.Lists {
@@ -649,29 +659,29 @@ func applyDeviceConfig(syncer *csync.Syncer, deviceConfig *config.DeviceConfig, 
 			continue
 		}
 
-		// Lookup smart list by GUID (uses recursive search for nested folders)
-		smartList, err := backend.FindListByID(listConfig.ListID)
+		// Lookup list by GUID (uses recursive search for nested folders)
+		list, err := backend.FindListByID(listConfig.ListID)
 		if err != nil {
-			return fmt.Errorf("error looking up smart list %s: %w", listConfig.ListName, err)
+			return fmt.Errorf("error looking up list %s: %w", listConfig.ListName, err)
 		}
-		if smartList == nil || !strings.Contains(smartList.Type, "SmartList") {
-			return fmt.Errorf("smart list %s (ID: %s) not found in library", listConfig.ListName, listConfig.ListID)
+		if list == nil || strings.Contains(list.Type, "Folder") {
+			return fmt.Errorf("list %s (ID: %s) not found in library, or is a folder", listConfig.ListName, listConfig.ListID)
 		}
 
-		smartLists = append(smartLists, smartList)
+		lists = append(lists, list)
 		listNames = append(listNames, listConfig.ListName)
 	}
 
 	// Set all filter lists (union of all lists)
-	if len(smartLists) > 0 {
-		if err := syncer.SetFilterLists(smartLists); err != nil {
+	if len(lists) > 0 {
+		if err := syncer.SetFilterLists(lists); err != nil {
 			return fmt.Errorf("failed to set filter lists: %w", err)
 		}
 
 		logger.Info().
-			Int("list_count", len(smartLists)).
+			Int("list_count", len(lists)).
 			Strs("list_names", listNames).
-			Msg("Applied multiple smart lists to syncer")
+			Msg("Applied multiple lists to syncer")
 	}
 
 	// Apply settings (use device default settings)

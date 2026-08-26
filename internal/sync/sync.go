@@ -72,29 +72,29 @@ func (s *Syncer) SetPathResolver(resolve func(string) string) {
 	s.resolvePath = resolve
 }
 
-// SetFilterList sets a smart list to filter which books get synced
-// Pass nil to sync all books
+// SetFilterList sets a list to filter which books get synced - any list
+// type with real book membership works (smart list, ID list, reading
+// list; see GetBooksForList), not just smart lists. Folders are rejected
+// since they group other lists rather than containing books themselves.
+// Pass nil to sync all books.
 // Deprecated: Use SetFilterLists for multi-list support
 func (s *Syncer) SetFilterList(list *library.ComicListItem) error {
-	if list != nil {
-		// Validate it's a smart list
-		if !strings.Contains(list.Type, "SmartList") {
-			return fmt.Errorf("list %q is not a smart list (type: %s)", list.Name, list.Type)
-		}
+	if list != nil && strings.Contains(list.Type, "Folder") {
+		return fmt.Errorf("list %q is a folder, not something books can sync from (type: %s)", list.Name, list.Type)
 	}
 	s.filterList = list
 	s.filterLists = nil // Clear multi-list if single list is set
 	return nil
 }
 
-// SetFilterLists sets multiple smart lists to filter which books get synced
-// Books matching ANY list will be synced (union of all lists)
-// Pass nil or empty slice to sync all books
+// SetFilterLists sets multiple lists to filter which books get synced -
+// same list-type support as SetFilterList. Books matching ANY list will
+// be synced (union of all lists). Pass nil or empty slice to sync all
+// books.
 func (s *Syncer) SetFilterLists(lists []*library.ComicListItem) error {
-	// Validate all lists are smart lists
 	for _, list := range lists {
-		if list != nil && !strings.Contains(list.Type, "SmartList") {
-			return fmt.Errorf("list %q is not a smart list (type: %s)", list.Name, list.Type)
+		if list != nil && strings.Contains(list.Type, "Folder") {
+			return fmt.Errorf("list %q is a folder, not something books can sync from (type: %s)", list.Name, list.Type)
 		}
 	}
 	s.filterLists = lists
@@ -328,8 +328,12 @@ func (s *Syncer) computeUnionOfLists() []*library.ComicBook {
 			continue
 		}
 
-		// Get books matching this list
-		matchedBooks, err := s.backend.MatchBooks(list)
+		// Get books matching this list - GetBooksForList (not MatchBooks)
+		// so this works for every list type a device can be assigned:
+		// smart lists, ID lists, and reading lists (same class of fix as
+		// comic-server-vwl's Komga-target fix). MatchBooks only evaluates
+		// matcher rules, which an ID/reading list doesn't have.
+		matchedBooks, err := s.backend.GetBooksForList(list)
 		if err != nil {
 			// Log error but continue with other lists
 			continue
@@ -361,8 +365,9 @@ func (s *Syncer) ComputeSyncPlan(deviceBooks map[string]*DeviceBook) ([]SyncOper
 		// Apply multiple smart list filters (union of all lists)
 		booksToSync = s.computeUnionOfLists()
 	} else if s.filterList != nil {
-		// Apply single smart list filter (backward compatibility)
-		filteredBooks, err := s.backend.MatchBooks(s.filterList)
+		// Apply single list filter (backward compatibility) - GetBooksForList,
+		// see computeUnionOfLists for why.
+		filteredBooks, err := s.backend.GetBooksForList(s.filterList)
 		if err != nil {
 			return nil, fmt.Errorf("failed to apply filter list: %w", err)
 		}

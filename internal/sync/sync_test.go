@@ -708,6 +708,11 @@ func TestSetFilterLists_MultipleSmartLists(t *testing.T) {
 				Name: "Regular List",
 				Type: "ReadingList",
 			},
+			{
+				ID:   "list4",
+				Name: "A Folder",
+				Type: "ComicListItemFolder",
+			},
 		},
 	}
 
@@ -732,11 +737,19 @@ func TestSetFilterLists_MultipleSmartLists(t *testing.T) {
 		t.Error("expected filterList to be cleared when filterLists is set")
 	}
 
-	// Test setting non-smart list should fail
-	regularList := &lib.ComicLists[2]
-	err = syncer.SetFilterLists([]*library.ComicListItem{smartList1, regularList})
-	if err == nil {
-		t.Error("expected error when setting non-smart list, got nil")
+	// A reading list has real book membership - it should be accepted
+	// alongside a smart list (comic-server-vwl's device-sync fix: any list
+	// type with books works, not just smart lists).
+	readingList := &lib.ComicLists[2]
+	if err := syncer.SetFilterLists([]*library.ComicListItem{smartList1, readingList}); err != nil {
+		t.Errorf("expected a reading list to be accepted, got error: %v", err)
+	}
+
+	// A folder groups other lists rather than containing books itself -
+	// it should still be rejected.
+	folder := &lib.ComicLists[3]
+	if err := syncer.SetFilterLists([]*library.ComicListItem{smartList1, folder}); err == nil {
+		t.Error("expected error when setting a folder, got nil")
 	}
 }
 
@@ -862,6 +875,56 @@ func TestComputeUnionOfLists(t *testing.T) {
 	// Verify book4 is NOT in union (not in any list)
 	if bookIDs["book4"] {
 		t.Error("book4 should not be in union")
+	}
+}
+
+// TestComputeSyncPlan_IdListSyncsItsBooks is the regression test for
+// comic-server-vwl's device-sync fix: an ID list ("To Read",
+// ComicIdListItem) assigned as a device's filter list must actually sync
+// its books. Before the fix, computeUnionOfLists called
+// backend.MatchBooks, which errors on anything that isn't a smart list -
+// silently dropping the list from the union (or, via
+// cmd/server.go's applyDeviceConfig, aborting the device's sync outright)
+// even though SetFilterLists itself now accepts the list.
+func TestComputeSyncPlan_IdListSyncsItsBooks(t *testing.T) {
+	lib := &library.ComicLibrary{
+		Books: []library.ComicBook{
+			{ID: "book1", Title: "Book 1", FilePath: "/path/book1.cbz"},
+			{ID: "book2", Title: "Book 2", FilePath: "/path/book2.cbz"},
+			{ID: "book3", Title: "Book 3", FilePath: "/path/book3.cbz"},
+		},
+		ComicLists: []library.ComicListItem{
+			{
+				ID:      "idlist1",
+				Name:    "To Read",
+				Type:    "ComicIdListItem",
+				BookIds: []string{"book1", "book3"},
+			},
+		},
+	}
+
+	client := NewMockClient()
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	syncer := NewSyncer(client, backend)
+
+	if err := syncer.SetFilterLists([]*library.ComicListItem{&lib.ComicLists[0]}); err != nil {
+		t.Fatalf("unexpected error setting an ID list as a filter: %v", err)
+	}
+
+	operations, err := syncer.ComputeSyncPlan(make(map[string]*DeviceBook))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	bookIDs := make(map[string]bool)
+	for _, op := range operations {
+		bookIDs[op.Book.ID] = true
+	}
+	if !bookIDs["book1"] || !bookIDs["book3"] {
+		t.Errorf("expected book1 and book3 (the ID list's members) to sync, got operations: %+v", operations)
+	}
+	if bookIDs["book2"] {
+		t.Error("book2 is not in the ID list and should not sync")
 	}
 }
 

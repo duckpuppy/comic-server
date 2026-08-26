@@ -655,7 +655,7 @@ func (s *Server) handleDeviceLists(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleDeviceListAdd adds a smart list to a device's sync configuration
+// handleDeviceListAdd adds a list to a device's sync configuration
 func (s *Server) handleDeviceListAdd(w http.ResponseWriter, r *http.Request) {
 	deviceID := parsePathParam(r.URL.Path, "/api/devices/lists/")
 	if deviceID == "" {
@@ -674,14 +674,25 @@ func (s *Server) handleDeviceListAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify list exists in library (search recursively through folders)
+	// Verify list exists in library (search recursively through folders).
+	// Any list type with real book membership can be assigned to a device
+	// for wireless sync - smart lists, ID lists, and reading lists all
+	// evaluate via backend.GetBooksForList (see
+	// (*csync.Syncer).ComputeSyncPlan). Folders don't: they're a grouping
+	// of other lists, not a set of books themselves. Originally restricted
+	// to smart lists only under the mistaken belief that this reflected a
+	// real ComicRack wireless-sync protocol constraint; confirmed against
+	// ComicRackCE's own source that no such restriction exists - relaxed
+	// 2026-08-26 after a real "To Read" ID list assigned to a device hit
+	// this and got the confusing "not found" error even though the list
+	// existed (same class of bug as comic-server-vwl's Komga-target fix).
 	list, err := s.backend.FindListByID(req.ListID)
 	if err != nil {
-		log.Error().Err(err).Str("list_id", req.ListID).Msg("Error looking up smart list")
-		http.Error(w, "Error looking up smart list", http.StatusInternalServerError)
+		log.Error().Err(err).Str("list_id", req.ListID).Msg("Error looking up list")
+		http.Error(w, "Error looking up list", http.StatusInternalServerError)
 		return
 	}
-	if list == nil || !strings.Contains(list.Type, "SmartList") {
+	if list == nil || strings.Contains(list.Type, "Folder") {
 		log.Warn().
 			Str("requested_list_id", req.ListID).
 			Bool("found", list != nil).
@@ -691,15 +702,15 @@ func (s *Server) handleDeviceListAdd(w http.ResponseWriter, r *http.Request) {
 				}
 				return "n/a"
 			}()).
-			Msg("Smart list not found in library")
-		http.Error(w, "Smart list not found in library", http.StatusNotFound)
+			Msg("List not found, or is a folder")
+		http.Error(w, "List not found, or is a folder (folders can't be synced to a device)", http.StatusNotFound)
 		return
 	}
 
 	log.Debug().
 		Str("list_id", list.ID).
 		Str("list_name", list.Name).
-		Msg("Found matching smart list")
+		Msg("Found matching list")
 
 	// Use the list name from the library if not provided
 	if req.ListName == "" {
@@ -771,7 +782,7 @@ func (s *Server) handleDeviceListAdd(w http.ResponseWriter, r *http.Request) {
 		Str("device_id", deviceID).
 		Str("list_id", req.ListID).
 		Str("list_name", req.ListName).
-		Msg("Smart list added to device")
+		Msg("List added to device")
 
 	// Broadcast list added event
 	s.wsHub.Broadcast(ws.EventDeviceUpdated, map[string]interface{}{

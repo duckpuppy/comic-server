@@ -1,9 +1,11 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -11,6 +13,7 @@ import (
 	"github.com/duckpuppy/comic-server/internal/device"
 	"github.com/duckpuppy/comic-server/internal/library"
 	"github.com/duckpuppy/comic-server/internal/syncstate"
+	ws "github.com/duckpuppy/comic-server/internal/websocket"
 )
 
 func TestHandleGetDeviceDetail(t *testing.T) {
@@ -355,5 +358,66 @@ func TestHandleGetDeviceSyncHistory_InvalidLimit(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("Expected status 400, got %d", w.Code)
+	}
+}
+
+// TestHandleDeviceListAdd_AcceptsNonSmartLists is the regression test for
+// device wireless sync silently or outright failing when a device is
+// assigned a real ID list ("To Read", ComicIdListItem) rather than a smart
+// list: handleDeviceListAdd used to reject anything whose Type didn't
+// contain "SmartList" with a misleading "Smart list not found in library"
+// 404, even though the list existed - and cmd/server.go's
+// applyDeviceConfig had the identical restriction, which made that
+// device's ENTIRE sync fail outright (not just skip that one list) the
+// next time it connected. Both were relaxed under the mistaken belief
+// this reflected a real ComicRack wireless-sync protocol constraint;
+// confirmed against ComicRackCE's own source (DeviceSyncSettings.SharedList
+// stores only an opaque ListId, no type restriction) that no such
+// constraint exists. Any list with real book membership (smart list, ID
+// list, reading list) should be acceptable; only folders (a grouping of
+// other lists, not a set of books) should still be rejected. Same class
+// of bug as comic-server-vwl's Komga-target fix.
+func TestHandleDeviceListAdd_AcceptsNonSmartLists(t *testing.T) {
+	newServer := func() *Server {
+		registry := device.NewRegistry()
+		registry.Add(&device.Info{ID: "device-1", Name: "Test Tablet"}, "192.168.1.100")
+
+		lib := &library.ComicLibrary{
+			ComicLists: []library.ComicListItem{
+				{ID: "idlist-1", Name: "To Read", Type: "ComicIdListItem", BookIds: []string{"book-1"}},
+				{ID: "readinglist-1", Name: "My Reading List", Type: "ComicReadingList"},
+				{ID: "folder-1", Name: "A Folder", Type: "ComicListItemFolder"},
+			},
+		}
+		backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+
+		s := &Server{
+			backend:           backend,
+			registry:          registry,
+			registeredDevices: map[string]bool{"device-1": true},
+			config:            &config.Config{},
+			configPath:        filepath.Join(t.TempDir(), "config.yaml"),
+			wsHub:             ws.NewHub(),
+		}
+		return s
+	}
+
+	doAdd := func(t *testing.T, s *Server, listID, listName string) *httptest.ResponseRecorder {
+		t.Helper()
+		body, _ := json.Marshal(AddListRequest{ListID: listID, ListName: listName, Enabled: true})
+		req := httptest.NewRequest(http.MethodPost, "/api/devices/lists/device-1", bytes.NewReader(body))
+		w := httptest.NewRecorder()
+		s.handleDeviceListAdd(w, req)
+		return w
+	}
+
+	if w := doAdd(t, newServer(), "idlist-1", "To Read"); w.Code != http.StatusOK {
+		t.Errorf("expected an ID list to be accepted for device sync, got %d: %s", w.Code, w.Body.String())
+	}
+	if w := doAdd(t, newServer(), "readinglist-1", "My Reading List"); w.Code != http.StatusOK {
+		t.Errorf("expected a reading list to be accepted for device sync, got %d: %s", w.Code, w.Body.String())
+	}
+	if w := doAdd(t, newServer(), "folder-1", "A Folder"); w.Code != http.StatusNotFound {
+		t.Errorf("expected a folder to still be rejected, got %d: %s", w.Code, w.Body.String())
 	}
 }

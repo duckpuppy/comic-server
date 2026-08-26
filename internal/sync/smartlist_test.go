@@ -6,7 +6,9 @@ import (
 	"github.com/duckpuppy/comic-server/internal/library"
 )
 
-// TestSetFilterList tests setting a smart list filter
+// TestSetFilterList tests setting a list filter - any list type with real
+// book membership (smart list, ID list, reading list); only folders are
+// rejected.
 func TestSetFilterList(t *testing.T) {
 	lib := &library.ComicLibrary{}
 	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
@@ -31,10 +33,23 @@ func TestSetFilterList(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "invalid - reading list",
+			// A reading list has real book membership - it should be
+			// accepted, not just smart lists (comic-server-vwl's
+			// device-sync fix).
+			name: "valid - reading list",
 			list: &library.ComicListItem{
 				Type: "ComicReadingList",
-				Name: "Not Smart",
+				Name: "A Reading List",
+			},
+			wantErr: false,
+		},
+		{
+			// A folder groups other lists rather than containing books
+			// itself - it should still be rejected.
+			name: "invalid - folder",
+			list: &library.ComicListItem{
+				Type: "ComicListItemFolder",
+				Name: "A Folder",
 			},
 			wantErr: true,
 		},
