@@ -376,6 +376,43 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 		deviceInfos = append(deviceInfos, info)
 	}
 
+	// Also include devices that are registered (have a saved config entry)
+	// but aren't currently in the live discovery registry - e.g. asleep,
+	// or the server restarted and they haven't re-broadcast yet. Without
+	// this, a registered device vanishes from this list entirely instead
+	// of showing as offline, even though its list assignments are safely
+	// persisted in config.yaml and will resume syncing once it reconnects.
+	// handleGetDeviceDetail (the single-device view) already does this
+	// same registry+config merge; this list view didn't.
+	for deviceID, deviceConfig := range s.config.Devices {
+		if _, inRegistry := s.registry.Get(deviceID); inRegistry {
+			continue // already added above from the live registry
+		}
+
+		info := DeviceInfo{
+			ID:           deviceID,
+			Name:         deviceConfig.FriendlyName,
+			LastSeen:     deviceConfig.LastSeen,
+			IsSyncing:    s.syncManager.IsDeviceSyncing(deviceID),
+			IsRegistered: true,
+		}
+
+		if editionFilter != "" && info.Edition != editionFilter {
+			continue
+		}
+		if syncingFilter != "" {
+			syncingWanted := syncingFilter == "true"
+			if info.IsSyncing != syncingWanted {
+				continue
+			}
+		}
+		if !lastSeenAfter.IsZero() && info.LastSeen.Before(lastSeenAfter) {
+			continue
+		}
+
+		deviceInfos = append(deviceInfos, info)
+	}
+
 	response := DevicesResponse{
 		Devices: deviceInfos,
 		Count:   len(deviceInfos),
@@ -403,13 +440,22 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	uptime := time.Since(s.startTime)
-	devices := s.registry.List()
+
+	// RegisteredDevices counts durable registrations (s.registeredDevices,
+	// seeded from and kept in sync with config.Devices), not
+	// s.registry.List() - the live discovery registry, which only holds
+	// devices that have broadcast recently and resets to empty on every
+	// server restart. "Registered Devices" should reflect what's actually
+	// configured, not just who's currently saying hello.
+	s.mu.RLock()
+	registeredCount := len(s.registeredDevices)
+	s.mu.RUnlock()
 
 	response := StatsResponse{
 		Uptime:               uptime.String(),
 		UptimeSeconds:        int64(uptime.Seconds()),
 		ActiveSyncs:          s.syncManager.GetActiveCount(),
-		RegisteredDevices:    len(devices),
+		RegisteredDevices:    registeredCount,
 		MaxConcurrent:        s.config.Server.MaxConcurrentConnections,
 		RateLimitingEnabled:  s.config.Server.MaxConnectionsPerIP > 0 || s.config.Server.MaxRequestsPerDevice > 0,
 		MaxConnectionsPerIP:  s.config.Server.MaxConnectionsPerIP,

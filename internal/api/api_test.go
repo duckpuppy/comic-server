@@ -321,6 +321,63 @@ func TestHandleDevices(t *testing.T) {
 	}
 }
 
+// TestHandleDevices_IncludesRegisteredButOfflineDevice is the regression
+// test for a device vanishing entirely from the Devices tab (not just
+// showing as offline) once it stops broadcasting - e.g. it goes to sleep,
+// or the server process restarts and the live discovery registry (which
+// this endpoint used to source ENTIRELY from) resets to empty. A device
+// with a saved config entry is still registered and will still sync once
+// it reconnects; handleGetDeviceDetail (the single-device view) already
+// merged registry+config for this reason, but this list view didn't.
+func TestHandleDevices_IncludesRegisteredButOfflineDevice(t *testing.T) {
+	syncManager := syncstate.NewManager(10)
+	registry := device.NewRegistry()
+	cfg := &config.Config{
+		Devices: map[string]*config.DeviceConfig{
+			"offline-device": {DeviceID: "offline-device", FriendlyName: "Sleeping Tablet"},
+		},
+	}
+	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
+	server := createTestServer(syncManager, registry, cfg, version)
+
+	// Note: "offline-device" is deliberately NOT added to the live
+	// discovery registry - it only exists in config, simulating a
+	// registered device that isn't currently broadcasting.
+
+	req := httptest.NewRequest(http.MethodGet, "/api/devices", nil)
+	w := httptest.NewRecorder()
+	server.handleDevices(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	var response DevicesResponse
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	var found *DeviceInfo
+	for i := range response.Devices {
+		if response.Devices[i].ID == "offline-device" {
+			found = &response.Devices[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("expected the registered-but-offline device to still appear in the devices list")
+	}
+	if found.Name != "Sleeping Tablet" {
+		t.Errorf("expected name 'Sleeping Tablet', got %q", found.Name)
+	}
+	if !found.IsRegistered {
+		t.Error("expected the offline device to be marked as registered")
+	}
+	if found.IsSyncing {
+		t.Error("expected the offline device to not be marked as syncing")
+	}
+}
+
 func TestHandleStats(t *testing.T) {
 	syncManager := syncstate.NewManager(10)
 	registry := device.NewRegistry()
@@ -329,6 +386,13 @@ func TestHandleStats(t *testing.T) {
 			MaxConcurrentConnections: 5,
 			MaxConnectionsPerIP:      10,
 			MaxRequestsPerDevice:     100,
+		},
+		// RegisteredDevices now counts durable registrations (seeded from
+		// this at server construction), not just who's currently in the
+		// live discovery registry - see the fix for the "device vanishes
+		// from the Devices tab while asleep or after a restart" bug.
+		Devices: map[string]*config.DeviceConfig{
+			"device1": {DeviceID: "device1", FriendlyName: "Tablet 1"},
 		},
 	}
 	version := VersionInfo{Version: "test", GitCommit: "abc123", BuildDate: "2024-01-01"}
