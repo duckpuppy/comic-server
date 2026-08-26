@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.7.0](https://github.com/duckpuppy/comic-server/compare/v1.6.1...v1.7.0) (2026-08-26)
+
+
+### Features
+
+* disable Convert-to-CBZ button when a list has nothing to convert ([9129ae3](https://github.com/duckpuppy/comic-server/commit/9129ae3ef18ea1ff49167e09a366c274916439ef))
+* reimport merges field-by-field instead of overwriting the whole row ([bca1c26](https://github.com/duckpuppy/comic-server/commit/bca1c2672fbd3082924ec6d43a85f6e1e1b30bb0))
+* soft-delete books/lists removed from an XML import ([91660c9](https://github.com/duckpuppy/comic-server/commit/91660c975fe88458324df78149e36c738a6dcf8a))
+
+
+### Bug Fixes
+
+* Komga sync now accepts ID lists and reading lists, not just smart lists ([2e7328c](https://github.com/duckpuppy/comic-server/commit/2e7328c91ce9b533128a5bd31cdb3cc8ff0724b6))
+* move comics preview above management panels on list detail page ([0487747](https://github.com/duckpuppy/comic-server/commit/0487747fc86e3f454833f3e4144ec6b5712dc28b))
+* SQLiteBackend.UpdateBookFields was silently dropping most fields ([402d0bf](https://github.com/duckpuppy/comic-server/commit/402d0bf0eb6acd36394fadcfec64a8ea266fc103))
+
 ## [1.6.1](https://github.com/duckpuppy/comic-server/compare/v1.6.0...v1.6.1) (2026-08-26)
 
 
