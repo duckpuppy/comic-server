@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.9.0](https://github.com/duckpuppy/comic-server/compare/v1.8.3...v1.9.0) (2026-08-26)
+
+
+### Features
+
+* add always-open config.db foundation for record-shaped config ([1c5ce5f](https://github.com/duckpuppy/comic-server/commit/1c5ce5f8aea61ec18c3772a288ddff3e4f8bed70))
+* migrate device registrations and list assignments off config.yaml into config.db ([f64a070](https://github.com/duckpuppy/comic-server/commit/f64a07040731889351bf2a164019fe03fe46a117))
+* migrate Komga sync targets off config.yaml into config.db ([92d50b8](https://github.com/duckpuppy/comic-server/commit/92d50b8056e8876717c20175955628b242d48190))
+
+
+### Bug Fixes
+
+* standardize device settings list button wording to "Assign" ([8f383ff](https://github.com/duckpuppy/comic-server/commit/8f383ffe2ac28ec19a41532ba6ef78abc5042a73))
+
 ## [1.8.3](https://github.com/duckpuppy/comic-server/compare/v1.8.2...v1.8.3) (2026-08-26)
 
 
