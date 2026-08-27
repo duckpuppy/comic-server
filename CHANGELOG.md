@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.9.1](https://github.com/duckpuppy/comic-server/compare/v1.9.0...v1.9.1) (2026-08-27)
+
+
+### Bug Fixes
+
+* abort only checked every 10 operations, and a hung check kept the sync running ([3f6ba4a](https://github.com/duckpuppy/comic-server/commit/3f6ba4a684076507e08928c4a1ab66cf051b1546))
+* config.db lands outside any mounted volume in Docker, gets wiped on restart ([d0fd9e2](https://github.com/duckpuppy/comic-server/commit/d0fd9e2df1df7e68060c544005c561b071501d43))
+* deploy workflow skips every tagged release, only fires on main pushes ([e35c8c1](https://github.com/duckpuppy/comic-server/commit/e35c8c19518948170794747a2393960234daf7c9))
+* hidden Lists Browser action icons still catch taps on real touch devices ([15c1a43](https://github.com/duckpuppy/comic-server/commit/15c1a4355538ddf86d1cb8276cec57482651db9e))
+* per-list sync settings silently discarded once a device has 2+ lists ([79e4742](https://github.com/duckpuppy/comic-server/commit/79e474278298d557135418dc4fe1688e65175502))
+
 ## [1.9.0](https://github.com/duckpuppy/comic-server/compare/v1.8.3...v1.9.0) (2026-08-26)
 
 
