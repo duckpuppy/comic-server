@@ -49,32 +49,53 @@ func (c *Client) SetRetries(retries int) {
 	c.retries = retries
 }
 
-// connect establishes a TCP connection to the device with retries
-func (c *Client) connect() (net.Conn, error) {
-	var conn net.Conn
-	var err error
+// dial opens a single TCP connection to the device - no retry, that's
+// execute's job (see below).
+func (c *Client) dial() (net.Conn, error) {
+	address := net.JoinHostPort(c.deviceIP, strconv.Itoa(c.devicePort))
+	return net.DialTimeout("tcp", address, c.connectionTimeout)
+}
+
+// execute performs a command with automatic connection management,
+// timeouts, and retries. On any failure - a failed connect, or the
+// command itself failing partway through (e.g. a write that times out
+// mid-transfer on flaky WiFi) - the WHOLE attempt is retried with a
+// brand-new connection, up to c.retries additional times.
+//
+// This matches ComicRackCE's own WirelessSyncProvider.Communicate(),
+// confirmed from its source: every command there opens its own
+// short-lived socket and retries the entire operation (not just the
+// connect) on any exception, using a fresh socket each time. comic-server
+// used to only retry the connect phase - once connected, a command that
+// failed partway through was never retried, it just failed that one
+// operation outright. Against unstable WiFi (a connection that drops
+// mid-transfer, not just a connect that never succeeds), that meant many
+// avoidable failures that ComicRackCE's own client would have quietly
+// recovered from. Found 2026-08-27 while comparing retry behavior
+// against ComicRackCE's source during a real high-timeout-rate sync.
+func (c *Client) execute(commandFunc func(conn net.Conn) error) error {
+	var lastErr error
 
 	for attempt := 0; attempt <= c.retries; attempt++ {
-		address := net.JoinHostPort(c.deviceIP, strconv.Itoa(c.devicePort))
-		conn, err = net.DialTimeout("tcp", address, c.connectionTimeout)
-		if err == nil {
-			return conn, nil
+		if attempt > 0 {
+			time.Sleep(100 * time.Millisecond)
 		}
 
-		// If this isn't the last attempt, wait a bit before retrying
-		if attempt < c.retries {
-			time.Sleep(100 * time.Millisecond)
+		lastErr = c.executeOnce(commandFunc)
+		if lastErr == nil {
+			return nil
 		}
 	}
 
-	return nil, fmt.Errorf("failed to connect after %d retries: %w", c.retries, err)
+	return fmt.Errorf("failed after %d retries: %w", c.retries, lastErr)
 }
 
-// execute performs a command with automatic connection management and timeouts
-func (c *Client) execute(commandFunc func(conn net.Conn) error) error {
-	conn, err := c.connect()
+// executeOnce is one full attempt: dial, set the deadline, run the
+// command. No retry logic here - see execute.
+func (c *Client) executeOnce(commandFunc func(conn net.Conn) error) error {
+	conn, err := c.dial()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to connect: %w", err)
 	}
 	defer conn.Close()
 

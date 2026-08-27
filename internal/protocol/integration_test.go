@@ -1,6 +1,8 @@
 package protocol_test
 
 import (
+	"net"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -148,5 +150,54 @@ func TestClientRetries(t *testing.T) {
 	// With 50ms timeout each, should take at least 150ms
 	if elapsed < 100*time.Millisecond {
 		t.Errorf("Expected retries to take at least 100ms, took %v", elapsed)
+	}
+}
+
+// TestClientRetriesFullOperationNotJustConnect is the regression test for
+// a gap found 2026-08-27 comparing against ComicRackCE's own retry
+// behavior: the client only retried the initial TCP connect, never an
+// operation that failed AFTER connecting successfully (e.g. a write that
+// drops mid-transfer on flaky WiFi) - that's exactly the failure mode
+// unstable WiFi produces, and ComicRackCE's own client recovers from it
+// by retrying the whole operation with a fresh connection.
+//
+// This listener accepts every connection (so dial always succeeds) but
+// closes it immediately without responding, forcing the command itself
+// to fail with a read error - and counts how many separate connections
+// it received. A client that only retried the connect phase would open
+// exactly one connection and give up; one that retries the whole
+// operation should open several.
+func TestClientRetriesFullOperationNotJustConnect(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to start listener: %v", err)
+	}
+	defer listener.Close()
+
+	var connectionCount int64
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return // listener closed
+			}
+			atomic.AddInt64(&connectionCount, 1)
+			conn.Close() // drop immediately, before any response
+		}
+	}()
+
+	addr := listener.Addr().(*net.TCPAddr)
+	client := protocol.NewClient("127.0.0.1", addr.Port)
+	client.SetTimeouts(200*time.Millisecond, 200*time.Millisecond, 200*time.Millisecond)
+	client.SetRetries(2)
+
+	_, err = client.ReadFile("test.txt")
+	if err == nil {
+		t.Error("expected an error since the server never responds")
+	}
+
+	got := atomic.LoadInt64(&connectionCount)
+	if got < 2 {
+		t.Errorf("expected at least 2 separate connection attempts (initial + retry after the command itself failed), got %d", got)
 	}
 }
