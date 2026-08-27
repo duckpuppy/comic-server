@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.3](https://github.com/duckpuppy/comic-server/compare/v1.9.2...v1.9.3) (2026-08-27)
+
+
+### Bug Fixes
+
+* identical lists on device (comic-server-f4i), and stuck sync blocking new attempts (comic-server-2gh) ([bae26a3](https://github.com/duckpuppy/comic-server/commit/bae26a31d08897c72f064120039a736d9ad4a55f))
+
 ## [1.9.2](https://github.com/duckpuppy/comic-server/compare/v1.9.1...v1.9.2) (2026-08-27)
 
 
