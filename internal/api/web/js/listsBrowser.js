@@ -21,11 +21,11 @@ class ListsBrowser {
         this.render();
     }
 
-    // Touch screens have no :hover, so the rename/move/delete overlay (shown
-    // on hover for a mouse) instead reveals via long-press, and hides again
-    // on the next tap outside it. Wired once here rather than per-render,
-    // since renderContent() replaces the row/tile elements on every
-    // navigation but the document itself persists.
+    // The rename/move/delete overlay reveals on hover for a mouse, or via
+    // long-press (touch has no real hover) - and hides again on the next
+    // tap outside it. Wired once here rather than per-render, since
+    // renderContent() replaces the row/tile elements on every navigation
+    // but the document itself persists.
     attachGlobalTouchHandling() {
         document.addEventListener('touchstart', (e) => {
             document.querySelectorAll('.fb-icon-item.actions-visible, .fb-row.actions-visible').forEach(el => {
@@ -391,6 +391,32 @@ class ListsBrowser {
         document.querySelectorAll('[data-action]').forEach(btn => {
             btn.addEventListener('click', e => {
                 e.stopPropagation();
+
+                // Belt-and-suspenders against a real touch-browser quirk:
+                // CSS pointer-events: none on the hidden .fb-item-actions
+                // overlay is what's SUPPOSED to stop a tap on its hidden
+                // position from reaching this button - confirmed correct
+                // via elementFromPoint right up until the moment of the
+                // tap - but real mobile Chromium/Safari synthesize a
+                // compatibility mouse sequence after a tap (including a
+                // one-shot :hover match) for sites built only for mouse
+                // hover, and that synthetic hover flips pointer-events
+                // back to auto just in time for the resulting click to
+                // land here anyway. e.sourceCapabilities.firesTouchEvents
+                // is exactly the browser-provided signal for "this click
+                // (even a synthetic mouse one) originated from a touch
+                // gesture" - unlike :hover or a touchstart/mousemove flag,
+                // it isn't fooled by that compatibility sequence. On
+                // touch, only an explicit long-press (.actions-visible)
+                // counts as a real reveal; :hover only counts on a
+                // genuine mouse click.
+                const container = btn.closest('.fb-icon-item, .fb-row');
+                const firesTouchEvents = e.sourceCapabilities && e.sourceCapabilities.firesTouchEvents;
+                const revealedByHover = !firesTouchEvents && container?.matches(':hover');
+                if (container && !container.classList.contains('actions-visible') && !revealedByHover) {
+                    return;
+                }
+
                 const { action, id, name } = btn.dataset;
                 if (action === 'rename') this.showRenameFolderDialog(id, name);
                 else if (action === 'delete-folder') this.showDeleteFolderDialog(id, name);
