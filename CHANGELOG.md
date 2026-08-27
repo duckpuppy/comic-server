@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.2](https://github.com/duckpuppy/comic-server/compare/v1.9.1...v1.9.2) (2026-08-27)
+
+
+### Bug Fixes
+
+* SharedListSettings has no json tags, every web-UI settings save silently discarded ([2f9db03](https://github.com/duckpuppy/comic-server/commit/2f9db035aeb5f78742c40e9f492c7163b788e6d6))
+
 ## [1.9.1](https://github.com/duckpuppy/comic-server/compare/v1.9.0...v1.9.1) (2026-08-27)
 
 
