@@ -117,24 +117,34 @@ func (st *SortType) UnmarshalText(text []byte) error {
 
 // SharedListSettings contains per-list sync options
 // These control how books are filtered, sorted, and limited when syncing
+//
+// json tags matter here, not just yaml/toml - this struct round-trips
+// through the REST API (device settings save/preview) as JSON using the
+// web UI's snake_case field names. Without an explicit json tag,
+// encoding/json falls back to the bare Go field name (e.g. "OnlyUnread"),
+// which its case-insensitive matching does NOT bridge to "only_unread"
+// (an underscore isn't a case difference) - every field silently
+// unmarshaled to its zero value, so no per-list setting saved through the
+// web UI ever actually took effect. Found live 2026-08-26 tracing why
+// "Only sync unread books" kept saving as off. See comic-server-asp.
 type SharedListSettings struct {
 	// Filtering options
-	OnlyUnread   bool `yaml:"only_unread" toml:"only_unread"`       // Only sync unread books (CurrentPage < PageCount)
-	KeepLastRead bool `yaml:"keep_last_read" toml:"keep_last_read"` // When OnlyUnread=true, include N recently read books for context
+	OnlyUnread   bool `json:"only_unread" yaml:"only_unread" toml:"only_unread"`          // Only sync unread books (CurrentPage < PageCount)
+	KeepLastRead bool `json:"keep_last_read" yaml:"keep_last_read" toml:"keep_last_read"` // When OnlyUnread=true, include N recently read books for context
 	// KeepLastReadCount is N above. Zero (including configs saved before this
 	// field existed) falls back to the ComicRackCE default of 3 in
 	// ApplySettings, so omitting it from YAML/TOML is backward compatible.
-	KeepLastReadCount int  `yaml:"keep_last_read_count,omitempty" toml:"keep_last_read_count,omitempty"`
-	OnlyChecked       bool `yaml:"only_checked" toml:"only_checked"` // Only sync books marked as "checked"
+	KeepLastReadCount int  `json:"keep_last_read_count,omitempty" yaml:"keep_last_read_count,omitempty" toml:"keep_last_read_count,omitempty"`
+	OnlyChecked       bool `json:"only_checked" yaml:"only_checked" toml:"only_checked"` // Only sync books marked as "checked"
 
 	// Limiting options
-	Limit          bool      `yaml:"limit" toml:"limit"`                       // Enable limiting
-	LimitValue     int       `yaml:"limit_value" toml:"limit_value"`           // Limit amount (default 50)
-	LimitValueType LimitType `yaml:"limit_value_type" toml:"limit_value_type"` // Limit unit: Books, MB, or GB
+	Limit          bool      `json:"limit" yaml:"limit" toml:"limit"`                                  // Enable limiting
+	LimitValue     int       `json:"limit_value" yaml:"limit_value" toml:"limit_value"`                // Limit amount (default 50)
+	LimitValueType LimitType `json:"limit_value_type" yaml:"limit_value_type" toml:"limit_value_type"` // Limit unit: Books, MB, or GB
 
 	// Sorting options
-	Sort         bool     `yaml:"sort" toml:"sort"`                     // Enable sorting
-	ListSortType SortType `yaml:"list_sort_type" toml:"list_sort_type"` // How to sort (default: Series)
+	Sort         bool     `json:"sort" yaml:"sort" toml:"sort"`                               // Enable sorting
+	ListSortType SortType `json:"list_sort_type" yaml:"list_sort_type" toml:"list_sort_type"` // How to sort (default: Series)
 }
 
 // DefaultSettings returns the default SharedListSettings

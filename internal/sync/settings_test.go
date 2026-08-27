@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -8,6 +9,64 @@ import (
 
 	"github.com/duckpuppy/comic-server/internal/library"
 )
+
+// TestSharedListSettings_JSONRoundTrip is the regression test for
+// comic-server-asp: SharedListSettings had yaml/toml struct tags but no
+// json tags, so a JSON payload using the same snake_case keys (exactly
+// what the web UI's device settings modal sends) silently unmarshaled to
+// a zero-value struct - every field's key (only_unread, limit_value, ...)
+// failed to match the bare Go field name (OnlyUnread, LimitValue, ...),
+// and Go's case-insensitive JSON matching doesn't bridge an underscore
+// difference. Confirmed live: the web UI would report "saved successfully"
+// while persisting every field as false/zero regardless of what was
+// picked.
+func TestSharedListSettings_JSONRoundTrip(t *testing.T) {
+	payload := `{
+		"only_unread": true,
+		"keep_last_read": true,
+		"keep_last_read_count": 5,
+		"only_checked": true,
+		"limit": true,
+		"limit_value": 42,
+		"limit_value_type": "mb",
+		"sort": true,
+		"list_sort_type": "published"
+	}`
+
+	var settings SharedListSettings
+	if err := json.Unmarshal([]byte(payload), &settings); err != nil {
+		t.Fatalf("json.Unmarshal failed: %v", err)
+	}
+
+	want := SharedListSettings{
+		OnlyUnread:        true,
+		KeepLastRead:      true,
+		KeepLastReadCount: 5,
+		OnlyChecked:       true,
+		Limit:             true,
+		LimitValue:        42,
+		LimitValueType:    LimitTypeMB,
+		Sort:              true,
+		ListSortType:      SortTypePublished,
+	}
+	if settings != want {
+		t.Errorf("unmarshaled settings = %+v, want %+v", settings, want)
+	}
+
+	// And the reverse direction: marshaling should produce the same
+	// snake_case keys the web UI expects back.
+	out, err := json.Marshal(want)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
+	}
+	var roundTripped SharedListSettings
+	if err := json.Unmarshal(out, &roundTripped); err != nil {
+		t.Fatalf("json.Unmarshal of marshaled output failed: %v", err)
+	}
+	if roundTripped != want {
+		t.Errorf("round-tripped settings = %+v, want %+v", roundTripped, want)
+	}
+}
 
 // Helper function to create test books
 func createTestBook(id, series string, year, volume int, number string, pageCount, currentPage int) *library.ComicBook {
