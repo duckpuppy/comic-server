@@ -146,14 +146,22 @@ func (s *Syncer) PerformSync() (*SyncResult, error) {
 	// Step 6: Execute sync operations
 	totalOps := len(operations)
 	for i, op := range operations {
-		// Check for abort periodically
-		if i%10 == 0 {
-			aborted, err := s.client.CheckAbort()
-			if err != nil {
-				log.Warn().Err(err).Msg("Failed to check abort status")
-			} else if aborted {
-				return result, fmt.Errorf("sync aborted by user")
-			}
+		// Check for abort before every operation - not every 10th - so a
+		// user-initiated abort takes effect as soon as whatever operation
+		// is currently in flight finishes, rather than after up to 9 more
+		// run first (comic-server-akt). This trades one extra round trip
+		// to the device per operation for that responsiveness.
+		//
+		// A failed check (not just aborted=true) is treated as a stop
+		// signal too: a device that can't even answer CheckAbort almost
+		// certainly can't take a WriteFile either, and continuing to
+		// grind through the remaining queue would just be a long series
+		// of doomed, individually-timing-out operations against a device
+		// that's already gone.
+		if aborted, err := s.client.CheckAbort(); err != nil {
+			return result, fmt.Errorf("sync stopped: device unresponsive to abort check: %w", err)
+		} else if aborted {
+			return result, fmt.Errorf("sync aborted by user")
 		}
 
 		// Execute operation

@@ -406,6 +406,71 @@ func TestPerformSync_AbortHandling(t *testing.T) {
 	}
 }
 
+// TestPerformSync_AbortCheckedEveryOperation is the regression test for
+// comic-server-akt: abort used to only be checked every 10th operation, so
+// a user-initiated abort could take up to 9 more operations to actually
+// register. With a library of 5 books, an abort surfacing on the very
+// first CheckAbort call should now stop the sync immediately, not after
+// several more operations run first.
+func TestPerformSync_AbortCheckedEveryOperation(t *testing.T) {
+	mockClient := NewMockClient()
+
+	books := make([]library.ComicBook, 5)
+	for i := 0; i < 5; i++ {
+		books[i] = library.ComicBook{ID: string(rune('a' + i)), Title: "Book"}
+	}
+	lib := &library.ComicLibrary{Books: books}
+
+	mockClient.CheckAbortFunc = func() (bool, error) {
+		return true, nil // Abort on the very first check
+	}
+
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	syncer := NewSyncer(mockClient, backend)
+
+	result, err := syncer.PerformSync()
+	if err == nil || err.Error() != "sync aborted by user" {
+		t.Errorf("expected 'sync aborted by user' error, got: %v", err)
+	}
+	if mockClient.CheckAbortCalls != 1 {
+		t.Errorf("expected exactly 1 CheckAbort call before stopping, got %d", mockClient.CheckAbortCalls)
+	}
+	if result.BooksAdded != 0 {
+		t.Errorf("expected 0 books added before the immediate abort, got %d", result.BooksAdded)
+	}
+}
+
+// TestPerformSync_AbortCheckFailureStopsSync is the regression test for
+// comic-server-akt's second half: a device that can't even answer
+// CheckAbort (unresponsive/dropped connection) should stop the sync
+// rather than being logged as a warning and left to grind through every
+// remaining operation, each individually timing out against a device
+// that's already gone.
+func TestPerformSync_AbortCheckFailureStopsSync(t *testing.T) {
+	mockClient := NewMockClient()
+
+	books := make([]library.ComicBook, 5)
+	for i := 0; i < 5; i++ {
+		books[i] = library.ComicBook{ID: string(rune('a' + i)), Title: "Book"}
+	}
+	lib := &library.ComicLibrary{Books: books}
+
+	mockClient.CheckAbortFunc = func() (bool, error) {
+		return false, errors.New("i/o timeout")
+	}
+
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	syncer := NewSyncer(mockClient, backend)
+
+	result, err := syncer.PerformSync()
+	if err == nil {
+		t.Fatal("expected an error when CheckAbort itself fails")
+	}
+	if result.BooksAdded != 0 {
+		t.Errorf("expected 0 books added when the device is unresponsive, got %d", result.BooksAdded)
+	}
+}
+
 // TestPerformSync_ProgressUpdates tests that progress is reported correctly
 func TestPerformSync_ProgressUpdates(t *testing.T) {
 	// Create temporary comic book files
