@@ -30,11 +30,12 @@ type Client interface {
 
 // Syncer orchestrates synchronization between the library and a device
 type Syncer struct {
-	client      Client
-	backend     library.Backend          // Backend for library operations (replaces library + libraryCache)
-	filterList  *library.ComicListItem   // Optional single smart list to filter books (deprecated, use filterLists)
-	filterLists []*library.ComicListItem // Optional multiple smart lists to filter books (union of all lists)
-	settings    *SharedListSettings      // Sync settings to apply (filtering, sorting, limiting)
+	client       Client
+	backend      library.Backend                // Backend for library operations (replaces library + libraryCache)
+	filterList   *library.ComicListItem         // Optional single smart list to filter books (deprecated, use filterLists)
+	filterLists  []*library.ComicListItem       // Optional multiple smart lists to filter books (union of all lists)
+	listSettings map[string]*SharedListSettings // ListID -> per-list settings override; see SetFilterListsWithSettings
+	settings     *SharedListSettings            // Default sync settings - applied to a list with no per-list override in listSettings, or globally when filterLists isn't used
 
 	// resolvePath translates a book's raw library FilePath into a path
 	// actually readable on this filesystem, before any direct file read -
@@ -99,6 +100,42 @@ func (s *Syncer) SetFilterLists(lists []*library.ComicListItem) error {
 	}
 	s.filterLists = lists
 	s.filterList = nil // Clear single list if multi-list is set
+	s.listSettings = nil
+	return nil
+}
+
+// FilterListEntry pairs one filter list with its own sync settings, for
+// SetFilterListsWithSettings.
+type FilterListEntry struct {
+	List     *library.ComicListItem
+	Settings *SharedListSettings // nil = use the Syncer's default settings (see SetSettings)
+}
+
+// SetFilterListsWithSettings is SetFilterLists, but lets each list carry
+// its own SharedListSettings (only-unread, limit, sort, etc.) instead of
+// every list sharing one global settings object. Each list's own settings
+// (filtering, sorting, limiting) are applied to that list's matched books
+// before the union is taken, so e.g. one list can be "unread only" while
+// another isn't. A list whose Settings is nil falls back to the Syncer's
+// default settings (SetSettings) - same behavior as before this method
+// existed. See comic-server-3oq: before this, every list silently shared
+// one settings object the moment there was more than one of them,
+// discarding per-list only-unread/limit/sort configuration outright.
+func (s *Syncer) SetFilterListsWithSettings(entries []FilterListEntry) error {
+	lists := make([]*library.ComicListItem, 0, len(entries))
+	listSettings := make(map[string]*SharedListSettings, len(entries))
+	for _, entry := range entries {
+		if entry.List != nil && strings.Contains(entry.List.Type, "Folder") {
+			return fmt.Errorf("list %q is a folder, not something books can sync from (type: %s)", entry.List.Name, entry.List.Type)
+		}
+		lists = append(lists, entry.List)
+		if entry.Settings != nil && entry.List != nil {
+			listSettings[entry.List.ID] = entry.Settings
+		}
+	}
+	s.filterLists = lists
+	s.filterList = nil
+	s.listSettings = listSettings
 	return nil
 }
 
@@ -318,9 +355,15 @@ func (s *Syncer) GetDeviceBooks() (map[string]*DeviceBook, error) {
 	return deviceBooks, nil
 }
 
-// computeUnionOfLists computes the union of all filter lists
-// Returns all books that match ANY of the filter lists (no duplicates)
-func (s *Syncer) computeUnionOfLists() []*library.ComicBook {
+// computeUnionOfLists computes the union of all filter lists, applying
+// each list's own settings (see SetFilterListsWithSettings) - or the
+// Syncer's default settings, for a list with no override - to that list's
+// matched books BEFORE the union is taken. This is what makes e.g.
+// "unread only" on one list not bleed into (or get discarded by) another
+// list synced alongside it; see comic-server-3oq.
+// Returns all books that survive ANY of the filter lists' own settings
+// (no duplicates).
+func (s *Syncer) computeUnionOfLists() ([]*library.ComicBook, error) {
 	bookMap := make(map[string]*library.ComicBook)
 
 	for _, list := range s.filterLists {
@@ -339,6 +382,17 @@ func (s *Syncer) computeUnionOfLists() []*library.ComicBook {
 			continue
 		}
 
+		settings := s.settings
+		if override, ok := s.listSettings[list.ID]; ok {
+			settings = override
+		}
+		if settings != nil {
+			matchedBooks, err = ApplySettingsWithResolver(matchedBooks, settings, s.resolvePath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to apply settings for list %q: %w", list.Name, err)
+			}
+		}
+
 		// Add to union (map automatically deduplicates by book ID)
 		for _, book := range matchedBooks {
 			bookMap[book.ID] = book
@@ -351,7 +405,7 @@ func (s *Syncer) computeUnionOfLists() []*library.ComicBook {
 		result = append(result, book)
 	}
 
-	return result
+	return result, nil
 }
 
 // ComputeSyncPlan compares library books against device books and determines
@@ -362,8 +416,15 @@ func (s *Syncer) ComputeSyncPlan(deviceBooks map[string]*DeviceBook) ([]SyncOper
 	// Get filtered book list if a filter is set
 	var booksToSync []*library.ComicBook
 	if len(s.filterLists) > 0 {
-		// Apply multiple smart list filters (union of all lists)
-		booksToSync = s.computeUnionOfLists()
+		// Apply multiple smart list filters (union of all lists) - each
+		// list's own settings (or the default, for a list with no
+		// override) are applied per-list inside computeUnionOfLists, so
+		// skip the global settings pass below for this branch.
+		var err error
+		booksToSync, err = s.computeUnionOfLists()
+		if err != nil {
+			return nil, err
+		}
 	} else if s.filterList != nil {
 		// Apply single list filter (backward compatibility) - GetBooksForList,
 		// see computeUnionOfLists for why.
@@ -372,6 +433,15 @@ func (s *Syncer) ComputeSyncPlan(deviceBooks map[string]*DeviceBook) ([]SyncOper
 			return nil, fmt.Errorf("failed to apply filter list: %w", err)
 		}
 		booksToSync = filteredBooks
+
+		// Apply sync settings (filtering, sorting, limiting)
+		if s.settings != nil {
+			processedBooks, err := ApplySettingsWithResolver(booksToSync, s.settings, s.resolvePath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to apply sync settings: %w", err)
+			}
+			booksToSync = processedBooks
+		}
 	} else {
 		// No filter - sync all books
 		allBooks, err := s.backend.GetAllBooks()
@@ -382,15 +452,15 @@ func (s *Syncer) ComputeSyncPlan(deviceBooks map[string]*DeviceBook) ([]SyncOper
 		for i := range allBooks {
 			booksToSync[i] = &allBooks[i]
 		}
-	}
 
-	// Apply sync settings (filtering, sorting, limiting)
-	if s.settings != nil {
-		processedBooks, err := ApplySettingsWithResolver(booksToSync, s.settings, s.resolvePath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to apply sync settings: %w", err)
+		// Apply sync settings (filtering, sorting, limiting)
+		if s.settings != nil {
+			processedBooks, err := ApplySettingsWithResolver(booksToSync, s.settings, s.resolvePath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to apply sync settings: %w", err)
+			}
+			booksToSync = processedBooks
 		}
-		booksToSync = processedBooks
 	}
 
 	// DEBUG: Print library book IDs

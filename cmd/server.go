@@ -785,7 +785,7 @@ func applyDeviceConfig(syncer *csync.Syncer, deviceConfig *configdb.Device, back
 	// the device's ENTIRE sync fail outright (not just that one list -
 	// this error aborts handleSyncRequest), same class of bug as
 	// comic-server-vwl's Komga-target fix.
-	var lists []*library.ComicListItem
+	var entries []csync.FilterListEntry
 	var listNames []string
 
 	for _, listConfig := range deviceConfig.Lists {
@@ -802,30 +802,32 @@ func applyDeviceConfig(syncer *csync.Syncer, deviceConfig *configdb.Device, back
 			return fmt.Errorf("list %s (ID: %s) not found in library, or is a folder", listConfig.ListName, listConfig.ListID)
 		}
 
-		lists = append(lists, list)
+		entries = append(entries, csync.FilterListEntry{List: list, Settings: listConfig.Settings})
 		listNames = append(listNames, listConfig.ListName)
 	}
 
-	// Set all filter lists (union of all lists)
-	if len(lists) > 0 {
-		if err := syncer.SetFilterLists(lists); err != nil {
+	// Apply the device's default settings as the fallback for any list
+	// with no override of its own (see FilterListEntry.Settings).
+	defaultSettings := deviceConfig.DefaultSettings
+	if defaultSettings == nil {
+		defaultSettings = csync.DefaultSettings()
+	}
+	syncer.SetSettings(defaultSettings)
+
+	// Set all filter lists (union of all lists) - each list's own
+	// settings (only-unread, limit, sort, etc.) are applied to that
+	// list's own books before the union, instead of being discarded in
+	// favor of one shared settings object (comic-server-3oq).
+	if len(entries) > 0 {
+		if err := syncer.SetFilterListsWithSettings(entries); err != nil {
 			return fmt.Errorf("failed to set filter lists: %w", err)
 		}
 
 		logger.Info().
-			Int("list_count", len(lists)).
+			Int("list_count", len(entries)).
 			Strs("list_names", listNames).
 			Msg("Applied multiple lists to syncer")
 	}
-
-	// Apply settings (use device default settings)
-	// Note: Per-list settings are not currently supported with multi-list sync
-	// All lists use the device's default settings
-	settings := deviceConfig.DefaultSettings
-	if settings == nil {
-		settings = csync.DefaultSettings()
-	}
-	syncer.SetSettings(settings)
 
 	return nil
 }

@@ -852,7 +852,10 @@ func TestComputeUnionOfLists(t *testing.T) {
 	}
 
 	// Compute union
-	books := syncer.computeUnionOfLists()
+	books, err := syncer.computeUnionOfLists()
+	if err != nil {
+		t.Fatalf("computeUnionOfLists() error = %v", err)
+	}
 
 	// Verify union contains book1, book2, book3 (no duplicates)
 	if len(books) != 3 {
@@ -1010,6 +1013,81 @@ func TestComputeSyncPlan_MultipleFilterLists(t *testing.T) {
 
 	if bookIDs["book4"] {
 		t.Error("book4 should not be in operations (not in any filter list)")
+	}
+}
+
+// TestComputeSyncPlan_PerListSettings is the regression test for
+// comic-server-3oq: before SetFilterListsWithSettings existed, every list
+// assigned to a device silently shared ONE settings object the moment a
+// device had more than one enabled list, discarding any per-list
+// only-unread/limit/sort configuration outright. Two lists here each
+// carry their own settings ("Unread Only" filters out a read book, "All
+// Books" doesn't) and the test asserts each list's own setting actually
+// takes effect on its own books.
+func TestComputeSyncPlan_PerListSettings(t *testing.T) {
+	lib := &library.ComicLibrary{
+		Books: []library.ComicBook{
+			// Series A: one read, one unread - only the unread one should
+			// survive "Unread Only" on list1.
+			{ID: "book1-read", Series: "Series A", Title: "Book 1 (read)", FilePath: "/path/book1.cbz", PageCount: 20, CurrentPage: 20},
+			{ID: "book2-unread", Series: "Series A", Title: "Book 2 (unread)", FilePath: "/path/book2.cbz", PageCount: 20, CurrentPage: 0},
+			// Series B: one read - list2 has no only-unread filter, so it
+			// should still come through.
+			{ID: "book3-read", Series: "Series B", Title: "Book 3 (read)", FilePath: "/path/book3.cbz", PageCount: 20, CurrentPage: 20},
+		},
+		ComicLists: []library.ComicListItem{
+			{
+				ID:          "list1",
+				Name:        "Series A (unread only)",
+				Type:        "ComicSmartListItem",
+				MatcherMode: "And",
+				Matchers: []library.ComicBookMatcher{
+					{Type: "Series", MatchOperator: "0", MatchValue: "Series A"},
+				},
+			},
+			{
+				ID:          "list2",
+				Name:        "Series B (all)",
+				Type:        "ComicSmartListItem",
+				MatcherMode: "And",
+				Matchers: []library.ComicBookMatcher{
+					{Type: "Series", MatchOperator: "0", MatchValue: "Series B"},
+				},
+			},
+		},
+	}
+
+	client := NewMockClient()
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	syncer := NewSyncer(client, backend)
+
+	unreadOnly := &SharedListSettings{OnlyUnread: true}
+	err := syncer.SetFilterListsWithSettings([]FilterListEntry{
+		{List: &lib.ComicLists[0], Settings: unreadOnly},
+		{List: &lib.ComicLists[1], Settings: nil}, // falls back to syncer default (no filtering)
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	operations, err := syncer.ComputeSyncPlan(make(map[string]*DeviceBook))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	bookIDs := make(map[string]bool)
+	for _, op := range operations {
+		bookIDs[op.Book.ID] = true
+	}
+
+	if bookIDs["book1-read"] {
+		t.Error("book1-read should have been excluded by list1's only-unread setting")
+	}
+	if !bookIDs["book2-unread"] {
+		t.Error("book2-unread should have been included (unread, matches list1)")
+	}
+	if !bookIDs["book3-read"] {
+		t.Error("book3-read should have been included (list2 has no only-unread filter)")
 	}
 }
 

@@ -491,7 +491,11 @@ func (s *Syncer) getReadingLists() []ReadingList {
 
 	if len(activeFilterLists) > 0 {
 		// Get the books that match the filter lists (union of all lists)
-		booksToSync := s.computeUnionOfLists()
+		booksToSync, err := s.computeUnionOfLists()
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to compute union of filter lists for sync_information.xml")
+			booksToSync = nil
+		}
 
 		// For each filter list, create a reading list entry
 		// Note: When syncing multiple lists, each list entry in sync_information.xml
