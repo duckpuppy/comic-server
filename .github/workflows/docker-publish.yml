@@ -12,6 +12,21 @@ on:
       - main
   workflow_dispatch:
 
+# Rapid successive pushes to the SAME ref only need the LATEST build to
+# finish - e.g. three quick fixes pushed to main in a row don't each need
+# their own build to complete before the next one can start, only the
+# last one's outcome matters. Scoped by ref (not just workflow name) so
+# this never cancels a DIFFERENT ref's build: each tag is its own unique
+# ref, so one release's build in flight is never touched by another
+# release's tag or by a plain main push - only genuinely-superseded runs
+# on the identical ref get canceled. A canceled docker push leaves no
+# broken state (registry blobs are content-addressed and a tag only
+# updates when the push completes), so this is safe even if a build gets
+# canceled partway through uploading.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}

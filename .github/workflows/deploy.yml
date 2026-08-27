@@ -5,6 +5,15 @@ on:
     workflows: ['Build and Publish Docker Images']
     types: [completed]
 
+# Queue overlapping deploys rather than canceling one mid-restart -
+# `docker compose pull && up -d` is quick but not instant, and letting a
+# deploy run to completion before the next one starts avoids stacking two
+# `docker compose up -d` calls against the same container. No
+# cancel-in-progress: unlike the build workflow, an in-flight deploy isn't
+# safely interruptible.
+concurrency:
+  group: deploy-mediaserver
+
 jobs:
   deploy:
     name: Deploy to mediaserver (live testing)
