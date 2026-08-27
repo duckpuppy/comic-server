@@ -2,6 +2,7 @@ package sync
 
 import (
 	"encoding/xml"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -109,6 +110,49 @@ func TestGetDeviceBooks(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestGetDeviceBooks_CircuitBreaksOnUnreachableDevice is the regression
+// test for a real lockout found live 2026-08-27: when a device goes
+// completely unreachable mid-sync (not just slow - every single read
+// fails), the individual-sidecar-read fallback used to grind through
+// every remaining file (each with its own 3 retries) with no way to bail
+// out early. Since a device can't start a second sync while one is
+// already running (StartSync rejects it), that meant a hung, doomed sync
+// against an unreachable device blocked the user from retrying for as
+// long as it took to exhaust the whole file list - potentially thousands
+// of files. This asserts GetDeviceBooks now fails fast instead of trying
+// every file.
+func TestGetDeviceBooks_CircuitBreaksOnUnreachableDevice(t *testing.T) {
+	client := NewMockClient()
+
+	// 30 fake device files - many more than the circuit breaker's
+	// threshold, so a naive implementation would try all 30 (x3 retries
+	// each = 90 ReadFile calls).
+	var fileList string
+	for i := 0; i < 30; i++ {
+		if i > 0 {
+			fileList += "\n"
+		}
+		fileList += fmt.Sprintf("book%d.cbp", i)
+	}
+	client.ListFilesResult = fileList
+	client.ReadMultiError = fmt.Errorf("batch read unsupported") // force the individual-read fallback
+	client.ReadFileError = fmt.Errorf("connection refused")      // every individual read fails too
+
+	backend := library.NewXMLBackendFromLibrary(&library.ComicLibrary{}, "", nil)
+	syncer := NewSyncer(client, backend)
+
+	_, err := syncer.GetDeviceBooks()
+	if err == nil {
+		t.Fatal("expected GetDeviceBooks to fail fast against a completely unreachable device")
+	}
+
+	// 10 (circuit breaker threshold) x 3 (retries per file) = 30 calls,
+	// not 90 (which is what trying all 30 files would produce).
+	if len(client.ReadFileCalls) > 30 {
+		t.Errorf("expected GetDeviceBooks to bail out well before trying all files, got %d ReadFile calls", len(client.ReadFileCalls))
 	}
 }
 

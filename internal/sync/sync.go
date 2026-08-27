@@ -252,7 +252,24 @@ func (s *Syncer) GetDeviceBooks() (map[string]*DeviceBook, error) {
 
 			sidecars = make(map[string][]byte)
 			successCount := 0
+			// Circuit breaker for a device that's gone completely
+			// unreachable (not just slow): a run of consecutive failures
+			// this long means every retry from here on is doomed too, so
+			// bail out of the whole sync attempt now instead of grinding
+			// through the rest of potentially thousands of sidecar files,
+			// each with its own 3 retries, only to then fail every write
+			// operation the same way. Also fixes a real-world lockout:
+			// while a sync is running the device can't start another one
+			// (StartSync rejects it), so a hung, doomed sync here directly
+			// blocked the user from retrying for as long as it took to
+			// exhaust every remaining file - found live 2026-08-27.
+			const maxConsecutiveFailures = 10
+			consecutiveFailures := 0
 			for _, sidecarFile := range sidecarFiles {
+				if consecutiveFailures >= maxConsecutiveFailures {
+					return nil, fmt.Errorf("device unreachable: %d consecutive sidecar reads failed", consecutiveFailures)
+				}
+
 				// Try to read the file with retries
 				var data []byte
 				var err error
@@ -285,6 +302,7 @@ func (s *Syncer) GetDeviceBooks() (map[string]*DeviceBook, error) {
 				}
 
 				if err != nil {
+					consecutiveFailures++
 					log.Warn().
 						Err(err).
 						Str("sidecar", sidecarFile).
@@ -292,6 +310,7 @@ func (s *Syncer) GetDeviceBooks() (map[string]*DeviceBook, error) {
 						Msg("Failed to read individual sidecar file after all retries")
 					continue
 				}
+				consecutiveFailures = 0
 				sidecars[sidecarFile] = data
 				successCount++
 
@@ -355,6 +374,43 @@ func (s *Syncer) GetDeviceBooks() (map[string]*DeviceBook, error) {
 	return deviceBooks, nil
 }
 
+// booksForFilterList returns the books matched by one filter list, with
+// that list's own settings applied (or the Syncer's default settings, for
+// a list with no override) - the per-list unit both computeUnionOfLists
+// (for the sync plan) and the sync_information.xml writer in session.go
+// (for reporting each list's own membership to the device) build on, so
+// both agree on what's actually "in" a given list.
+func (s *Syncer) booksForFilterList(list *library.ComicListItem) ([]*library.ComicBook, error) {
+	if list == nil {
+		return nil, nil
+	}
+
+	// GetBooksForList (not MatchBooks) so this works for every list type a
+	// device can be assigned: smart lists, ID lists, and reading lists
+	// (same class of fix as comic-server-vwl's Komga-target fix).
+	// MatchBooks only evaluates matcher rules, which an ID/reading list
+	// doesn't have.
+	matchedBooks, err := s.backend.GetBooksForList(list)
+	if err != nil {
+		// Matches computeUnionOfLists' pre-refactor behavior: log-and-skip
+		// rather than fail the whole sync over one bad list.
+		return nil, nil
+	}
+
+	settings := s.settings
+	if override, ok := s.listSettings[list.ID]; ok {
+		settings = override
+	}
+	if settings == nil {
+		return matchedBooks, nil
+	}
+	matchedBooks, err = ApplySettingsWithResolver(matchedBooks, settings, s.resolvePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to apply settings for list %q: %w", list.Name, err)
+	}
+	return matchedBooks, nil
+}
+
 // computeUnionOfLists computes the union of all filter lists, applying
 // each list's own settings (see SetFilterListsWithSettings) - or the
 // Syncer's default settings, for a list with no override - to that list's
@@ -367,30 +423,9 @@ func (s *Syncer) computeUnionOfLists() ([]*library.ComicBook, error) {
 	bookMap := make(map[string]*library.ComicBook)
 
 	for _, list := range s.filterLists {
-		if list == nil {
-			continue
-		}
-
-		// Get books matching this list - GetBooksForList (not MatchBooks)
-		// so this works for every list type a device can be assigned:
-		// smart lists, ID lists, and reading lists (same class of fix as
-		// comic-server-vwl's Komga-target fix). MatchBooks only evaluates
-		// matcher rules, which an ID/reading list doesn't have.
-		matchedBooks, err := s.backend.GetBooksForList(list)
+		matchedBooks, err := s.booksForFilterList(list)
 		if err != nil {
-			// Log error but continue with other lists
-			continue
-		}
-
-		settings := s.settings
-		if override, ok := s.listSettings[list.ID]; ok {
-			settings = override
-		}
-		if settings != nil {
-			matchedBooks, err = ApplySettingsWithResolver(matchedBooks, settings, s.resolvePath)
-			if err != nil {
-				return nil, fmt.Errorf("failed to apply settings for list %q: %w", list.Name, err)
-			}
+			return nil, err
 		}
 
 		// Add to union (map automatically deduplicates by book ID)

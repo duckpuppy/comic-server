@@ -498,28 +498,33 @@ func (s *Syncer) getReadingLists() []ReadingList {
 	}
 
 	if len(activeFilterLists) > 0 {
-		// Get the books that match the filter lists (union of all lists)
-		booksToSync, err := s.computeUnionOfLists()
-		if err != nil {
-			log.Error().Err(err).Msg("Failed to compute union of filter lists for sync_information.xml")
-			booksToSync = nil
-		}
-
-		// For each filter list, create a reading list entry
-		// Note: When syncing multiple lists, each list entry in sync_information.xml
-		// will contain the same union of books (this matches ComicRackCE behavior)
+		// For each filter list, create a reading list entry containing
+		// THAT list's own matched-and-settings-filtered books - not the
+		// union across every list assigned to the device. Writing the
+		// union into every entry (the previous behavior) made every
+		// synced list look identical on the device regardless of how
+		// different their actual membership was - see comic-server-f4i,
+		// found live after enabling per-list only-unread settings that
+		// differed between two lists but the device still showed them as
+		// the same content.
 		for _, filterList := range activeFilterLists {
+			booksForThisList, err := s.booksForFilterList(filterList)
+			if err != nil {
+				log.Error().Err(err).Str("list_name", filterList.Name).Msg("Failed to compute list's own books for sync_information.xml")
+				booksForThisList = nil
+			}
+
 			readingList := ReadingList{
 				Name:        filterList.Name,
 				Description: "",
 			}
 
 			// Add book IDs from the filtered books
-			if len(booksToSync) > 0 {
+			if len(booksForThisList) > 0 {
 				readingList.Books = &BookIDs{
-					ID: make([]string, 0, len(booksToSync)),
+					ID: make([]string, 0, len(booksForThisList)),
 				}
-				for _, book := range booksToSync {
+				for _, book := range booksForThisList {
 					readingList.Books.ID = append(readingList.Books.ID, book.ID)
 				}
 			}
@@ -527,7 +532,7 @@ func (s *Syncer) getReadingLists() []ReadingList {
 			lists = append(lists, readingList)
 			log.Debug().
 				Str("list_name", filterList.Name).
-				Int("book_count", len(booksToSync)).
+				Int("book_count", len(booksForThisList)).
 				Msg("Added smart list to sync_information.xml")
 		}
 	}
