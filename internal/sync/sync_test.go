@@ -975,6 +975,58 @@ func TestComputeSyncPlan_IdListSyncsItsBooks(t *testing.T) {
 	}
 }
 
+// TestGetReadingLists_NoDuplicateEntryForNonSmartFilterList is the
+// regression test for a real device bug found live 2026-08-27: an ID
+// list ("To Read", ComicIdListItem) assigned as a device's filter list
+// showed its books synced fine, but the list itself never appeared on
+// the device. getReadingLists' "regular reading lists" pass only skipped
+// smart lists (comicrack:ComicSmartListItem), so a filter list of any
+// other type (ID list, reading list) got written into sync_information.xml
+// TWICE: once here with its raw, unfiltered ComicReadingListItem Items
+// (empty for an ID list, since those store membership in BookIds instead)
+// and once more, correctly, in the filter-list pass below. Two <List>
+// entries sharing a Name - the first one empty - is exactly the kind of
+// thing a device app would resolve by hiding the list.
+func TestGetReadingLists_NoDuplicateEntryForNonSmartFilterList(t *testing.T) {
+	lib := &library.ComicLibrary{
+		Books: []library.ComicBook{
+			{ID: "book1", Title: "Book 1", FilePath: "/path/book1.cbz"},
+			{ID: "book2", Title: "Book 2", FilePath: "/path/book2.cbz"},
+		},
+		ComicLists: []library.ComicListItem{
+			{
+				ID:      "idlist1",
+				Name:    "To Read",
+				Type:    "ComicIdListItem",
+				BookIds: []string{"book1", "book2"},
+			},
+		},
+	}
+
+	client := NewMockClient()
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	syncer := NewSyncer(client, backend)
+
+	if err := syncer.SetFilterLists([]*library.ComicListItem{&lib.ComicLists[0]}); err != nil {
+		t.Fatalf("unexpected error setting an ID list as a filter: %v", err)
+	}
+
+	readingLists := syncer.getReadingLists()
+
+	var matches []ReadingList
+	for _, rl := range readingLists {
+		if rl.Name == "To Read" {
+			matches = append(matches, rl)
+		}
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected exactly 1 \"To Read\" entry in sync_information.xml, got %d: %+v", len(matches), matches)
+	}
+	if matches[0].Books == nil || len(matches[0].Books.ID) != 2 {
+		t.Errorf("expected the single \"To Read\" entry to have its 2 real books, got %+v", matches[0])
+	}
+}
+
 func TestComputeSyncPlan_MultipleFilterLists(t *testing.T) {
 	// Create test library
 	lib := &library.ComicLibrary{

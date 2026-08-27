@@ -456,6 +456,26 @@ func (s *Syncer) writeSyncInformation() error {
 func (s *Syncer) getReadingLists() []ReadingList {
 	var lists []ReadingList
 
+	// IDs of every list assigned to this device as a filter (smart list,
+	// ID list, or reading list) - these are handled separately below with
+	// their own settings-filtered membership, so the "regular reading
+	// lists" pass must skip them too, not just smart lists. Missing this
+	// for a non-smart-list type (e.g. a ComicIdListItem like "To Read")
+	// wrote it into sync_information.xml TWICE - once here with its raw,
+	// unfiltered membership, once below with the correct filtered one -
+	// two <List> entries sharing a Name that the device app appears to
+	// resolve by hiding the list entirely, even though its books still
+	// transferred fine as regular Add operations. Found live 2026-08-27.
+	filterListIDs := make(map[string]bool)
+	for _, fl := range s.filterLists {
+		if fl != nil {
+			filterListIDs[fl.ID] = true
+		}
+	}
+	if s.filterList != nil {
+		filterListIDs[s.filterList.ID] = true
+	}
+
 	// Add regular reading lists from the library
 	allLists, err := s.backend.GetAllLists()
 	if err != nil {
@@ -463,8 +483,9 @@ func (s *Syncer) getReadingLists() []ReadingList {
 		// Continue without library lists - we may still have filter lists
 	} else {
 		for _, listItem := range allLists {
-			// Skip smart lists - we'll handle them separately
-			if listItem.Type == "comicrack:ComicSmartListItem" {
+			// Skip smart lists, and any list already handled as a filter
+			// list below (see filterListIDs above).
+			if listItem.Type == "comicrack:ComicSmartListItem" || filterListIDs[listItem.ID] {
 				continue
 			}
 
