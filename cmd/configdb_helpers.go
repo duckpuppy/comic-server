@@ -5,20 +5,22 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/duckpuppy/comic-server/internal/config"
 	"github.com/duckpuppy/comic-server/internal/configdb"
 	"github.com/duckpuppy/comic-server/internal/sync"
 )
 
-// openConfigDB opens config.db at the same path cmd/server.go uses -
-// $XDG_CONFIG_HOME/comic-server/config.db (or the OS equivalent). Callers
-// are responsible for closing the returned DB.
+// openConfigDB opens config.db next to the resolved --config file (same
+// rule cmd/server.go uses) - NOT config.GetConfigDir()'s XDG default,
+// which ignores --config and would silently open a different config.db
+// than the one the server itself is using whenever --config points
+// somewhere non-default. Callers are responsible for closing the
+// returned DB.
 func openConfigDB() (*configdb.DB, error) {
-	configDir, err := config.GetConfigDir()
+	configPath, err := GetConfigPath()
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve config directory: %w", err)
+		return nil, fmt.Errorf("failed to resolve config path: %w", err)
 	}
-	db, err := configdb.Open(filepath.Join(configDir, "config.db"))
+	db, err := configdb.Open(filepath.Join(filepath.Dir(configPath), "config.db"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to open config.db: %w", err)
 	}

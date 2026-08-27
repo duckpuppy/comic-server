@@ -170,11 +170,19 @@ func runServer(cmd *cobra.Command, args []string) error {
 	// independent of which library backend is active below. See
 	// comic-server-745 for the design record, comic-server-ihb for this
 	// foundation issue, and comic-server-3ek for the device/list tables.
-	configDir, err := config.GetConfigDir()
-	if err != nil {
-		return fmt.Errorf("failed to determine config directory: %w", err)
-	}
-	configDBPath := filepath.Join(configDir, "config.db")
+	//
+	// Deliberately placed next to configPath (the resolved --config file),
+	// NOT config.GetConfigDir()'s XDG default - GetConfigDir() ignores
+	// --config entirely, so a container invoked with
+	// `--config /config/config.yaml` (comic-server's own Docker image) was
+	// putting config.db under $HOME/.config/comic-server instead, a path
+	// with no volume mount at all. That's the container's throwaway
+	// filesystem: every restart silently wiped device registrations, list
+	// assignments, and Komga targets, discovered 2026-08-26 when
+	// mediaserver's real device data survived only by chance until this
+	// was caught (see comic-server-3ek/cde's one-time migration, which by
+	// then had already cleared the config.yaml fields it moved out of).
+	configDBPath := filepath.Join(filepath.Dir(configPath), "config.db")
 	configDB, err := configdb.Open(configDBPath)
 	if err != nil {
 		return fmt.Errorf("failed to open config database: %w", err)
