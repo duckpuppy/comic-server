@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.0](https://github.com/duckpuppy/comic-server/compare/v1.9.3...v1.10.0) (2026-08-27)
+
+
+### Features
+
+* retry a whole failed operation with a fresh connection, not just the initial connect ([33612d9](https://github.com/duckpuppy/comic-server/commit/33612d9385897e9a8a955a25acd5d913c618280e))
+
 ## [1.9.3](https://github.com/duckpuppy/comic-server/compare/v1.9.2...v1.9.3) (2026-08-27)
 
 
