@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.1](https://github.com/duckpuppy/comic-server/compare/v1.10.0...v1.10.1) (2026-08-27)
+
+
+### Bug Fixes
+
+* non-smart filter list written twice into sync_information.xml, device hides it ([89ae2d6](https://github.com/duckpuppy/comic-server/commit/89ae2d651a7274df6a3bfe5d6cc32c47a6fec972))
+
 ## [1.10.0](https://github.com/duckpuppy/comic-server/compare/v1.9.3...v1.10.0) (2026-08-27)
 
 
