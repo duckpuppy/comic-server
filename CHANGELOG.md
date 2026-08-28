@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.10.9](https://github.com/duckpuppy/comic-server/compare/v1.10.8...v1.10.9) (2026-08-28)
+
+
+### Bug Fixes
+
+* flatten .cbz entry names to basename, matching ComicRackCE's writer ([e71c6a6](https://github.com/duckpuppy/comic-server/commit/e71c6a66471578febe4a733f88adb90ef85e5fc8))
+* rename .cbz page entries sequentially to match the sidecar's Key ([4fd60e9](https://github.com/duckpuppy/comic-server/commit/4fd60e9012b8cdd37e621cc243516ea310055d7f))
+
 ## [1.10.8](https://github.com/duckpuppy/comic-server/compare/v1.10.7...v1.10.8) (2026-08-28)
 
 
