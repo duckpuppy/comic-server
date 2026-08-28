@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.8](https://github.com/duckpuppy/comic-server/compare/v1.10.7...v1.10.8) (2026-08-28)
+
+
+### Bug Fixes
+
+* normalizeArchiveForSync used a data descriptor instead of writing sizes upfront ([cf97a09](https://github.com/duckpuppy/comic-server/commit/cf97a09bbe8fdd70d909b203c9fe6d2101f63986))
+
 ## [1.10.7](https://github.com/duckpuppy/comic-server/compare/v1.10.6...v1.10.7) (2026-08-28)
 
 
