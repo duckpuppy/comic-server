@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.1](https://github.com/duckpuppy/comic-server/compare/v1.11.0...v1.11.1) (2026-08-28)
+
+
+### Bug Fixes
+
+* reimport now lets comic-server's live value win a genuine field conflict ([df164f5](https://github.com/duckpuppy/comic-server/commit/df164f5c83a061e0428089a3a645998cc0c4b968))
+
 ## [1.11.0](https://github.com/duckpuppy/comic-server/compare/v1.10.9...v1.11.0) (2026-08-28)
 
 
