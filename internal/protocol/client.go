@@ -372,7 +372,21 @@ func (c *Client) ListFiles() (string, error) {
 
 // WriteFile sends CommandWriteFile to write a file to the device
 // Request: BYTE(5) + STRING(filename) + DATA(contents)
-// Response: (none)
+// Response: BOOL(success)
+//
+// The device stages an incoming write and only commits/renames it to the
+// requested filename once it finishes processing the transfer - signaled
+// by this BOOL. comic-server used to close the connection immediately
+// after writing the last byte of data without reading anything back
+// (matching ComicRackCE's WirelessSyncProvider.WriteFile only up through
+// the data send, missing its trailing `if (!ReadBool(s)) throw new
+// IOException();`). Closing the socket before the device sends that
+// acknowledgment can race its finalize step, leaving the data stranded
+// under an internal staging name instead of the real filename - found
+// live 2026-08-28 via files named e.g. "sync4779799853534301468" instead
+// of a real comic filename on a real device, with no comic body written
+// under its real name since long before this entire debugging session
+// (comic-server-*, see the writeFile-ack bd issue).
 func (c *Client) WriteFile(filename string, data []byte) error {
 	return c.execute(func(conn net.Conn) error {
 		// Send command
@@ -388,12 +402,23 @@ func (c *Client) WriteFile(filename string, data []byte) error {
 		// dataTimeout. A real comic book can be tens to hundreds of MB;
 		// the default receiveTimeout (sized for a command byte and a
 		// filename) isn't remotely enough to move that much data, on any
-		// WiFi, regardless of actual flakiness.
+		// WiFi, regardless of actual flakiness. The same extended
+		// deadline covers the trailing BOOL read below too - the device
+		// can't finalize the write until the whole body has arrived, so
+		// the ack won't come back any faster than the transfer itself.
 		if err := conn.SetDeadline(time.Now().Add(c.dataTimeout(int64(len(data))))); err != nil {
 			return fmt.Errorf("failed to extend deadline for file data: %w", err)
 		}
 		if err := WriteData(conn, data); err != nil {
 			return fmt.Errorf("failed to write file data: %w", err)
+		}
+
+		success, err := ReadBool(conn)
+		if err != nil {
+			return fmt.Errorf("failed to read write acknowledgment: %w", err)
+		}
+		if !success {
+			return fmt.Errorf("device reported write failure for %q", filename)
 		}
 
 		return nil
@@ -402,7 +427,13 @@ func (c *Client) WriteFile(filename string, data []byte) error {
 
 // DeleteFile sends CommandDeleteFile to delete a file from the device
 // Request: BYTE(4) + STRING(filename)
-// Response: (none)
+// Response: BOOL(success)
+//
+// ComicRackCE's own client reads this and discards it (no error check) -
+// matched here for the same reason: draining it before closing the
+// connection, rather than leaving an unread byte on a socket the device
+// may still be writing to when we close (see WriteFile's ack for the
+// case where NOT reading this actually mattered).
 func (c *Client) DeleteFile(filename string) error {
 	return c.execute(func(conn net.Conn) error {
 		// Send command
@@ -412,6 +443,10 @@ func (c *Client) DeleteFile(filename string) error {
 
 		if err := WriteString(conn, filename); err != nil {
 			return fmt.Errorf("failed to write filename: %w", err)
+		}
+
+		if _, err := ReadBool(conn); err != nil {
+			return fmt.Errorf("failed to read delete acknowledgment: %w", err)
 		}
 
 		return nil

@@ -228,7 +228,7 @@ func TestWriteFile_LargePayloadOverSlowLinkDoesNotTimeOut(t *testing.T) {
 
 		// CommandWriteFile request: BYTE(command) + STRING(filename) +
 		// DATA(length + body). Read it all, deliberately slowly, then
-		// just close - WriteFile doesn't wait for a response.
+		// send the BOOL(success) acknowledgment WriteFile now waits for.
 		buf := make([]byte, 1)
 		if _, err := conn.Read(buf); err != nil {
 			return // command byte
@@ -266,6 +266,8 @@ func TestWriteFile_LargePayloadOverSlowLinkDoesNotTimeOut(t *testing.T) {
 			remaining -= n
 			time.Sleep(20 * time.Millisecond)
 		}
+
+		conn.Write([]byte{0x01}) // BOOL(true) - write succeeded
 	}()
 
 	addr := listener.Addr().(*net.TCPAddr)
@@ -282,5 +284,66 @@ func TestWriteFile_LargePayloadOverSlowLinkDoesNotTimeOut(t *testing.T) {
 	payload := make([]byte, 2*1024*1024)
 	if err := client.WriteFile("test.cbp", payload); err != nil {
 		t.Errorf("expected WriteFile to succeed despite exceeding the flat default timeout, got: %v", err)
+	}
+}
+
+// TestWriteFile_DeviceFailureAckReturnsError is the regression test for
+// the writeFile-ack bug found live 2026-08-28: comic-server's WriteFile
+// closed the connection immediately after sending the file body, never
+// reading the trailing BOOL(success) ComicRackCE's own client reads and
+// throws on (WirelessSyncProvider.WriteFile: `if (!ReadBool(s)) throw
+// new IOException();`). A device that failed to persist the write (full
+// disk, staging error, anything) had no way to signal that failure back
+// to comic-server, which just recorded the operation as a success -
+// found via a real device where added books landed as unresolvable
+// internally-named files instead of under their real filenames.
+func TestWriteFile_DeviceFailureAckReturnsError(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to start listener: %v", err)
+	}
+	defer listener.Close()
+
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		buf := make([]byte, 1)
+		if _, err := conn.Read(buf); err != nil {
+			return // command byte
+		}
+		var lenBuf [4]byte
+		if _, err := io.ReadFull(conn, lenBuf[:]); err != nil {
+			return
+		}
+		nameLen := int(lenBuf[0])<<24 | int(lenBuf[1])<<16 | int(lenBuf[2])<<8 | int(lenBuf[3])
+		nameBuf := make([]byte, nameLen)
+		if _, err := io.ReadFull(conn, nameBuf); err != nil {
+			return // filename
+		}
+		var dataLenBuf [8]byte
+		if _, err := io.ReadFull(conn, dataLenBuf[:]); err != nil {
+			return
+		}
+		dataLen := int64(0)
+		for _, b := range dataLenBuf {
+			dataLen = dataLen<<8 | int64(b)
+		}
+		if _, err := io.CopyN(io.Discard, conn, dataLen); err != nil {
+			return
+		}
+
+		conn.Write([]byte{0x00}) // BOOL(false) - device reports write failure
+	}()
+
+	addr := listener.Addr().(*net.TCPAddr)
+	client := protocol.NewClient("127.0.0.1", addr.Port)
+	client.SetRetries(0)
+
+	if err := client.WriteFile("test.cbp", []byte("payload")); err == nil {
+		t.Error("expected WriteFile to return an error when the device acks with BOOL(false)")
 	}
 }
