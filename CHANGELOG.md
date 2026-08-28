@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.6](https://github.com/duckpuppy/comic-server/compare/v1.10.5...v1.10.6) (2026-08-28)
+
+
+### Bug Fixes
+
+* strip embedded ComicInfo.xml/ComicBook.xml before syncing a .cbz ([9c4df89](https://github.com/duckpuppy/comic-server/commit/9c4df89420d536f4b67306d93e14d7c4aa4aff3f))
+
 ## [1.10.5](https://github.com/duckpuppy/comic-server/compare/v1.10.4...v1.10.5) (2026-08-28)
 
 
