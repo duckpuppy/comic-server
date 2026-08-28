@@ -609,11 +609,66 @@ func TestGetTitleForOp(t *testing.T) {
 			op:       SyncOperation{},
 			expected: "(unknown)",
 		},
+		{
+			// comic-server-aev: library FilePath is Windows-style
+			// (ComicRackCE runs on Windows); on Linux, filepath.Base
+			// wouldn't recognize '\' as a separator and would return
+			// the whole path unchanged.
+			name: "book without title, Windows-style FilePath",
+			op: SyncOperation{
+				Book: &library.ComicBook{
+					ID:       "book1",
+					FilePath: `G:\Comics\DC Comics\Foo\Foo Vol.2016 #01.cbz`,
+				},
+			},
+			expected: "Foo Vol.2016 #01",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := getTitleForOp(tt.op)
+			if result != tt.expected {
+				t.Errorf("expected '%s', got '%s'", tt.expected, result)
+			}
+		})
+	}
+}
+
+// TestBasename covers comic-server-aev: on-device filenames must use only
+// the final path component, regardless of whether the source path uses
+// Windows or Unix separators.
+func TestBasename(t *testing.T) {
+	tests := []struct {
+		name     string
+		path     string
+		expected string
+	}{
+		{
+			name:     "windows path",
+			path:     `G:\Comics\DC Comics\Foo\Foo Vol.2016 #01 (July, 2016).cbz`,
+			expected: "Foo Vol.2016 #01 (July, 2016).cbz",
+		},
+		{
+			name:     "unix path",
+			path:     "/data/comics/DC Comics/Foo.cbz",
+			expected: "Foo.cbz",
+		},
+		{
+			name:     "no separators",
+			path:     "Foo.cbz",
+			expected: "Foo.cbz",
+		},
+		{
+			name:     "empty",
+			path:     "",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := basename(tt.path)
 			if result != tt.expected {
 				t.Errorf("expected '%s', got '%s'", tt.expected, result)
 			}

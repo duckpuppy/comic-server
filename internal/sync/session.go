@@ -262,7 +262,7 @@ func (s *Syncer) executeOperation(op SyncOperation, writtenFiles map[string]bool
 func (s *Syncer) addBook(book *library.ComicBook) (string, error) {
 	// 1. Determine target filename on device
 	// Use actual filename from library, not GUID
-	baseFilename := filepath.Base(book.FilePath)
+	baseFilename := basename(book.FilePath)
 	// Change extension to .cbp for device storage
 	filename := strings.TrimSuffix(baseFilename, filepath.Ext(baseFilename)) + ".cbp"
 
@@ -561,6 +561,21 @@ func (s *Syncer) getReadingLists() []ReadingList {
 	return lists
 }
 
+// basename returns the final path component of book.FilePath, splitting on
+// both '/' and '\' regardless of host OS. Library paths come from
+// ComicRackCE running on Windows (e.g. `G:\Comics\DC Comics\Foo.cbz`), but
+// comic-server runs on Linux where filepath.Base only recognizes '/' - it
+// would treat a Windows path as having no separators at all and return it
+// unchanged, turning the entire path into the on-device filename
+// (comic-server-aev, found live 2026-08-27: tablet showed full
+// "G:\Comics\..." strings as filenames).
+func basename(path string) string {
+	if idx := strings.LastIndexAny(path, `/\`); idx >= 0 {
+		return path[idx+1:]
+	}
+	return path
+}
+
 // getTitleForOp extracts a displayable title from a sync operation
 func getTitleForOp(op SyncOperation) string {
 	if op.Book != nil {
@@ -569,7 +584,7 @@ func getTitleForOp(op SyncOperation) string {
 		}
 		// Use filename if title is empty
 		if op.Book.FilePath != "" {
-			baseFilename := filepath.Base(op.Book.FilePath)
+			baseFilename := basename(op.Book.FilePath)
 			return strings.TrimSuffix(baseFilename, filepath.Ext(baseFilename))
 		}
 		return op.Book.ID
