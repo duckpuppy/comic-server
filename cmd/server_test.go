@@ -1,11 +1,16 @@
 package cmd
 
 import (
+	"errors"
+	"path/filepath"
 	"testing"
 
+	"github.com/duckpuppy/comic-server/internal/config"
 	"github.com/duckpuppy/comic-server/internal/configdb"
+	"github.com/duckpuppy/comic-server/internal/device"
 	"github.com/duckpuppy/comic-server/internal/library"
 	csync "github.com/duckpuppy/comic-server/internal/sync"
+	"github.com/duckpuppy/comic-server/internal/syncstate"
 )
 
 // TestApplyDeviceConfig_AcceptsIdList is the regression test for the most
@@ -63,5 +68,83 @@ func TestApplyDeviceConfig_RejectsFolder(t *testing.T) {
 
 	if err := applyDeviceConfig(syncer, deviceConfig, backend); err == nil {
 		t.Error("expected an error assigning a folder, got nil")
+	}
+}
+
+func newTestConfigDB(t *testing.T) *configdb.DB {
+	t.Helper()
+	db, err := configdb.Open(filepath.Join(t.TempDir(), "config.db"))
+	if err != nil {
+		t.Fatalf("failed to open test config db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	return db
+}
+
+// TestTriggerManualSync_DeviceNotConnected covers comic-server-yfp's manual
+// sync trigger's synchronous pre-check: a device ID with nothing in the
+// registry (never discovered, or discovered and then aged out) can't be
+// synced - there's no IP to connect to.
+func TestTriggerManualSync_DeviceNotConnected(t *testing.T) {
+	registry := device.NewRegistry()
+	syncManager := syncstate.NewManager(10)
+	backend := library.NewXMLBackendFromLibrary(&library.ComicLibrary{}, "", nil)
+
+	err := triggerManualSync("device-1", registry, syncManager, &config.Config{}, backend, newTestConfigDB(t), nil, nil)
+	if !errors.Is(err, device.ErrNotConnected) {
+		t.Errorf("expected device.ErrNotConnected, got %v", err)
+	}
+}
+
+// TestTriggerManualSync_AlreadySyncing covers the other synchronous
+// pre-check: a device that's mid-sync already shouldn't have a second one
+// started concurrently for it (syncstate.Manager.StartSync would reject it
+// anyway, but the pre-check here means the HTTP caller finds out
+// immediately instead of after handleSyncRequest dials out and fails).
+func TestTriggerManualSync_AlreadySyncing(t *testing.T) {
+	registry := device.NewRegistry()
+	registry.Add(&device.Info{ID: "device-1", Name: "Test Tablet"}, "192.168.1.100")
+
+	syncManager := syncstate.NewManager(10)
+	if err := syncManager.StartSync("device-1", "192.168.1.100", "Test Tablet"); err != nil {
+		t.Fatalf("failed to seed an in-progress sync: %v", err)
+	}
+
+	backend := library.NewXMLBackendFromLibrary(&library.ComicLibrary{}, "", nil)
+
+	err := triggerManualSync("device-1", registry, syncManager, &config.Config{}, backend, newTestConfigDB(t), nil, nil)
+	var alreadySyncing *syncstate.DeviceAlreadySyncingError
+	if !errors.As(err, &alreadySyncing) {
+		t.Errorf("expected *syncstate.DeviceAlreadySyncingError, got %v", err)
+	}
+}
+
+// TestTriggerManualSync_StartsInBackground confirms a connected, idle
+// device passes both pre-checks and returns immediately (nil) without
+// waiting for the sync itself to finish - the sync (which will fail fast
+// here, since nothing is actually listening on the fake device's IP) runs
+// in its own goroutine.
+func TestTriggerManualSync_StartsInBackground(t *testing.T) {
+	registry := device.NewRegistry()
+	registry.Add(&device.Info{ID: "device-1", Name: "Test Tablet"}, "127.0.0.1")
+
+	syncManager := syncstate.NewManager(10)
+	backend := library.NewXMLBackendFromLibrary(&library.ComicLibrary{}, "", nil)
+
+	// Deliberately not t.Cleanup(db.Close): triggerManualSync's whole point
+	// is that the actual sync keeps running after this function returns,
+	// in its own goroutine (it'll fail fast here since nothing's really
+	// listening on 127.0.0.1's comic-server port, but it still touches
+	// configDB on the way) - closing the DB on test exit would race that
+	// goroutine's own use of it and log a spurious "database is closed"
+	// error. The temp dir (and its still-open fd) is cleaned up by the OS
+	// once the test binary exits.
+	configDB, err := configdb.Open(filepath.Join(t.TempDir(), "config.db"))
+	if err != nil {
+		t.Fatalf("failed to open test config db: %v", err)
+	}
+
+	if err := triggerManualSync("device-1", registry, syncManager, &config.Config{}, backend, configDB, nil, nil); err != nil {
+		t.Errorf("expected nil (sync started in the background), got %v", err)
 	}
 }

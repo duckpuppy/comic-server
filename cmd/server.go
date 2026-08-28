@@ -369,6 +369,9 @@ func runServer(cmd *cobra.Command, args []string) error {
 		BuildDate: BuildDate,
 	}
 	apiServer := api.NewServer(syncManager, registry, backend, cfg, configPath, apiVersion, wsHub, configDB)
+	apiServer.SetSyncTrigger(func(deviceID string) error {
+		return triggerManualSync(deviceID, registry, syncManager, cfg, backend, configDB, deviceLimiter, syncSemaphore)
+	})
 
 	if cfg.Server.ComicVineAPIKey != "" {
 		if err := wireScraperAPI(apiServer, cfg.Server.ComicVineAPIKey); err != nil {
@@ -832,6 +835,53 @@ func applyDeviceConfig(syncer *csync.Syncer, deviceConfig *configdb.Device, back
 			Strs("list_names", listNames).
 			Msg("Applied multiple lists to syncer")
 	}
+
+	return nil
+}
+
+// triggerManualSync starts a sync for deviceID immediately, if it's
+// currently connected and not already syncing (comic-server-yfp) -
+// letting a user force a sync from the web UI instead of waiting for
+// auto-sync or the device's own sync button. Backs api.Server's
+// SetSyncTrigger callback.
+//
+// The two pre-checks (device connected, not already syncing) happen
+// synchronously so an HTTP caller gets an immediate, specific error; the
+// sync itself runs in a background goroutine rather than blocking the
+// caller for however long the sync takes, mirroring how a discovery-loop-
+// triggered sync (handleDiscoveredDevice) already never blocks anything
+// else in the running server for that request's own success/failure -
+// this just gets that same async result for a REST-triggered sync too.
+func triggerManualSync(
+	deviceID string,
+	registry *device.Registry,
+	syncManager *syncstate.Manager,
+	cfg *config.Config,
+	backend library.Backend,
+	configDB *configdb.DB,
+	deviceLimiter *ratelimit.DeviceLimiter,
+	syncSemaphore chan struct{},
+) error {
+	dev, ok := registry.Get(deviceID)
+	if !ok {
+		return device.ErrNotConnected
+	}
+
+	if syncManager.IsDeviceSyncing(deviceID) {
+		return &syncstate.DeviceAlreadySyncingError{DeviceID: deviceID}
+	}
+
+	logger := log.With().
+		Str("device_id", deviceID).
+		Str("device_ip", dev.IPAddress).
+		Logger()
+	logger.Info().Msg("Manual sync triggered via API")
+
+	go func() {
+		if err := handleSyncRequest(dev.Info, dev.IPAddress, cfg, backend, configDB, syncManager, deviceLimiter, syncSemaphore); err != nil {
+			logger.Error().Err(err).Msg("Manually triggered sync failed")
+		}
+	}()
 
 	return nil
 }

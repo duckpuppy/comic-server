@@ -2,11 +2,14 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/duckpuppy/comic-server/internal/device"
 	"github.com/duckpuppy/comic-server/internal/log"
+	"github.com/duckpuppy/comic-server/internal/syncstate"
 )
 
 // DeviceDetail represents full device information
@@ -192,6 +195,16 @@ func (s *Server) handleDevicesRouter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// URL: /api/devices/:deviceId/sync - manually trigger a sync
+	// (comic-server-yfp). Checked before the generic "/sync-history"
+	// substring could ever be mistaken for it: HasSuffix on "/sync" only
+	// matches a path actually ending in "/sync", never
+	// ".../sync-history".
+	if strings.HasSuffix(path, "/sync") {
+		s.handleTriggerSync(w, r)
+		return
+	}
+
 	// URL: /api/devices/:deviceId/lists/:listId/preview - the only
 	// /api/devices/:deviceId/lists... route left on this shape.
 	// Add/remove/update-settings for a device's lists all live on
@@ -254,4 +267,52 @@ func (s *Server) handleGetDeviceSyncHistory(w http.ResponseWriter, r *http.Reque
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+// handleTriggerSync manually starts a sync for a currently-connected
+// device (comic-server-yfp), instead of waiting for auto-sync or the
+// device's own sync button. The sync itself runs in the background - this
+// only reports whether it was started, via s.triggerSync (wired by
+// SetSyncTrigger; see its doc comment for why the API package can't call
+// into it directly).
+func (s *Server) handleTriggerSync(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// URL: /api/devices/:deviceId/sync
+	path := r.URL.Path
+	deviceID := strings.TrimSuffix(path[len("/api/devices/"):], "/sync")
+	if deviceID == "" {
+		http.Error(w, "Device ID is required", http.StatusBadRequest)
+		return
+	}
+
+	if s.triggerSync == nil {
+		http.Error(w, "Manual sync trigger not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	if err := s.triggerSync(deviceID); err != nil {
+		if errors.Is(err, device.ErrNotConnected) {
+			http.Error(w, "Device is not currently connected", http.StatusNotFound)
+			return
+		}
+		var alreadySyncing *syncstate.DeviceAlreadySyncingError
+		if errors.As(err, &alreadySyncing) {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		log.Error().Err(err).Str("device_id", deviceID).Msg("Failed to trigger manual sync")
+		http.Error(w, "Failed to trigger sync", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":    "sync started",
+		"device_id": deviceID,
+	})
 }

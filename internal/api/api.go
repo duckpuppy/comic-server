@@ -62,6 +62,24 @@ type Server struct {
 	komgaSyncer *komga.Syncer
 
 	coverCache *covers.Cache
+
+	// triggerSync kicks off a sync for a currently-connected device,
+	// looking it up by ID. Set via SetSyncTrigger - the API server can't
+	// call cmd.handleSyncRequest directly (cmd imports this package, so
+	// the reverse import would cycle), so cmd wires this closure in at
+	// startup instead, the same pattern as SetCoverCache/SetKomgaStatus.
+	// Returns device.ErrNotConnected if deviceID isn't currently
+	// connected, or a *syncstate.DeviceAlreadySyncingError if a sync for
+	// it is already running; otherwise the sync has been started (in the
+	// background - this returns without waiting for it to finish).
+	triggerSync func(deviceID string) error
+}
+
+// SetSyncTrigger wires manual sync-trigger support into the API server
+// (comic-server-yfp). Without it, POST /api/devices/:deviceId/sync
+// responds with 503 Service Unavailable.
+func (s *Server) SetSyncTrigger(fn func(deviceID string) error) {
+	s.triggerSync = fn
 }
 
 // SetCoverCache wires a cover-thumbnail cache into the API server. Without

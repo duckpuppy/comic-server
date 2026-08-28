@@ -439,3 +439,127 @@ func TestHandleDeviceListAdd_AcceptsNonSmartLists(t *testing.T) {
 		t.Errorf("expected a folder to still be rejected, got %d: %s", w.Code, w.Body.String())
 	}
 }
+
+func newTriggerSyncTestServer(t *testing.T) *Server {
+	t.Helper()
+	configDB, err := configdb.Open(filepath.Join(t.TempDir(), "config.db"))
+	if err != nil {
+		t.Fatalf("failed to open test config db: %v", err)
+	}
+	t.Cleanup(func() { configDB.Close() })
+
+	return &Server{
+		registry:    device.NewRegistry(),
+		config:      &config.Config{},
+		configDB:    configDB,
+		backend:     library.NewXMLBackendFromLibrary(&library.ComicLibrary{}, "", nil),
+		listCache:   library.NewListCache(5 * time.Minute),
+		syncManager: syncstate.NewManager(100),
+	}
+}
+
+func TestHandleTriggerSync_NoTriggerWired(t *testing.T) {
+	server := newTriggerSyncTestServer(t)
+	// server.triggerSync intentionally left nil - matches production
+	// startup before SetSyncTrigger is called, and any deployment that
+	// never wires it.
+
+	req := httptest.NewRequest(http.MethodPost, "/api/devices/device-1/sync", nil)
+	w := httptest.NewRecorder()
+	server.handleDevicesRouter(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503 with no trigger wired, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleTriggerSync_DeviceNotConnected(t *testing.T) {
+	server := newTriggerSyncTestServer(t)
+	server.SetSyncTrigger(func(deviceID string) error {
+		return device.ErrNotConnected
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/devices/device-1/sync", nil)
+	w := httptest.NewRecorder()
+	server.handleDevicesRouter(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for a disconnected device, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleTriggerSync_AlreadySyncing(t *testing.T) {
+	server := newTriggerSyncTestServer(t)
+	server.SetSyncTrigger(func(deviceID string) error {
+		return &syncstate.DeviceAlreadySyncingError{DeviceID: deviceID}
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/devices/device-1/sync", nil)
+	w := httptest.NewRecorder()
+	server.handleDevicesRouter(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Errorf("expected 409 for a device already syncing, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestHandleTriggerSync_Success(t *testing.T) {
+	server := newTriggerSyncTestServer(t)
+	var gotDeviceID string
+	server.SetSyncTrigger(func(deviceID string) error {
+		gotDeviceID = deviceID
+		return nil
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/devices/device-1/sync", nil)
+	w := httptest.NewRecorder()
+	server.handleDevicesRouter(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202 Accepted, got %d: %s", w.Code, w.Body.String())
+	}
+	if gotDeviceID != "device-1" {
+		t.Errorf("expected triggerSync to be called with device-1, got %q", gotDeviceID)
+	}
+
+	var response struct {
+		Status   string `json:"status"`
+		DeviceID string `json:"device_id"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if response.DeviceID != "device-1" {
+		t.Errorf("expected response device_id device-1, got %q", response.DeviceID)
+	}
+}
+
+func TestHandleTriggerSync_WrongMethod(t *testing.T) {
+	server := newTriggerSyncTestServer(t)
+	server.SetSyncTrigger(func(deviceID string) error { return nil })
+
+	req := httptest.NewRequest(http.MethodGet, "/api/devices/device-1/sync", nil)
+	w := httptest.NewRecorder()
+	server.handleDevicesRouter(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405 for GET, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestHandleTriggerSync_DoesNotShadowSyncHistoryRoute guards against a
+// regression where a broad "/sync" suffix check could accidentally
+// swallow the pre-existing "/sync-history" route (both start with
+// "/sync", but only one actually ends with it).
+func TestHandleTriggerSync_DoesNotShadowSyncHistoryRoute(t *testing.T) {
+	server := newTriggerSyncTestServer(t)
+	server.SetSyncTrigger(func(deviceID string) error { return nil })
+
+	req := httptest.NewRequest(http.MethodGet, "/api/devices/device-1/sync-history", nil)
+	w := httptest.NewRecorder()
+	server.handleDevicesRouter(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected /sync-history to still route to sync history (200), got %d: %s", w.Code, w.Body.String())
+	}
+}

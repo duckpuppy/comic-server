@@ -97,6 +97,7 @@ class DeviceDetail {
                         ${this.renderStatusBadge()}
                     </div>
                     <div class="device-header-actions">
+                        ${this.renderSyncNowButton()}
                         <button class="btn btn-secondary" onclick="router.navigate('/devices/${this.deviceId}/settings'); return false;">
                             ⚙️ Settings
                         </button>
@@ -126,6 +127,58 @@ class DeviceDetail {
                 </div>
             </div>
         `;
+    }
+
+    // Sync Now is only offered when the device is actually connected
+    // (device.ip is only populated from the registry - see
+    // handleGetDeviceDetail - so an offline/config-only device has
+    // nothing to dial) and not already mid-sync. comic-server-yfp.
+    renderSyncNowButton() {
+        if (!this.device.ip) {
+            return '';
+        }
+        if (this.device.is_syncing) {
+            return `<button class="btn btn-primary" disabled>⏳ Syncing…</button>`;
+        }
+        return `<button class="btn btn-primary" onclick="deviceDetail.triggerSyncNow()">🔄 Sync Now</button>`;
+    }
+
+    async triggerSyncNow() {
+        try {
+            const response = await fetch(`/api/devices/${this.deviceId}/sync`, { method: 'POST' });
+
+            if (response.status === 202) {
+                // Sync accepted. The sync_started WebSocket event
+                // (handleSyncStarted) will also flip this, but set it
+                // immediately too so the button disables without waiting
+                // on that round trip.
+                this.device.is_syncing = true;
+                this.render();
+                this.attachListeners();
+                return;
+            }
+
+            if (response.status === 409) {
+                alert('This device is already syncing.');
+                return;
+            }
+
+            if (response.status === 404) {
+                alert('This device is not currently connected.');
+                await this.loadDeviceInfo();
+                if (this.device) {
+                    this.render();
+                    this.attachListeners();
+                }
+                return;
+            }
+
+            const text = await response.text();
+            throw new Error(text || `HTTP ${response.status}`);
+        } catch (error) {
+            console.error('Failed to trigger sync:', error);
+            alert('Failed to start sync. Please try again.');
+        }
     }
 
     renderStatusBadge() {

@@ -1,10 +1,17 @@
 package device
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 )
+
+// ErrNotConnected is returned by callers resolving a device ID against a
+// Registry (e.g. to trigger a manual sync) when no device with that ID is
+// currently connected - as opposed to a device that's simply unregistered,
+// which is a configdb.GetDevice concern, not this package's.
+var ErrNotConnected = errors.New("device not connected")
 
 // RegisteredDevice represents a device in the registry
 type RegisteredDevice struct {

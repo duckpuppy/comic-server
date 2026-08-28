@@ -200,6 +200,7 @@ class DevicesBrowser {
                 </div>
                 <div class="device-card-footer">
                     ${isRegistered ? `
+                        ${this.renderSyncNowButton(device, status)}
                         <button class="btn btn-secondary view-device-btn" data-device-id="${device.id}">
                             View Details
                         </button>
@@ -214,6 +215,48 @@ class DevicesBrowser {
                 </div>
             </div>
         `;
+    }
+
+    // Sync Now is only offered for a device the registry actually has an
+    // IP for (device.ip is empty for a registered-but-not-currently-
+    // connected device - see handleDevices) and that isn't already
+    // syncing. comic-server-yfp.
+    renderSyncNowButton(device, status) {
+        if (!device.ip) {
+            return '';
+        }
+        if (status === 'syncing') {
+            return `<button class="btn btn-primary" disabled>⏳ Syncing…</button>`;
+        }
+        return `<button class="btn btn-primary btn-sync-now" data-device-id="${device.id}">🔄 Sync Now</button>`;
+    }
+
+    async triggerSync(deviceId) {
+        try {
+            const response = await fetch(`/api/devices/${deviceId}/sync`, { method: 'POST' });
+
+            if (response.status === 202) {
+                await this.loadDevices();
+                this.updateGrid();
+                return;
+            }
+            if (response.status === 409) {
+                alert('This device is already syncing.');
+                return;
+            }
+            if (response.status === 404) {
+                alert('This device is not currently connected.');
+                await this.loadDevices();
+                this.updateGrid();
+                return;
+            }
+
+            const error = await response.text();
+            throw new Error(error || `HTTP ${response.status}`);
+        } catch (error) {
+            console.error('Failed to trigger sync:', error);
+            alert(`Failed to start sync: ${error.message}`);
+        }
     }
 
     attachListeners() {
@@ -292,6 +335,16 @@ class DevicesBrowser {
                 e.stopPropagation();
                 const deviceId = btn.dataset.deviceId;
                 this.unregisterDevice(deviceId);
+            });
+        });
+
+        // Sync Now buttons
+        const syncNowButtons = document.querySelectorAll('.btn-sync-now');
+        syncNowButtons.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const deviceId = btn.dataset.deviceId;
+                this.triggerSync(deviceId);
             });
         });
 
