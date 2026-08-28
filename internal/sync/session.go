@@ -489,19 +489,25 @@ func (s *Syncer) getReadingLists() []ReadingList {
 				continue
 			}
 
+			// Skip lists with no books entirely, rather than writing an
+			// empty <List> entry - matches ComicRackCE's own SetLists
+			// (StorageSync.cs: `where cli.Books.Count > 0`), which never
+			// serializes a reading list with zero books. The Android app
+			// was only ever built against that shape, so an empty <List>
+			// is uncharted territory for its parser (comic-server-lev).
+			if len(listItem.Items) == 0 {
+				continue
+			}
+
 			readingList := ReadingList{
 				Name:        listItem.Name,
 				Description: "", // ComicListItem doesn't have description in current implementation
-			}
-
-			// Add book IDs from the list
-			if len(listItem.Items) > 0 {
-				readingList.Books = &BookIDs{
+				Books: &BookIDs{
 					ID: make([]string, 0, len(listItem.Items)),
-				}
-				for _, item := range listItem.Items {
-					readingList.Books.ID = append(readingList.Books.ID, item.ID)
-				}
+				},
+			}
+			for _, item := range listItem.Items {
+				readingList.Books.ID = append(readingList.Books.ID, item.ID)
 			}
 
 			lists = append(lists, readingList)
@@ -535,26 +541,30 @@ func (s *Syncer) getReadingLists() []ReadingList {
 				booksForThisList = nil
 			}
 
-			readingList := ReadingList{
-				Name:        filterList.Name,
-				Description: "",
-			}
-
-			// Add book IDs from the filtered books
-			if len(booksForThisList) > 0 {
-				readingList.Books = &BookIDs{
-					ID: make([]string, 0, len(booksForThisList)),
-				}
-				for _, book := range booksForThisList {
-					readingList.Books.ID = append(readingList.Books.ID, book.ID)
-				}
-			}
-
-			lists = append(lists, readingList)
 			log.Debug().
 				Str("list_name", filterList.Name).
 				Int("book_count", len(booksForThisList)).
 				Msg("Added smart list to sync_information.xml")
+
+			// Skip lists with no books entirely, rather than writing an
+			// empty <List> entry - see the matching skip above for
+			// regular reading lists (same rationale).
+			if len(booksForThisList) == 0 {
+				continue
+			}
+
+			readingList := ReadingList{
+				Name:        filterList.Name,
+				Description: "",
+				Books: &BookIDs{
+					ID: make([]string, 0, len(booksForThisList)),
+				},
+			}
+			for _, book := range booksForThisList {
+				readingList.Books.ID = append(readingList.Books.ID, book.ID)
+			}
+
+			lists = append(lists, readingList)
 		}
 	}
 

@@ -1027,6 +1027,74 @@ func TestGetReadingLists_NoDuplicateEntryForNonSmartFilterList(t *testing.T) {
 	}
 }
 
+// TestGetReadingLists_OmitsEmptyFilterList covers comic-server-lev:
+// ComicRackCE's own SetLists (StorageSync.cs) never serializes a reading
+// list with zero books at all - `where cli.Books.Count > 0` filters it out
+// before the XML is even built. comic-server used to still write a <List>
+// entry (just without a <Books> child) whenever a filter list's settings
+// (e.g. only-unread) filtered every book out. That shape was never part of
+// what the Android app was built against.
+func TestGetReadingLists_OmitsEmptyFilterList(t *testing.T) {
+	lib := &library.ComicLibrary{
+		Books: []library.ComicBook{
+			{ID: "book1", Title: "Book 1", FilePath: "/path/book1.cbz"},
+		},
+		ComicLists: []library.ComicListItem{
+			{
+				ID:      "idlist1",
+				Name:    "Empty List",
+				Type:    "ComicIdListItem",
+				BookIds: []string{}, // resolves to zero books
+			},
+		},
+	}
+
+	client := NewMockClient()
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	syncer := NewSyncer(client, backend)
+
+	if err := syncer.SetFilterLists([]*library.ComicListItem{&lib.ComicLists[0]}); err != nil {
+		t.Fatalf("unexpected error setting an ID list as a filter: %v", err)
+	}
+
+	readingLists := syncer.getReadingLists()
+	for _, rl := range readingLists {
+		if rl.Name == "Empty List" {
+			t.Fatalf("expected no entry for a list with zero books, got %+v", rl)
+		}
+	}
+}
+
+// TestGetReadingLists_OmitsEmptyRegularList covers the same rule
+// (comic-server-lev) for the "regular reading lists" pass, not just the
+// filter-list pass.
+func TestGetReadingLists_OmitsEmptyRegularList(t *testing.T) {
+	lib := &library.ComicLibrary{
+		Books: []library.ComicBook{
+			{ID: "book1", Title: "Book 1", FilePath: "/path/book1.cbz"},
+		},
+		ComicLists: []library.ComicListItem{
+			{
+				ID:    "readinglist1",
+				Name:  "Empty Reading List",
+				Type:  "ComicReadingList",
+				Items: nil, // resolves to zero books
+			},
+		},
+	}
+
+	client := NewMockClient()
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	syncer := NewSyncer(client, backend)
+
+	readingLists := syncer.getReadingLists()
+	for _, rl := range readingLists {
+		if rl.Name == "Empty Reading List" {
+			t.Fatalf("expected no entry for a list with zero books, got %+v", rl)
+		}
+	}
+}
+
 func TestComputeSyncPlan_MultipleFilterLists(t *testing.T) {
 	// Create test library
 	lib := &library.ComicLibrary{
