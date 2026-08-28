@@ -664,20 +664,47 @@ func normalizeArchiveForSync(data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("failed to open archive as zip: %w", err)
 	}
 
+	usedNames := make(map[string]bool)
+
 	var buf bytes.Buffer
 	w := zip.NewWriter(&buf)
 	for _, f := range r.File {
 		if f.FileInfo().IsDir() {
-			// ComicRackCE's writer never emits directory entries either
-			// - matched here, though not confirmed as load-bearing on
-			// its own (see comic-server-639's notes on the deferred,
-			// unconfirmed directory-flattening follow-up).
+			// ComicRackCE's writer never emits directory entries either.
 			continue
 		}
-		name := strings.ToLower(filepath.Base(f.Name))
+		baseName := filepath.Base(f.Name)
+		name := strings.ToLower(baseName)
 		if name == "comicinfo.xml" || name == "comicbook.xml" {
 			continue
 		}
+
+		// Flatten to just the basename, matching ComicRackCE's writer
+		// (PackedStorageProvider.cs WritePage never re-nests entries
+		// under the source archive's own folder structure - every
+		// entry lands at the zip root). Confirmed live 2026-08-28 as
+		// the last remaining structural difference from a working
+		// ComicRackCE-synced copy, after the ComicInfo.xml strip,
+		// Store conversion, and data-descriptor fix were all
+		// independently verified correct and STILL insufficient on a
+		// real device. On a basename collision (two entries under
+		// different source subfolders sharing a name - not currently
+		// observed, but real archives are unpredictable), disambiguate
+		// the same way ComicRackCE's own WritePage does: append a
+		// numeric suffix before the extension.
+		flatName := baseName
+		if usedNames[strings.ToLower(flatName)] {
+			ext := filepath.Ext(flatName)
+			stem := strings.TrimSuffix(flatName, ext)
+			for n := 2; ; n++ {
+				candidate := fmt.Sprintf("%s_%d%s", stem, n, ext)
+				if !usedNames[strings.ToLower(candidate)] {
+					flatName = candidate
+					break
+				}
+			}
+		}
+		usedNames[strings.ToLower(flatName)] = true
 
 		rc, err := f.Open()
 		if err != nil {
@@ -711,7 +738,7 @@ func normalizeArchiveForSync(data []byte) ([]byte, error) {
 		// with no data descriptor, matching ComicRackCE's shape exactly.
 		crc := crc32.ChecksumIEEE(content)
 		header := &zip.FileHeader{
-			Name:               f.Name,
+			Name:               flatName,
 			Method:             zip.Store,
 			Modified:           f.Modified,
 			CRC32:              crc,

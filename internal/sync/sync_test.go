@@ -256,11 +256,7 @@ func TestNormalizeArchiveForSync_NoDataDescriptorForAlreadyStoredEntry(t *testin
 }
 
 // TestNormalizeArchiveForSync_DropsDirectoryEntries covers ComicRackCE's
-// writer never emitting directory entries either - not confirmed as
-// load-bearing on its own (a real broken archive, Cyborg's, was already
-// flat and still broke - see comic-server-639's notes), but matched
-// anyway since it costs nothing and moves comic-server's output closer to
-// the reference client's actual shape.
+// writer never emitting directory entries either.
 func TestNormalizeArchiveForSync_DropsDirectoryEntries(t *testing.T) {
 	input := buildTestZip(t, map[string][]byte{
 		"Release Folder/":           nil,
@@ -276,8 +272,8 @@ func TestNormalizeArchiveForSync_DropsDirectoryEntries(t *testing.T) {
 	if _, exists := entries["Release Folder/"]; exists {
 		t.Error("expected the directory entry to be dropped")
 	}
-	if _, exists := entries["Release Folder/P00001.jpg"]; !exists {
-		t.Error("expected the nested page image to survive (only the directory entry itself should be dropped)")
+	if _, exists := entries["P00001.jpg"]; !exists {
+		t.Error("expected the page image to survive, flattened to its basename")
 	}
 }
 
@@ -300,8 +296,68 @@ func TestNormalizeArchiveForSync_MatchesByBaseNameRegardlessOfPath(t *testing.T)
 	if _, exists := entries["Release Folder/ComicInfo.xml"]; exists {
 		t.Error("expected nested ComicInfo.xml to be stripped, but it's still present")
 	}
-	if _, exists := entries["Release Folder/P00001.jpg"]; !exists {
-		t.Error("expected the nested page image to survive stripping")
+	if _, exists := entries["P00001.jpg"]; !exists {
+		t.Error("expected the page image to survive, flattened to its basename")
+	}
+}
+
+// TestNormalizeArchiveForSync_FlattensNestedEntries covers comic-server-639's
+// final confirmed factor: real scanner-released archives can nest every
+// page under a release-named folder (e.g.
+// "Aquamen 001 (2022).../Aquamen (2022-) 001-000.jpg"). ComicRackCE's
+// writer (PackedStorageProvider.cs WritePage) never re-nests entries -
+// everything lands flat at the zip root. Confirmed live 2026-08-28 as the
+// last remaining structural difference after the ComicInfo.xml strip,
+// Store conversion, and data-descriptor fix were all independently
+// verified correct on a real device and STILL insufficient.
+func TestNormalizeArchiveForSync_FlattensNestedEntries(t *testing.T) {
+	input := buildTestZip(t, map[string][]byte{
+		"Release Folder/Book 001-000.jpg": []byte("page data"),
+	})
+
+	got, err := normalizeArchiveForSync(input)
+	if err != nil {
+		t.Fatalf("normalizeArchiveForSync() error = %v", err)
+	}
+
+	entries := readTestZip(t, got)
+	if _, exists := entries["Release Folder/Book 001-000.jpg"]; exists {
+		t.Error("expected the entry to be flattened, but the nested path is still present")
+	}
+	if content, exists := entries["Book 001-000.jpg"]; !exists {
+		t.Error("expected the entry to survive under its flattened basename")
+	} else if string(content) != "page data" {
+		t.Errorf("content changed during flattening: got %q", content)
+	}
+}
+
+// TestNormalizeArchiveForSync_DisambiguatesBasenameCollisions covers the
+// edge case where flattening entries to their basename (see
+// TestNormalizeArchiveForSync_FlattensNestedEntries) could produce a
+// collision - two entries from different source subfolders sharing a
+// name. Matches ComicRackCE's own PackedStorageProvider.cs WritePage,
+// which resolves this the same way: append a numeric suffix before the
+// extension rather than silently overwriting one entry with another.
+func TestNormalizeArchiveForSync_DisambiguatesBasenameCollisions(t *testing.T) {
+	input := buildTestZip(t, map[string][]byte{
+		"Folder A/page.jpg": []byte("from folder A"),
+		"Folder B/page.jpg": []byte("from folder B"),
+	})
+
+	got, err := normalizeArchiveForSync(input)
+	if err != nil {
+		t.Fatalf("normalizeArchiveForSync() error = %v", err)
+	}
+
+	entries := readTestZip(t, got)
+	if len(entries) != 2 {
+		t.Fatalf("expected both colliding entries to survive under distinct names, got %d entries: %v", len(entries), entries)
+	}
+	if _, exists := entries["page.jpg"]; !exists {
+		t.Error("expected the first entry to keep the plain basename")
+	}
+	if _, exists := entries["page_2.jpg"]; !exists {
+		t.Error("expected the second entry to be disambiguated as page_2.jpg")
 	}
 }
 
