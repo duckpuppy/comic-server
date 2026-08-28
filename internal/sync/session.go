@@ -483,9 +483,23 @@ func (s *Syncer) getReadingLists() []ReadingList {
 		// Continue without library lists - we may still have filter lists
 	} else {
 		for _, listItem := range allLists {
-			// Skip smart lists, and any list already handled as a filter
-			// list below (see filterListIDs above).
-			if listItem.Type == "comicrack:ComicSmartListItem" || filterListIDs[listItem.ID] {
+			// Skip smart lists, folders, and any list already handled as
+			// a filter list below (see filterListIDs above). Folders
+			// (e.g. the built-in "Library"/"Smart Lists"/"Temporary
+			// Lists" tree nodes) group other lists rather than containing
+			// books themselves - GetAllLists() returns them alongside
+			// real lists, and without this check they were written as
+			// bogus, always-empty <List> entries. Found live 2026-08-27:
+			// three such entries landed ahead of "Infinite Frontier" and
+			// "To Read" in a real device's sync_information.xml, and
+			// ComicRackCE's own producer never emits an empty <List> at
+			// all (StorageSync.cs: `where cli.Books.Count > 0`) - the
+			// Android app's parser has likely never had to tolerate one,
+			// making this a plausible cause of it silently failing to
+			// render every list that came after (comic-server-lev).
+			if listItem.Type == "comicrack:ComicSmartListItem" ||
+				strings.Contains(listItem.Type, "Folder") ||
+				filterListIDs[listItem.ID] {
 				continue
 			}
 

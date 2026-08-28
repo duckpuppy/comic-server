@@ -1095,6 +1095,39 @@ func TestGetReadingLists_OmitsEmptyRegularList(t *testing.T) {
 	}
 }
 
+// TestGetReadingLists_OmitsFolders covers comic-server-lev: folder items
+// (e.g. the built-in "Library"/"Smart Lists"/"Temporary Lists" tree nodes)
+// group other lists rather than containing books themselves, and must
+// never be written into sync_information.xml as if they were reading
+// lists. Found live on a real device: three such empty <List> entries
+// landed ahead of the real lists in the file, a shape ComicRackCE's own
+// producer never emits (it filters 0-book lists before serializing).
+func TestGetReadingLists_OmitsFolders(t *testing.T) {
+	lib := &library.ComicLibrary{
+		Books: []library.ComicBook{
+			{ID: "book1", Title: "Book 1", FilePath: "/path/book1.cbz"},
+		},
+		ComicLists: []library.ComicListItem{
+			{
+				ID:   "folder1",
+				Name: "Library",
+				Type: "comicrack:ComicListItemFolder",
+			},
+		},
+	}
+
+	client := NewMockClient()
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	syncer := NewSyncer(client, backend)
+
+	readingLists := syncer.getReadingLists()
+	for _, rl := range readingLists {
+		if rl.Name == "Library" {
+			t.Fatalf("expected no entry for a folder, got %+v", rl)
+		}
+	}
+}
+
 func TestComputeSyncPlan_MultipleFilterLists(t *testing.T) {
 	// Create test library
 	lib := &library.ComicLibrary{
