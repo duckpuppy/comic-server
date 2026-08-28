@@ -149,6 +149,7 @@ func (s *Syncer) PerformSync() (*SyncResult, error) {
 
 	// Step 6: Execute sync operations
 	totalOps := len(operations)
+	s.onProgress(0, totalOps, 0, 0, 0, 0)
 	for i, op := range operations {
 		// Check for abort before every operation - not every 10th - so a
 		// user-initiated abort takes effect as soon as whatever operation
@@ -169,11 +170,13 @@ func (s *Syncer) PerformSync() (*SyncResult, error) {
 		}
 
 		// Execute operation
+		percent := ((i + 1) * 100) / totalOps
 		if err := s.executeOperation(op, writtenFiles); err != nil {
 			errMsg := fmt.Errorf("operation %d/%d failed (%s for %s): %w",
 				i+1, totalOps, op.Type, getTitleForOp(op), err)
 			result.Errors = append(result.Errors, errMsg)
 			log.Error().Err(errMsg).Msg("Operation failed")
+			s.onProgress(percent, totalOps, result.BooksAdded, result.BooksUpdated, result.BooksDeleted, len(result.Errors))
 			continue
 		}
 
@@ -186,9 +189,9 @@ func (s *Syncer) PerformSync() (*SyncResult, error) {
 		case OperationDelete:
 			result.BooksDeleted++
 		}
+		s.onProgress(percent, totalOps, result.BooksAdded, result.BooksUpdated, result.BooksDeleted, len(result.Errors))
 
 		// Update progress
-		percent := ((i + 1) * 100) / totalOps
 		if err := s.client.SendProgressUpdate(percent); err != nil {
 			log.Warn().Err(err).Msg("Failed to send progress update")
 		}

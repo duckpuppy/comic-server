@@ -957,6 +957,9 @@ func handleSyncRequest(
 	syncer.SetStatusDetailCallback(func(detail string) {
 		syncManager.SetDetail(deviceID, detail)
 	})
+	syncer.SetProgressCallback(func(percent, total, added, updated, deleted, errorCount int) {
+		syncManager.UpdateProgress(deviceID, percent, total, added, updated, deleted, errorCount)
+	})
 
 	// Apply device config if exists
 	deviceConfig, err := configDB.GetDevice(deviceID)

@@ -526,6 +526,119 @@ func TestPerformSync_ProgressUpdates(t *testing.T) {
 	}
 }
 
+// TestPerformSync_OnProgressCallback is the regression test for
+// comic-server-p0x: syncstate.Manager.UpdateProgress existed but nothing
+// in the forward-sync loop ever called it, so /api/sync/status's
+// progress/books_total/books_added fields stayed at 0 for the entire sync
+// despite real per-operation progress in the logs. This verifies
+// SetProgressCallback actually fires during the loop (not just at
+// start/end) with running, monotonically non-decreasing counts - the
+// server wiring itself (cmd/server.go calling syncManager.UpdateProgress
+// from this callback) isn't re-tested here, just that the callback fires
+// with the right shape for it to feed.
+func TestPerformSync_OnProgressCallback(t *testing.T) {
+	tmpDir := t.TempDir()
+	book1Path := tmpDir + "/book1.cbz"
+	book2Path := tmpDir + "/book2.cbz"
+	if err := os.WriteFile(book1Path, []byte("dummy comic 1 data"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+	if err := os.WriteFile(book2Path, []byte("dummy comic 2 data"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	mockClient := NewMockClient()
+	lib := &library.ComicLibrary{
+		Books: []library.ComicBook{
+			{ID: "book1", Title: "Book 1", FilePath: book1Path},
+			{ID: "book2", Title: "Book 2", FilePath: book2Path},
+		},
+	}
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	syncer := NewSyncer(mockClient, backend)
+
+	type progressCall struct {
+		percent, total, added, updated, deleted, errorCount int
+	}
+	var calls []progressCall
+	syncer.SetProgressCallback(func(percent, total, added, updated, deleted, errorCount int) {
+		calls = append(calls, progressCall{percent, total, added, updated, deleted, errorCount})
+	})
+
+	result, err := syncer.PerformSync()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.BooksAdded != 2 {
+		t.Fatalf("expected 2 books added, got %d", result.BooksAdded)
+	}
+
+	// Seed call before the loop starts, plus one per operation.
+	if len(calls) < 3 {
+		t.Fatalf("expected at least 3 progress callback invocations (seed + 2 ops), got %d: %+v", len(calls), calls)
+	}
+
+	first := calls[0]
+	if first.total != 2 || first.percent != 0 {
+		t.Errorf("expected seed call {percent:0 total:2}, got %+v", first)
+	}
+
+	last := calls[len(calls)-1]
+	if last.percent != 100 {
+		t.Errorf("expected final callback percent 100, got %d", last.percent)
+	}
+	if last.added != 2 {
+		t.Errorf("expected final callback added=2, got %d", last.added)
+	}
+
+	for i := 1; i < len(calls); i++ {
+		if calls[i].percent < calls[i-1].percent {
+			t.Errorf("progress percent decreased: %+v -> %+v", calls[i-1], calls[i])
+		}
+	}
+}
+
+// TestPerformSync_OnProgressCallback_CountsFailures verifies a failed
+// operation still advances progress and bumps errorCount, rather than
+// leaving the callback silent until the next success - a sync with one
+// bad book shouldn't look stalled on that book forever.
+func TestPerformSync_OnProgressCallback_CountsFailures(t *testing.T) {
+	tmpDir := t.TempDir()
+	book2Path := tmpDir + "/book2.cbz"
+	if err := os.WriteFile(book2Path, []byte("dummy comic 2 data"), 0644); err != nil {
+		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	mockClient := NewMockClient()
+	lib := &library.ComicLibrary{
+		Books: []library.ComicBook{
+			// book1 has no backing file on disk - addBook will fail to
+			// read it, so this operation fails while book2 succeeds.
+			{ID: "book1", Title: "Book 1", FilePath: tmpDir + "/does-not-exist.cbz"},
+			{ID: "book2", Title: "Book 2", FilePath: book2Path},
+		},
+	}
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	syncer := NewSyncer(mockClient, backend)
+
+	var lastErrorCount, lastAdded int
+	syncer.SetProgressCallback(func(percent, total, added, updated, deleted, errorCount int) {
+		lastErrorCount = errorCount
+		lastAdded = added
+	})
+
+	result, _ := syncer.PerformSync()
+	if len(result.Errors) != 1 {
+		t.Fatalf("expected exactly 1 sync error (the missing file), got %d: %v", len(result.Errors), result.Errors)
+	}
+	if lastErrorCount != 1 {
+		t.Errorf("expected final progress callback to report errorCount=1, got %d", lastErrorCount)
+	}
+	if lastAdded != 1 {
+		t.Errorf("expected final progress callback to report added=1 (book2 still succeeded), got %d", lastAdded)
+	}
+}
+
 // TestPerformSync_SyncInformationWritten tests that reading lists are written
 func TestPerformSync_SyncInformationWritten(t *testing.T) {
 	mockClient := NewMockClient()

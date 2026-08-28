@@ -17,9 +17,74 @@ class DeviceDetail {
         if (this.device) {
             this.render();
             this.attachListeners();
-            this.setupWebSocketListeners();
+            this.startSyncPolling(ctx);
             await this.loadSyncHistory();
             if (ctx && ctx.aborted) return;
+        }
+    }
+
+    // This used to rely on sync_started/sync_progress/sync_completed/
+    // sync_failed WebSocket events, but those are never actually
+    // broadcast by the server - nothing in cmd/server.go's sync path calls
+    // wsHub.Broadcast for them - so this.syncProgress was permanently null
+    // and renderSyncProgress() never showed anything (comic-server-p0x).
+    // Poll the same GET /api/sync/status the dashboard already uses
+    // instead, filtered to this device, until a real event pipeline exists
+    // to replace it.
+    //
+    // ctx is the router navigation context (see router.js): unlike
+    // dashboard.js/devices.js's singleton, session-lifetime setIntervals,
+    // this DeviceDetail instance is recreated on every navigation to
+    // /devices/:deviceId and there's no page-teardown hook to clear this
+    // timer from the outside - so pollSyncStatus checks ctx.aborted itself
+    // on every tick and self-cancels once the router has moved on,
+    // instead of leaking a timer that would otherwise keep clobbering
+    // whatever page the user navigated to next with stale device markup.
+    startSyncPolling(ctx) {
+        this.pollCtx = ctx;
+        this.pollSyncStatus();
+        this.syncPollTimer = setInterval(() => this.pollSyncStatus(), 5000);
+    }
+
+    stopSyncPolling() {
+        if (this.syncPollTimer) {
+            clearInterval(this.syncPollTimer);
+            this.syncPollTimer = null;
+        }
+    }
+
+    async pollSyncStatus() {
+        if (this.pollCtx && this.pollCtx.aborted) {
+            this.stopSyncPolling();
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/sync/status');
+            if (this.pollCtx && this.pollCtx.aborted) {
+                this.stopSyncPolling();
+                return;
+            }
+            if (!response.ok) return;
+            const data = await response.json();
+            const mine = (data.active_syncs || []).find(s => s.device_id === this.deviceId) || null;
+
+            if (JSON.stringify(mine) === JSON.stringify(this.syncProgress)) {
+                return; // nothing changed - skip the re-render
+            }
+
+            const hadPanel = !!this.syncProgress;
+            this.syncProgress = mine;
+            this.render();
+            this.attachListeners();
+
+            if (hadPanel && !mine) {
+                // A sync for this device just ended - refresh history
+                // instead of waiting for the next scheduled reload.
+                this.loadSyncHistory();
+            }
+        } catch (error) {
+            console.error('Failed to poll sync status:', error);
         }
     }
 
@@ -148,10 +213,10 @@ class DeviceDetail {
             const response = await fetch(`/api/devices/${this.deviceId}/sync`, { method: 'POST' });
 
             if (response.status === 202) {
-                // Sync accepted. The sync_started WebSocket event
-                // (handleSyncStarted) will also flip this, but set it
-                // immediately too so the button disables without waiting
-                // on that round trip.
+                // Sync accepted. The next pollSyncStatus tick (up to 5s
+                // away) will also flip this via the sync progress panel,
+                // but set it immediately too so the button disables
+                // without waiting on that round trip.
                 this.device.is_syncing = true;
                 this.render();
                 this.attachListeners();
@@ -230,17 +295,23 @@ class DeviceDetail {
         `;
     }
 
+    // this.syncProgress is a syncstate.SyncState from GET /api/sync/status
+    // (see pollSyncStatus) - progress/books_total/books_added/
+    // books_updated/books_deleted/error_count/detail.
     renderSyncProgress() {
         // Only show if device is currently syncing
         if (!this.syncProgress) {
             return '';
         }
 
-        const progressPercent = this.syncProgress.total_files > 0
-            ? Math.round((this.syncProgress.completed_files / this.syncProgress.total_files) * 100)
-            : 0;
-
-        const currentFile = this.syncProgress.current_file || 'Preparing...';
+        const progressPercent = this.syncProgress.progress || 0;
+        const added = this.syncProgress.books_added || 0;
+        const updated = this.syncProgress.books_updated || 0;
+        const deleted = this.syncProgress.books_deleted || 0;
+        const total = this.syncProgress.books_total || 0;
+        const done = added + updated + deleted;
+        const detail = this.syncProgress.detail
+            || (total > 0 ? 'Syncing...' : 'Preparing...');
 
         return `
             <div class="panel sync-progress-panel">
@@ -248,11 +319,12 @@ class DeviceDetail {
                 <div class="sync-progress-content">
                     <div class="sync-progress-info">
                         <div class="sync-current-file">
-                            <span class="label">Current file:</span>
-                            <span class="value">${this.escapeHtml(currentFile)}</span>
+                            <span class="label">Status:</span>
+                            <span class="value">${this.escapeHtml(detail)}</span>
                         </div>
                         <div class="sync-file-count">
-                            ${this.syncProgress.completed_files} / ${this.syncProgress.total_files} files
+                            ${done} / ${total} books (${added} added, ${updated} updated, ${deleted} deleted)
+                            ${this.syncProgress.error_count ? ` • ${this.syncProgress.error_count} error${this.syncProgress.error_count !== 1 ? 's' : ''}` : ''}
                         </div>
                     </div>
                     <div class="sync-progress-bar">
@@ -596,81 +668,4 @@ class DeviceDetail {
         }
     }
 
-    // WebSocket event listeners for sync progress
-    setupWebSocketListeners() {
-        if (!window.wsClient) {
-            console.warn('WebSocket client not available');
-            return;
-        }
-
-        // Listen for sync events for this device
-        window.wsClient.on('sync_started', (data) => this.handleSyncStarted(data));
-        window.wsClient.on('sync_progress', (data) => this.handleSyncProgress(data));
-        window.wsClient.on('sync_completed', (data) => this.handleSyncCompleted(data));
-        window.wsClient.on('sync_failed', (data) => this.handleSyncFailed(data));
-    }
-
-    handleSyncStarted(data) {
-        // Only update if it's for this device
-        if (data.device_id !== this.deviceId) {
-            return;
-        }
-
-        console.log('Sync started for device:', data);
-        this.syncProgress = {
-            device_id: data.device_id,
-            current_file: data.current_file || 'Preparing...',
-            completed_files: 0,
-            total_files: data.total_files || 0
-        };
-        this.render();
-        this.attachListeners();
-    }
-
-    handleSyncProgress(data) {
-        // Only update if it's for this device
-        if (data.device_id !== this.deviceId) {
-            return;
-        }
-
-        console.log('Sync progress for device:', data);
-        this.syncProgress = {
-            device_id: data.device_id,
-            current_file: data.current_file || 'Syncing...',
-            completed_files: data.completed_files || 0,
-            total_files: data.total_files || 0
-        };
-        this.render();
-        this.attachListeners();
-    }
-
-    handleSyncCompleted(data) {
-        // Only update if it's for this device
-        if (data.device_id !== this.deviceId) {
-            return;
-        }
-
-        console.log('Sync completed for device:', data);
-        this.syncProgress = null; // Clear progress panel
-        this.render();
-        this.attachListeners();
-
-        // Reload sync history to show the completed sync
-        this.loadSyncHistory();
-    }
-
-    handleSyncFailed(data) {
-        // Only update if it's for this device
-        if (data.device_id !== this.deviceId) {
-            return;
-        }
-
-        console.log('Sync failed for device:', data);
-        this.syncProgress = null; // Clear progress panel
-        this.render();
-        this.attachListeners();
-
-        // Reload sync history to show the failed sync
-        this.loadSyncHistory();
-    }
 }

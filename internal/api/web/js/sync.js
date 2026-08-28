@@ -108,6 +108,16 @@ class SyncManager {
         }
     }
 
+    // sync is a syncstate.SyncState (see GET /api/sync/status) -
+    // device_id/device_name/status/progress/books_total/books_added/
+    // books_updated/books_deleted/error_count/detail. Progress used to
+    // read fictional fields (total_files/completed_files/
+    // bytes_transferred/transfer_speed) that nothing on the server ever
+    // populated, so this bar always sat at 0% for an entire sync despite
+    // real per-operation progress in the server logs (comic-server-p0x) -
+    // fixed at the source by syncstate.Manager.UpdateProgress now
+    // actually being called from the forward-sync loop; this just reads
+    // the fields that are really there.
     createSyncProgress(sync) {
         const progress = this.syncProgressTemplate.content.cloneNode(true);
         const progressEl = progress.querySelector('.sync-progress');
@@ -118,26 +128,30 @@ class SyncManager {
         progress.querySelector('.sync-device-name').textContent = sync.device_name || sync.device_id;
 
         // Set status
-        progress.querySelector('.sync-status').textContent = 'In Progress';
+        progress.querySelector('.sync-status').textContent =
+            sync.status === 'starting' ? 'Starting' : 'In Progress';
 
-        // Set current file
-        const currentFile = sync.current_file || 'Preparing...';
-        progress.querySelector('.sync-current-file').textContent = `Current: ${currentFile}`;
+        // Set status detail - e.g. "device not responding yet, retrying"
+        // (comic-server-134) while nothing else is visibly moving yet.
+        progress.querySelector('.sync-current-file').textContent =
+            sync.detail || (sync.books_total > 0 ? 'Syncing...' : 'Preparing...');
 
-        // Set progress bar
-        let progressPercent = 0;
-        if (sync.total_files > 0) {
-            progressPercent = (sync.completed_files / sync.total_files) * 100;
-        }
+        // Set progress bar - the server already reports 0-100.
+        const progressPercent = sync.progress || 0;
         progress.querySelector('.progress-fill').style.width = `${progressPercent}%`;
 
-        // Set stats
-        const filesText = `Files: ${sync.completed_files || 0}/${sync.total_files || 0}`;
-        const bytesText = this.formatBytes(sync.bytes_transferred || 0);
-        const speedText = sync.transfer_speed ? this.formatSpeed(sync.transfer_speed) : '';
-
-        progress.querySelector('.sync-stats').textContent =
-            `${filesText} • ${bytesText}${speedText ? ' • ' + speedText : ''}`;
+        // Set stats - same "total (added/updated/deleted)" shape as
+        // history's file stats, for the same sync while it's still running.
+        const added = sync.books_added || 0;
+        const updated = sync.books_updated || 0;
+        const deleted = sync.books_deleted || 0;
+        const total = sync.books_total || 0;
+        const done = added + updated + deleted;
+        let statsText = `Books: ${done}/${total} (${added}/${updated}/${deleted})`;
+        if (sync.error_count) {
+            statsText += ` • ${sync.error_count} error${sync.error_count !== 1 ? 's' : ''}`;
+        }
+        progress.querySelector('.sync-stats').textContent = statsText;
 
         return progress;
     }
@@ -194,18 +208,6 @@ class SyncManager {
         }
 
         return item;
-    }
-
-    formatBytes(bytes) {
-        if (bytes === 0) return '0 B';
-        const k = 1024;
-        const sizes = ['B', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
-    }
-
-    formatSpeed(bytesPerSecond) {
-        return this.formatBytes(bytesPerSecond) + '/s';
     }
 
     formatDuration(ms) {

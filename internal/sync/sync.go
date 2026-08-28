@@ -50,6 +50,15 @@ type Syncer struct {
 	// isn't up yet (comic-server-134). See SetStatusDetailCallback.
 	onStatusDetail func(detail string)
 
+	// onProgress, if set, is called after every operation in the forward-
+	// sync loop (PerformSync's Step 6, in session.go) - success or
+	// failure - with the running percent complete and add/update/delete/
+	// error counts so far. Without this, a sync's visible progress only
+	// ever moved at start (0%) and end (100%): syncstate.Manager.
+	// UpdateProgress existed but nothing ever called it during the loop
+	// itself (comic-server-p0x). See SetProgressCallback.
+	onProgress func(percent, total, added, updated, deleted, errorCount int)
+
 	// connRefusedGracePeriod is how long GetDeviceBooks's sidecar-read
 	// circuit breaker keeps retrying past its normal failure threshold
 	// when every recent failure is specifically "connection refused" -
@@ -72,6 +81,7 @@ func NewSyncer(client Client, backend library.Backend) *Syncer {
 		settings:               DefaultSettings(), // Use default settings
 		resolvePath:            func(p string) string { return p },
 		onStatusDetail:         func(string) {},
+		onProgress:             func(int, int, int, int, int, int) {},
 		connRefusedGracePeriod: defaultConnRefusedGracePeriod,
 	}
 }
@@ -89,6 +99,19 @@ func (s *Syncer) SetStatusDetailCallback(fn func(detail string)) {
 		fn = func(string) {}
 	}
 	s.onStatusDetail = fn
+}
+
+// SetProgressCallback registers a callback invoked after every forward-sync
+// operation (success or failure) with the running percent complete and
+// add/update/delete/error counts so far - see onProgress's doc comment.
+// Callers use this to feed syncstate.Manager.UpdateProgress without this
+// package needing to know anything about syncstate. Passing nil restores
+// the default no-op.
+func (s *Syncer) SetProgressCallback(fn func(percent, total, added, updated, deleted, errorCount int)) {
+	if fn == nil {
+		fn = func(int, int, int, int, int, int) {}
+	}
+	s.onProgress = fn
 }
 
 // SetPathResolver overrides how a book's raw library FilePath is translated
