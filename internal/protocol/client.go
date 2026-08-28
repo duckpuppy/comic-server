@@ -5,6 +5,8 @@ import (
 	"net"
 	"strconv"
 	"time"
+
+	"github.com/duckpuppy/comic-server/internal/log"
 )
 
 const (
@@ -109,6 +111,28 @@ func (c *Client) execute(commandFunc func(conn net.Conn) error) error {
 
 	for attempt := 0; attempt <= c.retries; attempt++ {
 		if attempt > 0 {
+			// A retry after a mid-transfer failure reconnects and
+			// re-sends the whole command from scratch (matches
+			// ComicRackCE's own Communicate(), which does the same on
+			// any exception - see comic-server-z0m). Neither client
+			// sends any explicit "discard what you started" signal
+			// first. If the device's per-write staging isn't reset on a
+			// fresh CommandWriteFile for the same filename (e.g. it
+			// appends instead of truncating), a retried WriteFile could
+			// silently produce a corrupted, oversized archive - and
+			// until this log line existed, a retry that eventually
+			// succeeded was invisible: execute() only ever logged the
+			// final outcome, never individual attempt failures. Added
+			// live 2026-08-28 after finding two large (89MB, 127MB)
+			// synced comics reported as corrupt on-device despite
+			// verified-clean source files and error-free sync logs -
+			// this is the only way to confirm or rule that out next
+			// time it happens (comic-server-oqf).
+			log.Warn().
+				Int("attempt", attempt).
+				Int("max_retries", c.retries).
+				Err(lastErr).
+				Msg("Retrying command after failure")
 			time.Sleep(100 * time.Millisecond)
 		}
 
