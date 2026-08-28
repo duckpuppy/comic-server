@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.4](https://github.com/duckpuppy/comic-server/compare/v1.10.3...v1.10.4) (2026-08-28)
+
+
+### Bug Fixes
+
+* WriteFile/DeleteFile never read the device's success/fail acknowledgment ([d1ded94](https://github.com/duckpuppy/comic-server/commit/d1ded9439c9a8175f5728cca225b2334c149c34d))
+
 ## [1.10.3](https://github.com/duckpuppy/comic-server/compare/v1.10.2...v1.10.3) (2026-08-28)
 
 
