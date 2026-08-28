@@ -26,6 +26,17 @@ type SQLiteBackend struct {
 	// via SetCVData and attached to the temporary library MatchBooks/
 	// GetBooksForList build for evaluation - see comic-server-22c.
 	cvData map[string]*library.CVCompleteness
+	// libCache is a shared snapshot of every book and list, reused across
+	// repeated calls to cachedLibrary() until invalidated by any write
+	// (see invalidateCacheLocked) - comic-server-ea5. Without this,
+	// every list evaluation that can't use the SQL fast path (matcher_sql.go)
+	// rebuilt this from scratch - a full GetAllBooks() SQL fetch plus
+	// batched tag/custom-value joins - which at real-library scale (67K
+	// books, hundreds of untranslatable-matcher lists) turned a cold
+	// list-tree warm-up (internal/api/lists.go evaluates every list
+	// serially within one request) into a multi-hour stall: each list
+	// paying the ~1-1.5s rebuild cost independently instead of once.
+	libCache *library.ComicLibrary
 }
 
 // NewSQLiteBackend creates a new SQLite-based backend. xmlPath is the
@@ -77,6 +88,7 @@ func (b *SQLiteBackend) Reload() error {
 		return fmt.Errorf("reload: import: %w", err)
 	}
 
+	b.libCache = nil
 	return b.loadMetadata()
 }
 
@@ -158,6 +170,7 @@ func (b *SQLiteBackend) GetAllLists() ([]library.ComicListItem, error) {
 func (b *SQLiteBackend) CreateList(list *library.ComicListItem) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.libCache = nil
 	return b.db.InsertList(list)
 }
 
@@ -165,6 +178,7 @@ func (b *SQLiteBackend) CreateList(list *library.ComicListItem) error {
 func (b *SQLiteBackend) UpdateList(list *library.ComicListItem) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.libCache = nil
 	return b.db.UpdateListRecord(list)
 }
 
@@ -172,6 +186,7 @@ func (b *SQLiteBackend) UpdateList(list *library.ComicListItem) error {
 func (b *SQLiteBackend) DeleteList(id string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.libCache = nil
 	return b.db.DeleteList(id)
 }
 
@@ -179,15 +194,13 @@ func (b *SQLiteBackend) DeleteList(id string) error {
 func (b *SQLiteBackend) MoveList(id, parentID string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.libCache = nil
 	return b.db.MoveList(id, parentID)
 }
 
 // MatchBooks evaluates a smart list and returns matching books.
 func (b *SQLiteBackend) MatchBooks(list *library.ComicListItem) ([]*library.ComicBook, error) {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-
-	tempLib, err := b.evaluationLibraryLocked(list)
+	tempLib, err := b.evaluationLibrary(list)
 	if err != nil {
 		return nil, err
 	}
@@ -196,17 +209,14 @@ func (b *SQLiteBackend) MatchBooks(list *library.ComicListItem) ([]*library.Comi
 
 // GetBooksForList returns books for any list type (SmartList, IdList, ReadingList).
 func (b *SQLiteBackend) GetBooksForList(list *library.ComicListItem) ([]*library.ComicBook, error) {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-
-	tempLib, err := b.evaluationLibraryLocked(list)
+	tempLib, err := b.evaluationLibrary(list)
 	if err != nil {
 		return nil, err
 	}
 	return tempLib.GetBooksForList(list)
 }
 
-// evaluationLibraryLocked builds the library.ComicLibrary snapshot used to
+// evaluationLibrary builds the library.ComicLibrary snapshot used to
 // evaluate list. When list is a smart list with no BaseListId and its
 // entire matcher tree translates to a safe SQL predicate (see
 // matcher_sql.go), only the (superset) matching rows are fetched from
@@ -214,9 +224,8 @@ func (b *SQLiteBackend) GetBooksForList(list *library.ComicListItem) ([]*library
 // MatchBooks/GetBooksForList) still re-validates every candidate against
 // the exact in-memory matcher, so this can only reduce cost, never
 // correctness (see comic-server-770). Otherwise falls back to
-// tempLibraryLocked, loading every book (and every list, so BaseListId
-// scoping - comic-server-hha - still resolves).
-func (b *SQLiteBackend) evaluationLibraryLocked(list *library.ComicListItem) (*library.ComicLibrary, error) {
+// cachedLibrary, the shared full-library snapshot (comic-server-ea5).
+func (b *SQLiteBackend) evaluationLibrary(list *library.ComicListItem) (*library.ComicLibrary, error) {
 	if list != nil && list.BaseListId == "" && strings.Contains(list.Type, "SmartList") {
 		if pred, ok := translateMatchers(list.MatcherMode, list.Matchers); ok {
 			books, err := b.db.GetBooksWhere(pred.where, pred.args...)
@@ -224,31 +233,71 @@ func (b *SQLiteBackend) evaluationLibraryLocked(list *library.ComicListItem) (*l
 				return nil, err
 			}
 			tempLib := &library.ComicLibrary{Books: books}
-			tempLib.SetCVData(b.cvData)
+			tempLib.SetCVData(b.snapshotCVData())
 			return tempLib, nil
 		}
 	}
-	return b.tempLibraryLocked()
+	return b.cachedLibrary()
 }
 
-// tempLibraryLocked builds an in-memory library.ComicLibrary snapshot of
-// every book and list for matcher evaluation. Includes ComicLists (not just
-// Books) so BaseListId scoping resolves via FindListByID the same way it
-// does on XMLBackend - see comic-server-hha. Caller must hold at least
-// b.mu.RLock().
-func (b *SQLiteBackend) tempLibraryLocked() (*library.ComicLibrary, error) {
-	books, err := b.db.GetAllBooks()
-	if err != nil {
-		return nil, err
+// cachedLibrary returns a library.ComicLibrary snapshot backed by a shared
+// Books/ComicLists slice pair (comic-server-ea5), built at most once per
+// invalidation instead of once per call: a fast RLock path reuses the
+// existing snapshot if one's already built; a cache miss escalates to the
+// write lock, double-checking (another goroutine may have built it while
+// this one waited) before paying the full GetAllBooks()+GetAllLists()
+// cost. Includes ComicLists (not just Books) so BaseListId scoping
+// resolves via FindListByID the same way it does on XMLBackend - see
+// comic-server-hha.
+//
+// Every call gets its OWN *library.ComicLibrary wrapper around the shared
+// slices, with cvData set on that wrapper alone: ComicLibrary.SetCVData
+// just assigns an unexported field with no synchronization of its own, so
+// mutating the SAME shared struct's cvData from multiple concurrent RLock
+// callers (evaluationLibrary can run several list evaluations in
+// parallel) would be a real data race. The slices themselves are safe to
+// share read-only - nothing ever mutates a cached Book/ComicListItem in
+// place.
+func (b *SQLiteBackend) cachedLibrary() (*library.ComicLibrary, error) {
+	b.mu.RLock()
+	if b.libCache != nil {
+		books, lists := b.libCache.Books, b.libCache.ComicLists
+		b.mu.RUnlock()
+		lib := &library.ComicLibrary{Books: books, ComicLists: lists}
+		lib.SetCVData(b.snapshotCVData())
+		return lib, nil
 	}
-	lists, err := b.db.GetAllLists()
-	if err != nil {
-		return nil, err
-	}
+	b.mu.RUnlock()
 
-	tempLib := &library.ComicLibrary{Books: books, ComicLists: lists}
-	tempLib.SetCVData(b.cvData)
-	return tempLib, nil
+	b.mu.Lock()
+	if b.libCache == nil {
+		books, err := b.db.GetAllBooks()
+		if err != nil {
+			b.mu.Unlock()
+			return nil, err
+		}
+		lists, err := b.db.GetAllLists()
+		if err != nil {
+			b.mu.Unlock()
+			return nil, err
+		}
+		b.libCache = &library.ComicLibrary{Books: books, ComicLists: lists}
+	}
+	books, lists := b.libCache.Books, b.libCache.ComicLists
+	b.mu.Unlock()
+
+	lib := &library.ComicLibrary{Books: books, ComicLists: lists}
+	lib.SetCVData(b.snapshotCVData())
+	return lib, nil
+}
+
+// snapshotCVData safely reads the current cvData under RLock, for a caller
+// that isn't already holding b.mu (e.g. the SQL-fast-path branch of
+// evaluationLibrary, which never touches libCache at all).
+func (b *SQLiteBackend) snapshotCVData() map[string]*library.CVCompleteness {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.cvData
 }
 
 // SetCVData sets ComicVine enrichment data for use by CV smart list matchers
@@ -263,6 +312,7 @@ func (b *SQLiteBackend) SetCVData(data map[string]*library.CVCompleteness) {
 func (b *SQLiteBackend) UpdateBook(book *library.ComicBook) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.libCache = nil
 
 	return b.db.UpdateBookFields(book)
 }
@@ -271,6 +321,7 @@ func (b *SQLiteBackend) UpdateBook(book *library.ComicBook) error {
 func (b *SQLiteBackend) UpdateBooks(books []*library.ComicBook) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.libCache = nil
 
 	// Update each book (SQLite handles this efficiently)
 	for _, book := range books {
