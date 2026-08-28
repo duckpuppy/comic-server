@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.10.2](https://github.com/duckpuppy/comic-server/compare/v1.10.1...v1.10.2) (2026-08-28)
+
+
+### Bug Fixes
+
+* filterOnlyUnread/filterOnlyRead off-by-one made "only sync unread" a silent no-op ([3489ccc](https://github.com/duckpuppy/comic-server/commit/3489ccca59c39f84954b2d5e2095bf5dc9709157))
+* WriteFile/ReadFile used a flat 5s deadline for the whole transfer, not just protocol overhead ([0bb5f73](https://github.com/duckpuppy/comic-server/commit/0bb5f735a2e29454fe660dcbb7ad4274516b956a))
+
 ## [1.10.1](https://github.com/duckpuppy/comic-server/compare/v1.10.0...v1.10.1) (2026-08-27)
 
 
