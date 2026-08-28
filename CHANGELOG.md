@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.10.3](https://github.com/duckpuppy/comic-server/compare/v1.10.2...v1.10.3) (2026-08-28)
+
+
+### Bug Fixes
+
+* folder items written into sync_information.xml as empty &lt;List&gt; entries ([f884a84](https://github.com/duckpuppy/comic-server/commit/f884a84983bde2fa7005ba2567d2a556ab7225a2))
+* on-device filenames kept full Windows path instead of basename ([5f80bca](https://github.com/duckpuppy/comic-server/commit/5f80bca36a2d3e4c0b902a91ae60872b7a7ec681))
+* sync_information.xml wrote an empty &lt;List&gt; for 0-book lists ([e48a38a](https://github.com/duckpuppy/comic-server/commit/e48a38ac5d6060c7157a9d395f31e4d8f8d04a20))
+
 ## [1.10.2](https://github.com/duckpuppy/comic-server/compare/v1.10.1...v1.10.2) (2026-08-28)
 
 
