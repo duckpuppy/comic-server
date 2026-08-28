@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.7](https://github.com/duckpuppy/comic-server/compare/v1.10.6...v1.10.7) (2026-08-28)
+
+
+### Bug Fixes
+
+* also convert all .cbz entries to Stored, not just strip ComicInfo.xml ([0b4ab43](https://github.com/duckpuppy/comic-server/commit/0b4ab43585b665c1464f0bc2061fc1dc01b7fe68))
+
 ## [1.10.6](https://github.com/duckpuppy/comic-server/compare/v1.10.5...v1.10.6) (2026-08-28)
 
 
