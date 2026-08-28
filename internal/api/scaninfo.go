@@ -32,9 +32,12 @@ func (s *Server) handleRunScanInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.configMu.RLock()
-	cfg := s.config.Server.ScanInfo
-	s.configMu.RUnlock()
+	cfg, err := s.effectiveScanInfo()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to load scan info config")
+		http.Error(w, "Failed to load scan info config", http.StatusInternalServerError)
+		return
+	}
 
 	if !cfg.Enabled {
 		http.Error(w, "scan_info is not enabled in config", http.StatusServiceUnavailable)

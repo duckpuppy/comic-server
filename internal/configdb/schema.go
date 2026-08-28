@@ -5,8 +5,9 @@ import "fmt"
 // Schema version for migrations. Version 1 had no tables (comic-server-ihb,
 // the open/migrate foundation only). Version 2 adds devices/device_lists
 // (comic-server-3ek). Version 3 adds komga_targets (comic-server-cde).
-// Version 4 adds sync_history (comic-server-7vu).
-const schemaVersion = 4
+// Version 4 adds sync_history (comic-server-7vu). Version 5 adds scan_info
+// (comic-server-4ms).
+const schemaVersion = 5
 
 // initSchema brings the database up to schemaVersion. No-ops if already
 // current - safe to call on every Open, every server startup.
@@ -40,6 +41,11 @@ func (db *DB) initSchema() error {
 				return fmt.Errorf("migrate v3→v4: %w", err)
 			}
 		}
+		if version < 5 {
+			if err := db.migrateV4ToV5(); err != nil {
+				return fmt.Errorf("migrate v4→v5: %w", err)
+			}
+		}
 	}
 
 	if _, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
@@ -57,7 +63,10 @@ func (db *DB) createTables() error {
 	if err := db.createKomgaTargetsTable(); err != nil {
 		return err
 	}
-	return db.createSyncHistoryTable()
+	if err := db.createSyncHistoryTable(); err != nil {
+		return err
+	}
+	return db.createScanInfoTable()
 }
 
 // migrateV1ToV2 adds the devices/device_lists tables for a database that
@@ -105,6 +114,39 @@ func (db *DB) createSyncHistoryTable() error {
 	)`)
 	if err != nil {
 		return fmt.Errorf("create sync_history table: %w", err)
+	}
+	return nil
+}
+
+// migrateV4ToV5 adds the scan_info table for a database that was created
+// under schemaVersion 4 (comic-server-7vu, devices/device_lists/
+// komga_targets/sync_history only).
+func (db *DB) migrateV4ToV5() error {
+	return db.createScanInfoTable()
+}
+
+// createScanInfoTable creates the scan_info table - a single-row store for
+// Server.ScanInfo (Enabled/Scanners/Blacklist/Prefix/Unknown), the first
+// UI/API surface for what was previously config.yaml-hand-edit-only
+// (comic-server-4ms). A single row (id fixed at 1) rather than one table
+// per list field: Scanners/Blacklist are both short, together-configured
+// string lists with no per-entry metadata, so - per comic-server-745's own
+// design note - storing them as JSON columns alongside the two scalar
+// fields (prefix/unknown) they're configured together with is simpler
+// than two extra many-row tables, and callers always want the whole
+// struct at once (there's no per-entry lookup use case the way
+// device_lists' per-device queries have).
+func (db *DB) createScanInfoTable() error {
+	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS scan_info (
+		id        INTEGER PRIMARY KEY CHECK (id = 1),
+		enabled   INTEGER NOT NULL DEFAULT 0,
+		scanners  TEXT NOT NULL DEFAULT '[]',
+		blacklist TEXT NOT NULL DEFAULT '[]',
+		prefix    TEXT NOT NULL DEFAULT '',
+		unknown   TEXT NOT NULL DEFAULT ''
+	)`)
+	if err != nil {
+		return fmt.Errorf("create scan_info table: %w", err)
 	}
 	return nil
 }

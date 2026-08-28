@@ -34,6 +34,11 @@ func newScanInfoTestServer(t *testing.T, scanInfoCfg config.ScanInfoConfig, book
 			Server: config.ServerConfig{ScanInfo: scanInfoCfg},
 		},
 		configPath: filepath.Join(t.TempDir(), "config.yaml"),
+		// effectiveScanInfo (comic-server-4ms) checks config.db before
+		// falling back to config.yaml's Server.ScanInfo - an empty
+		// config.db here means every test in this file exercises that
+		// fallback path, matching what they set up scanInfoCfg for.
+		configDB: newTestConfigDB(t),
 	}
 }
 

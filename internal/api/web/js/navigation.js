@@ -42,6 +42,10 @@ class Navigation {
                     <span class="nav-label">Trash</span>
                     <span class="nav-badge" id="trash-count">0</span>
                 </a>
+                <a href="/settings" class="nav-tab" data-tab="settings">
+                    <span class="nav-icon">⚙️</span>
+                    <span class="nav-label">Settings</span>
+                </a>
             </div>
         `;
     }

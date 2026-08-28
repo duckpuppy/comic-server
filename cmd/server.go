@@ -242,6 +242,32 @@ func runServer(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// One-time migration: import Server.ScanInfo (Scanners/Blacklist/
+	// Prefix/Unknown/Enabled) still sitting in config.yaml into config.db,
+	// then stop config.yaml from carrying it going forward
+	// (comic-server-4ms - the first UI/API surface for this section,
+	// previously config.yaml-hand-edit-only). scan_info is a single row
+	// rather than a many-row table like devices/komga_targets, so "already
+	// migrated" is "a row exists" instead of "the table is non-empty" -
+	// same idea, just phrased for a singleton.
+	if cfg.Server.ScanInfo.Enabled || len(cfg.Server.ScanInfo.Scanners) > 0 || len(cfg.Server.ScanInfo.Blacklist) > 0 {
+		existing, err := configDB.GetScanInfo()
+		if err != nil {
+			return fmt.Errorf("failed to check config database for existing scan info: %w", err)
+		}
+		if existing == nil {
+			if err := configDB.UpsertScanInfo(cfg.Server.ScanInfo); err != nil {
+				return fmt.Errorf("failed to migrate scan info to config database: %w", err)
+			}
+			log.Info().Msg("Migrated scan_info config from config.yaml to config.db")
+
+			cfg.Server.ScanInfo = config.ScanInfoConfig{}
+			if err := config.Save(cfg, configPath); err != nil {
+				log.Error().Err(err).Msg("Failed to save config.yaml after migrating scan info to config.db")
+			}
+		}
+	}
+
 	// Load library using appropriate backend
 	var backend library.Backend
 	if cfg.Server.DatabasePath != "" {

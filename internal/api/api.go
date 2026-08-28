@@ -189,6 +189,9 @@ func (s *Server) registerRoutes() {
 	// Komga sync endpoints
 	s.mux.HandleFunc("/api/komga/status", s.handleKomgaStatus)
 
+	// Settings endpoints
+	s.mux.HandleFunc("/api/settings/scan-info", s.handleScanInfoConfig)
+
 	// WebSocket endpoint
 	s.mux.HandleFunc("/ws", s.handleWebSocket)
 
