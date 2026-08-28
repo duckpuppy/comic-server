@@ -260,7 +260,7 @@ func (db *DB) GetAllLists() ([]library.ComicListItem, error) {
 	// First pass: collect all lists
 	listMap := make(map[string]*library.ComicListItem)
 	var rootLists []string
-	parentMap := make(map[string]string) // child -> parent
+	childrenOf := make(map[string][]string) // parent ID -> child IDs, in query order
 
 	for rows.Next() {
 		var id, name, listType, matcherMode string
@@ -299,22 +299,13 @@ func (db *DB) GetAllLists() ([]library.ComicListItem, error) {
 		listMap[id] = list
 
 		if parentID.Valid {
-			parentMap[id] = parentID.String
+			childrenOf[parentID.String] = append(childrenOf[parentID.String], id)
 		} else {
 			rootLists = append(rootLists, id)
 		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate lists: %w", err)
-	}
-
-	// Second pass: build tree structure
-	for childID, parentID := range parentMap {
-		parent := listMap[parentID]
-		child := listMap[childID]
-		if parent != nil && child != nil {
-			parent.ChildItems = append(parent.ChildItems, *child)
-		}
 	}
 
 	// Load reading list items
@@ -326,15 +317,46 @@ func (db *DB) GetAllLists() ([]library.ComicListItem, error) {
 		}
 	}
 
-	// Return root lists
-	var result []library.ComicListItem
+	// Materialize the tree bottom-up via explicit recursion over
+	// childrenOf (comic-server-niv), rather than the previous single
+	// unordered pass over a Go map that appended a COPY of each child
+	// into its parent's ChildItems at whatever moment that map's
+	// randomized iteration happened to visit it. For 3+ level nesting,
+	// that meant a grandchild whose OWN (child -> parent) link was
+	// processed after its parent had already been copied into the
+	// grandparent was silently and non-deterministically dropped - the
+	// copy sitting in the grandparent's slice never saw the later
+	// mutation to the original. materializeList recurses depth-first, so
+	// a node's ChildItems is always fully built (every descendant
+	// attached) before that node is ever copied into ITS OWN parent -
+	// correctness no longer depends on map iteration order at all.
+	visiting := make(map[string]bool)
+	result := make([]library.ComicListItem, 0, len(rootLists))
 	for _, id := range rootLists {
-		if list := listMap[id]; list != nil {
-			result = append(result, *list)
-		}
+		result = append(result, materializeList(id, listMap, childrenOf, visiting))
 	}
 
 	return result, nil
+}
+
+// materializeList builds a fully-populated value copy of listMap[id],
+// including every descendant, by recursing over childrenOf. visiting
+// tracks the current root-to-node path (not every node ever visited) so a
+// malformed parent_id cycle - which should never happen for data that
+// went through this package's own import, but would otherwise recurse
+// forever - terminates that branch instead of stack-overflowing the
+// server.
+func materializeList(id string, listMap map[string]*library.ComicListItem, childrenOf map[string][]string, visiting map[string]bool) library.ComicListItem {
+	node := *listMap[id]
+	if visiting[id] {
+		return node
+	}
+	visiting[id] = true
+	for _, childID := range childrenOf[id] {
+		node.ChildItems = append(node.ChildItems, materializeList(childID, listMap, childrenOf, visiting))
+	}
+	delete(visiting, id)
+	return node
 }
 
 // scanner interface for both sql.Row and sql.Rows

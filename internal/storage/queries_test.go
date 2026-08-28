@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -431,6 +432,90 @@ func TestGetAllLists(t *testing.T) {
 		if list.ID == "folder-1" {
 			if len(list.ChildItems) != 1 {
 				t.Errorf("expected folder to have 1 child, got %d", len(list.ChildItems))
+			}
+		}
+	}
+}
+
+// TestGetAllLists_ThreeLevelNestingIsDeterministic is the regression test
+// for comic-server-niv: the OLD tree-building pass appended a COPY of
+// each child into its parent's ChildItems at whatever moment a single,
+// randomly-ordered Go map iteration happened to process that link. For
+// 3+ level nesting (root -> subfolder -> leaf lists), if the
+// (subfolder -> root) link was processed before ALL of the
+// (leaf -> subfolder) links, any leaf linked afterward was silently
+// dropped - the copy already sitting in root's ChildItems never saw the
+// later mutation to the original. This only reproduces reliably with
+// several leaves under one subfolder (more entries in the random
+// ordering for the bug to have a chance to bite) and several repeated
+// calls (Go doesn't guarantee the same map iteration order twice, even
+// within one process) - a single 2-level fixture or a single call could
+// pass by luck even against the buggy code.
+func TestGetAllLists_ThreeLevelNestingIsDeterministic(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	db, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	defer db.Close()
+
+	const leafCount = 20
+	leaves := make([]library.ComicListItem, leafCount)
+	wantIDs := make(map[string]bool, leafCount)
+	for i := 0; i < leafCount; i++ {
+		id := fmt.Sprintf("leaf-%d", i)
+		leaves[i] = library.ComicListItem{ID: id, Name: id, Type: "ComicSmartListItem"}
+		wantIDs[id] = true
+	}
+
+	lib := &library.ComicLibrary{
+		ID:   "test-library-id",
+		Name: "Test Library",
+		ComicLists: []library.ComicListItem{
+			{
+				ID:   "root-folder",
+				Name: "Root",
+				Type: "ComicListItemFolder",
+				ChildItems: []library.ComicListItem{
+					{
+						ID:         "sub-folder",
+						Name:       "Sub",
+						Type:       "ComicListItemFolder",
+						ChildItems: leaves,
+					},
+				},
+			},
+		},
+	}
+
+	if _, err := db.Import(lib, ImportOptions{}); err != nil {
+		t.Fatalf("import: %v", err)
+	}
+
+	for iteration := 0; iteration < 30; iteration++ {
+		lists, err := db.GetAllLists()
+		if err != nil {
+			t.Fatalf("iteration %d: get all lists: %v", iteration, err)
+		}
+		if len(lists) != 1 || lists[0].ID != "root-folder" {
+			t.Fatalf("iteration %d: expected 1 root (root-folder), got %+v", iteration, lists)
+		}
+		if len(lists[0].ChildItems) != 1 || lists[0].ChildItems[0].ID != "sub-folder" {
+			t.Fatalf("iteration %d: expected root-folder to have 1 child (sub-folder), got %+v", iteration, lists[0].ChildItems)
+		}
+
+		sub := lists[0].ChildItems[0]
+		if len(sub.ChildItems) != leafCount {
+			t.Fatalf("iteration %d: expected sub-folder to have %d leaf children, got %d: %+v",
+				iteration, leafCount, len(sub.ChildItems), sub.ChildItems)
+		}
+		got := make(map[string]bool, leafCount)
+		for _, leaf := range sub.ChildItems {
+			got[leaf.ID] = true
+		}
+		for id := range wantIDs {
+			if !got[id] {
+				t.Errorf("iteration %d: leaf %q missing from sub-folder's ChildItems", iteration, id)
 			}
 		}
 	}
