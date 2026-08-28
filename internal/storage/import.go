@@ -139,15 +139,16 @@ func (db *DB) importBooks(tx *sql.Tx, books []library.ComicBook, stats *ImportSt
 				oldSnapshot := &library.ComicBook{}
 				// A row migrated from pre-v4 (no snapshot yet, see
 				// migrateV3ToV4) has no prior snapshot to diff against -
-				// oldSnapshot stays zero-valued, so diffBookColumns finds
-				// everything "changed" and this degrades to a full
-				// overwrite for this one row, same as before the fix.
-				if prior.snapshot != "" {
+				// oldSnapshot stays zero-valued, so mergeUpdateBook (told
+				// via hasSnapshot=false) degrades to a full overwrite for
+				// this one row, same as before the fix.
+				hasSnapshot := prior.snapshot != ""
+				if hasSnapshot {
 					if err := json.Unmarshal([]byte(prior.snapshot), oldSnapshot); err != nil {
 						return fmt.Errorf("unmarshal xml snapshot for book %s: %w", book.ID, err)
 					}
 				}
-				if err := db.mergeUpdateBook(tx, oldSnapshot, book, hash); err != nil {
+				if err := db.mergeUpdateBook(tx, oldSnapshot, book, hash, hasSnapshot); err != nil {
 					return fmt.Errorf("merge-update book %s: %w", book.ID, err)
 				}
 			}

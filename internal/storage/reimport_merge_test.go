@@ -11,7 +11,8 @@ func TestDiffBookColumns_OnlyChangedFieldsReported(t *testing.T) {
 	old := &library.ComicBook{ID: "1", Title: "Old Title", Series: "Batman", Writer: "Jane Doe"}
 	newBook := &library.ComicBook{ID: "1", Title: "New Title", Series: "Batman", Writer: "Jane Doe"}
 
-	changes := diffBookColumns(old, newBook)
+	// live == old for every field, so nothing's in genuine conflict.
+	changes := diffBookColumns(old, old, newBook)
 	if len(changes) != 1 {
 		t.Fatalf("expected 1 changed column, got %d: %+v", len(changes), changes)
 	}
@@ -22,7 +23,7 @@ func TestDiffBookColumns_OnlyChangedFieldsReported(t *testing.T) {
 
 func TestDiffBookColumns_IdenticalBooksProduceNoChanges(t *testing.T) {
 	book := &library.ComicBook{ID: "1", Title: "Same", Series: "Batman"}
-	changes := diffBookColumns(book, book)
+	changes := diffBookColumns(book, book, book)
 	if len(changes) != 0 {
 		t.Errorf("expected no changes for identical books, got %+v", changes)
 	}
@@ -32,7 +33,7 @@ func TestDiffBookColumns_PagesComparedByContent(t *testing.T) {
 	old := &library.ComicBook{ID: "1", Pages: []library.ComicPageInfo{{Image: 0, Type: "Story"}}}
 	newBook := &library.ComicBook{ID: "1", Pages: []library.ComicPageInfo{{Image: 0, Type: "FrontCover"}}}
 
-	changes := diffBookColumns(old, newBook)
+	changes := diffBookColumns(old, old, newBook)
 	found := false
 	for _, c := range changes {
 		if c.column == "pages" {
@@ -41,6 +42,24 @@ func TestDiffBookColumns_PagesComparedByContent(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected a pages change, got %+v", changes)
+	}
+}
+
+// TestDiffBookColumns_LiveEditWinsOverConflictingXMLChange is the unit-
+// level check for comic-server-cfi: when the XML changed a field AND
+// comic-server's live value has independently diverged from the old
+// snapshot for that same field, the field is left alone (comic-server's
+// live value wins) rather than being overwritten by the new XML value.
+func TestDiffBookColumns_LiveEditWinsOverConflictingXMLChange(t *testing.T) {
+	old := &library.ComicBook{ID: "1", Notes: "original notes"}
+	live := &library.ComicBook{ID: "1", Notes: "locally edited notes"}
+	newBook := &library.ComicBook{ID: "1", Notes: "notes from ComicRack"}
+
+	changes := diffBookColumns(old, live, newBook)
+	for _, c := range changes {
+		if c.column == "notes" {
+			t.Fatalf("expected no change for notes (live value should win a genuine conflict), got %+v", c)
+		}
 	}
 }
 
@@ -111,11 +130,14 @@ func TestImportMerge_PreservesLocalEditWhenXMLChangesOtherField(t *testing.T) {
 	}
 }
 
-// TestImportMerge_XMLChangeToLocallyEditedFieldWins covers the real
-// conflict case (both sides touched the same field): XML wins, per
-// comic-server-aio's explicit non-goal ("no true conflict resolution -
-// XML wins for that field").
-func TestImportMerge_XMLChangeToLocallyEditedFieldWins(t *testing.T) {
+// TestImportMerge_LiveEditWinsOverConflictingXMLChange covers the real
+// conflict case (both sides touched the same field): comic-server's live
+// value wins, per comic-server-cfi's flip of aio's original "XML wins"
+// rule - now that ComicRack Desktop's XML is a periodic, essentially-
+// frozen import source rather than a live co-author, comic-server's own
+// value (e.g. reading progress reverse-synced from a device) is the more
+// authoritative one when both sides have genuinely diverged.
+func TestImportMerge_LiveEditWinsOverConflictingXMLChange(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 	db, err := Open(dbPath)
 	if err != nil {
@@ -150,8 +172,8 @@ func TestImportMerge_XMLChangeToLocallyEditedFieldWins(t *testing.T) {
 	if err != nil || after == nil {
 		t.Fatalf("get book after reimport: book=%+v err=%v", after, err)
 	}
-	if after.Notes != "notes from ComicRack" {
-		t.Errorf("Notes = %q, want %q (XML should win a genuine conflict)", after.Notes, "notes from ComicRack")
+	if after.Notes != "locally edited notes" {
+		t.Errorf("Notes = %q, want %q (comic-server's live value should win a genuine conflict)", after.Notes, "locally edited notes")
 	}
 }
 
@@ -247,5 +269,63 @@ func TestImportMerge_MissingSnapshotFallsBackToFullOverwrite(t *testing.T) {
 	}
 	if after.Title != "Changed" {
 		t.Errorf("Title = %q, want %q", after.Title, "Changed")
+	}
+}
+
+// TestImportMerge_ReadingProgressSurvivesConflictingXMLReimport is
+// comic-server-cfi's acceptance scenario: a device reverse-syncs a new
+// CurrentPage into comic-server's live DB, then a reimport arrives where
+// the XML's CurrentPage ALSO changed - to a third, different value (not
+// the original snapshot value, not the live value) - simulating a stale
+// ComicRack Desktop XML disagreeing with comic-server's own up-to-date
+// reading state. The live (reverse-synced) value must survive.
+func TestImportMerge_ReadingProgressSurvivesConflictingXMLReimport(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	db, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	defer db.Close()
+
+	lib := &library.ComicLibrary{
+		ID: "test-library-id",
+		Books: []library.ComicBook{
+			{ID: "book-1", FilePath: "/comics/book.cbz", CurrentPage: 1, LastPageRead: 1},
+		},
+	}
+	if _, err := db.Import(lib, ImportOptions{}); err != nil {
+		t.Fatalf("first import: %v", err)
+	}
+
+	// Device reverse-sync: user read further, comic-server's live DB is
+	// updated directly (not via a reimport).
+	book, err := db.GetBook("book-1")
+	if err != nil || book == nil {
+		t.Fatalf("get book: book=%+v err=%v", book, err)
+	}
+	book.CurrentPage = 15
+	book.LastPageRead = 15
+	if err := db.UpdateBookFields(book); err != nil {
+		t.Fatalf("UpdateBookFields (simulated reverse-sync): %v", err)
+	}
+
+	// The stale ComicRack Desktop XML also has a CurrentPage change - to a
+	// THIRD value, matching neither the original snapshot (1) nor the
+	// live reverse-synced value (15).
+	lib.Books[0].CurrentPage = 3
+	lib.Books[0].LastPageRead = 3
+	if _, err := db.Import(lib, ImportOptions{}); err != nil {
+		t.Fatalf("second import (conflicting reading progress): %v", err)
+	}
+
+	after, err := db.GetBook("book-1")
+	if err != nil || after == nil {
+		t.Fatalf("get book after reimport: book=%+v err=%v", after, err)
+	}
+	if after.CurrentPage != 15 {
+		t.Errorf("CurrentPage = %d, want 15 (comic-server's reverse-synced reading progress should survive a conflicting XML reimport)", after.CurrentPage)
+	}
+	if after.LastPageRead != 15 {
+		t.Errorf("LastPageRead = %d, want 15 (comic-server's reverse-synced reading progress should survive a conflicting XML reimport)", after.LastPageRead)
 	}
 }
