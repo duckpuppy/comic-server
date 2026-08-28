@@ -1,9 +1,12 @@
 package syncstate
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
+	"github.com/duckpuppy/comic-server/internal/configdb"
+	"github.com/duckpuppy/comic-server/internal/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -73,10 +76,37 @@ type Manager struct {
 	activeSyncs map[string]*SyncState // deviceID -> current sync state
 	history     []*SyncState          // Recently completed syncs (FIFO)
 	maxHistory  int                   // Maximum history entries to keep
+	store       *configdb.DB          // optional: persists history across restarts
 }
 
-// NewManager creates a new sync state manager
+// NewManager creates a new sync state manager with in-memory-only history
+// (lost on restart). Used by tests and any caller that doesn't have a
+// config database to persist to.
 func NewManager(maxHistory int) *Manager {
+	return newManager(maxHistory, nil)
+}
+
+// NewManagerWithStore creates a new sync state manager whose history is
+// persisted to store's sync_history table (comic-server-7vu) - every
+// completed/failed/aborted sync is written through to the database, and
+// the in-memory FIFO cache is warmed from the database at startup so
+// GetHistory/GetHistoryPaginated/GetHistoryForDevice keep serving from
+// memory unchanged.
+func NewManagerWithStore(maxHistory int, store *configdb.DB) (*Manager, error) {
+	m := newManager(maxHistory, store)
+
+	records, err := store.LoadRecentSyncHistory(m.maxHistory)
+	if err != nil {
+		return nil, fmt.Errorf("load sync history: %w", err)
+	}
+	for _, rec := range records {
+		m.history = append(m.history, syncStateFromRecord(rec))
+	}
+
+	return m, nil
+}
+
+func newManager(maxHistory int, store *configdb.DB) *Manager {
 	if maxHistory <= 0 {
 		maxHistory = 100 // Default: keep last 100 syncs
 	}
@@ -84,6 +114,43 @@ func NewManager(maxHistory int) *Manager {
 		activeSyncs: make(map[string]*SyncState),
 		history:     make([]*SyncState, 0, maxHistory),
 		maxHistory:  maxHistory,
+		store:       store,
+	}
+}
+
+func syncStateToRecord(state *SyncState) configdb.SyncHistoryRecord {
+	return configdb.SyncHistoryRecord{
+		DeviceID:     state.DeviceID,
+		DeviceIP:     state.DeviceIP,
+		DeviceName:   state.DeviceName,
+		StartTime:    state.StartTime,
+		EndTime:      state.EndTime,
+		Status:       string(state.Status),
+		Progress:     state.Progress,
+		BooksTotal:   state.BooksTotal,
+		BooksAdded:   state.BooksAdded,
+		BooksUpdated: state.BooksUpdated,
+		BooksDeleted: state.BooksDeleted,
+		ErrorCount:   state.ErrorCount,
+		ErrorMessage: state.ErrorMessage,
+	}
+}
+
+func syncStateFromRecord(rec configdb.SyncHistoryRecord) *SyncState {
+	return &SyncState{
+		DeviceID:     rec.DeviceID,
+		DeviceIP:     rec.DeviceIP,
+		DeviceName:   rec.DeviceName,
+		StartTime:    rec.StartTime,
+		EndTime:      rec.EndTime,
+		Status:       SyncStatus(rec.Status),
+		Progress:     rec.Progress,
+		BooksTotal:   rec.BooksTotal,
+		BooksAdded:   rec.BooksAdded,
+		BooksUpdated: rec.BooksUpdated,
+		BooksDeleted: rec.BooksDeleted,
+		ErrorCount:   rec.ErrorCount,
+		ErrorMessage: rec.ErrorMessage,
 	}
 }
 
@@ -421,6 +488,16 @@ func (m *Manager) addToHistory(state *SyncState) {
 	}
 
 	m.history = append(m.history, state)
+
+	if m.store != nil {
+		if err := m.store.AppendSyncHistory(syncStateToRecord(state), m.maxHistory); err != nil {
+			// Persistence is best-effort: the in-memory history (this
+			// process's source of truth until restart) already has the
+			// entry, so a DB write failure only risks losing it across
+			// the next restart, not right now.
+			log.Error().Err(err).Str("device_id", state.DeviceID).Msg("Failed to persist sync history")
+		}
+	}
 }
 
 // DeviceAlreadySyncingError is returned when attempting to start a sync for a device that's already syncing

@@ -290,8 +290,12 @@ func runServer(cmd *cobra.Command, args []string) error {
 	// Create device registry
 	registry := device.NewRegistry()
 
-	// Create sync state manager (max 100 history entries)
-	syncManager := syncstate.NewManager(100)
+	// Create sync state manager (max 100 history entries), persisted to
+	// config.db so history survives a restart (comic-server-7vu)
+	syncManager, err := syncstate.NewManagerWithStore(100, configDB)
+	if err != nil {
+		return fmt.Errorf("create sync state manager: %w", err)
+	}
 
 	// Initialize rate limiters
 	var ipLimiter *ratelimit.IPLimiter

@@ -43,7 +43,7 @@ func TestMigrateV1ToV2_AddsDeviceTables(t *testing.T) {
 		t.Errorf("expected schema version %d after migration, got %d", schemaVersion, version)
 	}
 
-	for _, table := range []string{"devices", "device_lists", "komga_targets"} {
+	for _, table := range []string{"devices", "device_lists", "komga_targets", "sync_history"} {
 		var name string
 		err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&name)
 		if err != nil {
@@ -84,5 +84,41 @@ func TestMigrateV2ToV3_AddsKomgaTargetsTable(t *testing.T) {
 	var name string
 	if err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='komga_targets'").Scan(&name); err != nil {
 		t.Errorf("expected table komga_targets to exist after migration: %v", err)
+	}
+}
+
+// TestMigrateV3ToV4_AddsSyncHistoryTable simulates a database created under
+// schemaVersion 3 (comic-server-cde, devices/device_lists/komga_targets
+// only - no sync_history table yet) and confirms opening it upgrades in
+// place.
+func TestMigrateV3ToV4_AddsSyncHistoryTable(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+
+	raw, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open raw db: %v", err)
+	}
+	if _, err := raw.Exec("PRAGMA user_version = 3"); err != nil {
+		t.Fatalf("set v3: %v", err)
+	}
+	raw.Close()
+
+	db, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer db.Close()
+
+	var version int
+	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
+		t.Fatalf("query user_version: %v", err)
+	}
+	if version != schemaVersion {
+		t.Errorf("expected schema version %d after migration, got %d", schemaVersion, version)
+	}
+
+	var name string
+	if err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='sync_history'").Scan(&name); err != nil {
+		t.Errorf("expected table sync_history to exist after migration: %v", err)
 	}
 }
