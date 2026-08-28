@@ -161,6 +161,11 @@ document.addEventListener('DOMContentLoaded', () => {
             listsTree = new ListsTree();
             await listsTree.init();
             if (ctx.aborted) return;
+        } else {
+            // Don't await: this is a background refresh of a persistent,
+            // already-rendered sidebar, not part of this navigation's
+            // critical path (see refreshTree's comment).
+            listsTree.refreshTree();
         }
         if (!listsBrowser) {
             listsBrowser = new ListsBrowser(listsTree);
@@ -175,6 +180,8 @@ document.addEventListener('DOMContentLoaded', () => {
             listsTree = new ListsTree();
             await listsTree.init();
             if (ctx.aborted) return;
+        } else {
+            listsTree.refreshTree();
         }
         const listDetail = new ListDetail(params.listId, listsTree);
         await listDetail.init(ctx);

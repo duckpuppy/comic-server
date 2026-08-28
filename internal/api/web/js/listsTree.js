@@ -25,6 +25,27 @@ class ListsTree {
         }
     }
 
+    // Re-fetches counts and re-renders. Unlike loadTree (used for the very
+    // first load), a failure here leaves the last-known tree in place
+    // rather than blanking the sidebar - this is meant to be called
+    // silently in the background on every navigation into the lists
+    // section, not just once per page load. Without this, the tree
+    // (a singleton reused for the lifetime of the SPA session - see
+    // app.js) only ever reflected counts as of whenever it was first
+    // created, drifting from the list detail page's always-fresh fetch
+    // the longer a session ran - e.g. after a reverse sync updated
+    // read-progress metadata mid-session (comic-server-dhz).
+    async refreshTree() {
+        try {
+            const response = await fetch('/api/library/lists/tree');
+            const data = await response.json();
+            this.tree = data.tree || [];
+            this.render();
+        } catch (error) {
+            console.error('Failed to refresh list tree:', error);
+        }
+    }
+
     // Called from file browser when navigating; expands ancestors and highlights folder
     setCurrentPath(pathStack) {
         for (const seg of pathStack) {
