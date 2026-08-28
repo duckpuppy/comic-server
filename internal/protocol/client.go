@@ -13,6 +13,24 @@ const (
 	DefaultSendTimeout       = 5000 * time.Millisecond // 5 seconds
 	DefaultConnectionTimeout = 2500 * time.Millisecond // 2.5 seconds
 	DefaultRetries           = 1
+
+	// minTransferThroughput is a deliberately conservative assumption for
+	// how slow the link to a device can get before a transfer is
+	// reasonably considered stalled, not just slow - used to size the
+	// deadline for operations moving real file data (WriteFile, ReadFile)
+	// instead of applying receiveTimeout (meant for small protocol
+	// messages: a command byte, a filename) to a multi-megabyte comic
+	// book. ComicRackCE's own client sidesteps this differently - its
+	// SendTimeout/ReceiveTimeout are PER-Send()/Receive()-call timeouts
+	// on a chunked ~100KB-at-a-time transfer, not one deadline for the
+	// whole file - but the same effect (a slow-but-alive transfer
+	// shouldn't fail just because it's large) is reached here more simply
+	// by sizing the one deadline to the payload. Found live 2026-08-27:
+	// average book size in a real sync was ~90MB, nowhere close to
+	// transferable in the flat 5s default, independent of any actual
+	// WiFi flakiness - explains a large share of that session's i/o
+	// timeout failures on WriteFile.
+	minTransferThroughput = 1024 * 1024 // 1 MB/s
 )
 
 // Client represents a TCP client for communicating with ComicRack devices
@@ -47,6 +65,19 @@ func (c *Client) SetTimeouts(receive, send, connection time.Duration) {
 // SetRetries sets the number of connection retry attempts
 func (c *Client) SetRetries(retries int) {
 	c.retries = retries
+}
+
+// dataTimeout returns the deadline duration for an operation moving
+// dataSize bytes of real file data - at least c.receiveTimeout (the
+// default, meant for small protocol messages), scaled up for anything
+// large enough that minTransferThroughput would need longer. See
+// minTransferThroughput's comment for why this exists.
+func (c *Client) dataTimeout(dataSize int64) time.Duration {
+	scaled := time.Duration(dataSize/minTransferThroughput) * time.Second
+	if scaled > c.receiveTimeout {
+		return scaled
+	}
+	return c.receiveTimeout
 }
 
 // dial opens a single TCP connection to the device - no retry, that's
@@ -124,8 +155,17 @@ func (c *Client) ReadFile(filename string) ([]byte, error) {
 			return fmt.Errorf("failed to write filename: %w", err)
 		}
 
-		// Read response
-		fileData, err := ReadData(conn)
+		// Read response - length first, then extend the deadline based
+		// on the announced size before reading the (potentially large)
+		// body itself, same reasoning as WriteFile.
+		length, err := ReadDataLength(conn)
+		if err != nil {
+			return fmt.Errorf("failed to read file data length: %w", err)
+		}
+		if err := conn.SetDeadline(time.Now().Add(c.dataTimeout(length))); err != nil {
+			return fmt.Errorf("failed to extend deadline for file data: %w", err)
+		}
+		fileData, err := ReadDataBody(conn, length)
 		if err != nil {
 			return fmt.Errorf("failed to read file data: %w", err)
 		}
@@ -344,6 +384,14 @@ func (c *Client) WriteFile(filename string, data []byte) error {
 			return fmt.Errorf("failed to write filename: %w", err)
 		}
 
+		// Extend the deadline for the file body itself - see
+		// dataTimeout. A real comic book can be tens to hundreds of MB;
+		// the default receiveTimeout (sized for a command byte and a
+		// filename) isn't remotely enough to move that much data, on any
+		// WiFi, regardless of actual flakiness.
+		if err := conn.SetDeadline(time.Now().Add(c.dataTimeout(int64(len(data))))); err != nil {
+			return fmt.Errorf("failed to extend deadline for file data: %w", err)
+		}
 		if err := WriteData(conn, data); err != nil {
 			return fmt.Errorf("failed to write file data: %w", err)
 		}

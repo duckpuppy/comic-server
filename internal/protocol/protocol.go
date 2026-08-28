@@ -166,25 +166,45 @@ func WriteData(w io.Writer, data []byte) error {
 // ReadData reads length-prefixed binary data
 // Format: LONG(length) + BYTE[length](data)
 func ReadData(r io.Reader) ([]byte, error) {
+	length, err := ReadDataLength(r)
+	if err != nil {
+		return nil, err
+	}
+	return ReadDataBody(r, length)
+}
+
+// ReadDataLength reads and validates just the LONG(length) prefix of a
+// length-prefixed data block, without reading the body. Split out from
+// ReadData so a caller expecting a potentially large body (e.g.
+// Client.ReadFile) can extend its read deadline based on the announced
+// length before reading the body itself - see
+// internal/protocol.Client.dataTimeout.
+func ReadDataLength(r io.Reader) (int64, error) {
 	length, err := ReadLong(r)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read data length: %w", err)
+		return 0, fmt.Errorf("failed to read data length: %w", err)
 	}
 
 	if length < 0 {
-		return nil, fmt.Errorf("invalid data length: %d (negative)", length)
+		return 0, fmt.Errorf("invalid data length: %d (negative)", length)
 	}
 
 	if length > MaxDataLength {
-		return nil, fmt.Errorf("invalid data length: %d (exceeds maximum of %d bytes)", length, MaxDataLength)
+		return 0, fmt.Errorf("invalid data length: %d (exceeds maximum of %d bytes)", length, MaxDataLength)
 	}
 
+	return length, nil
+}
+
+// ReadDataBody reads exactly length bytes - the body half of ReadData,
+// see ReadDataLength.
+func ReadDataBody(r io.Reader, length int64) ([]byte, error) {
 	if length == 0 {
 		return []byte{}, nil
 	}
 
 	buf := make([]byte, length)
-	_, err = io.ReadFull(r, buf)
+	_, err := io.ReadFull(r, buf)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read data: %w", err)
 	}

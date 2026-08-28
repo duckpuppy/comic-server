@@ -1,6 +1,7 @@
 package protocol_test
 
 import (
+	"io"
 	"net"
 	"sync/atomic"
 	"testing"
@@ -199,5 +200,87 @@ func TestClientRetriesFullOperationNotJustConnect(t *testing.T) {
 	got := atomic.LoadInt64(&connectionCount)
 	if got < 2 {
 		t.Errorf("expected at least 2 separate connection attempts (initial + retry after the command itself failed), got %d", got)
+	}
+}
+
+// TestWriteFile_LargePayloadOverSlowLinkDoesNotTimeOut is the regression
+// test for a real bug found live 2026-08-27: WriteFile applied the flat
+// default receiveTimeout (sized for a command byte and a filename, not
+// a file body) as the deadline for the WHOLE transfer, including a real
+// comic book's data - averaged ~90MB in one observed sync. This server
+// deliberately reads the file body slowly (in small chunks with pauses),
+// long enough to blow the tiny default timeout but well within what a
+// realistically-sized payload's scaled deadline allows, and asserts
+// WriteFile still succeeds.
+func TestWriteFile_LargePayloadOverSlowLinkDoesNotTimeOut(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to start listener: %v", err)
+	}
+	defer listener.Close()
+
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		// CommandWriteFile request: BYTE(command) + STRING(filename) +
+		// DATA(length + body). Read it all, deliberately slowly, then
+		// just close - WriteFile doesn't wait for a response.
+		buf := make([]byte, 1)
+		if _, err := conn.Read(buf); err != nil {
+			return // command byte
+		}
+		var lenBuf [4]byte
+		if _, err := io.ReadFull(conn, lenBuf[:]); err != nil {
+			return
+		}
+		nameLen := int(lenBuf[0])<<24 | int(lenBuf[1])<<16 | int(lenBuf[2])<<8 | int(lenBuf[3])
+		nameBuf := make([]byte, nameLen)
+		if _, err := io.ReadFull(conn, nameBuf); err != nil {
+			return // filename
+		}
+		var dataLenBuf [8]byte
+		if _, err := io.ReadFull(conn, dataLenBuf[:]); err != nil {
+			return
+		}
+		dataLen := int64(0)
+		for _, b := range dataLenBuf {
+			dataLen = dataLen<<8 | int64(b)
+		}
+
+		// Read the body in small chunks with a pause between each -
+		// slow, but never stalled for longer than a chunk read.
+		remaining := dataLen
+		chunk := make([]byte, 64*1024)
+		for remaining > 0 {
+			n := int64(len(chunk))
+			if remaining < n {
+				n = remaining
+			}
+			if _, err := io.ReadFull(conn, chunk[:n]); err != nil {
+				return
+			}
+			remaining -= n
+			time.Sleep(20 * time.Millisecond)
+		}
+	}()
+
+	addr := listener.Addr().(*net.TCPAddr)
+	client := protocol.NewClient("127.0.0.1", addr.Port)
+	// A tiny default - sized for the old (buggy) assumption that this
+	// covers the whole operation. The scaled deadline for the payload
+	// below must override it for the write to succeed.
+	client.SetTimeouts(200*time.Millisecond, 200*time.Millisecond, 500*time.Millisecond)
+	client.SetRetries(0)
+
+	// 2MB in 64KB chunks with a 20ms pause each = ~32 chunks * 20ms =
+	// ~640ms total - comfortably more than the 200ms default, and well
+	// under the ~2s a 2MB payload's scaled deadline allows.
+	payload := make([]byte, 2*1024*1024)
+	if err := client.WriteFile("test.cbp", payload); err != nil {
+		t.Errorf("expected WriteFile to succeed despite exceeding the flat default timeout, got: %v", err)
 	}
 }
