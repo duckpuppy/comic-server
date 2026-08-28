@@ -7,12 +7,28 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/duckpuppy/comic-server/internal/library"
 )
+
+// connRefusedErr builds a real "connection refused" error shaped the way
+// net.Dial actually returns one (a *net.OpError wrapping a syscall.Errno),
+// so it round-trips through protocol.IsConnectionRefused the same way a
+// real dial failure would - unlike a plain fmt.Errorf("connection
+// refused"), which looks like ordinary text to that check.
+func connRefusedErr() error {
+	return &net.OpError{
+		Op:  "dial",
+		Net: "tcp",
+		Err: &os.SyscallError{Syscall: "connect", Err: syscall.ECONNREFUSED},
+	}
+}
 
 // buildTestZip constructs an in-memory zip archive from name->content pairs,
 // for tests exercising stripEmbeddedComicInfo without needing a real
@@ -596,6 +612,91 @@ func TestGetDeviceBooks_CircuitBreaksOnUnreachableDevice(t *testing.T) {
 	// not 90 (which is what trying all 30 files would produce).
 	if len(client.ReadFileCalls) > 30 {
 		t.Errorf("expected GetDeviceBooks to bail out well before trying all files, got %d ReadFile calls", len(client.ReadFileCalls))
+	}
+}
+
+// TestGetDeviceBooks_ConnectionRefusedGetsExtraGracePeriod verifies
+// comic-server-134's fix: a run of failures past the normal circuit
+// breaker threshold doesn't abort the sync immediately if every one of
+// them is specifically "connection refused" (the shape a device whose TCP
+// listener isn't up yet produces) and still within the grace period -
+// unlike TestGetDeviceBooks_CircuitBreaksOnUnreachableDevice's plain
+// error, which bails out fast with no such allowance.
+func TestGetDeviceBooks_ConnectionRefusedGetsExtraGracePeriod(t *testing.T) {
+	client := NewMockClient()
+
+	var fileList string
+	for i := 0; i < 15; i++ {
+		if i > 0 {
+			fileList += "\n"
+		}
+		fileList += fmt.Sprintf("book%d.cbp", i)
+	}
+	client.ListFilesResult = fileList
+	client.ReadMultiError = fmt.Errorf("batch read unsupported")
+
+	// The first 12 files (book0..book11, all 3 retry attempts each) are
+	// refused - past the 10-consecutive-failure threshold; the device
+	// then "comes up" and the rest succeed.
+	failingFiles := make(map[string]bool)
+	for i := 0; i < 12; i++ {
+		failingFiles[fmt.Sprintf("book%d.cbp.xml", i)] = true
+	}
+	client.ReadFileFunc = func(filename string) ([]byte, error) {
+		if failingFiles[filename] {
+			return nil, connRefusedErr()
+		}
+		return []byte("<ComicInfo/>"), nil
+	}
+
+	backend := library.NewXMLBackendFromLibrary(&library.ComicLibrary{}, "", nil)
+	syncer := NewSyncer(client, backend)
+	// Grace period only needs to outlast the retry backoff for a couple of
+	// failed files (~1.4s each with 3 retries at 100/200/400ms), not the
+	// real 25s production value.
+	syncer.connRefusedGracePeriod = 10 * time.Second
+
+	var details []string
+	syncer.SetStatusDetailCallback(func(detail string) { details = append(details, detail) })
+
+	_, err := syncer.GetDeviceBooks()
+	if err != nil {
+		t.Fatalf("expected GetDeviceBooks to ride out connection-refused past the normal threshold, got error: %v", err)
+	}
+	if len(details) == 0 {
+		t.Error("expected a status detail while riding out the grace period, got none")
+	}
+}
+
+// TestGetDeviceBooks_ConnectionRefusedStillFailsPastGracePeriod verifies
+// the grace period isn't unbounded: a device that never comes up still
+// gets bailed out on eventually, just later than a non-connection-refused
+// failure would.
+func TestGetDeviceBooks_ConnectionRefusedStillFailsPastGracePeriod(t *testing.T) {
+	client := NewMockClient()
+
+	var fileList string
+	for i := 0; i < 30; i++ {
+		if i > 0 {
+			fileList += "\n"
+		}
+		fileList += fmt.Sprintf("book%d.cbp", i)
+	}
+	client.ListFilesResult = fileList
+	client.ReadMultiError = fmt.Errorf("batch read unsupported")
+	client.ReadFileFunc = func(filename string) ([]byte, error) {
+		return nil, connRefusedErr()
+	}
+
+	backend := library.NewXMLBackendFromLibrary(&library.ComicLibrary{}, "", nil)
+	syncer := NewSyncer(client, backend)
+	// Small enough that this test doesn't take 25 real seconds, but still
+	// longer than a couple of failed-file retry cycles.
+	syncer.connRefusedGracePeriod = 500 * time.Millisecond
+
+	_, err := syncer.GetDeviceBooks()
+	if err == nil {
+		t.Fatal("expected GetDeviceBooks to eventually fail against a device that never stops refusing connections")
 	}
 }
 

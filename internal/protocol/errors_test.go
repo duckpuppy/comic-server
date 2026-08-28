@@ -212,3 +212,53 @@ func TestTimeoutError(t *testing.T) {
 		t.Logf("Error type: %s", ErrorTypeString(err))
 	}
 }
+
+// TestIsConnectionRefused_RealDial exercises a genuine ECONNREFUSED from
+// the OS (dialing a port nothing is listening on), the same shape
+// comic-server-134's fix distinguishes from other network failures.
+func TestIsConnectionRefused_RealDial(t *testing.T) {
+	// Listen then immediately close, freeing a port the OS is very
+	// unlikely to have anything else bound to before the dial below - a
+	// closed TCP port on localhost reliably refuses rather than timing
+	// out or being silently dropped, unlike a bare fixed port number.
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to allocate a port: %v", err)
+	}
+	addr := listener.Addr().String()
+	listener.Close()
+
+	conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
+	if conn != nil {
+		conn.Close()
+	}
+	if err == nil {
+		t.Skip("expected dial to a closed port to fail, but it succeeded")
+	}
+
+	if !IsConnectionRefused(err) {
+		t.Errorf("expected IsConnectionRefused(%v) = true", err)
+	}
+	if ErrorTypeString(err) != "connection refused" {
+		t.Errorf("ErrorTypeString(%v) = %q, want \"connection refused\"", err, ErrorTypeString(err))
+	}
+}
+
+func TestIsConnectionRefused_OtherErrorsAreFalse(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{"nil", nil},
+		{"plain text mentioning refused", fmt.Errorf("connection refused")},
+		{"timeout", &timeoutError{}},
+		{"reset", &net.OpError{Op: "read", Net: "tcp", Err: &os.SyscallError{Syscall: "read", Err: syscall.ECONNRESET}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if IsConnectionRefused(tt.err) {
+				t.Errorf("IsConnectionRefused(%v) = true, want false", tt.err)
+			}
+		})
+	}
+}

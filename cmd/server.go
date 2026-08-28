@@ -904,6 +904,9 @@ func handleSyncRequest(
 	// Create syncer with backend
 	syncer := csync.NewSyncer(client, backend)
 	syncer.SetPathResolver(cfg.ResolveLibraryFilePath)
+	syncer.SetStatusDetailCallback(func(detail string) {
+		syncManager.SetDetail(deviceID, detail)
+	})
 
 	// Apply device config if exists
 	deviceConfig, err := configDB.GetDevice(deviceID)

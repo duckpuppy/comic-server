@@ -48,6 +48,7 @@ type MockClient struct {
 
 	// Custom behavior callbacks
 	CheckAbortFunc func() (bool, error)
+	ReadFileFunc   func(filename string) ([]byte, error) // if set, takes priority over ReadFileError/the file map - lets a test vary the response across calls (e.g. simulate a device that stops refusing connections partway through)
 }
 
 // WriteFileCall tracks a WriteFile call
@@ -77,6 +78,10 @@ func (m *MockClient) ReadFile(filename string) ([]byte, error) {
 	defer m.mu.Unlock()
 
 	m.ReadFileCalls = append(m.ReadFileCalls, filename)
+
+	if m.ReadFileFunc != nil {
+		return m.ReadFileFunc(filename)
+	}
 
 	if m.ReadFileError != nil {
 		return nil, m.ReadFileError

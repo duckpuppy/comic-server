@@ -43,17 +43,52 @@ type Syncer struct {
 	// deployments run on the same OS/filesystem that wrote the library
 	// XML, so no translation is needed.
 	resolvePath func(string) string
+
+	// onStatusDetail, if set, is called with a human-readable status
+	// string whenever the sync is in a state that isn't visible progress
+	// but also isn't a hang - e.g. retrying a device whose TCP listener
+	// isn't up yet (comic-server-134). See SetStatusDetailCallback.
+	onStatusDetail func(detail string)
+
+	// connRefusedGracePeriod is how long GetDeviceBooks's sidecar-read
+	// circuit breaker keeps retrying past its normal failure threshold
+	// when every recent failure is specifically "connection refused" -
+	// see the comment at its use site. A field (not a plain const) so
+	// tests can shrink it instead of running real-time for tens of
+	// seconds.
+	connRefusedGracePeriod time.Duration
 }
+
+// defaultConnRefusedGracePeriod is connRefusedGracePeriod's production
+// value.
+const defaultConnRefusedGracePeriod = 25 * time.Second
 
 // NewSyncer creates a new sync orchestrator
 func NewSyncer(client Client, backend library.Backend) *Syncer {
 	return &Syncer{
-		client:      client,
-		backend:     backend,
-		filterList:  nil,
-		settings:    DefaultSettings(), // Use default settings
-		resolvePath: func(p string) string { return p },
+		client:                 client,
+		backend:                backend,
+		filterList:             nil,
+		settings:               DefaultSettings(), // Use default settings
+		resolvePath:            func(p string) string { return p },
+		onStatusDetail:         func(string) {},
+		connRefusedGracePeriod: defaultConnRefusedGracePeriod,
 	}
+}
+
+// SetStatusDetailCallback registers a callback invoked with a
+// human-readable status string during a sync stretch that's neither
+// failing nor visibly progressing (currently: while retrying a device
+// that's refusing connections early in a sync, within its startup grace
+// period). Callers use this to surface that detail somewhere a user can
+// see it - e.g. syncstate.Manager.SetDetail - without this package needing
+// to know anything about syncstate. Passing nil restores the default
+// no-op.
+func (s *Syncer) SetStatusDetailCallback(fn func(detail string)) {
+	if fn == nil {
+		fn = func(string) {}
+	}
+	s.onStatusDetail = fn
 }
 
 // SetPathResolver overrides how a book's raw library FilePath is translated
@@ -263,11 +298,36 @@ func (s *Syncer) GetDeviceBooks() (map[string]*DeviceBook, error) {
 			// (StartSync rejects it), so a hung, doomed sync here directly
 			// blocked the user from retrying for as long as it took to
 			// exhaust every remaining file - found live 2026-08-27.
+			//
+			// connRefusedGracePeriod extends that circuit breaker
+			// specifically for "connection refused" failures early in a
+			// sync: the ComicRack Android app broadcasts its ':Sync'
+			// intent before its own TCP listener is actually up (found
+			// live 2026-08-27/28, comic-server-134), so a burst of
+			// connection-refused errors in the first few seconds of a
+			// sync usually means "give it a few more seconds," not
+			// "genuinely gone." Any other error shape (timeout, reset,
+			// unreachable) still hits the tight maxConsecutiveFailures
+			// cutoff - those don't carry the same "about to come up"
+			// implication connection-refused does. The grace period is
+			// timed from firstConnRefusedAt, not sync start, so a device
+			// that answers fine for a while and only later goes
+			// perma-refused still gets the same fast bailout everything
+			// else gets.
 			const maxConsecutiveFailures = 10
 			consecutiveFailures := 0
+			var firstConnRefusedAt time.Time
 			for _, sidecarFile := range sidecarFiles {
 				if consecutiveFailures >= maxConsecutiveFailures {
-					return nil, fmt.Errorf("device unreachable: %d consecutive sidecar reads failed", consecutiveFailures)
+					inGracePeriod := !firstConnRefusedAt.IsZero() && time.Since(firstConnRefusedAt) < s.connRefusedGracePeriod
+					if !inGracePeriod {
+						return nil, fmt.Errorf("device unreachable: %d consecutive sidecar reads failed", consecutiveFailures)
+					}
+					log.Debug().
+						Int("consecutive_failures", consecutiveFailures).
+						Dur("elapsed_since_first_refused", time.Since(firstConnRefusedAt)).
+						Msg("Device still refusing connections, within startup grace period - continuing to retry")
+					s.onStatusDetail("device not responding yet, retrying")
 				}
 
 				// Try to read the file with retries
@@ -303,6 +363,16 @@ func (s *Syncer) GetDeviceBooks() (map[string]*DeviceBook, error) {
 
 				if err != nil {
 					consecutiveFailures++
+					if protocol.IsConnectionRefused(err) {
+						if firstConnRefusedAt.IsZero() {
+							firstConnRefusedAt = time.Now()
+						}
+					} else {
+						// Not a "still starting up" error - don't let an
+						// earlier streak of refusals extend the grace
+						// period for a different kind of failure.
+						firstConnRefusedAt = time.Time{}
+					}
 					log.Warn().
 						Err(err).
 						Str("sidecar", sidecarFile).
@@ -311,6 +381,7 @@ func (s *Syncer) GetDeviceBooks() (map[string]*DeviceBook, error) {
 					continue
 				}
 				consecutiveFailures = 0
+				firstConnRefusedAt = time.Time{}
 				sidecars[sidecarFile] = data
 				successCount++
 

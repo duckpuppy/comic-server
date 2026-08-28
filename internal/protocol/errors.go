@@ -58,6 +58,29 @@ func IsNetworkError(err error) bool {
 	return false
 }
 
+// IsConnectionRefused returns true if err is specifically a "connection
+// refused" - the device has no process listening on the port yet (or no
+// longer does), as opposed to other network failures (timeout, reset,
+// unreachable). Callers use this to distinguish "the device's TCP
+// listener just isn't up yet" (worth a longer grace period - the device
+// is expected to start listening any second) from other failure shapes
+// that don't carry that same "give it a bit more time" implication.
+func IsConnectionRefused(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		var sysErr syscall.Errno
+		if errors.As(opErr.Err, &sysErr) {
+			return sysErr == syscall.ECONNREFUSED
+		}
+	}
+
+	return false
+}
+
 // ErrorTypeString returns a human-readable description of the error type
 func ErrorTypeString(err error) string {
 	if err == nil {

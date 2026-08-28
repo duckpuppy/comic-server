@@ -68,6 +68,7 @@ type SyncState struct {
 	BooksDeleted int        `json:"books_deleted"` // Books deleted from device
 	ErrorCount   int        `json:"error_count"`   // Number of errors
 	ErrorMessage string     `json:"error_message,omitempty"`
+	Detail       string     `json:"detail,omitempty"` // Human-readable status detail for a sync that's neither failed nor visibly progressing (e.g. "device not responding yet, retrying") - distinct from ErrorMessage, which is only ever set on a terminal failure
 }
 
 // Manager manages sync state for all devices
@@ -196,6 +197,21 @@ func (m *Manager) UpdateProgress(deviceID string, progress, total, added, update
 		state.BooksDeleted = deleted
 		state.ErrorCount = errorCount
 		state.Status = StatusInProgress
+	}
+}
+
+// SetDetail sets a human-readable status detail on an active sync, without
+// otherwise changing its status/progress - for a sync that's neither
+// failed nor visibly progressing but isn't hung either (e.g. retrying a
+// device whose TCP listener isn't up yet), so /api/sync/status can tell a
+// stalled-looking-but-fine sync apart from a truly silent one without
+// tailing logs (comic-server-134). No-op if the device has no active sync.
+func (m *Manager) SetDetail(deviceID, detail string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if state, exists := m.activeSyncs[deviceID]; exists {
+		state.Detail = detail
 	}
 }
 
