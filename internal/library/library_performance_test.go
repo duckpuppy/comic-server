@@ -110,9 +110,14 @@ func TestLibraryCacheFlushPerformance(t *testing.T) {
 	}
 
 	// Flush includes SaveLibrary overhead + cache bookkeeping
-	// For small library (10 books), should be < 1ms
-	// Observed performance: ~87µs
-	maxDuration := 1 * time.Millisecond
+	// For small library (10 books), should be well under 10ms.
+	// Observed performance: ~87µs locally, but GitHub Actions' shared
+	// runners are noisy enough that this flaked twice in a row at the
+	// original 1ms threshold (2.66ms and 2.74ms observed on CI, comic-
+	// server release v1.11.0 - see internal/library's git history) -
+	// 10ms keeps real regressions (which would be orders of magnitude
+	// slower, not single-digit-ms) caught while giving CI room to breathe.
+	maxDuration := 10 * time.Millisecond
 	if duration > maxDuration {
 		t.Errorf("Cache flush too slow: %v (expected < %v for %d books)",
 			duration, maxDuration, len(lib.Books))
@@ -158,10 +163,15 @@ func TestLibraryCacheBatchEfficiency(t *testing.T) {
 	}
 	batchDuration := time.Since(batchStart)
 
-	// Batched approach should be significantly faster
-	// Expect at least 5x improvement (conservative threshold)
-	if batchDuration*5 > individualDuration {
-		t.Errorf("Cache batching not efficient enough: individual=%v, batched=%v (expected >5x improvement)",
+	// Batched approach should be meaningfully faster. This was originally
+	// a >5x threshold, but that flaked twice in a row on GitHub Actions'
+	// shared runners (2.4x and 3.4x observed there, comic-server release
+	// v1.11.0) despite batching genuinely helping every time it ran -
+	// the noise is in how much it helps, not whether it does. 2x still
+	// catches a real regression (e.g. batching degenerating to one save
+	// per mark) while giving CI enough room not to flake on a good day.
+	if batchDuration*2 > individualDuration {
+		t.Errorf("Cache batching not efficient enough: individual=%v, batched=%v (expected >2x improvement)",
 			individualDuration, batchDuration)
 	}
 
