@@ -301,63 +301,72 @@ func TestNormalizeArchiveForSync_MatchesByBaseNameRegardlessOfPath(t *testing.T)
 	}
 }
 
-// TestNormalizeArchiveForSync_FlattensNestedEntries covers comic-server-639's
-// final confirmed factor: real scanner-released archives can nest every
-// page under a release-named folder (e.g.
-// "Aquamen 001 (2022).../Aquamen (2022-) 001-000.jpg"). ComicRackCE's
-// writer (PackedStorageProvider.cs WritePage) never re-nests entries -
-// everything lands flat at the zip root. Confirmed live 2026-08-28 as the
-// last remaining structural difference after the ComicInfo.xml strip,
-// Store conversion, and data-descriptor fix were all independently
-// verified correct on a real device and STILL insufficient.
-func TestNormalizeArchiveForSync_FlattensNestedEntries(t *testing.T) {
-	input := buildTestZip(t, map[string][]byte{
-		"Release Folder/Book 001-000.jpg": []byte("page data"),
-	})
+// TestNormalizeArchiveForSync_RenamesSequentially covers comic-server-639's
+// actual final root cause, found after three independently-verified-correct
+// structural fixes (ComicInfo.xml strip, Store conversion, data-descriptor
+// removal) were each individually insufficient on a real device: entry
+// NAMES. comic-server's own generated sidecar (.cbp.xml, via
+// generateSidecar) declares each page's Key from the library's stored
+// metadata, which already uses ComicRackCE's "P00001.jpg" sequential
+// convention - inherited from whenever the book was first imported - while
+// the archive itself always kept the source scanner's original filenames.
+// The two were never actually related: ComicRackCE generates both the
+// sidecar Key and the archive filename from the same variable in the same
+// pass (PackedStorageProvider.cs WritePage: `text = $"P{k + 1:00000}"`),
+// so they can never drift apart; comic-server generated them from two
+// completely unconnected sources. A reader resolving a page by its
+// declared Key inside the archive would find nothing for every page,
+// independent of every other structural property. Confirmed via a real
+// working ComicRackCE-synced archive that uses Deflate (not Store) but
+// does use this exact naming - ruling out compression method entirely and
+// isolating the name as what actually matters.
+func TestNormalizeArchiveForSync_RenamesSequentially(t *testing.T) {
+	var buf bytes.Buffer
+	w := zip.NewWriter(&buf)
+	entries := []struct {
+		name    string
+		content string
+	}{
+		{"Release Folder/Scanner Original 001.jpg", "page one"},
+		{"Release Folder/Scanner Original 002.jpg", "page two"},
+		{"Release Folder/Scanner Original 003.png", "page three"},
+	}
+	for _, e := range entries {
+		fw, err := w.Create(e.name)
+		if err != nil {
+			t.Fatalf("failed to create test entry %q: %v", e.name, err)
+		}
+		if _, err := fw.Write([]byte(e.content)); err != nil {
+			t.Fatalf("failed to write test entry %q: %v", e.name, err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("failed to close test zip writer: %v", err)
+	}
 
-	got, err := normalizeArchiveForSync(input)
+	got, err := normalizeArchiveForSync(buf.Bytes())
 	if err != nil {
 		t.Fatalf("normalizeArchiveForSync() error = %v", err)
 	}
 
-	entries := readTestZip(t, got)
-	if _, exists := entries["Release Folder/Book 001-000.jpg"]; exists {
-		t.Error("expected the entry to be flattened, but the nested path is still present")
+	result := readTestZip(t, got)
+	want := map[string]string{
+		"P00001.jpg": "page one",
+		"P00002.jpg": "page two",
+		"P00003.png": "page three", // original extension preserved
 	}
-	if content, exists := entries["Book 001-000.jpg"]; !exists {
-		t.Error("expected the entry to survive under its flattened basename")
-	} else if string(content) != "page data" {
-		t.Errorf("content changed during flattening: got %q", content)
+	for name, content := range want {
+		got, exists := result[name]
+		if !exists {
+			t.Errorf("expected renamed entry %q, not found in %v", name, result)
+			continue
+		}
+		if string(got) != content {
+			t.Errorf("entry %q content = %q, want %q", name, got, content)
+		}
 	}
-}
-
-// TestNormalizeArchiveForSync_DisambiguatesBasenameCollisions covers the
-// edge case where flattening entries to their basename (see
-// TestNormalizeArchiveForSync_FlattensNestedEntries) could produce a
-// collision - two entries from different source subfolders sharing a
-// name. Matches ComicRackCE's own PackedStorageProvider.cs WritePage,
-// which resolves this the same way: append a numeric suffix before the
-// extension rather than silently overwriting one entry with another.
-func TestNormalizeArchiveForSync_DisambiguatesBasenameCollisions(t *testing.T) {
-	input := buildTestZip(t, map[string][]byte{
-		"Folder A/page.jpg": []byte("from folder A"),
-		"Folder B/page.jpg": []byte("from folder B"),
-	})
-
-	got, err := normalizeArchiveForSync(input)
-	if err != nil {
-		t.Fatalf("normalizeArchiveForSync() error = %v", err)
-	}
-
-	entries := readTestZip(t, got)
-	if len(entries) != 2 {
-		t.Fatalf("expected both colliding entries to survive under distinct names, got %d entries: %v", len(entries), entries)
-	}
-	if _, exists := entries["page.jpg"]; !exists {
-		t.Error("expected the first entry to keep the plain basename")
-	}
-	if _, exists := entries["page_2.jpg"]; !exists {
-		t.Error("expected the second entry to be disambiguated as page_2.jpg")
+	if len(result) != len(want) {
+		t.Errorf("expected exactly %d entries, got %d: %v", len(want), len(result), result)
 	}
 }
 

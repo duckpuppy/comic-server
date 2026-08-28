@@ -664,7 +664,7 @@ func normalizeArchiveForSync(data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("failed to open archive as zip: %w", err)
 	}
 
-	usedNames := make(map[string]bool)
+	pageNum := 0
 
 	var buf bytes.Buffer
 	w := zip.NewWriter(&buf)
@@ -679,32 +679,32 @@ func normalizeArchiveForSync(data []byte) ([]byte, error) {
 			continue
 		}
 
-		// Flatten to just the basename, matching ComicRackCE's writer
-		// (PackedStorageProvider.cs WritePage never re-nests entries
-		// under the source archive's own folder structure - every
-		// entry lands at the zip root). Confirmed live 2026-08-28 as
-		// the last remaining structural difference from a working
-		// ComicRackCE-synced copy, after the ComicInfo.xml strip,
-		// Store conversion, and data-descriptor fix were all
-		// independently verified correct and STILL insufficient on a
-		// real device. On a basename collision (two entries under
-		// different source subfolders sharing a name - not currently
-		// observed, but real archives are unpredictable), disambiguate
-		// the same way ComicRackCE's own WritePage does: append a
-		// numeric suffix before the extension.
-		flatName := baseName
-		if usedNames[strings.ToLower(flatName)] {
-			ext := filepath.Ext(flatName)
-			stem := strings.TrimSuffix(flatName, ext)
-			for n := 2; ; n++ {
-				candidate := fmt.Sprintf("%s_%d%s", stem, n, ext)
-				if !usedNames[strings.ToLower(candidate)] {
-					flatName = candidate
-					break
-				}
-			}
-		}
-		usedNames[strings.ToLower(flatName)] = true
+		// Rename sequentially to P00001.jpg, P00002.jpg, ... matching
+		// ComicRackCE's writer exactly (PackedStorageProvider.cs
+		// WritePage: `text = $"P{k + 1:00000}"` whenever
+		// KeepOriginalImageNames is false, which GetPortableFormat
+		// never sets true). This is not cosmetic: comic-server's own
+		// generated sidecar (.cbp.xml, via generateSidecar) declares
+		// each page's Key from the LIBRARY's stored metadata - which
+		// already uses this exact "P00001.jpg" convention, inherited
+		// from whenever the book was first imported - while the
+		// archive itself, until now, always kept the source scanner's
+		// original filenames. The two were never actually related:
+		// ComicRackCE generates both the sidecar Key and the archive
+		// filename from the same variable in the same pass, so they
+		// can never drift apart; comic-server generated them from two
+		// completely unconnected sources. A reader resolving a page by
+		// its declared Key inside the archive would find nothing for
+		// every page, independent of every other structural property
+		// (compression, header layout, folder nesting) - confirmed
+		// live 2026-08-28 after three independently-verified-correct
+		// fixes for exactly those other properties were all
+		// individually insufficient, and after finding a real working
+		// ComicRackCE-synced archive that uses Deflate (not Store) but
+		// does use this exact P00001.jpg naming - ruling compression
+		// method out entirely and pointing squarely at the name.
+		pageNum++
+		flatName := fmt.Sprintf("P%05d%s", pageNum, filepath.Ext(baseName))
 
 		rc, err := f.Open()
 		if err != nil {
