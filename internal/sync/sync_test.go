@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/xml"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"os"
 	"path/filepath"
@@ -69,6 +70,23 @@ func entryMethod(t *testing.T, data []byte, name string) uint16 {
 	for _, f := range r.File {
 		if f.Name == name {
 			return f.Method
+		}
+	}
+	t.Fatalf("entry %q not found in archive", name)
+	return 0
+}
+
+// entryFlags returns the general-purpose bit flags recorded for a named
+// entry - used to assert the data-descriptor bit (bit 3) is not set.
+func entryFlags(t *testing.T, data []byte, name string) uint16 {
+	t.Helper()
+	r, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatalf("failed to open result as zip: %v", err)
+	}
+	for _, f := range r.File {
+		if f.Name == name {
+			return f.Flags
 		}
 	}
 	t.Fatalf("entry %q not found in archive", name)
@@ -165,9 +183,75 @@ func TestNormalizeArchiveForSync_ConvertsToStored(t *testing.T) {
 	if method := entryMethod(t, got, "P00001.jpg"); method != zip.Store {
 		t.Errorf("expected entry to be converted to zip.Store, got method %d", method)
 	}
+	if flags := entryFlags(t, got, "P00001.jpg"); flags&0x8 != 0 {
+		t.Errorf("expected no data-descriptor bit (bit 3), got flags %b", flags)
+	}
 	entries := readTestZip(t, got)
 	if string(entries["P00001.jpg"]) != string(pageData) {
 		t.Error("page content changed across the Deflate -> Store conversion")
+	}
+}
+
+// TestNormalizeArchiveForSync_NoDataDescriptorForAlreadyStoredEntry covers
+// comic-server-639's actual final root cause. Stripping ComicInfo.xml and
+// converting to Store were BOTH independently verified correct on a real
+// device and BOTH still produced a black screen. A byte-level zip
+// structure comparison against ComicRackCE's own working copy of the same
+// page found the real remaining defect: general-purpose bit 3 (the
+// data-descriptor flag). CreateHeader's streaming Write() path doesn't
+// know an entry's final size until every byte is written, so it defers
+// CRC32/size to a trailing descriptor instead of the local file header.
+// ComicRackCE's writer always has the full image already in memory and
+// writes correct values directly - no descriptor. A reader that takes a
+// zero-copy path for Stored entries (trusting the local header's size/CRC
+// directly - exactly the optimization Store exists to enable) would read
+// zeroed placeholder values from a data-descriptor entry and fail, while
+// every general-purpose tool (unzip, 7-zip, Go's own zip.Reader) always
+// falls back to the authoritative central directory regardless - which is
+// why every earlier integrity check showed this archive as perfectly
+// valid. This test uses an ALREADY-Stored input (not Deflate) specifically
+// to isolate this from the Store-conversion test above: even an entry
+// that started as Store must still avoid the data-descriptor bit if it's
+// re-written via the normal streaming path instead of CreateRaw.
+func TestNormalizeArchiveForSync_NoDataDescriptorForAlreadyStoredEntry(t *testing.T) {
+	var buf bytes.Buffer
+	w := zip.NewWriter(&buf)
+	fw, err := w.CreateHeader(&zip.FileHeader{Name: "P00001.jpg", Method: zip.Store})
+	if err != nil {
+		t.Fatalf("failed to create stored test entry: %v", err)
+	}
+	pageData := bytes.Repeat([]byte("page bytes "), 1000)
+	if _, err := fw.Write(pageData); err != nil {
+		t.Fatalf("failed to write test entry: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("failed to close test zip writer: %v", err)
+	}
+	input := buf.Bytes()
+
+	got, err := normalizeArchiveForSync(input)
+	if err != nil {
+		t.Fatalf("normalizeArchiveForSync() error = %v", err)
+	}
+
+	if flags := entryFlags(t, got, "P00001.jpg"); flags&0x8 != 0 {
+		t.Errorf("expected no data-descriptor bit (bit 3), got flags %b", flags)
+	}
+
+	// Confirm the local file header itself (not just the central
+	// directory) carries the real CRC32/size - this is the actual thing
+	// a zero-copy reader would depend on.
+	r, err := zip.NewReader(bytes.NewReader(got), int64(len(got)))
+	if err != nil {
+		t.Fatalf("failed to open result as zip: %v", err)
+	}
+	f := r.File[0]
+	wantCRC := crc32.ChecksumIEEE(pageData)
+	if f.CRC32 != wantCRC {
+		t.Errorf("central directory CRC32 = %x, want %x", f.CRC32, wantCRC)
+	}
+	if f.UncompressedSize64 != uint64(len(pageData)) {
+		t.Errorf("central directory UncompressedSize64 = %d, want %d", f.UncompressedSize64, len(pageData))
 	}
 }
 

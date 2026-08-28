@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/xml"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"os"
 	"path/filepath"
@@ -682,19 +683,47 @@ func normalizeArchiveForSync(data []byte) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to open archive entry %q: %w", f.Name, err)
 		}
-		wc, err := w.CreateHeader(&zip.FileHeader{
-			Name:     f.Name,
-			Method:   zip.Store,
-			Modified: f.Modified,
-		})
+		content, err := io.ReadAll(rc)
+		rc.Close()
 		if err != nil {
-			rc.Close()
+			return nil, fmt.Errorf("failed to read archive entry %q: %w", f.Name, err)
+		}
+
+		// CreateHeader's normal streaming Write() path doesn't know an
+		// entry's final size until every byte has been written, so it
+		// falls back to a trailing data descriptor (general-purpose bit
+		// 3) instead of writing real CRC32/size values directly into the
+		// local file header. ComicRackCE's writer always has the full
+		// image already decoded in memory and writes correct values
+		// upfront - no descriptor. Confirmed live 2026-08-28 as the
+		// actual remaining defect after both the ComicInfo.xml strip and
+		// the Store conversion (both independently verified correct on
+		// a real device, still broken): a reader that takes a zero-copy
+		// path for Stored entries - trusting the local header's size/CRC
+		// directly, exactly the kind of optimization Store exists to
+		// enable - would read zeroed placeholder values from a
+		// data-descriptor entry and fail, while every general-purpose
+		// tool (unzip, 7-zip, Go's own zip.Reader) always falls back to
+		// the authoritative central directory regardless, which is why
+		// every integrity check performed tonight showed this archive as
+		// perfectly valid. CreateRaw (not CreateHeader) is used here
+		// specifically because it writes the header exactly as given,
+		// with no data descriptor, matching ComicRackCE's shape exactly.
+		crc := crc32.ChecksumIEEE(content)
+		header := &zip.FileHeader{
+			Name:               f.Name,
+			Method:             zip.Store,
+			Modified:           f.Modified,
+			CRC32:              crc,
+			UncompressedSize64: uint64(len(content)),
+			CompressedSize64:   uint64(len(content)),
+		}
+		wc, err := w.CreateRaw(header)
+		if err != nil {
 			return nil, fmt.Errorf("failed to write archive entry %q: %w", f.Name, err)
 		}
-		_, copyErr := io.Copy(wc, rc)
-		rc.Close()
-		if copyErr != nil {
-			return nil, fmt.Errorf("failed to copy archive entry %q: %w", f.Name, copyErr)
+		if _, err := wc.Write(content); err != nil {
+			return nil, fmt.Errorf("failed to write archive entry %q: %w", f.Name, err)
 		}
 	}
 	if err := w.Close(); err != nil {
