@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.5](https://github.com/duckpuppy/comic-server/compare/v1.10.4...v1.10.5) (2026-08-28)
+
+
+### Bug Fixes
+
+* execute() retries were completely invisible in logs, hiding real transfer failures ([7187876](https://github.com/duckpuppy/comic-server/commit/71878760c516f1499f1c7a7d5db03e0e5c96e9a3))
+
 ## [1.10.4](https://github.com/duckpuppy/comic-server/compare/v1.10.3...v1.10.4) (2026-08-28)
 
 
