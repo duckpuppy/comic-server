@@ -1,14 +1,219 @@
 package sync
 
 import (
+	"archive/zip"
+	"bytes"
 	"encoding/xml"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/duckpuppy/comic-server/internal/library"
 )
+
+// buildTestZip constructs an in-memory zip archive from name->content pairs,
+// for tests exercising stripEmbeddedComicInfo without needing a real
+// comic archive fixture on disk.
+func buildTestZip(t *testing.T, entries map[string][]byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	w := zip.NewWriter(&buf)
+	for name, content := range entries {
+		fw, err := w.Create(name)
+		if err != nil {
+			t.Fatalf("failed to create zip entry %q: %v", name, err)
+		}
+		if _, err := fw.Write(content); err != nil {
+			t.Fatalf("failed to write zip entry %q: %v", name, err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("failed to close zip writer: %v", err)
+	}
+	return buf.Bytes()
+}
+
+// readTestZip returns every entry's decompressed content, keyed by name.
+func readTestZip(t *testing.T, data []byte) map[string][]byte {
+	t.Helper()
+	r, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatalf("failed to open result as zip: %v", err)
+	}
+	out := make(map[string][]byte)
+	for _, f := range r.File {
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatalf("failed to open entry %q: %v", f.Name, err)
+		}
+		content, err := io.ReadAll(rc)
+		if err != nil {
+			t.Fatalf("failed to read entry %q: %v", f.Name, err)
+		}
+		rc.Close()
+		out[f.Name] = content
+	}
+	return out
+}
+
+// TestStripEmbeddedComicInfo_RemovesComicInfoXML covers comic-server-oqf's
+// actual root cause: real scanner-released .cbz archives can carry an
+// embedded ComicInfo.xml whose <Pages> list doesn't match its own
+// <PageCount> (one real example had only 2 of 24 declared pages listed).
+// ComicRackCE's reference client never embeds this file at all
+// (EmbedComicInfo = false, unconditional) - matched here by stripping it
+// unconditionally too, not by trying to detect malformed content.
+func TestStripEmbeddedComicInfo_RemovesComicInfoXML(t *testing.T) {
+	pageData := []byte("fake jpeg bytes for page 1")
+	input := buildTestZip(t, map[string][]byte{
+		"ComicInfo.xml": []byte(`<ComicInfo><PageCount>24</PageCount></ComicInfo>`),
+		"P00001.jpg":    pageData,
+	})
+
+	got, err := stripEmbeddedComicInfo(input)
+	if err != nil {
+		t.Fatalf("stripEmbeddedComicInfo() error = %v", err)
+	}
+
+	entries := readTestZip(t, got)
+	if _, exists := entries["ComicInfo.xml"]; exists {
+		t.Error("expected ComicInfo.xml to be stripped, but it's still present")
+	}
+	if string(entries["P00001.jpg"]) != string(pageData) {
+		t.Errorf("page image content changed: got %q, want %q", entries["P00001.jpg"], pageData)
+	}
+	if len(entries) != 1 {
+		t.Errorf("expected exactly 1 remaining entry, got %d: %v", len(entries), entries)
+	}
+}
+
+// TestStripEmbeddedComicInfo_RemovesComicBookXML covers the same treatment
+// for ComicBook.xml (also never embedded by ComicRackCE's reference client).
+func TestStripEmbeddedComicInfo_RemovesComicBookXML(t *testing.T) {
+	input := buildTestZip(t, map[string][]byte{
+		"ComicBook.xml": []byte(`<ComicBook />`),
+		"P00001.jpg":    []byte("page data"),
+	})
+
+	got, err := stripEmbeddedComicInfo(input)
+	if err != nil {
+		t.Fatalf("stripEmbeddedComicInfo() error = %v", err)
+	}
+
+	entries := readTestZip(t, got)
+	if _, exists := entries["ComicBook.xml"]; exists {
+		t.Error("expected ComicBook.xml to be stripped, but it's still present")
+	}
+}
+
+// TestStripEmbeddedComicInfo_NoOpWhenAbsent confirms an archive with no
+// embedded metadata file is returned completely unchanged (byte-identical),
+// not just functionally equivalent - avoids an unnecessary zip rewrite for
+// the common case where there's nothing to strip.
+func TestStripEmbeddedComicInfo_NoOpWhenAbsent(t *testing.T) {
+	input := buildTestZip(t, map[string][]byte{
+		"P00001.jpg": []byte("page data"),
+		"P00002.jpg": []byte("more page data"),
+	})
+
+	got, err := stripEmbeddedComicInfo(input)
+	if err != nil {
+		t.Fatalf("stripEmbeddedComicInfo() error = %v", err)
+	}
+	if !bytes.Equal(got, input) {
+		t.Error("expected byte-identical passthrough when no ComicInfo.xml/ComicBook.xml is present")
+	}
+}
+
+// TestStripEmbeddedComicInfo_MatchesByBaseNameRegardlessOfPath covers a
+// ComicInfo.xml nested inside a subfolder within the archive (some real
+// scanner releases nest every entry, including ComicInfo.xml, under a
+// release-named folder) - matching must be by basename, not exact path.
+func TestStripEmbeddedComicInfo_MatchesByBaseNameRegardlessOfPath(t *testing.T) {
+	input := buildTestZip(t, map[string][]byte{
+		"Release Folder/ComicInfo.xml": []byte(`<ComicInfo />`),
+		"Release Folder/P00001.jpg":    []byte("page data"),
+	})
+
+	got, err := stripEmbeddedComicInfo(input)
+	if err != nil {
+		t.Fatalf("stripEmbeddedComicInfo() error = %v", err)
+	}
+
+	entries := readTestZip(t, got)
+	if _, exists := entries["Release Folder/ComicInfo.xml"]; exists {
+		t.Error("expected nested ComicInfo.xml to be stripped, but it's still present")
+	}
+	if _, exists := entries["Release Folder/P00001.jpg"]; !exists {
+		t.Error("expected the nested page image to survive stripping")
+	}
+}
+
+// TestStripEmbeddedComicInfo_InvalidZipReturnsError confirms a caller can
+// distinguish "not a valid zip" from "valid zip, nothing to strip" -
+// readComicFile relies on this to soft-fail (ship the archive unmodified)
+// rather than corrupt or reject a non-zip source (e.g. a mislabeled file).
+func TestStripEmbeddedComicInfo_InvalidZipReturnsError(t *testing.T) {
+	if _, err := stripEmbeddedComicInfo([]byte("not a zip file at all")); err == nil {
+		t.Error("expected an error for invalid zip data, got nil")
+	}
+}
+
+// TestReadComicFile_StripsComicInfoFromCBZ is the end-to-end regression
+// test for comic-server-oqf: a real .cbz read through readComicFile has
+// its embedded ComicInfo.xml stripped, while the page content survives
+// unchanged.
+func TestReadComicFile_StripsComicInfoFromCBZ(t *testing.T) {
+	dir := t.TempDir()
+	realPath := filepath.Join(dir, "Aquamen #1.cbz")
+	pageData := []byte("fake page 1 jpeg bytes")
+	archive := buildTestZip(t, map[string][]byte{
+		"ComicInfo.xml": []byte(`<ComicInfo><PageCount>24</PageCount><Pages><Page Image="0"/></Pages></ComicInfo>`),
+		"P00001.jpg":    pageData,
+	})
+	if err := os.WriteFile(realPath, archive, 0o644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	syncer := NewSyncer(nil, nil)
+	book := &library.ComicBook{ID: "1", FilePath: realPath}
+	got, err := syncer.readComicFile(book)
+	if err != nil {
+		t.Fatalf("readComicFile() error = %v", err)
+	}
+
+	entries := readTestZip(t, got)
+	if _, exists := entries["ComicInfo.xml"]; exists {
+		t.Error("expected readComicFile to strip embedded ComicInfo.xml for a .cbz")
+	}
+	if string(entries["P00001.jpg"]) != string(pageData) {
+		t.Errorf("page image content changed: got %q, want %q", entries["P00001.jpg"], pageData)
+	}
+}
+
+// TestReadComicFile_DoesNotTouchNonCBZExtensions confirms the strip only
+// applies to .cbz - a .cbr/.cb7 (rar/7z, not zip) fed through the same
+// path must come back byte-identical, not attempted-and-failed-to-parse.
+func TestReadComicFile_DoesNotTouchNonCBZExtensions(t *testing.T) {
+	dir := t.TempDir()
+	realPath := filepath.Join(dir, "Batman #1.cbr")
+	want := []byte("fake rar contents, not a zip")
+	if err := os.WriteFile(realPath, want, 0o644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	syncer := NewSyncer(nil, nil)
+	book := &library.ComicBook{ID: "1", FilePath: realPath}
+	got, err := syncer.readComicFile(book)
+	if err != nil {
+		t.Fatalf("readComicFile() error = %v", err)
+	}
+	if string(got) != string(want) {
+		t.Errorf("readComicFile() = %q, want %q (should be untouched for non-.cbz)", got, want)
+	}
+}
 
 // TestGetDeviceBooks tests retrieving and parsing books from device
 func TestGetDeviceBooks(t *testing.T) {
