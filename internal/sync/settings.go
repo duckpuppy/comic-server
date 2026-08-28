@@ -249,27 +249,36 @@ func filterOnlyChecked(books []*library.ComicBook) []*library.ComicBook {
 	return result
 }
 
-// filterOnlyUnread returns only unread books (CurrentPage < PageCount)
+// filterOnlyUnread returns only unread books, per ComicBook.IsUnread().
+//
+// This used to reimplement its own "unread" check against CurrentPage
+// (CurrentPage < PageCount) instead of calling IsUnread(). That check is
+// structurally always true: pages are 0-indexed, so a fully-read book's
+// CurrentPage tops out at PageCount-1, never PageCount itself - it can
+// never fail "CurrentPage < PageCount". "Only sync unread books" was
+// therefore a no-op, silently including every book regardless of real
+// read status, ever since this was written. IsUnread() (LastPageRead <
+// PageCount-1, or never opened) is the already-correct, already-used-
+// elsewhere (the API's own unread-count display) definition - found live
+// 2026-08-27 when a sync's actual "add" count came out far higher than
+// the unread counts shown in the UI implied it should.
 func filterOnlyUnread(books []*library.ComicBook) []*library.ComicBook {
 	var result []*library.ComicBook
 	for _, book := range books {
-		// Book is unread if CurrentPage < PageCount or CurrentPage == 0
-		// Handle case where PageCount might be 0 (no pages tracked)
-		if book.PageCount > 0 && book.CurrentPage < book.PageCount {
-			result = append(result, book)
-		} else if book.PageCount == 0 && book.CurrentPage == 0 {
-			// If no page tracking, consider it unread
+		if book.IsUnread() {
 			result = append(result, book)
 		}
 	}
 	return result
 }
 
-// filterOnlyRead returns only read books (CurrentPage >= PageCount)
+// filterOnlyRead returns only read books - the complement of
+// filterOnlyUnread, see its comment for why this now defers to
+// IsUnread() instead of its own CurrentPage-based check.
 func filterOnlyRead(books []*library.ComicBook) []*library.ComicBook {
 	var result []*library.ComicBook
 	for _, book := range books {
-		if book.PageCount > 0 && book.CurrentPage >= book.PageCount {
+		if !book.IsUnread() {
 			result = append(result, book)
 		}
 	}

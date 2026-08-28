@@ -204,7 +204,7 @@ func TestComputeSyncPlanWithSettings(t *testing.T) {
 			{ID: "1", Series: "Batman", Volume: 1, Number: "1", Year: 2020, CurrentPage: 0, PageCount: 20},
 			{ID: "2", Series: "Batman", Volume: 1, Number: "2", Year: 2020, CurrentPage: 0, PageCount: 20},
 			{ID: "3", Series: "Superman", Volume: 1, Number: "1", Year: 2020, CurrentPage: 0, PageCount: 20},
-			{ID: "4", Series: "Superman", Volume: 1, Number: "2", Year: 2020, CurrentPage: 20, PageCount: 20}, // Read
+			{ID: "4", Series: "Superman", Volume: 1, Number: "2", Year: 2020, CurrentPage: 20, PageCount: 20, OpenCount: 1, LastPageRead: 19}, // Read
 			{ID: "5", Series: "Wonder Woman", Volume: 1, Number: "1", Year: 2020, CurrentPage: 0, PageCount: 20},
 		},
 	}

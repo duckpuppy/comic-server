@@ -70,17 +70,28 @@ func TestSharedListSettings_JSONRoundTrip(t *testing.T) {
 
 // Helper function to create test books
 func createTestBook(id, series string, year, volume int, number string, pageCount, currentPage int) *library.ComicBook {
+	// OpenCount/LastPageRead derived from currentPage so existing callers'
+	// implicit "0 = unread, >0 = read this far" convention keeps working
+	// under ComicBook.IsUnread() (OpenCount==0, or LastPageRead <
+	// PageCount-1), which filterOnlyUnread/filterOnlyRead now use instead
+	// of their own since-fixed CurrentPage-based check.
+	openCount := 0
+	if currentPage > 0 {
+		openCount = 1
+	}
 	return &library.ComicBook{
-		ID:          id,
-		Series:      series,
-		Year:        year,
-		Month:       1,
-		Day:         1,
-		Volume:      volume,
-		Number:      number,
-		PageCount:   pageCount,
-		CurrentPage: currentPage,
-		Checked:     false,
+		ID:           id,
+		Series:       series,
+		Year:         year,
+		Month:        1,
+		Day:          1,
+		Volume:       volume,
+		Number:       number,
+		PageCount:    pageCount,
+		CurrentPage:  currentPage,
+		LastPageRead: currentPage,
+		OpenCount:    openCount,
+		Checked:      false,
 	}
 }
 
@@ -106,6 +117,39 @@ func TestFilterOnlyUnread(t *testing.T) {
 		if !expectedIDs[book.ID] {
 			t.Errorf("Unexpected book in unread results: %s", book.ID)
 		}
+	}
+}
+
+// TestFilterOnlyUnread_RealisticallyFullyReadBook is the regression test
+// for a real off-by-one bug found live 2026-08-27: pages are 0-indexed,
+// so a fully-read book's CurrentPage tops out at PageCount-1, never
+// PageCount itself (e.g. a 25-page book that's been read to the end has
+// CurrentPage 24, confirmed against a real library.xml on mediaserver).
+// filterOnlyUnread used to check CurrentPage < PageCount directly, which
+// is true for every value CurrentPage can actually take - "only unread"
+// was a silent no-op, including every book with pages regardless of real
+// read status. This uses realistic values (CurrentPage == PageCount-1,
+// not PageCount) plus properly-set OpenCount/LastPageRead, unlike
+// TestFilterOnlyUnread's PageCount==CurrentPage case above, which isn't
+// a value CurrentPage can reach in practice.
+func TestFilterOnlyUnread_RealisticallyFullyReadBook(t *testing.T) {
+	fullyRead := &library.ComicBook{
+		ID:           "read",
+		PageCount:    25,
+		CurrentPage:  24, // last valid 0-indexed page - as read as it gets
+		OpenCount:    1,
+		LastPageRead: 24,
+	}
+	neverOpened := &library.ComicBook{
+		ID:        "unread",
+		PageCount: 25,
+		OpenCount: 0,
+	}
+
+	result := filterOnlyUnread([]*library.ComicBook{fullyRead, neverOpened})
+
+	if len(result) != 1 || result[0].ID != "unread" {
+		t.Errorf("expected only the never-opened book to survive an only-unread filter, got %+v", result)
 	}
 }
 

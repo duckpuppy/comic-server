@@ -1125,11 +1125,11 @@ func TestComputeSyncPlan_PerListSettings(t *testing.T) {
 		Books: []library.ComicBook{
 			// Series A: one read, one unread - only the unread one should
 			// survive "Unread Only" on list1.
-			{ID: "book1-read", Series: "Series A", Title: "Book 1 (read)", FilePath: "/path/book1.cbz", PageCount: 20, CurrentPage: 20},
+			{ID: "book1-read", Series: "Series A", Title: "Book 1 (read)", FilePath: "/path/book1.cbz", PageCount: 20, CurrentPage: 20, OpenCount: 1, LastPageRead: 19},
 			{ID: "book2-unread", Series: "Series A", Title: "Book 2 (unread)", FilePath: "/path/book2.cbz", PageCount: 20, CurrentPage: 0},
 			// Series B: one read - list2 has no only-unread filter, so it
 			// should still come through.
-			{ID: "book3-read", Series: "Series B", Title: "Book 3 (read)", FilePath: "/path/book3.cbz", PageCount: 20, CurrentPage: 20},
+			{ID: "book3-read", Series: "Series B", Title: "Book 3 (read)", FilePath: "/path/book3.cbz", PageCount: 20, CurrentPage: 20, OpenCount: 1, LastPageRead: 19},
 		},
 		ComicLists: []library.ComicListItem{
 			{
