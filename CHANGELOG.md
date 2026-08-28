@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.11.0](https://github.com/duckpuppy/comic-server/compare/v1.10.9...v1.11.0) (2026-08-28)
+
+
+### Features
+
+* add Settings UI and REST API for ScanInfo.Scanners/Blacklist ([056e7f6](https://github.com/duckpuppy/comic-server/commit/056e7f674236a81c875f56bbdcd9f59a328a2710))
+* manually trigger a sync for an online device from the web UI ([765f9c5](https://github.com/duckpuppy/comic-server/commit/765f9c561e0ed2275b528572bc3be27869491b0a))
+* persist sync history to config.db across restarts ([fb3331b](https://github.com/duckpuppy/comic-server/commit/fb3331b92610764ae81db4725d8c6e5e9dec6983))
+* surface live per-device sync progress in the web UI ([f887a1e](https://github.com/duckpuppy/comic-server/commit/f887a1e9bab4e3de8cce502f58427e03286a70e9))
+
+
+### Bug Fixes
+
+* give a device that's still starting up more time before a sync bails out ([675d428](https://github.com/duckpuppy/comic-server/commit/675d428038c9930bfb15ccab22b5718411ea8f89))
+* refresh the persistent list tree sidebar's counts on every navigation ([380d3e0](https://github.com/duckpuppy/comic-server/commit/380d3e0a259dac94be65a6e2d9a6c86fa341cab5))
+
 ## [1.10.9](https://github.com/duckpuppy/comic-server/compare/v1.10.8...v1.10.9) (2026-08-28)
 
 
