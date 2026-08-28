@@ -626,67 +626,79 @@ func getTitleForOp(op SyncOperation) string {
 	return "(unknown)"
 }
 
-// stripEmbeddedComicInfo returns a copy of a .cbz archive's bytes with any
-// embedded ComicInfo.xml/ComicBook.xml entries removed, leaving every other
-// entry (the actual page images) byte-for-byte untouched via zip's raw
-// copy APIs - no image decode/re-encode happens here at all.
+// normalizeArchiveForSync returns a copy of a .cbz archive's bytes
+// repackaged to match ComicRackCE's own reference writer
+// (CbzStorageProvider.cs) in the two ways confirmed to matter for real
+// devices: embedded ComicInfo.xml/ComicBook.xml entries are dropped, and
+// every remaining entry is stored with Method=Stored (uncompressed)
+// instead of whatever compression the source archive used. Every kept
+// entry's decompressed bytes are otherwise untouched - this is a
+// container-level repackage, never an image decode/re-encode.
 //
-// ComicRackCE's own reference client never embeds ComicInfo.xml in a
-// synced book (SyncProviderBase.cs GetPortableFormat: EmbedComicInfo =
-// false, set unconditionally - not conditioned on whether the source's
-// copy is well-formed). comic-server's own generated sidecar
-// (.cbp.xml, via generateSidecar) is the actual source of truth for
-// metadata anyway, so an embedded ComicInfo.xml only risks conflicting
-// with it. Found live 2026-08-28: two real scanner-released archives
-// (different scanner groups, so not an isolated bad release) had
-// embedded ComicInfo.xml files whose <Pages> list didn't match their own
-// declared <PageCount> - one had only 2 of 24 declared pages listed.
-// ComicRack Android renders a black screen for both books despite the
-// archive itself, and every embedded page image, being independently
-// verified byte-valid. Confirmed via a real device: the exact same
-// image bytes, delivered by ComicRackCE (which never ships this file),
-// render correctly; comic-server's raw byte-for-byte copy (which used to
-// include it) did not (comic-server-oqf, comic-server-cfw).
-func stripEmbeddedComicInfo(data []byte) ([]byte, error) {
+// ComicRackCE never embeds ComicInfo.xml in a synced book
+// (SyncProviderBase.cs GetPortableFormat: EmbedComicInfo = false,
+// unconditional) and its writer defaults to Method=Stored unless a
+// non-default compression level is explicitly configured
+// (CbzStorageProvider.cs OnCreateFile: `zos.SetLevel(...) switch { ...,
+// _ => 0 }`, then `CompressionMethod = level == 0 ? Stored : Deflated`).
+// comic-server's own generated sidecar (.cbp.xml, via generateSidecar)
+// is the actual source of truth for metadata anyway, so an embedded
+// ComicInfo.xml only risks conflicting with it - and JPEG page data
+// gains nothing from Deflate (every real archive checked tonight showed
+// 0% additional compression on its image entries), so switching to
+// Stored costs nothing in size.
+//
+// Both found live 2026-08-28 investigating two real scanner-released
+// archives (different scanner groups, so not one bad release) that
+// rendered a black screen on a real device despite being independently
+// verified byte-valid at every level (zip container, JPEG decode, and a
+// direct MD5 comparison against ComicRackCE's own successfully-synced
+// copy of the same page). Stripping ComicInfo.xml ALONE was not
+// sufficient - confirmed by re-testing on the real device after that
+// fix alone shipped (still broken) before this compression-method
+// change was added (comic-server-oqf, comic-server-639).
+func normalizeArchiveForSync(data []byte) ([]byte, error) {
 	r, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to open archive as zip: %w", err)
 	}
 
-	hasEmbeddedInfo := false
-	for _, f := range r.File {
-		name := strings.ToLower(filepath.Base(f.Name))
-		if name == "comicinfo.xml" || name == "comicbook.xml" {
-			hasEmbeddedInfo = true
-			break
-		}
-	}
-	if !hasEmbeddedInfo {
-		return data, nil
-	}
-
 	var buf bytes.Buffer
 	w := zip.NewWriter(&buf)
 	for _, f := range r.File {
+		if f.FileInfo().IsDir() {
+			// ComicRackCE's writer never emits directory entries either
+			// - matched here, though not confirmed as load-bearing on
+			// its own (see comic-server-639's notes on the deferred,
+			// unconfirmed directory-flattening follow-up).
+			continue
+		}
 		name := strings.ToLower(filepath.Base(f.Name))
 		if name == "comicinfo.xml" || name == "comicbook.xml" {
 			continue
 		}
 
-		rc, err := f.OpenRaw()
+		rc, err := f.Open()
 		if err != nil {
 			return nil, fmt.Errorf("failed to open archive entry %q: %w", f.Name, err)
 		}
-		wc, err := w.CreateRaw(&f.FileHeader)
+		wc, err := w.CreateHeader(&zip.FileHeader{
+			Name:     f.Name,
+			Method:   zip.Store,
+			Modified: f.Modified,
+		})
 		if err != nil {
+			rc.Close()
 			return nil, fmt.Errorf("failed to write archive entry %q: %w", f.Name, err)
 		}
-		if _, err := io.Copy(wc, rc); err != nil {
-			return nil, fmt.Errorf("failed to copy archive entry %q: %w", f.Name, err)
+		_, copyErr := io.Copy(wc, rc)
+		rc.Close()
+		if copyErr != nil {
+			return nil, fmt.Errorf("failed to copy archive entry %q: %w", f.Name, copyErr)
 		}
 	}
 	if err := w.Close(); err != nil {
-		return nil, fmt.Errorf("failed to finalize stripped archive: %w", err)
+		return nil, fmt.Errorf("failed to finalize repackaged archive: %w", err)
 	}
 
 	return buf.Bytes(), nil
@@ -706,15 +718,15 @@ func (s *Syncer) readComicFile(book *library.ComicBook) ([]byte, error) {
 	}
 
 	if strings.EqualFold(filepath.Ext(resolvedPath), ".cbz") {
-		stripped, err := stripEmbeddedComicInfo(data)
+		normalized, err := normalizeArchiveForSync(data)
 		if err != nil {
 			// Same reasoning as the rest of this codebase's soft-fail
-			// patterns (e.g. writeSyncInformation): a stripping failure
-			// isn't worth aborting the whole sync over - ship the
-			// archive as-is rather than blocking the add.
-			log.Warn().Err(err).Str("book_id", book.ID).Msg("Failed to strip embedded ComicInfo.xml, syncing archive unmodified")
+			// patterns (e.g. writeSyncInformation): a repackaging
+			// failure isn't worth aborting the whole sync over - ship
+			// the archive as-is rather than blocking the add.
+			log.Warn().Err(err).Str("book_id", book.ID).Msg("Failed to repackage archive for sync, syncing unmodified")
 		} else {
-			data = stripped
+			data = normalized
 		}
 	}
 
