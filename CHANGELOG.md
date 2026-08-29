@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.12.0](https://github.com/duckpuppy/comic-server/compare/v1.11.2...v1.12.0) (2026-08-29)
+
+
+### Features
+
+* block device sync on cold SQLite lists until warmed up ([c88af9c](https://github.com/duckpuppy/comic-server/commit/c88af9c442a1b18f8eb6b2e66e2a1191af253967))
+
+
+### Bug Fixes
+
+* --discovery-port flag was ignored, listener always bound 7615 ([1b10ff4](https://github.com/duckpuppy/comic-server/commit/1b10ff4529bcbe6ee21ca65dcb53a8cb7d0ad433))
+
 ## [1.11.2](https://github.com/duckpuppy/comic-server/compare/v1.11.1...v1.11.2) (2026-08-29)
 
 
