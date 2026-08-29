@@ -9,6 +9,7 @@ import (
 	"github.com/duckpuppy/comic-server/internal/configdb"
 	"github.com/duckpuppy/comic-server/internal/device"
 	"github.com/duckpuppy/comic-server/internal/library"
+	"github.com/duckpuppy/comic-server/internal/storage"
 	csync "github.com/duckpuppy/comic-server/internal/sync"
 	"github.com/duckpuppy/comic-server/internal/syncstate"
 )
@@ -68,6 +69,66 @@ func TestApplyDeviceConfig_RejectsFolder(t *testing.T) {
 
 	if err := applyDeviceConfig(syncer, deviceConfig, backend); err == nil {
 		t.Error("expected an error assigning a folder, got nil")
+	}
+}
+
+// TestNotReadyDeviceLists_BlocksOnColdIdListButNotWarmSmartList covers
+// comic-server-jrn's device-scoped readiness gate: a device with both an ID
+// list (always needs the shared snapshot) and a smart list whose matchers
+// translate to a scoped SQL query (never needs it) assigned should only be
+// blocked by the ID list while the backend is cold, and by neither once
+// warm - regardless of the smart list ever needing it at all. Round-trips
+// through a real Reload() rather than hand-building structs, per the
+// comic-server-hha lesson that in-memory construction can hide bugs the
+// real import path would catch.
+func TestNotReadyDeviceLists_BlocksOnColdIdListButNotWarmSmartList(t *testing.T) {
+	dir := t.TempDir()
+	xmlPath := filepath.Join(dir, "ComicDb.xml")
+	dbPath := filepath.Join(dir, "test.db")
+
+	lib := &library.ComicLibrary{
+		Books: []library.ComicBook{
+			{ID: "book1", Title: "Book 1", Series: "Batman", Year: 2020},
+		},
+		ComicLists: []library.ComicListItem{
+			{ID: "idlist-1", Name: "To Read", Type: "ComicIdListItem", BookIds: []string{"book1"}},
+			{
+				ID: "smartlist-1", Name: "Batman", Type: "ComicSmartListItem", MatcherMode: "And",
+				Matchers: []library.ComicBookMatcher{{Type: "Series", MatchOperator: "0", MatchValue: "Batman"}},
+			},
+		},
+	}
+	if err := library.SaveLibrary(xmlPath, lib); err != nil {
+		t.Fatalf("SaveLibrary: %v", err)
+	}
+	backend, err := storage.NewSQLiteBackend(dbPath, xmlPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteBackend: %v", err)
+	}
+	t.Cleanup(func() { backend.Close() })
+	if err := backend.Reload(); err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+
+	deviceConfig := &configdb.Device{
+		DeviceID: "device-1",
+		Lists: []configdb.DeviceList{
+			{ListID: "idlist-1", ListName: "To Read", Enabled: true},
+			{ListID: "smartlist-1", ListName: "Batman", Enabled: true},
+			{ListID: "smartlist-1", ListName: "Disabled dup", Enabled: false},
+		},
+	}
+
+	notReady := notReadyDeviceLists(backend, deviceConfig)
+	if len(notReady) != 1 || notReady[0] != "idlist-1" {
+		t.Fatalf("expected only idlist-1 not-ready while cold, got %v", notReady)
+	}
+
+	if err := backend.WarmUp(); err != nil {
+		t.Fatalf("WarmUp: %v", err)
+	}
+	if notReady := notReadyDeviceLists(backend, deviceConfig); len(notReady) != 0 {
+		t.Fatalf("expected no not-ready lists once warm, got %v", notReady)
 	}
 }
 

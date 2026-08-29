@@ -288,6 +288,16 @@ func runServer(cmd *cobra.Command, args []string) error {
 			Int("books", backend.BookCount()).
 			Str("library_id", backend.LibraryID()).
 			Msg("SQLite library loaded successfully")
+
+		// Warm the shared list-evaluation snapshot in the background so a
+		// device sync attempt (handleSyncRequest's NotReadyLists check)
+		// finds it already built instead of hitting a cold, potentially
+		// slow evaluation inline - see comic-server-jrn.
+		go func() {
+			if err := sqliteBackend.WarmUp(); err != nil {
+				log.Warn().Err(err).Msg("Background library warm-up failed after startup")
+			}
+		}()
 	} else {
 		// Use XML backend (default)
 		log.Debug().Str("path", cfg.Server.LibraryPath).Msg("Loading comic library")
@@ -514,6 +524,17 @@ func runServer(cmd *cobra.Command, args []string) error {
 				})
 				if komgaSyncer != nil {
 					komgaSyncer.TriggerNow()
+				}
+				// Reload() already marked the SQLite backend's shared
+				// snapshot stale (SQLiteBackend.bumpGeneration); rebuild it
+				// now in the background rather than waiting for the next
+				// sync attempt to trigger it inline - see comic-server-jrn.
+				if sb, ok := reloadable.(*storage.SQLiteBackend); ok {
+					go func() {
+						if err := sb.WarmUp(); err != nil {
+							log.Warn().Err(err).Msg("Background library warm-up failed after reload")
+						}
+					}()
 				}
 			})
 			watcherCtx, watcherCancel := context.WithCancel(context.Background())
@@ -804,6 +825,30 @@ func migrateKomgaTargetsToConfigDB(cfg *config.Config, configDB *configdb.DB) (i
 
 // applyDeviceConfig applies a device's sync configuration to a syncer
 // This configures which lists to sync and their settings
+// notReadyDeviceLists resolves deviceConfig's enabled lists and checks them
+// against sb's warm-up state, returning the IDs of any that aren't ready to
+// evaluate yet (comic-server-jrn). Only the lists actually assigned to this
+// device are checked - most of a large library's lists are never synced to
+// any device, so gating on the whole library would be far more
+// conservative than needed. A list that fails to resolve here is skipped
+// rather than treated as not-ready - applyDeviceConfig performs the same
+// lookup right afterward and surfaces a proper "list not found" error if
+// it's genuinely missing.
+func notReadyDeviceLists(sb *storage.SQLiteBackend, deviceConfig *configdb.Device) []string {
+	var lists []*library.ComicListItem
+	for _, listConfig := range deviceConfig.Lists {
+		if !listConfig.Enabled {
+			continue
+		}
+		list, err := sb.FindListByID(listConfig.ListID)
+		if err != nil || list == nil {
+			continue
+		}
+		lists = append(lists, list)
+	}
+	return sb.NotReadyLists(lists)
+}
+
 func applyDeviceConfig(syncer *csync.Syncer, deviceConfig *configdb.Device, backend library.Backend) error {
 	logger := log.With().Str("device_id", deviceConfig.DeviceID).Logger()
 
@@ -993,6 +1038,16 @@ func handleSyncRequest(
 		return fmt.Errorf("failed to look up device config: %w", err)
 	}
 	if deviceConfig != nil {
+		if sb, ok := backend.(*storage.SQLiteBackend); ok {
+			if notReady := notReadyDeviceLists(sb, deviceConfig); len(notReady) > 0 {
+				logger.Warn().
+					Strs("lists", notReady).
+					Msg("Sync rejected: library still warming up after a reload")
+				msg := "library still warming up after a reimport; retry shortly"
+				syncManager.FailSync(deviceID, msg)
+				return fmt.Errorf("%s (%d list(s) not yet settled)", msg, len(notReady))
+			}
+		}
 		if err := applyDeviceConfig(syncer, deviceConfig, backend); err != nil {
 			return fmt.Errorf("failed to apply device config: %w", err)
 		}

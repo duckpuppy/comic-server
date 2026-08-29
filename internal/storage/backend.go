@@ -37,6 +37,14 @@ type SQLiteBackend struct {
 	// serially within one request) into a multi-hour stall: each list
 	// paying the ~1-1.5s rebuild cost independently instead of once.
 	libCache *library.ComicLibrary
+
+	// warmMu guards generation/warmed, separately from mu, so a readiness
+	// check (NotReadyLists) is a cheap in-memory read that never blocks
+	// behind a slow reload or snapshot rebuild - see WarmUp/IsWarm
+	// (comic-server-jrn).
+	warmMu     sync.RWMutex
+	generation int64
+	warmed     bool
 }
 
 // NewSQLiteBackend creates a new SQLite-based backend. xmlPath is the
@@ -89,7 +97,87 @@ func (b *SQLiteBackend) Reload() error {
 	}
 
 	b.libCache = nil
+	b.bumpGeneration()
 	return b.loadMetadata()
+}
+
+// bumpGeneration marks the shared library snapshot (libCache) as stale
+// after a reload, so NotReadyLists starts reporting affected lists as not
+// ready again until a subsequent WarmUp (or ordinary evaluation) rebuilds
+// it. Called with b.mu already held (Reload).
+func (b *SQLiteBackend) bumpGeneration() {
+	b.warmMu.Lock()
+	b.generation++
+	b.warmed = false
+	b.warmMu.Unlock()
+}
+
+// WarmUp rebuilds the shared full-library snapshot (internal cachedLibrary)
+// if it isn't already fresh for the current reload generation, then marks
+// the backend warm. Intended to run once in a background goroutine right
+// after startup and after each Reload, so that a device sync attempt finds
+// the snapshot already warm instead of paying its rebuild cost inline -
+// see NotReadyLists (comic-server-jrn).
+func (b *SQLiteBackend) WarmUp() error {
+	b.warmMu.RLock()
+	gen := b.generation
+	b.warmMu.RUnlock()
+
+	if _, err := b.cachedLibrary(); err != nil {
+		return err
+	}
+
+	b.warmMu.Lock()
+	// Only mark warm if no other reload happened while we were building -
+	// otherwise this stale build's completion would incorrectly clear the
+	// not-ready state for the NEW generation's (not yet rebuilt) snapshot.
+	if b.generation == gen {
+		b.warmed = true
+	}
+	b.warmMu.Unlock()
+	return nil
+}
+
+// IsWarm reports whether the shared full-library snapshot is fresh for the
+// current reload generation. A cheap in-memory read - never itself
+// triggers or waits on a rebuild.
+func (b *SQLiteBackend) IsWarm() bool {
+	b.warmMu.RLock()
+	defer b.warmMu.RUnlock()
+	return b.warmed
+}
+
+// needsWarmSnapshot reports whether evaluating list would fall back to the
+// shared full-library snapshot (cachedLibrary) rather than a scoped SQL
+// query - mirrors evaluationLibrary's own branch, without actually running
+// the query.
+func (b *SQLiteBackend) needsWarmSnapshot(list *library.ComicListItem) bool {
+	if list != nil && list.BaseListId == "" && strings.Contains(list.Type, "SmartList") {
+		if _, ok := translateMatchers(list.MatcherMode, list.Matchers); ok {
+			return false
+		}
+	}
+	return true
+}
+
+// NotReadyLists checks the given (already-resolved) lists against the
+// current warm-up state and returns the IDs of any that would trigger a
+// slow, uncached evaluation right now - lists that need the shared
+// snapshot while it's stale after a reload. An empty result means it's
+// safe to evaluate all of them immediately (comic-server-jrn: used to
+// hard-block a device sync until its assigned lists are ready, rather than
+// risk the sync stalling on a cold evaluation).
+func (b *SQLiteBackend) NotReadyLists(lists []*library.ComicListItem) []string {
+	if b.IsWarm() {
+		return nil
+	}
+	var notReady []string
+	for _, l := range lists {
+		if l != nil && b.needsWarmSnapshot(l) {
+			notReady = append(notReady, l.ID)
+		}
+	}
+	return notReady
 }
 
 func (b *SQLiteBackend) loadMetadata() error {
