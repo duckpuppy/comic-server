@@ -35,8 +35,13 @@ type DiscoveryListener struct {
 	stopChan chan struct{}
 }
 
-// NewDiscoveryListener creates a new UDP multicast listener
-func NewDiscoveryListener() (*DiscoveryListener, error) {
+// NewDiscoveryListener creates a new UDP multicast listener on the given
+// port. A port of 0 falls back to the default DiscoveryPort (7615).
+func NewDiscoveryListener(port int) (*DiscoveryListener, error) {
+	if port == 0 {
+		port = DiscoveryPort
+	}
+
 	// Parse multicast group address
 	groupAddr := net.ParseIP(MulticastGroup)
 	if groupAddr == nil {
@@ -49,8 +54,8 @@ func NewDiscoveryListener() (*DiscoveryListener, error) {
 		return nil, fmt.Errorf("failed to get network interface: %w", err)
 	}
 
-	// Bind to the port on all interfaces (0.0.0.0:7615)
-	listenAddr, err := net.ResolveUDPAddr("udp4", fmt.Sprintf("0.0.0.0:%d", DiscoveryPort))
+	// Bind to the port on all interfaces (0.0.0.0:<port>)
+	listenAddr, err := net.ResolveUDPAddr("udp4", fmt.Sprintf("0.0.0.0:%d", port))
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve listen address: %w", err)
 	}

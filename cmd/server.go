@@ -360,7 +360,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 
 	// Start UDP multicast listener
 	log.Debug().Msg("Creating discovery listener")
-	listener, err := device.NewDiscoveryListener()
+	listener, err := device.NewDiscoveryListener(cfg.Server.DiscoveryPort)
 	if err != nil {
 		return fmt.Errorf("failed to start discovery listener: %w", err)
 	}
@@ -368,7 +368,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 
 	log.Info().
 		Str("multicast_group", device.MulticastGroup).
-		Int("port", device.DiscoveryPort).
+		Int("port", cfg.Server.DiscoveryPort).
 		Msg("Listening for device broadcasts")
 
 	// Start listening

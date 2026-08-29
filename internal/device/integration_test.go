@@ -52,7 +52,7 @@ func (m *MockBroadcaster) Close() {
 
 func TestDiscoveryListenerIntegration(t *testing.T) {
 	// Create discovery listener
-	listener, err := device.NewDiscoveryListener()
+	listener, err := device.NewDiscoveryListener(0)
 	if err != nil {
 		t.Fatalf("Failed to create discovery listener: %v", err)
 	}
@@ -283,7 +283,7 @@ Edition=Android Full
 	server.Start()
 
 	// Create discovery listener
-	listener, err := device.NewDiscoveryListener()
+	listener, err := device.NewDiscoveryListener(0)
 	if err != nil {
 		t.Fatalf("Failed to create discovery listener: %v", err)
 	}

@@ -1,8 +1,45 @@
 package device
 
 import (
+	"net"
 	"testing"
 )
+
+func TestNewDiscoveryListenerUsesConfiguredPort(t *testing.T) {
+	// A non-default port must actually be bound, and two listeners on
+	// different explicit ports must be able to run at the same time
+	// without a bind conflict.
+	l1, err := NewDiscoveryListener(17615)
+	if err != nil {
+		t.Fatalf("failed to create listener on 17615: %v", err)
+	}
+	defer l1.Stop()
+
+	l2, err := NewDiscoveryListener(17616)
+	if err != nil {
+		t.Fatalf("failed to create listener on 17616: %v", err)
+	}
+	defer l2.Stop()
+
+	if got := l1.conn.LocalAddr().(*net.UDPAddr).Port; got != 17615 {
+		t.Errorf("expected listener 1 bound to port 17615, got %d", got)
+	}
+	if got := l2.conn.LocalAddr().(*net.UDPAddr).Port; got != 17616 {
+		t.Errorf("expected listener 2 bound to port 17616, got %d", got)
+	}
+}
+
+func TestNewDiscoveryListenerDefaultsToStandardPort(t *testing.T) {
+	l, err := NewDiscoveryListener(0)
+	if err != nil {
+		t.Fatalf("failed to create listener with default port: %v", err)
+	}
+	defer l.Stop()
+
+	if got := l.conn.LocalAddr().(*net.UDPAddr).Port; got != DiscoveryPort {
+		t.Errorf("expected default port %d, got %d", DiscoveryPort, got)
+	}
+}
 
 func TestParseDiscoveryMessage(t *testing.T) {
 	tests := []struct {
