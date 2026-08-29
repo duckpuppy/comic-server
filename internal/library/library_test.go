@@ -482,6 +482,82 @@ func TestGetBooksByList(t *testing.T) {
 	}
 }
 
+// TestGetBooksByList_IdListItem is the regression test for
+// comic-server-6wm: GetBooksByList used to only ever read list.Items
+// (ComicReadingList's ordered book references), never list.BookIds
+// (ComicIdListItem's flat GUID set) - so a smart list's BaseListId scoped
+// to an id-list-typed base list (rather than a reading list or another
+// smart list) resolved to zero candidates regardless of the id list's
+// actual members.
+func TestGetBooksByList_IdListItem(t *testing.T) {
+	lib := &ComicLibrary{
+		Books: []ComicBook{
+			{ID: "book-1", Series: "Batman"},
+			{ID: "book-2", Series: "Superman"},
+			{ID: "book-3", Series: "Wonder Woman"},
+		},
+	}
+
+	idList := &ComicListItem{
+		ID:      "id-list-1",
+		Name:    "Favorites",
+		Type:    "ComicIdListItem",
+		BookIds: []string{"book-2", "book-1"},
+	}
+
+	books := lib.GetBooksByList(idList)
+	if len(books) != 2 {
+		t.Fatalf("GetBooksByList() returned %d books, want 2: %+v", len(books), books)
+	}
+	if books[0].ID != "book-2" || books[1].ID != "book-1" {
+		t.Errorf("expected books in BookIds order [book-2 book-1], got [%s %s]", books[0].ID, books[1].ID)
+	}
+}
+
+// TestMatchBooks_BaseListIdScopedToIdList confirms the fix end-to-end via
+// the actual caller that surfaced this bug: a smart list's BaseListId
+// scope resolving correctly when the base list is a ComicIdListItem, not
+// just a SmartList or ComicReadingList.
+func TestMatchBooks_BaseListIdScopedToIdList(t *testing.T) {
+	lib := &ComicLibrary{
+		Books: []ComicBook{
+			{ID: "book-1", Series: "Lady Death", Publisher: "Chaos! Comics"},
+			{ID: "book-2", Series: "Belladonna", Publisher: "Chaos! Comics"},
+			// Same series, but not a member of the id-list base - must be
+			// excluded by the scope, not just by coincidence of the
+			// matcher.
+			{ID: "book-3", Series: "Lady Death", Publisher: "Avatar Press"},
+		},
+		ComicLists: []ComicListItem{
+			{
+				ID:      "chaos-base",
+				Name:    "Chaos! Comics",
+				Type:    "ComicIdListItem",
+				BookIds: []string{"book-1", "book-2"},
+			},
+			{
+				ID:          "lady-death-scoped",
+				Name:        "Lady Death",
+				Type:        "ComicSmartListItem",
+				BaseListId:  "chaos-base",
+				MatcherMode: "And",
+				Matchers: []ComicBookMatcher{
+					{Type: "Series", MatchOperator: "1", MatchValue: "Lady Death"},
+				},
+			},
+		},
+	}
+
+	scoped := &lib.ComicLists[1]
+	books, err := lib.MatchBooks(scoped)
+	if err != nil {
+		t.Fatalf("MatchBooks: %v", err)
+	}
+	if len(books) != 1 || books[0].ID != "book-1" {
+		t.Fatalf("expected BaseListId scoping to an id list to exclude book-3 (not a base list member), got %+v", books)
+	}
+}
+
 func TestFindList(t *testing.T) {
 	var library ComicLibrary
 	if err := xml.Unmarshal([]byte(sampleLibraryXML), &library); err != nil {

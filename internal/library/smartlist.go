@@ -1528,15 +1528,7 @@ func (l *ComicLibrary) GetBooksForList(list *ComicListItem) ([]*ComicBook, error
 	if strings.Contains(list.Type, "SmartList") {
 		return l.MatchBooks(list)
 	}
-	if strings.Contains(list.Type, "IdListItem") {
-		books := make([]*ComicBook, 0, len(list.BookIds))
-		for _, id := range list.BookIds {
-			if book := l.GetBook(id); book != nil {
-				books = append(books, book)
-			}
-		}
-		return books, nil
-	}
-	// ComicReadingList and anything else — use Items references
+	// ComicIdListItem (list.BookIds) or ComicReadingList (list.Items) -
+	// GetBooksByList picks the right one based on list.Type.
 	return l.GetBooksByList(list), nil
 }

@@ -3,6 +3,7 @@ package library
 import (
 	"encoding/xml"
 	"os"
+	"strings"
 )
 
 // ComicLibrary represents the root library container from ComicDb.xml
@@ -263,10 +264,31 @@ func (l *ComicLibrary) GetBook(id string) *ComicBook {
 	return nil
 }
 
-// GetBooksByList returns books referenced in a reading list
+// GetBooksByList returns books referenced in a reading list (list.Items)
+// or an id list (list.BookIds) - whichever the list's Type actually
+// stores membership in. Used both as GetBooksForList's fallback for a
+// directly-requested list and, via MatchBooks, to resolve a smart list's
+// BaseListId scope when the base list itself isn't a SmartList.
+//
+// Before comic-server-6wm this only ever read Items, so a BaseListId
+// scoped to an id-list-typed base list silently resolved to zero
+// candidates regardless of the id list's actual members - found while
+// diagnosing comic-server-38j (not what caused that issue's real-world
+// symptoms, since the library's actual base lists are all SmartLists, but
+// a real gap in this shared path all the same).
 func (l *ComicLibrary) GetBooksByList(list *ComicListItem) []*ComicBook {
 	if list == nil {
 		return nil
+	}
+
+	if strings.Contains(list.Type, "IdListItem") {
+		books := make([]*ComicBook, 0, len(list.BookIds))
+		for _, id := range list.BookIds {
+			if book := l.GetBook(id); book != nil {
+				books = append(books, book)
+			}
+		}
+		return books
 	}
 
 	books := make([]*ComicBook, 0, len(list.Items))
