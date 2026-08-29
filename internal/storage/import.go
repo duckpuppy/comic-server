@@ -531,19 +531,42 @@ func (db *DB) insertList(tx *sql.Tx, list *library.ComicListItem, parentID strin
 		return err
 	}
 
-	// Insert reading list items if this is a reading list
-	if list.Type == "ComicReadingList" && len(list.Items) > 0 {
+	if err := db.insertListMembers(tx, list); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// insertListMembers persists a list's explicit book membership into
+// reading_list_items - which, despite its name, stores membership for
+// BOTH ComicReadingList (list.Items, ordered book references) and
+// ComicIdListItem (list.BookIds, a flat GUID set - comic-server-254).
+// Both shapes are (list_id, book_id, position), so one table serves both
+// rather than adding a second, structurally-identical one. Every other
+// list type (SmartList, folders) has no explicit membership to store -
+// GetBooksForList resolves them via matcher evaluation instead.
+func (db *DB) insertListMembers(tx *sql.Tx, list *library.ComicListItem) error {
+	switch {
+	case list.Type == "ComicReadingList":
 		for i, item := range list.Items {
-			_, err := tx.Exec(
+			if _, err := tx.Exec(
 				"INSERT INTO reading_list_items (list_id, book_id, position) VALUES (?, ?, ?)",
 				list.ID, item.ID, i,
-			)
-			if err != nil {
+			); err != nil {
 				return fmt.Errorf("insert reading list item: %w", err)
 			}
 		}
+	case strings.Contains(list.Type, "IdListItem"):
+		for i, bookID := range list.BookIds {
+			if _, err := tx.Exec(
+				"INSERT INTO reading_list_items (list_id, book_id, position) VALUES (?, ?, ?)",
+				list.ID, bookID, i,
+			); err != nil {
+				return fmt.Errorf("insert id list member: %w", err)
+			}
+		}
 	}
-
 	return nil
 }
 
@@ -576,21 +599,13 @@ func (db *DB) updateList(tx *sql.Tx, list *library.ComicListItem, parentID strin
 		return err
 	}
 
-	// Delete and re-insert reading list items
+	// Delete and re-insert list members (reading list Items or id list
+	// BookIds - see insertListMembers)
 	if _, err := tx.Exec("DELETE FROM reading_list_items WHERE list_id = ?", list.ID); err != nil {
-		return fmt.Errorf("delete reading list items: %w", err)
+		return fmt.Errorf("delete list members: %w", err)
 	}
-
-	if list.Type == "ComicReadingList" && len(list.Items) > 0 {
-		for i, item := range list.Items {
-			_, err := tx.Exec(
-				"INSERT INTO reading_list_items (list_id, book_id, position) VALUES (?, ?, ?)",
-				list.ID, item.ID, i,
-			)
-			if err != nil {
-				return fmt.Errorf("insert reading list item: %w", err)
-			}
-		}
+	if err := db.insertListMembers(tx, list); err != nil {
+		return err
 	}
 
 	return nil
@@ -669,6 +684,13 @@ func computeListHash(list *library.ComicListItem) string {
 	// Hash reading list items
 	for _, item := range list.Items {
 		fmt.Fprintf(h, "%s|", item.ID)
+	}
+
+	// Hash id list members (comic-server-254) - without this, an XML edit
+	// that only changes an id list's membership (adding/removing a book,
+	// same book_count) would never be detected as changed on reimport.
+	for _, bookID := range list.BookIds {
+		fmt.Fprintf(h, "%s|", bookID)
 	}
 
 	return hex.EncodeToString(h.Sum(nil))

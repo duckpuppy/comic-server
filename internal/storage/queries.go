@@ -234,11 +234,8 @@ func (db *DB) GetList(id string) (*library.ComicListItem, error) {
 		return nil, fmt.Errorf("get list %s: %w", id, err)
 	}
 
-	// Load reading list items if applicable
-	if list.Type == "ComicReadingList" {
-		if err := db.loadReadingListItems(list); err != nil {
-			return nil, err
-		}
+	if err := db.loadListMembers(list); err != nil {
+		return nil, err
 	}
 
 	return list, nil
@@ -308,12 +305,10 @@ func (db *DB) GetAllLists() ([]library.ComicListItem, error) {
 		return nil, fmt.Errorf("iterate lists: %w", err)
 	}
 
-	// Load reading list items
+	// Load list membership (reading list Items or id list BookIds)
 	for _, list := range listMap {
-		if list.Type == "ComicReadingList" {
-			if err := db.loadReadingListItems(list); err != nil {
-				return nil, err
-			}
+		if err := db.loadListMembers(list); err != nil {
+			return nil, err
 		}
 	}
 
@@ -507,6 +502,45 @@ func (db *DB) loadBookTags(book *library.ComicBook) error {
 
 	if len(tags) > 0 {
 		book.Tags = joinStrings(tags, ", ")
+	}
+
+	return nil
+}
+
+// loadListMembers loads a list's explicit book membership - Items for a
+// ComicReadingList, BookIds for a ComicIdListItem (comic-server-254) - or
+// does nothing for any other type (SmartList/folder membership is
+// resolved via matcher evaluation, not stored membership).
+func (db *DB) loadListMembers(list *library.ComicListItem) error {
+	switch {
+	case list.Type == "ComicReadingList":
+		return db.loadReadingListItems(list)
+	case strings.Contains(list.Type, "IdListItem"):
+		return db.loadIdListMembers(list)
+	}
+	return nil
+}
+
+func (db *DB) loadIdListMembers(list *library.ComicListItem) error {
+	rows, err := db.Query(`
+		SELECT book_id FROM reading_list_items
+		WHERE list_id = ?
+		ORDER BY position
+	`, list.ID)
+	if err != nil {
+		return fmt.Errorf("query id list members: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var bookID string
+		if err := rows.Scan(&bookID); err != nil {
+			return fmt.Errorf("scan id list member: %w", err)
+		}
+		list.BookIds = append(list.BookIds, bookID)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate id list members: %w", err)
 	}
 
 	return nil

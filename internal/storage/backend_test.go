@@ -312,3 +312,99 @@ func TestSQLiteBackend_ConcurrentFallbackEvaluationsAndCVDataAreRaceFree(t *test
 	}
 	wg.Wait()
 }
+
+// TestSQLiteBackend_IdListMembershipSurvivesImportAndReimport is the
+// regression test for comic-server-254: a ComicIdListItem (an explicit,
+// manually-curated set of book GUIDs - NOT matcher-based) used to have no
+// persisted membership at all on the SQL backend, so GetBooksForList
+// always returned empty regardless of what the XML said. Covers both a
+// fresh import and a reimport (exercising updateList's delete-and-
+// reinsert path, not just insertList's), plus that reordering/changing
+// membership on an otherwise-identical list is actually detected as a
+// change (computeListHash now hashes BookIds too - previously an XML edit
+// that only changed an id list's members, with the same book_count,
+// would never have been picked up as "changed" on reimport at all).
+func TestSQLiteBackend_IdListMembershipSurvivesImportAndReimport(t *testing.T) {
+	dir := t.TempDir()
+	xmlPath := filepath.Join(dir, "ComicDb.xml")
+	dbPath := filepath.Join(dir, "test.db")
+
+	lib := &library.ComicLibrary{
+		ID: "test-library",
+		Books: []library.ComicBook{
+			{ID: "book-1", FilePath: "/comics/book1.cbz", Title: "One"},
+			{ID: "book-2", FilePath: "/comics/book2.cbz", Title: "Two"},
+			{ID: "book-3", FilePath: "/comics/book3.cbz", Title: "Three"},
+		},
+		ComicLists: []library.ComicListItem{
+			{
+				ID:      "to-read",
+				Name:    "To Read",
+				Type:    "ComicIdListItem",
+				BookIds: []string{"book-2", "book-1"}, // deliberately out of insertion order
+			},
+		},
+	}
+	if err := library.SaveLibrary(xmlPath, lib); err != nil {
+		t.Fatalf("SaveLibrary: %v", err)
+	}
+
+	backend, err := NewSQLiteBackend(dbPath, xmlPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteBackend: %v", err)
+	}
+	defer backend.Close()
+	if err := backend.Reload(); err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+
+	list, err := backend.FindListByID("to-read")
+	if err != nil || list == nil {
+		t.Fatalf("FindListByID: list=%+v err=%v", list, err)
+	}
+	if got := list.BookIds; len(got) != 2 || got[0] != "book-2" || got[1] != "book-1" {
+		t.Fatalf("expected FindListByID's BookIds to be [book-2 book-1] (order preserved), got %v", got)
+	}
+
+	books, err := backend.GetBooksForList(list)
+	if err != nil {
+		t.Fatalf("GetBooksForList: %v", err)
+	}
+	if len(books) != 2 {
+		t.Fatalf("expected 2 books for the id list, got %d: %v", len(books), books)
+	}
+	gotIDs := map[string]bool{books[0].ID: true, books[1].ID: true}
+	if !gotIDs["book-1"] || !gotIDs["book-2"] {
+		t.Errorf("expected book-1 and book-2, got %v", gotIDs)
+	}
+
+	// Reimport with changed membership (same book_count, so anything that
+	// only compares BookCount rather than the actual member IDs would
+	// miss this) - must be detected and applied.
+	lib.ComicLists[0].BookIds = []string{"book-3", "book-1"}
+	if err := library.SaveLibrary(xmlPath, lib); err != nil {
+		t.Fatalf("SaveLibrary (update): %v", err)
+	}
+	if err := backend.Reload(); err != nil {
+		t.Fatalf("Reload (second): %v", err)
+	}
+
+	list2, err := backend.FindListByID("to-read")
+	if err != nil || list2 == nil {
+		t.Fatalf("FindListByID (after reimport): list=%+v err=%v", list2, err)
+	}
+	books2, err := backend.GetBooksForList(list2)
+	if err != nil {
+		t.Fatalf("GetBooksForList (after reimport): %v", err)
+	}
+	if len(books2) != 2 {
+		t.Fatalf("expected 2 books after reimport, got %d: %v", len(books2), books2)
+	}
+	gotIDs2 := map[string]bool{books2[0].ID: true, books2[1].ID: true}
+	if !gotIDs2["book-1"] || !gotIDs2["book-3"] {
+		t.Errorf("expected membership to update to book-1 and book-3 after reimport, got %v", gotIDs2)
+	}
+	if gotIDs2["book-2"] {
+		t.Errorf("expected book-2 to no longer be a member after reimport, got %v", gotIDs2)
+	}
+}
