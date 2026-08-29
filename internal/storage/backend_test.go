@@ -408,3 +408,93 @@ func TestSQLiteBackend_IdListMembershipSurvivesImportAndReimport(t *testing.T) {
 		t.Errorf("expected book-2 to no longer be a member after reimport, got %v", gotIDs2)
 	}
 }
+
+// TestSQLiteBackend_BaseListIdSurvivesImport is the regression test for
+// comic-server-38j's root cause: list.BaseListId (scopes a smart list's
+// matcher evaluation to another list's result set instead of the whole
+// library) had NO column in the SQL schema at all - comic-server-hha
+// fixed the LOOKUP mechanism (FindListByID resolving against the SQL
+// backend's ComicLists), but nothing ever persisted BaseListId itself, so
+// it always read back as "" and every scoped smart list silently matched
+// against the entire library instead. hha's own regression test
+// (TestBackend_MatchBooks's "scoped" case) never caught this because it
+// constructs the scoped ComicListItem directly in Go memory - with
+// BaseListId already set - and hands it straight to MatchBooks, never
+// round-tripping it through db.Import(). This test does: import a smart
+// list with BaseListId set, fetch it back via FindListByID (so BaseListId
+// comes from the DB, not from the caller's in-memory struct), and confirm
+// scoping still resolves correctly - found live against the real library
+// ("Lady Death", scoped to a small horror-imprint base list, was matching
+// all 67K books instead of that base list's members).
+func TestSQLiteBackend_BaseListIdSurvivesImport(t *testing.T) {
+	dir := t.TempDir()
+	xmlPath := filepath.Join(dir, "ComicDb.xml")
+	dbPath := filepath.Join(dir, "test.db")
+
+	lib := &library.ComicLibrary{
+		ID: "test-library",
+		Books: []library.ComicBook{
+			{ID: "book-1", FilePath: "/comics/b1.cbz", Series: "Lady Death", Publisher: "Chaos! Comics"},
+			{ID: "book-2", FilePath: "/comics/b2.cbz", Series: "Belladonna", Publisher: "Chaos! Comics"},
+			// Same series name as book-1, but NOT a member of the base
+			// list - if BaseListId scoping is silently dropped, this book
+			// gets wrongly included (matches "Lady Death" against the
+			// whole library instead of just the base list's members).
+			{ID: "book-3", FilePath: "/comics/b3.cbz", Series: "Lady Death", Publisher: "Avatar Press"},
+		},
+		ComicLists: []library.ComicListItem{
+			// The real library's actual shape (checked against production
+			// XML): a scoped list's BaseListId points at another
+			// ComicSmartListItem (a publisher-imprint list), not an id
+			// list or reading list - exercises MatchBooks' recursive
+			// l.MatchBooks(baseList) branch, not GetBooksByList.
+			{
+				ID:          "chaos-base",
+				Name:        "Chaos! Comics",
+				Type:        "ComicSmartListItem",
+				MatcherMode: "",
+				Matchers: []library.ComicBookMatcher{
+					{Type: "Publisher", MatchOperator: "0", MatchValue: "Chaos! Comics"},
+				},
+			},
+			{
+				ID:          "lady-death-scoped",
+				Name:        "Lady Death",
+				Type:        "ComicSmartListItem",
+				MatcherMode: "",
+				BaseListId:  "chaos-base",
+				Matchers: []library.ComicBookMatcher{
+					{Type: "Series", MatchOperator: "1", MatchValue: "Lady Death"},
+				},
+			},
+		},
+	}
+	if err := library.SaveLibrary(xmlPath, lib); err != nil {
+		t.Fatalf("SaveLibrary: %v", err)
+	}
+
+	backend, err := NewSQLiteBackend(dbPath, xmlPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteBackend: %v", err)
+	}
+	defer backend.Close()
+	if err := backend.Reload(); err != nil {
+		t.Fatalf("Reload: %v", err)
+	}
+
+	list, err := backend.FindListByID("lady-death-scoped")
+	if err != nil || list == nil {
+		t.Fatalf("FindListByID: list=%+v err=%v", list, err)
+	}
+	if list.BaseListId != "chaos-base" {
+		t.Fatalf("expected BaseListId to survive the round trip through SQL, got %q", list.BaseListId)
+	}
+
+	books, err := backend.MatchBooks(list)
+	if err != nil {
+		t.Fatalf("MatchBooks: %v", err)
+	}
+	if len(books) != 1 || books[0].ID != "book-1" {
+		t.Fatalf("expected scoping to the base list to exclude book-3 (same series, wrong publisher, NOT in the base list), got %+v", books)
+	}
+}

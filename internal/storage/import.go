@@ -517,15 +517,20 @@ func (db *DB) insertList(tx *sql.Tx, list *library.ComicListItem, parentID strin
 		parentIDValue = parentID
 	}
 
+	var baseListIDValue interface{}
+	if list.BaseListId != "" {
+		baseListIDValue = list.BaseListId
+	}
+
 	_, err = tx.Exec(`
 		INSERT INTO lists (
 			id, name, type, parent_id, description, favorite, collapsed,
-			matcher_mode, matchers, book_count, import_hash, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			matcher_mode, matchers, base_list_id, book_count, import_hash, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		list.ID, list.Name, list.Type, parentIDValue, list.Description,
 		boolToInt(list.Favorite), boolToInt(list.Collapsed),
-		list.MatcherMode, string(matchersJSON), list.BookCount, hash, now,
+		list.MatcherMode, string(matchersJSON), baseListIDValue, list.BookCount, hash, now,
 	)
 	if err != nil {
 		return err
@@ -584,15 +589,20 @@ func (db *DB) updateList(tx *sql.Tx, list *library.ComicListItem, parentID strin
 		parentIDValue = parentID
 	}
 
+	var baseListIDValue interface{}
+	if list.BaseListId != "" {
+		baseListIDValue = list.BaseListId
+	}
+
 	_, err = tx.Exec(`
 		UPDATE lists SET
 			name = ?, type = ?, parent_id = ?, description = ?, favorite = ?, collapsed = ?,
-			matcher_mode = ?, matchers = ?, book_count = ?, import_hash = ?, updated_at = ?, deleted_at = NULL
+			matcher_mode = ?, matchers = ?, base_list_id = ?, book_count = ?, import_hash = ?, updated_at = ?, deleted_at = NULL
 		WHERE id = ?
 	`,
 		list.Name, list.Type, parentIDValue, list.Description,
 		boolToInt(list.Favorite), boolToInt(list.Collapsed),
-		list.MatcherMode, string(matchersJSON), list.BookCount, hash, now,
+		list.MatcherMode, string(matchersJSON), baseListIDValue, list.BookCount, hash, now,
 		list.ID,
 	)
 	if err != nil {
@@ -673,9 +683,9 @@ func computeBookHash(book *library.ComicBook) string {
 func computeListHash(list *library.ComicListItem) string {
 	h := sha256.New()
 
-	fmt.Fprintf(h, "%s|%s|%s|%s|%t|%t|%s|%d|",
+	fmt.Fprintf(h, "%s|%s|%s|%s|%t|%t|%s|%s|%d|",
 		list.ID, list.Name, list.Type, list.Description,
-		list.Favorite, list.Collapsed, list.MatcherMode, list.BookCount)
+		list.Favorite, list.Collapsed, list.MatcherMode, list.BaseListId, list.BookCount)
 
 	// Hash matchers
 	matchersJSON, _ := json.Marshal(list.Matchers)

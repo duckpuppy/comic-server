@@ -222,7 +222,7 @@ func (db *DB) GetBookCount() (int, error) {
 // GetList retrieves a single list by ID.
 func (db *DB) GetList(id string) (*library.ComicListItem, error) {
 	row := db.QueryRow(`
-		SELECT id, name, type, description, favorite, collapsed, matcher_mode, matchers, book_count
+		SELECT id, name, type, description, favorite, collapsed, matcher_mode, matchers, base_list_id, book_count
 		FROM lists WHERE id = ? AND deleted_at IS NULL
 	`, id)
 
@@ -244,7 +244,7 @@ func (db *DB) GetList(id string) (*library.ComicListItem, error) {
 // GetAllLists retrieves all lists from the database.
 func (db *DB) GetAllLists() ([]library.ComicListItem, error) {
 	rows, err := db.Query(`
-		SELECT id, name, type, parent_id, description, favorite, collapsed, matcher_mode, matchers, book_count
+		SELECT id, name, type, parent_id, description, favorite, collapsed, matcher_mode, matchers, base_list_id, book_count
 		FROM lists
 		WHERE deleted_at IS NULL
 		ORDER BY name
@@ -265,9 +265,10 @@ func (db *DB) GetAllLists() ([]library.ComicListItem, error) {
 		var description sql.NullString
 		var favorite, collapsed bool
 		var matchersJSON string
+		var baseListID sql.NullString
 		var bookCount int
 
-		err := rows.Scan(&id, &name, &listType, &parentID, &description, &favorite, &collapsed, &matcherMode, &matchersJSON, &bookCount)
+		err := rows.Scan(&id, &name, &listType, &parentID, &description, &favorite, &collapsed, &matcherMode, &matchersJSON, &baseListID, &bookCount)
 		if err != nil {
 			return nil, fmt.Errorf("scan list: %w", err)
 		}
@@ -284,6 +285,9 @@ func (db *DB) GetAllLists() ([]library.ComicListItem, error) {
 
 		if description.Valid {
 			list.Description = description.String
+		}
+		if baseListID.Valid {
+			list.BaseListId = baseListID.String
 		}
 
 		// Parse matchers
@@ -432,10 +436,11 @@ func scanList(s scanner) (*library.ComicListItem, error) {
 	var list library.ComicListItem
 	var description sql.NullString
 	var matchersJSON string
+	var baseListID sql.NullString
 
 	err := s.Scan(
 		&list.ID, &list.Name, &list.Type, &description,
-		&list.Favorite, &list.Collapsed, &list.MatcherMode, &matchersJSON, &list.BookCount,
+		&list.Favorite, &list.Collapsed, &list.MatcherMode, &matchersJSON, &baseListID, &list.BookCount,
 	)
 	if err != nil {
 		return nil, err
@@ -443,6 +448,9 @@ func scanList(s scanner) (*library.ComicListItem, error) {
 
 	if description.Valid {
 		list.Description = description.String
+	}
+	if baseListID.Valid {
+		list.BaseListId = baseListID.String
 	}
 
 	// Parse matchers

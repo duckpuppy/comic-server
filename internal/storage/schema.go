@@ -3,7 +3,7 @@ package storage
 import "fmt"
 
 // Schema version for migrations
-const schemaVersion = 4
+const schemaVersion = 5
 
 // initSchema creates the database tables if they don't exist.
 func (db *DB) initSchema() error {
@@ -38,6 +38,11 @@ func (db *DB) initSchema() error {
 		if version < 4 {
 			if err := db.migrateV3ToV4(); err != nil {
 				return fmt.Errorf("migrate v3→v4: %w", err)
+			}
+		}
+		if version < 5 {
+			if err := db.migrateV4ToV5(); err != nil {
+				return fmt.Errorf("migrate v4→v5: %w", err)
 			}
 		}
 	}
@@ -123,6 +128,25 @@ func (db *DB) migrateV2ToV3() error {
 func (db *DB) migrateV3ToV4() error {
 	if _, err := db.Exec("ALTER TABLE books ADD COLUMN xml_snapshot TEXT"); err != nil {
 		return fmt.Errorf("add xml_snapshot column: %w", err)
+	}
+	return nil
+}
+
+// migrateV4ToV5 adds base_list_id (comic-server-38j): a smart list's
+// BaseListId (scopes matcher evaluation to another list's result set
+// instead of the whole library - see library.ComicListItem.BaseListId)
+// was never persisted anywhere in the SQL schema at all, despite
+// SQLiteBackend.evaluationLibrary/MatchBooks already having logic that
+// reads it (comic-server-hha fixed the LOOKUP mechanism, assuming this
+// field would be populated - it never was). Every scoped smart list
+// silently evaluated against the entire library instead of its actual
+// base list's members, a correctness gap wider than just miscounting -
+// found live while validating comic-server-254 against the real library
+// ("Lady Death", scoped to a small horror-imprint base list, was
+// matching against all 67K books instead of that base list's members).
+func (db *DB) migrateV4ToV5() error {
+	if _, err := db.Exec("ALTER TABLE lists ADD COLUMN base_list_id TEXT"); err != nil {
+		return fmt.Errorf("add base_list_id column: %w", err)
 	}
 	return nil
 }
@@ -335,6 +359,7 @@ func (db *DB) createTables() error {
 			collapsed INTEGER DEFAULT 0,
 			matcher_mode TEXT,
 			matchers TEXT,
+			base_list_id TEXT,
 			book_count INTEGER DEFAULT 0,
 			import_hash TEXT,
 			updated_at TEXT,
