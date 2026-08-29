@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.11.2](https://github.com/duckpuppy/comic-server/compare/v1.11.1...v1.11.2) (2026-08-29)
+
+
+### Bug Fixes
+
+* GetAllLists tree-building was non-deterministic, silently dropping nested lists ([796dcc3](https://github.com/duckpuppy/comic-server/commit/796dcc3d6bfb367a7431c987137021964a51c367))
+* GetBooksByList ignored BookIds - BaseListId scoped to an id list resolved empty ([6d7e94d](https://github.com/duckpuppy/comic-server/commit/6d7e94d127ee7eebc0f69bb3b64ab9dbf4229e05))
+* SQLite backend never persisted a smart list's BaseListId ([66af18c](https://github.com/duckpuppy/comic-server/commit/66af18ca5e4d702326f55d0da98afb2cf614c5c7))
+* SQLite backend never persisted ComicIdListItem book membership ([0900b77](https://github.com/duckpuppy/comic-server/commit/0900b770d571489954359de2d05eb080653e02b8))
+
+
+### Performance Improvements
+
+* cache SQLiteBackend's full-library snapshot across fallback-path list evaluations ([20decc2](https://github.com/duckpuppy/comic-server/commit/20decc25357031a57a181c1ddcc246d08b0a83e0))
+
 ## [1.11.1](https://github.com/duckpuppy/comic-server/compare/v1.11.0...v1.11.1) (2026-08-28)
 
 
