@@ -74,6 +74,21 @@ func getListSchema() *ListSchema {
 				{"2", "No", false, false},
 				{"3", "Unknown", false, false},
 			},
+			// customvalue reuses the exact string operator set - a
+			// CustomValues matcher's operator parsing (smartlist.go's
+			// NewMatcherFromXML, "CustomValues" branch) shares the same
+			// parseOperator() as every plain string field. Kept as its own
+			// schema key (not aliased to "string") only so the editor can
+			// tell fieldType apart for the two-input rendering below.
+			"customvalue": {
+				{"0", "equals", true, false},
+				{"1", "contains", true, false},
+				{"2", "contains any of", true, false},
+				{"3", "contains all of", true, false},
+				{"4", "starts with", true, false},
+				{"5", "ends with", true, false},
+				{"7", "matches regex", true, false},
+			},
 		},
 		MatcherTypes: []MatcherTypeInfo{
 			// Title & Series
@@ -111,6 +126,13 @@ func getListSchema() *ListSchema {
 			{ID: "ComicBookPageCountMatcher", Label: "Page Count", Category: "Content", FieldType: "numeric"},
 			{ID: "ComicBookBlackAndWhiteMatcher", Label: "Black & White", Category: "Content", FieldType: "yesno"},
 			{ID: "ComicBookMangaMatcher", Label: "Manga", Category: "Content", FieldType: "manga"},
+			// Custom Value - MatchValue holds the custom field's KEY name
+			// (not a comparison value), MatchValue2 holds the actual value
+			// to compare against - the editor needs a dedicated
+			// "customvalue" fieldType to render both inputs (see
+			// listDetail.js's renderMatcherEditor), not the single-value
+			// layout every other string field uses.
+			{ID: "ComicBookCustomValuesMatcher", Label: "Custom Value", Category: "Content", FieldType: "customvalue"},
 			// Characters & Teams
 			{ID: "ComicBookCharactersMatcher", Label: "Characters", Category: "Characters & Teams", FieldType: "string"},
 			{ID: "ComicBookTeamsMatcher", Label: "Teams", Category: "Characters & Teams", FieldType: "string"},

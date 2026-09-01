@@ -390,6 +390,15 @@ class ListDetail {
         const showValue = selectedOp.hasValue !== false;
         const showValue2 = !!selectedOp.hasValue2;
 
+        // CustomValues is shaped differently from every other matcher:
+        // MatchValue holds the custom field's KEY name (e.g. "Data Manager
+        // processed"), not a value to compare - the actual comparison
+        // value lives in MatchValue2. Rendering it through the normal
+        // single-value layout would show the key where a comparison value
+        // belongs and offer no way to see or edit the key itself - the
+        // "07 DataManager" list bug (comic-server-arn).
+        const isCustomValue = fieldType === 'customvalue';
+
         return `
             <li class="matcher-editor-row" data-index="${index}">
                 <div class="matcher-editor-controls">
@@ -400,10 +409,14 @@ class ListDetail {
                     <select class="matcher-type-select" data-index="${index}">
                         ${typeOptions}
                     </select>
+                    ${isCustomValue ? `
+                    <input type="text" class="matcher-customfield-input" data-index="${index}"
+                           value="${this.escapeHtml(matcher.MatchValue || '')}" placeholder="custom field name">
+                    ` : ''}
                     <select class="matcher-op-select" data-index="${index}">
                         ${opOptions}
                     </select>
-                    ${showValue ? `
+                    ${showValue && !isCustomValue ? `
                     <input type="text" class="matcher-value-input" data-index="${index}"
                            value="${this.escapeHtml(matcher.MatchValue || '')}" placeholder="value">
                     ` : ''}
@@ -411,6 +424,10 @@ class ListDetail {
                     <span class="matcher-range-and">and</span>
                     <input type="text" class="matcher-value2-input" data-index="${index}"
                            value="${this.escapeHtml(matcher.MatchValue2 || '')}" placeholder="value 2">
+                    ` : ''}
+                    ${isCustomValue ? `
+                    <input type="text" class="matcher-value2-input" data-index="${index}"
+                           value="${this.escapeHtml(matcher.MatchValue2 || '')}" placeholder="value">
                     ` : ''}
                 </div>
                 <button class="btn btn-small btn-danger matcher-remove-btn" data-index="${index}" title="Remove">✕</button>
@@ -1016,6 +1033,18 @@ class ListDetail {
         });
 
         document.querySelectorAll('.matcher-value-input').forEach(el => {
+            el.addEventListener('input', () => {
+                const i = parseInt(el.dataset.index);
+                if (this.editState.matchers[i]) this.editState.matchers[i].MatchValue = el.value;
+            });
+        });
+
+        // CustomValues' "field name" input - writes to MatchValue, same
+        // underlying field as matcher-value-input above, but the two never
+        // coexist for the same matcher (see renderMatcherEditor's
+        // isCustomValue branch), so there's no risk of one clobbering the
+        // other.
+        document.querySelectorAll('.matcher-customfield-input').forEach(el => {
             el.addEventListener('input', () => {
                 const i = parseInt(el.dataset.index);
                 if (this.editState.matchers[i]) this.editState.matchers[i].MatchValue = el.value;
