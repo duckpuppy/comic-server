@@ -1,0 +1,8 @@
+{
+  "name": "comic-server-browser-testing",
+  "private": true,
+  "description": "Playwright for ad hoc headless-browser verification of the web UI (internal/api/web). Not a build dependency of comic-server itself - the Go binary embeds the web UI directly and never touches Node.",
+  "devDependencies": {
+    "playwright": "^1.62.1"
+  }
+}

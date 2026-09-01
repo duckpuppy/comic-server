@@ -583,6 +583,37 @@ just ci  # Runs lint + test + build
   - Tests error handling and progress reporting
   - Tests sync with smart list filtering
 
+### Browser Testing (Playwright)
+
+For verifying web UI changes (`internal/api/web/`) with a real headless
+browser instead of just reading the JS/CSS. Setup is npm-based
+(`package.json`, `.gitignore` allows it and ignores `node_modules/`):
+
+```bash
+npm install                    # installs the playwright package
+npx playwright install chromium  # downloads the actual browser binary (~150-300MB, one-time)
+```
+
+`npx playwright install --with-deps` (which also apt-installs system
+libraries) needs root and will fail in this sandbox - skip `--with-deps`.
+Chromium launches fine headless without it here.
+
+A driver script must live inside this repo (or anywhere under it) for
+Node's `require('playwright')` to resolve via `node_modules` - a script
+under `/tmp` or the scratchpad directory won't find it. Write one-off
+driver scripts as dotfiles in the repo root (e.g. `.dm-click-through.js`),
+delete them when done, and confirm `git status` is clean afterward (they're
+untracked, not gitignored, so `git status` will show them until removed).
+
+**Point `--library`/`--config` at a scratch copy, never
+`testdata/library/ComicDb.xml` directly** - any write path (a rule apply,
+a sync, a metadata edit) will silently overwrite the real committed
+fixture through a real headless browser session exactly like it would
+through any other client. Copy `testdata/library/` to a scratch directory
+first (see the Test Library section above and the smoke-testing memory on
+`book.FilePath` being relative to server cwd, not `--library`'s directory)
+and point everything at the copy.
+
 ### Test Infrastructure
 
 **Mock Device Server** (`internal/protocol/testserver.go`):

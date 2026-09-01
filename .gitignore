@@ -53,6 +53,11 @@ Thumbs.db
 !.github/workflows/*.yml
 !release-please-config.json
 !.release-please-manifest.json
+!package.json
+!package-lock.json
+
+# Node (Playwright browser testing - see package.json)
+node_modules/
 
 # Test coverage
 coverage.txt
