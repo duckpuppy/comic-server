@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.15.0](https://github.com/duckpuppy/comic-server/compare/v1.14.0...v1.15.0) (2026-09-01)
+
+
+### Features
+
+* add left-border status accent to Komga sync target cards ([66b653d](https://github.com/duckpuppy/comic-server/commit/66b653da2f2a21cacc991ae4f7711b1060a5c31b))
+* sort list tree folders-then-lists, alphabetical, at every level ([d38a453](https://github.com/duckpuppy/comic-server/commit/d38a453e003f769280dfa8ab54256cc376954dee))
+
+
+### Bug Fixes
+
+* add missing "Linked" matcher and yes/no operator picker to editor ([ddfdab3](https://github.com/duckpuppy/comic-server/commit/ddfdab31d314eef9aa1e574e793aa4d89ffbc1d5))
+
 ## [1.14.0](https://github.com/duckpuppy/comic-server/compare/v1.13.0...v1.14.0) (2026-09-01)
 
 
