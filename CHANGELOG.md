@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.16.1](https://github.com/duckpuppy/comic-server/compare/v1.16.0...v1.16.1) (2026-09-01)
+
+
+### Bug Fixes
+
+* CustomValues matcher mislabeled as Series in list editor ([893498b](https://github.com/duckpuppy/comic-server/commit/893498b1e3bc7e9d766ee239bebc34624b1b4121))
+
 ## [1.16.0](https://github.com/duckpuppy/comic-server/compare/v1.15.0...v1.16.0) (2026-09-01)
 
 
