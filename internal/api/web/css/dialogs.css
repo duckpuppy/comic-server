@@ -67,6 +67,7 @@
     color: white;
     font-size: 0.9375rem;
     line-height: 1.4;
+    white-space: pre-line;
     opacity: 0;
     transform: translateY(0.5rem);
     transition: opacity 0.2s ease, transform 0.2s ease;

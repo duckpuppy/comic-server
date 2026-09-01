@@ -172,7 +172,7 @@ const ListManager = {
             console.log(`Added list ${listName} to device`);
         } catch (error) {
             console.error('Error adding list:', error);
-            alert(`Failed to add list: ${error.message}`);
+            dialogs.toast(`Failed to add list: ${error.message}`, 'error');
         }
     },
 
@@ -197,7 +197,7 @@ const ListManager = {
             console.log(`Removed list from device`);
         } catch (error) {
             console.error('Error removing list:', error);
-            alert(`Failed to remove list: ${error.message}`);
+            dialogs.toast(`Failed to remove list: ${error.message}`, 'error');
         }
     },
 

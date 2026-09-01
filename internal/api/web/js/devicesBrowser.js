@@ -241,11 +241,11 @@ class DevicesBrowser {
                 return;
             }
             if (response.status === 409) {
-                alert('This device is already syncing.');
+                dialogs.toast('This device is already syncing.', 'error');
                 return;
             }
             if (response.status === 404) {
-                alert('This device is not currently connected.');
+                dialogs.toast('This device is not currently connected.', 'error');
                 await this.loadDevices();
                 this.updateGrid();
                 return;
@@ -255,7 +255,7 @@ class DevicesBrowser {
             throw new Error(error || `HTTP ${response.status}`);
         } catch (error) {
             console.error('Failed to trigger sync:', error);
-            alert(`Failed to start sync: ${error.message}`);
+            dialogs.toast(`Failed to start sync: ${error.message}`, 'error');
         }
     }
 
@@ -423,11 +423,11 @@ class DevicesBrowser {
             } else {
                 const error = await response.text();
                 console.error('Failed to register device:', error);
-                alert(`Failed to register device: ${error}`);
+                dialogs.toast(`Failed to register device: ${error}`, 'error');
             }
         } catch (error) {
             console.error('Error registering device:', error);
-            alert(`Error registering device: ${error.message}`);
+            dialogs.toast(`Error registering device: ${error.message}`, 'error');
         }
     }
 
@@ -435,9 +435,13 @@ class DevicesBrowser {
         const device = this.devices.find(d => d.id === deviceId);
         const deviceName = device ? (device.friendly_name || device.name) : deviceId;
 
-        if (!confirm(`Unregister device "${deviceName}"?\n\nThis will remove all list assignments and sync settings.`)) {
-            return;
-        }
+        const ok = await dialogs.confirm({
+            title: 'Unregister Device',
+            message: `Unregister device "${deviceName}"? This will remove all list assignments and sync settings.`,
+            confirmLabel: 'Unregister',
+            danger: true,
+        });
+        if (!ok) return;
 
         try {
             const response = await fetch('/api/devices/unregister', {
@@ -453,11 +457,11 @@ class DevicesBrowser {
             } else {
                 const error = await response.text();
                 console.error('Failed to unregister device:', error);
-                alert(`Failed to unregister device: ${error}`);
+                dialogs.toast(`Failed to unregister device: ${error}`, 'error');
             }
         } catch (error) {
             console.error('Error unregistering device:', error);
-            alert(`Error unregistering device: ${error.message}`);
+            dialogs.toast(`Error unregistering device: ${error.message}`, 'error');
         }
     }
 

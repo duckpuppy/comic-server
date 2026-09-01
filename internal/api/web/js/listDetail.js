@@ -649,7 +649,7 @@ class ListDetail {
         const state = this.editState;
 
         if (!state.name) {
-            alert('List name is required');
+            dialogs.toast('List name is required', 'error');
             return;
         }
 
@@ -681,12 +681,18 @@ class ListDetail {
             this.attachListeners();
         } catch (e) {
             console.error('Failed to save list:', e);
-            alert('Failed to save list: ' + e.message);
+            dialogs.toast('Failed to save list: ' + e.message, 'error');
         }
     }
 
     async deleteList() {
-        if (!confirm(`Delete "${this.list.name}"? This cannot be undone.`)) return;
+        const ok = await dialogs.confirm({
+            title: 'Delete List',
+            message: `Delete "${this.list.name}"? This cannot be undone.`,
+            confirmLabel: 'Delete',
+            danger: true,
+        });
+        if (!ok) return;
 
         try {
             const resp = await fetch(`/api/library/lists/${this.listId}`, { method: 'DELETE' });
@@ -697,7 +703,7 @@ class ListDetail {
             router.navigate('/lists');
         } catch (e) {
             console.error('Failed to delete list:', e);
-            alert('Failed to delete list: ' + e.message);
+            dialogs.toast('Failed to delete list: ' + e.message, 'error');
         }
     }
 
@@ -833,9 +839,13 @@ class ListDetail {
     }
 
     async runCBZConvert() {
-        if (!confirm('Convert every book in this list to CBZ? Original files are replaced (moved to the server\'s trash folder, not deleted). This cannot be undone from this page.')) {
-            return;
-        }
+        const ok = await dialogs.confirm({
+            title: 'Convert to CBZ',
+            message: "Convert every book in this list to CBZ? Original files are replaced (moved to the server's trash folder, not deleted). This cannot be undone from this page.",
+            confirmLabel: 'Convert',
+            danger: true,
+        });
+        if (!ok) return;
         const btn = document.getElementById('run-cbz-convert-btn');
         const resultEl = document.getElementById('cbz-convert-result');
         btn.disabled = true;
@@ -1014,7 +1024,7 @@ class ListDetail {
             }
         } catch (error) {
             console.error('Failed to assign device:', error);
-            alert('Failed to assign list to device');
+            dialogs.toast('Failed to assign list to device', 'error');
         }
     }
 
@@ -1036,14 +1046,18 @@ class ListDetail {
             this.attachListeners();
         } catch (error) {
             console.error('Failed to toggle list:', error);
-            alert('Failed to update list settings');
+            dialogs.toast('Failed to update list settings', 'error');
         }
     }
 
     async unassignDevice(deviceId) {
-        if (!confirm('Remove this list from the device?')) {
-            return;
-        }
+        const ok = await dialogs.confirm({
+            title: 'Remove from Device',
+            message: 'Remove this list from the device?',
+            confirmLabel: 'Remove',
+            danger: true,
+        });
+        if (!ok) return;
 
         try {
             const response = await fetch(`/api/devices/lists/${deviceId}/${this.listId}`, {
@@ -1060,7 +1074,7 @@ class ListDetail {
             this.attachListeners();
         } catch (error) {
             console.error('Failed to unassign device:', error);
-            alert('Failed to remove list from device');
+            dialogs.toast('Failed to remove list from device', 'error');
         }
     }
 
@@ -1097,7 +1111,7 @@ class ListDetail {
         saveBtn.onclick = async () => {
             const komgaName = nameInput.value.trim();
             if (!komgaName) {
-                alert('Komga name is required');
+                dialogs.toast('Komga name is required', 'error');
                 return;
             }
             saveBtn.disabled = true;
@@ -1132,14 +1146,18 @@ class ListDetail {
             this.attachListeners();
         } catch (error) {
             console.error('Failed to save Komga target:', error);
-            alert('Failed to save Komga target: ' + error.message);
+            dialogs.toast('Failed to save Komga target: ' + error.message, 'error');
         }
     }
 
     async removeKomgaTarget() {
-        if (!confirm('Remove this list from Komga sync?')) {
-            return;
-        }
+        const ok = await dialogs.confirm({
+            title: 'Remove Komga Sync',
+            message: 'Remove this list from Komga sync?',
+            confirmLabel: 'Remove',
+            danger: true,
+        });
+        if (!ok) return;
 
         try {
             const response = await fetch(`/api/library/lists/${this.listId}/komga`, { method: 'DELETE' });
@@ -1152,7 +1170,7 @@ class ListDetail {
             this.attachListeners();
         } catch (error) {
             console.error('Failed to remove Komga target:', error);
-            alert('Failed to remove Komga target');
+            dialogs.toast('Failed to remove Komga target', 'error');
         }
     }
 

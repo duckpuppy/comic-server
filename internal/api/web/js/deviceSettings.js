@@ -492,10 +492,10 @@ class DeviceSettings {
             }
 
             this.device.friendly_name = newName;
-            alert('Friendly name updated successfully');
+            dialogs.toast('Friendly name updated successfully', 'success');
         } catch (error) {
             console.error('Failed to update friendly name:', error);
-            alert(`Failed to update friendly name: ${error.message}`);
+            dialogs.toast(`Failed to update friendly name: ${error.message}`, 'error');
         }
     }
 
@@ -533,10 +533,10 @@ class DeviceSettings {
             this.render();
             this.attachListeners();
 
-            alert(`Successfully added "${listName}" to this device.`);
+            dialogs.toast(`Successfully added "${listName}" to this device.`, 'success');
         } catch (error) {
             console.error('Failed to add list:', error);
-            alert(`Failed to add list: ${error.message}`);
+            dialogs.toast(`Failed to add list: ${error.message}`, 'error');
         }
     }
 
@@ -566,7 +566,7 @@ class DeviceSettings {
             console.log(`List ${enabled ? 'enabled' : 'disabled'} successfully`);
         } catch (error) {
             console.error('Failed to toggle list:', error);
-            alert(`Failed to update list: ${error.message}`);
+            dialogs.toast(`Failed to update list: ${error.message}`, 'error');
 
             // Reload to show correct state
             await this.loadDeviceInfo();
@@ -576,9 +576,13 @@ class DeviceSettings {
     }
 
     async removeList(listId, listName) {
-        if (!confirm(`Remove "${listName}" from this device?\n\nThis will stop syncing this list to the device.`)) {
-            return;
-        }
+        const ok = await dialogs.confirm({
+            title: 'Remove List',
+            message: `Remove "${listName}" from this device? This will stop syncing this list to the device.`,
+            confirmLabel: 'Remove',
+            danger: true,
+        });
+        if (!ok) return;
 
         try {
             const response = await fetch(`/api/devices/lists/${this.deviceId}/${listId}`, {
@@ -595,10 +599,10 @@ class DeviceSettings {
             this.render();
             this.attachListeners();
 
-            alert(`Successfully removed "${listName}" from this device.`);
+            dialogs.toast(`Successfully removed "${listName}" from this device.`, 'success');
         } catch (error) {
             console.error('Failed to remove list:', error);
-            alert(`Failed to remove list: ${error.message}`);
+            dialogs.toast(`Failed to remove list: ${error.message}`, 'error');
         }
     }
 
@@ -760,10 +764,10 @@ class DeviceSettings {
             this.render();
             this.attachListeners();
 
-            alert('Settings saved successfully');
+            dialogs.toast('Settings saved successfully', 'success');
         } catch (error) {
             console.error('Failed to save settings:', error);
-            alert(`Failed to save settings: ${error.message}`);
+            dialogs.toast(`Failed to save settings: ${error.message}`, 'error');
         }
     }
 

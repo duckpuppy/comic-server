@@ -176,9 +176,12 @@ class TrashBrowser {
     async confirmAndRestore(ids) {
         if (ids.length === 0) return;
         const label = ids.length === 1 ? '1 item' : `${ids.length} items`;
-        if (!confirm(`Restore ${label} from trash? If a file now occupies the original spot, it will be quarantined in its place.`)) {
-            return;
-        }
+        const ok = await dialogs.confirm({
+            title: 'Restore from Trash',
+            message: `Restore ${label} from trash? If a file now occupies the original spot, it will be quarantined in its place.`,
+            confirmLabel: 'Restore',
+        });
+        if (!ok) return;
         try {
             const response = await fetch('/api/trash/restore', {
                 method: 'POST',
@@ -191,7 +194,7 @@ class TrashBrowser {
             }
             const result = JSON.parse(text);
             if (result.errors && result.errors.length > 0) {
-                alert(`Restored ${result.restored}, but some failed:\n${result.errors.join('\n')}`);
+                dialogs.toast(`Restored ${result.restored}, but some failed:\n${result.errors.join('\n')}`, 'error', 8000);
             }
             ids.forEach(id => this.selectedIds.delete(id));
             await this.loadEntries();
@@ -199,7 +202,7 @@ class TrashBrowser {
             this.attachListeners();
         } catch (error) {
             console.error('Failed to restore trash entries:', error);
-            alert('Failed to restore: ' + error.message);
+            dialogs.toast('Failed to restore: ' + error.message, 'error');
         }
     }
 

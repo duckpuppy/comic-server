@@ -98,9 +98,13 @@ class DeviceManager {
     }
 
     async unregisterDevice(deviceId) {
-        if (!confirm('Are you sure you want to unregister this device?')) {
-            return;
-        }
+        const ok = await dialogs.confirm({
+            title: 'Unregister Device',
+            message: 'Are you sure you want to unregister this device?',
+            confirmLabel: 'Unregister',
+            danger: true,
+        });
+        if (!ok) return;
 
         try {
             const response = await fetch('/api/devices/unregister', {

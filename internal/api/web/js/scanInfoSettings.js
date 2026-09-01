@@ -215,10 +215,10 @@ class ScanInfoSettings {
             }
 
             this.dirty = false;
-            alert('Scan info settings saved.');
+            dialogs.toast('Scan info settings saved.', 'success');
         } catch (error) {
             console.error('Failed to save scan info settings:', error);
-            alert(`Failed to save: ${error.message}`);
+            dialogs.toast(`Failed to save: ${error.message}`, 'error');
         } finally {
             this.saving = false;
             this.render();

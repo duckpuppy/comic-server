@@ -224,12 +224,12 @@ class DeviceDetail {
             }
 
             if (response.status === 409) {
-                alert('This device is already syncing.');
+                dialogs.toast('This device is already syncing.', 'error');
                 return;
             }
 
             if (response.status === 404) {
-                alert('This device is not currently connected.');
+                dialogs.toast('This device is not currently connected.', 'error');
                 await this.loadDeviceInfo();
                 if (this.device) {
                     this.render();
@@ -242,7 +242,7 @@ class DeviceDetail {
             throw new Error(text || `HTTP ${response.status}`);
         } catch (error) {
             console.error('Failed to trigger sync:', error);
-            alert('Failed to start sync. Please try again.');
+            dialogs.toast('Failed to start sync. Please try again.', 'error');
         }
     }
 
@@ -595,10 +595,10 @@ class DeviceDetail {
                 this.attachListeners();
             }
 
-            alert(`Successfully assigned "${listName}" to this device.`);
+            dialogs.toast(`Successfully assigned "${listName}" to this device.`, 'success');
         } catch (error) {
             console.error('Failed to assign list:', error);
-            alert(`Failed to assign list: ${error.message}`);
+            dialogs.toast(`Failed to assign list: ${error.message}`, 'error');
         }
     }
 
@@ -628,7 +628,7 @@ class DeviceDetail {
             console.log(`List ${enabled ? 'enabled' : 'disabled'} successfully`);
         } catch (error) {
             console.error('Failed to toggle list:', error);
-            alert(`Failed to update list: ${error.message}`);
+            dialogs.toast(`Failed to update list: ${error.message}`, 'error');
 
             // Revert the checkbox
             await this.loadDeviceInfo();
@@ -640,9 +640,13 @@ class DeviceDetail {
     }
 
     async removeList(listId, listName) {
-        if (!confirm(`Remove "${listName}" from this device?\n\nThis will stop syncing this list to the device.`)) {
-            return;
-        }
+        const ok = await dialogs.confirm({
+            title: 'Remove List',
+            message: `Remove "${listName}" from this device? This will stop syncing this list to the device.`,
+            confirmLabel: 'Remove',
+            danger: true,
+        });
+        if (!ok) return;
 
         try {
             const response = await fetch(`/api/devices/lists/${this.deviceId}/${listId}`, {
@@ -661,10 +665,10 @@ class DeviceDetail {
                 this.attachListeners();
             }
 
-            alert(`Successfully removed "${listName}" from this device.`);
+            dialogs.toast(`Successfully removed "${listName}" from this device.`, 'success');
         } catch (error) {
             console.error('Failed to remove list:', error);
-            alert(`Failed to remove list: ${error.message}`);
+            dialogs.toast(`Failed to remove list: ${error.message}`, 'error');
         }
     }
 
