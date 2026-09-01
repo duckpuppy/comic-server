@@ -244,8 +244,13 @@ func isSeriesMatcherType(xmlType string) bool {
 }
 
 func NewMatcherFromXML(xmlMatcher *ComicBookMatcher) (*Matcher, error) {
-	// Check if this is a group matcher (has nested matchers)
-	if strings.Contains(xmlMatcher.Type, "GroupMatcher") {
+	// Check if this is a group matcher (has nested matchers). Must be an
+	// exact match, not a substring check - "ComicBookSeriesGroupMatcher"
+	// (the SeriesGroup field) also ends in "GroupMatcher" and was
+	// previously misclassified as an empty group by a looser check,
+	// silently breaking any real matcher on that field (found via
+	// comic-server-764.3's real-data tests).
+	if xmlMatcher.Type == "ComicBookGroupMatcher" {
 		// Group matchers don't have MatchOperator/MatchValue, skip them
 		// The nested matchers will be processed separately
 		return nil, fmt.Errorf("group matcher not supported as individual matcher")
@@ -286,17 +291,35 @@ func NewMatcherFromXML(xmlMatcher *ComicBookMatcher) (*Matcher, error) {
 	fieldName := extractFieldName(xmlMatcher.Type)
 
 	// Special handling for CustomValues matchers
-	// CustomValues uses both MatchValue (key name) and MatchValue2 (expected value)
+	// CustomValues uses both MatchValue (key name) and MatchValue2 (expected
+	// value/comparison target). Operator defaults to Equals (parseOperator's
+	// own default for an empty/"0" MatchOperator), same as every existing
+	// CustomValues matcher already on disk, but now also honors
+	// Contains/StartsWith/Regex/etc - see comic-server-764.3 (added to
+	// support Data Manager's custom-value rule conditions, which benefits
+	// smart lists using CustomValues too).
 	if fieldName == "CustomValues" {
-		// CustomValues matcher: key (MatchValue) must equal value (MatchValue2)
-		return &Matcher{
+		m := &Matcher{
 			Type:        "CustomValues",
 			MatchValue:  xmlMatcher.MatchValue,  // Key name
 			MatchValue2: xmlMatcher.MatchValue2, // Expected value
 			Not:         xmlMatcher.Not,
 			IgnoreCase:  true,
-			Operator:    OperatorEquals,
-		}, nil
+		}
+		if err := m.parseOperator(xmlMatcher.MatchOperator); err != nil {
+			return nil, fmt.Errorf("invalid operator %q: %w", xmlMatcher.MatchOperator, err)
+		}
+		// parseOperator's own Regex handling compiles m.MatchValue, which
+		// holds the custom value's KEY name here, not the pattern - the
+		// pattern is in MatchValue2. Recompile against the right string.
+		if m.Operator == OperatorRegex {
+			rx, err := regexp.Compile(m.MatchValue2)
+			if err != nil {
+				return nil, fmt.Errorf("invalid regex %q: %w", m.MatchValue2, err)
+			}
+			m.compiledRegex = rx
+		}
+		return m, nil
 	}
 
 	// Special handling for the Expression matcher: MatchValue is a raw
@@ -479,10 +502,18 @@ func (m *Matcher) matchInternal(book *ComicBook) bool {
 			actualValue = *found
 		}
 
-		if m.IgnoreCase {
-			return strings.EqualFold(actualValue, expectedValue)
+		// Reuse matchString's operator semantics (Contains/StartsWith/
+		// Regex/ContainsAny/etc, not just Equals) via a shadow Matcher -
+		// m.MatchValue holds the custom value's KEY name here, not the
+		// comparison target, so matchString must run against MatchValue2
+		// instead without mutating m itself.
+		shadow := &Matcher{
+			Operator:      m.Operator,
+			MatchValue:    expectedValue,
+			IgnoreCase:    m.IgnoreCase,
+			compiledRegex: m.compiledRegex,
 		}
-		return actualValue == expectedValue
+		return shadow.matchString(actualValue)
 	}
 
 	// Extract the value from the book based on matcher type
@@ -497,9 +528,16 @@ func (m *Matcher) matchInternal(book *ComicBook) bool {
 		MatcherTypeDay, MatcherTypeWeek,
 		MatcherTypeNewPages, MatcherTypeBookmarkCount, MatcherTypeBookPrice:
 		return m.matchNumeric(value)
-	case MatcherTypeAlternateNumber:
-		// AlternateNumber is stored as a string in ComicBook but matched numerically
-		return m.matchNumeric(value)
+	case MatcherTypeNumber, MatcherTypeAlternateNumber:
+		// Comic issue numbers are "pseudo-numeric" (ComicRack/Data
+		// Manager's own term) - real values like "1A", "10.5AU" aren't
+		// plain floats, so a naive numeric parse would just fail to
+		// match them at all. matchPseudoNumeric splits into a leading
+		// numeric portion plus suffix so "1A" sorts sanely against "2"
+		// and "10" (see comic-server-764.3's design notes - needed for
+		// the Data Manager rule engine's Number/AlternateNumber
+		// Greater/Less/Range support, benefits smart lists identically).
+		return m.matchPseudoNumeric(value)
 	case MatcherTypeAddedTime, MatcherTypeOpenedTime,
 		MatcherTypeModified, MatcherTypeCreation,
 		MatcherTypePublished, MatcherTypeReleased:
@@ -878,6 +916,77 @@ func (m *Matcher) matchNumeric(value string) bool {
 	}
 }
 
+// splitPseudoNumeric splits a ComicRack "pseudo-numeric" issue-number-like
+// string (e.g. "1", "1A", "10.5", "0.5AU") into its leading numeric
+// portion and trailing suffix, so a plain float parse doesn't just fail
+// outright on the common case of a lettered issue number. ok is false if
+// s has no leading numeric portion at all.
+func splitPseudoNumeric(s string) (num float64, suffix string, ok bool) {
+	i := 0
+	n := len(s)
+	if i < n && s[i] == '-' {
+		i++
+	}
+	start := i
+	for i < n && s[i] >= '0' && s[i] <= '9' {
+		i++
+	}
+	if i < n && s[i] == '.' {
+		j := i + 1
+		for j < n && s[j] >= '0' && s[j] <= '9' {
+			j++
+		}
+		if j > i+1 {
+			i = j
+		}
+	}
+	if i == start {
+		return 0, s, false
+	}
+	f, err := strconv.ParseFloat(s[:i], 64)
+	if err != nil {
+		return 0, s, false
+	}
+	return f, s[i:], true
+}
+
+// comparePseudoNumeric compares two pseudo-numeric strings: by numeric
+// value first, then by suffix as a tie-break (so "1" < "1A"). Falls back
+// to a plain string compare if either side has no numeric portion at all.
+func comparePseudoNumeric(a, b string) int {
+	an, asfx, aok := splitPseudoNumeric(a)
+	bn, bsfx, bok := splitPseudoNumeric(b)
+	if !aok || !bok {
+		return strings.Compare(a, b)
+	}
+	if an != bn {
+		if an < bn {
+			return -1
+		}
+		return 1
+	}
+	return strings.Compare(asfx, bsfx)
+}
+
+// matchPseudoNumeric handles Number/AlternateNumber comparisons. Only the
+// base operators are needed here - GreaterEq/LesserEq expand into an
+// OR-group of Greater/Lesser + Equals at the Data Manager translation
+// layer (see comic-server-764.3), not a distinct operator.
+func (m *Matcher) matchPseudoNumeric(value string) bool {
+	switch m.Operator {
+	case OperatorEquals:
+		return comparePseudoNumeric(value, m.MatchValue) == 0
+	case OperatorGreater:
+		return comparePseudoNumeric(value, m.MatchValue) > 0
+	case OperatorLesser:
+		return comparePseudoNumeric(value, m.MatchValue) < 0
+	case OperatorInRange:
+		return comparePseudoNumeric(value, m.MatchValue) >= 0 && comparePseudoNumeric(value, m.MatchValue2) <= 0
+	default:
+		return false
+	}
+}
+
 // matchDate performs date/time comparison
 func (m *Matcher) matchDate(value string) bool {
 	dateValue, err := time.Parse(time.RFC3339, value)
@@ -1066,8 +1175,10 @@ func (m *Matcher) matchYesNo(value string) bool {
 
 // evaluateMatcher recursively evaluates a matcher (value or group) against a book
 func evaluateMatcher(xmlMatcher *ComicBookMatcher, book *ComicBook, ctx *evalCtx) bool {
-	// Check if this is a group matcher
-	if strings.Contains(xmlMatcher.Type, "GroupMatcher") {
+	// Check if this is a group matcher - exact match, see the identical
+	// check in NewMatcherFromXML for why a substring check breaks
+	// SeriesGroup.
+	if xmlMatcher.Type == "ComicBookGroupMatcher" {
 		groupMode := xmlMatcher.MatcherMode
 		if groupMode == "" {
 			groupMode = "And"

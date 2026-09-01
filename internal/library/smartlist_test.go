@@ -1374,6 +1374,84 @@ func TestCustomValuesMatcher(t *testing.T) {
 	}
 }
 
+// TestCustomValuesMatcher_Operators covers comic-server-764.3's extension
+// of the CustomValues matcher beyond exact-equals - Contains/StartsWith/
+// Regex/ContainsAny/etc now work against a custom value's stored value,
+// same as any other string field, while an explicitly-empty or "0"
+// MatchOperator still means Equals (see TestCustomValuesMatcher above for
+// that backward-compat coverage).
+func TestCustomValuesMatcher_Operators(t *testing.T) {
+	tests := []struct {
+		name     string
+		store    string
+		matchKey string
+		operator MatchOperator
+		matchVal string
+		want     bool
+	}{
+		{
+			name:     "contains - match",
+			store:    ",Concept=DC Rebirth Event",
+			matchKey: "Concept",
+			operator: OperatorContains,
+			matchVal: "Rebirth",
+			want:     true,
+		},
+		{
+			name:     "contains - no match",
+			store:    ",Concept=DC Rebirth Event",
+			matchKey: "Concept",
+			operator: OperatorContains,
+			matchVal: "Crisis",
+			want:     false,
+		},
+		{
+			name:     "starts with - match",
+			store:    ",Concept=DC Rebirth Event",
+			matchKey: "Concept",
+			operator: OperatorStartsWith,
+			matchVal: "DC",
+			want:     true,
+		},
+		{
+			name:     "starts with - absent key never matches a non-empty prefix",
+			store:    "",
+			matchKey: "Concept",
+			operator: OperatorStartsWith,
+			matchVal: "DC",
+			want:     false,
+		},
+		{
+			name:     "regex - match",
+			store:    ",Concept=DC Rebirth Event",
+			matchKey: "Concept",
+			operator: OperatorRegex,
+			matchVal: "^DC .*Event$",
+			want:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			book := &ComicBook{CustomValuesStore: tt.store}
+			xmlM := &ComicBookMatcher{
+				Type:          "ComicBookCustomValuesMatcher",
+				MatchValue:    tt.matchKey,
+				MatchValue2:   tt.matchVal,
+				MatchOperator: strconv.Itoa(int(tt.operator)),
+			}
+			matcher, err := NewMatcherFromXML(xmlM)
+			if err != nil {
+				t.Fatalf("NewMatcherFromXML error: %v", err)
+			}
+			got := matcher.Match(book)
+			if got != tt.want {
+				t.Errorf("Match() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestListContainsMatcher tests MatchOperator=6 (ListContains) for tag-like fields
 func TestListContainsMatcher(t *testing.T) {
 	tests := []struct {
