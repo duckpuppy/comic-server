@@ -242,8 +242,8 @@ func ApplyMetadata(book *library.ComicBook, volume Volume, detail *IssueDetail, 
 	note("Web", setString(&book.Web, detail.SiteDetailURL, cfg.UpdateWebpage, cfg.OverwriteExisting, cfg.IgnoreBlanks))
 
 	// Identity tracking is always applied, independent of the per-field toggles above.
-	newStore := setCustomValue(book.CustomValuesStore, "comicvine_volume", strconv.Itoa(volume.ID))
-	newStore = setCustomValue(newStore, "comicvine_issue", strconv.Itoa(detail.ID))
+	newStore := library.SetCustomValue(book.CustomValuesStore, "comicvine_volume", strconv.Itoa(volume.ID))
+	newStore = library.SetCustomValue(newStore, "comicvine_issue", strconv.Itoa(detail.ID))
 	if newStore != book.CustomValuesStore {
 		book.CustomValuesStore = newStore
 		note("CustomValuesStore", true)
@@ -418,44 +418,6 @@ func appendScrapeNote(book *library.ComicBook, at time.Time) bool {
 		book.Notes = book.Notes + "; " + stamp
 	}
 	return true
-}
-
-// setCustomValue adds or updates a key in a CustomValuesStore string
-// (format: ",key1=value1,key2=value2"), preserving other keys.
-func setCustomValue(store, key, value string) string {
-	pairs := splitCustomValues(store)
-	found := false
-	for i, p := range pairs {
-		k, _, ok := strings.Cut(p, "=")
-		if ok && k == key {
-			pairs[i] = key + "=" + value
-			found = true
-			break
-		}
-	}
-	if !found {
-		pairs = append(pairs, key+"="+value)
-	}
-	return joinCustomValues(pairs)
-}
-
-func splitCustomValues(store string) []string {
-	var pairs []string
-	for p := range strings.SplitSeq(store, ",") {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-		pairs = append(pairs, p)
-	}
-	return pairs
-}
-
-func joinCustomValues(pairs []string) string {
-	if len(pairs) == 0 {
-		return ""
-	}
-	return "," + strings.Join(pairs, ",")
 }
 
 // setCVDBTag replaces any existing "CVDB<id>" tag with the current issue's
