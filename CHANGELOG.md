@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.13.0](https://github.com/duckpuppy/comic-server/compare/v1.12.0...v1.13.0) (2026-09-01)
+
+
+### Features
+
+* finish comic-server-orl - no native dialogs left in the web UI ([f32cbf9](https://github.com/duckpuppy/comic-server/commit/f32cbf904779500f48baaa203033c9818dd7386a))
+* replace listsBrowser.js native dialogs with in-app modals ([e4f804b](https://github.com/duckpuppy/comic-server/commit/e4f804be6a19c61015c00f7e318d245ab21cb11c))
+
+
+### Bug Fixes
+
+* POST /api/library/lists returned capitalized JSON keys, breaking created.id ([3e14cd2](https://github.com/duckpuppy/comic-server/commit/3e14cd2f637f3641dc838f5db7ea0792d229d165))
+
 ## [1.12.0](https://github.com/duckpuppy/comic-server/compare/v1.11.2...v1.12.0) (2026-08-29)
 
 
