@@ -737,6 +737,45 @@
     margin-bottom: 1rem;
 }
 
+/* Data Manager Panel */
+.datamanager-actions {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.datamanager-errors {
+    color: var(--danger-color, #dc2626);
+}
+
+.datamanager-diff-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    overflow: hidden;
+    margin-top: 1rem;
+}
+
+.datamanager-diff-table th,
+.datamanager-diff-table td {
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+    vertical-align: top;
+}
+
+.datamanager-diff-table th {
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 0.875rem;
+}
+
+.datamanager-diff-table tr:last-child td {
+    border-bottom: none;
+}
+
 /* Matchers Panel */
 .matcher-mode {
     display: inline-block;

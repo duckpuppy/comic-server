@@ -340,6 +340,18 @@ func (s *Server) handleListsRouter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// /api/library/lists/:listId/datamanager-preview
+	if strings.HasSuffix(path, "/datamanager-preview") {
+		s.handleDataManagerPreview(w, r)
+		return
+	}
+
+	// /api/library/lists/:listId/datamanager-apply
+	if strings.HasSuffix(path, "/datamanager-apply") {
+		s.handleDataManagerApply(w, r)
+		return
+	}
+
 	http.NotFound(w, r)
 }
 

@@ -14,6 +14,13 @@ class ListDetail {
         this.editState = null;
         this.schema = null;
         this.activeTab = 'matchers';
+        // dmResult holds the last preview/apply response so the panel can
+        // render its diff table across re-renders without re-fetching -
+        // cleared when the user navigates away or applies (apply's result
+        // stays visible until the next preview, matching cbz-convert's own
+        // "leave the last result on screen" pattern).
+        this.dmResult = null;
+        this.dmRunning = false;
     }
 
     async init(ctx) {
@@ -214,6 +221,7 @@ class ListDetail {
                 ${this.renderTabButton('komga', 'Komga')}
                 ${this.renderTabButton('scaninfo', 'Scan Info')}
                 ${this.renderTabButton('convert', 'Convert')}
+                ${this.renderTabButton('datamanager', 'Data Manager')}
             </div>
 
             <div class="list-detail-tab-panels">
@@ -259,8 +267,51 @@ class ListDetail {
                     ${this.renderCBZConvertButton()}
                     <div id="cbz-convert-result"></div>
                 </div>
+
+                <!-- Data Manager Panel -->
+                <div class="panel datamanager-panel${this.tabPanelActiveClass('datamanager')}" data-tab-panel="datamanager">
+                    <h2>Data Manager Rules</h2>
+                    <p class="empty-message">Runs every enabled Data Manager rule (comic-server-764) against this list's books and previews every field it would change before anything is written.</p>
+                    <div class="datamanager-actions">
+                        <button class="btn btn-primary" id="run-dm-preview-btn">Preview Changes</button>
+                        <button class="btn btn-primary" id="run-dm-apply-btn" ${this.dmResult && this.dmResult.changed > 0 && !this.dmResult.applied ? '' : 'disabled'}>Apply Changes</button>
+                    </div>
+                    <div id="datamanager-result">${this.renderDataManagerResult()}</div>
+                </div>
             </div>
         `;
+    }
+
+    renderDataManagerResult() {
+        if (this.dmRunning) {
+            return '<p class="empty-message">Running…</p>';
+        }
+        const r = this.dmResult;
+        if (!r) {
+            return '';
+        }
+
+        let html = `<p>${r.applied ? 'Applied' : 'Previewed'}: processed ${r.processed}, ${r.changed} book${r.changed === 1 ? '' : 's'} changed.</p>`;
+        if (r.errors && r.errors.length > 0) {
+            html += `<p class="datamanager-errors">Errors: ${this.escapeHtml(r.errors.join('; '))}</p>`;
+        }
+        if (r.books && r.books.length > 0) {
+            html += '<table class="datamanager-diff-table"><thead><tr><th>Book</th><th>Field</th><th>Old</th><th>New</th></tr></thead><tbody>';
+            for (const book of r.books) {
+                const label = `${book.series}${book.number ? ' #' + book.number : ''}${book.title ? ' - ' + book.title : ''}`;
+                book.changes.forEach((c, i) => {
+                    const fieldLabel = c.custom ? `${c.field} (custom)` : c.field;
+                    html += '<tr>';
+                    if (i === 0) {
+                        html += `<td rowspan="${book.changes.length}">${this.escapeHtml(label)}</td>`;
+                    }
+                    html += `<td>${this.escapeHtml(fieldLabel)}</td><td>${this.escapeHtml(c.old)}</td><td>${this.escapeHtml(c.new)}</td>`;
+                    html += '</tr>';
+                });
+            }
+            html += '</tbody></table>';
+        }
+        return html;
     }
 
     renderTabButton(tabId, label) {
@@ -807,6 +858,64 @@ class ListDetail {
         const runCBZConvertBtn = document.getElementById('run-cbz-convert-btn');
         if (runCBZConvertBtn) {
             runCBZConvertBtn.addEventListener('click', () => this.runCBZConvert());
+        }
+
+        const runDMPreviewBtn = document.getElementById('run-dm-preview-btn');
+        if (runDMPreviewBtn) {
+            runDMPreviewBtn.addEventListener('click', () => this.runDataManager(false));
+        }
+
+        const runDMApplyBtn = document.getElementById('run-dm-apply-btn');
+        if (runDMApplyBtn) {
+            runDMApplyBtn.addEventListener('click', () => this.runDataManager(true));
+        }
+    }
+
+    // runDataManager drives both the preview and apply calls - apply
+    // re-runs the full rule set rather than replaying the previewed diff,
+    // so it always reflects the library's current state (matches
+    // cbz-convert's own re-match-then-act pattern, not a stale preview
+    // getting blindly committed).
+    async runDataManager(apply) {
+        if (apply) {
+            const ok = await dialogs.confirm({
+                title: 'Apply Data Manager Rules',
+                message: `Apply every enabled Data Manager rule to this list's books now? This commits all ${this.dmResult ? this.dmResult.changed : ''} changed book(s) in one action and cannot be undone from this page.`,
+                confirmLabel: 'Apply',
+                danger: true,
+            });
+            if (!ok) return;
+        }
+
+        const previewBtn = document.getElementById('run-dm-preview-btn');
+        const applyBtn = document.getElementById('run-dm-apply-btn');
+        const resultEl = document.getElementById('datamanager-result');
+        this.dmRunning = true;
+        if (previewBtn) previewBtn.disabled = true;
+        if (applyBtn) applyBtn.disabled = true;
+        resultEl.innerHTML = this.renderDataManagerResult();
+
+        try {
+            const suffix = apply ? 'datamanager-apply' : 'datamanager-preview';
+            const response = await fetch(`/api/library/lists/${this.listId}/${suffix}`, { method: 'POST' });
+            const text = await response.text();
+            if (!response.ok) {
+                throw new Error(text || `Failed to run Data Manager ${apply ? 'apply' : 'preview'}`);
+            }
+            this.dmResult = JSON.parse(text);
+        } catch (error) {
+            console.error('Failed to run Data Manager rules:', error);
+            this.dmResult = null;
+            resultEl.innerHTML = `<p class="datamanager-errors">Failed: ${this.escapeHtml(error.message)}</p>`;
+            return;
+        } finally {
+            this.dmRunning = false;
+            if (previewBtn) previewBtn.disabled = false;
+        }
+
+        resultEl.innerHTML = this.renderDataManagerResult();
+        if (applyBtn) {
+            applyBtn.disabled = !(this.dmResult.changed > 0 && !this.dmResult.applied);
         }
     }
 
