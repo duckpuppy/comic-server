@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -201,6 +202,59 @@ func TestHandleGetListTree_MatchesHandleGetLists(t *testing.T) {
 	}
 	if treeCount != listsResp.Total {
 		t.Errorf("Nav tree leaf count (%d) diverged from /api/library/lists total (%d)", treeCount, listsResp.Total)
+	}
+}
+
+// TestHandleCreateList_ResponseHasLowercaseID is the regression test for
+// comic-server-3rb: handleCreateList used to Encode() the raw
+// library.ComicListItem directly, whose fields are only XML-tagged, so
+// encoding/json fell back to their capitalized Go names ("ID", not "id").
+// The frontend reads response.id right after creating a list to navigate
+// to it (listsBrowser.js's showNewListDialog), so that silently sent the
+// browser to /lists/undefined. This asserts the JSON body actually has a
+// lowercase "id" that resolves back to a real list via a follow-up GET -
+// not just that a field named ID exists somewhere in the struct.
+func TestHandleCreateList_ResponseHasLowercaseID(t *testing.T) {
+	lib := &library.ComicLibrary{}
+	backend := library.NewXMLBackendFromLibrary(lib, filepath.Join(t.TempDir(), "ComicDb.xml"), nil)
+	server := &Server{backend: backend, listCache: library.NewListCache(5 * time.Minute)}
+
+	body := `{"name":"Currently Reading","type":"ComicSmartListItem","matcher_mode":"And","matchers":[]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/library/lists", strings.NewReader(body))
+	w := httptest.NewRecorder()
+
+	server.handleCreateList(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Decode into a map, not a tagged struct: encoding/json's Unmarshal
+	// falls back to a case-INSENSITIVE field match, so a struct with a
+	// `json:"id"` tag would happily accept a wire-format "ID" too and
+	// mask the exact bug this test exists to catch - the frontend's
+	// JS `created.id` property access is case-sensitive and would see
+	// undefined for that same body.
+	var raw map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&raw); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	id, ok := raw["id"].(string)
+	if !ok || id == "" {
+		t.Fatalf("expected a non-empty lowercase \"id\" key in the response body, got: %s", w.Body.String())
+	}
+	if name, _ := raw["name"].(string); name != "Currently Reading" {
+		t.Errorf("expected lowercase \"name\" key %q, got %q (body: %s)", "Currently Reading", name, w.Body.String())
+	}
+
+	// The real-world failure mode: the frontend immediately GETs
+	// /api/library/lists/<created id> to land on the new list's detail
+	// page. Prove that ID actually resolves.
+	getReq := httptest.NewRequest(http.MethodGet, "/api/library/lists/"+id, nil)
+	getW := httptest.NewRecorder()
+	server.handleGetListDetail(getW, getReq)
+	if getW.Code != http.StatusOK {
+		t.Fatalf("GET /api/library/lists/%s: expected 200, got %d: %s", id, getW.Code, getW.Body.String())
 	}
 }
 

@@ -623,7 +623,16 @@ func (s *Server) handleCreateList(w http.ResponseWriter, r *http.Request) {
 	log.Info().Str("id", list.ID).Str("name", list.Name).Msg("Smart list created")
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(list)
+	// Encode a small lowercase-keyed response rather than the raw
+	// library.ComicListItem (whose fields are only XML-tagged, so
+	// encoding/json falls back to their capitalized Go names) - the
+	// frontend reads response.id after creating a list to navigate to it
+	// (comic-server-3rb: a bare Encode(list) here made created.id
+	// silently undefined, sending the browser to /lists/undefined).
+	json.NewEncoder(w).Encode(struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}{ID: list.ID, Name: list.Name})
 }
 
 // handleUpdateList replaces an existing smart list. PUT /api/library/lists/:id
