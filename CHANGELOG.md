@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.16.0](https://github.com/duckpuppy/comic-server/compare/v1.15.0...v1.16.0) (2026-09-01)
+
+
+### Features
+
+* add configdb schema for Data Manager rule groups/rulesets ([6eaf8ea](https://github.com/duckpuppy/comic-server/commit/6eaf8ea7b86369b6068f7acd4a5a3d840e1bfb55))
+* Data Manager apply/preview/approve flow ([b48ae6f](https://github.com/duckpuppy/comic-server/commit/b48ae6fb845e0368a8539dac291e78e2c1d5ec62))
+* Data Manager rule engine - action side (comic-server-764.3, part 2) ([b24a566](https://github.com/duckpuppy/comic-server/commit/b24a5669341e837912c6b3f1ae9761b0bd4c1b32))
+* Data Manager rule engine - condition side (comic-server-764.3, part 1) ([b261ea6](https://github.com/duckpuppy/comic-server/commit/b261ea63e0dc50a4752aeae8d22dbb47e92e6dcb))
+* import dataman.dat XML into config.db ([61af7e6](https://github.com/duckpuppy/comic-server/commit/61af7e6a9b8284a28b84dbf9d67df7f3ba492fbb))
+
+
+### Bug Fixes
+
+* bare "Not" modifier unsupported on built-in string/numeric/date/language fields ([3c5868b](https://github.com/duckpuppy/comic-server/commit/3c5868b338918663150c805ef45ad0641da438b2))
+* datamanager import --force wipes and replaces instead of duplicating ([b46f65d](https://github.com/duckpuppy/comic-server/commit/b46f65d2bf5ebba677ca9d815774d7a992093528))
+* SeriesGroup matcher misclassified as an empty group; add pseudo-numeric Number comparison; extend CustomValues operators ([9e7490b](https://github.com/duckpuppy/comic-server/commit/9e7490b553e502400506d3984e1236810fd24bdc))
+
+
+### Code Refactoring
+
+* move custom-value write helper to internal/library, export it ([80ab7fe](https://github.com/duckpuppy/comic-server/commit/80ab7fee286f8a640d653c5568cf349de475b6f4))
+
 ## [1.15.0](https://github.com/duckpuppy/comic-server/compare/v1.14.0...v1.15.0) (2026-09-01)
 
 
