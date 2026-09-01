@@ -339,8 +339,6 @@ class ListDetail {
         const showValue = selectedOp.hasValue !== false;
         const showValue2 = !!selectedOp.hasValue2;
 
-        const isYesNo = fieldType === 'yesno' || fieldType === 'manga';
-
         return `
             <li class="matcher-editor-row" data-index="${index}">
                 <div class="matcher-editor-controls">
@@ -351,12 +349,10 @@ class ListDetail {
                     <select class="matcher-type-select" data-index="${index}">
                         ${typeOptions}
                     </select>
-                    ${!isYesNo ? `
                     <select class="matcher-op-select" data-index="${index}">
                         ${opOptions}
                     </select>
-                    ` : ''}
-                    ${showValue && !isYesNo ? `
+                    ${showValue ? `
                     <input type="text" class="matcher-value-input" data-index="${index}"
                            value="${this.escapeHtml(matcher.MatchValue || '')}" placeholder="value">
                     ` : ''}

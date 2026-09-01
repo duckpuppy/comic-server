@@ -143,6 +143,7 @@ func getListSchema() *ListSchema {
 			{ID: "ComicBookModifiedMatcher", Label: "Date Modified", Category: "File", FieldType: "date"},
 			{ID: "ComicBookCreationMatcher", Label: "Date Created", Category: "File", FieldType: "date"},
 			{ID: "ComicBookIsMissingMatcher", Label: "File Missing", Category: "File", FieldType: "yesno"},
+			{ID: "ComicBookIsLinkedMatcher", Label: "Linked", Category: "File", FieldType: "yesno"},
 			// Catalog
 			{ID: "ComicBookBookAgeMatcher", Label: "Book Age", Category: "Catalog", FieldType: "string"},
 			{ID: "ComicBookBookConditionMatcher", Label: "Condition", Category: "Catalog", FieldType: "string"},
