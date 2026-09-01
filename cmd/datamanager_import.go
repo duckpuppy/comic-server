@@ -22,17 +22,21 @@ var datamanagerImportCmd = &cobra.Command{
 its groups, rulesets, rules, and actions into config.db, preserving the
 file's own nested folder structure and depth-first evaluation order.
 
-This is a one-time migration of existing curated data, not an ongoing
-sync - the source file is only ever read, never modified. Running import
+This only ever reads the source file, never modifies it. Running import
 again on a config.db that already has Data Manager rules is refused
-unless --force is passed, since re-importing would duplicate everything
-rather than merge or update it.`,
+unless --force is passed - since rules are still actively authored in
+ComicRack's Data Manager plugin until it's fully retired, re-import is a
+real recurring workflow, not a one-time migration. --force WIPES every
+existing Data Manager group/ruleset/rule/action and replaces them with
+the freshly parsed file, atomically (nothing is deleted if the parse or
+insert fails) - it does not merge, and any rule you created directly in
+config.db (not from a dataman.dat import) would be lost too.`,
 	RunE: runDatamanagerImport,
 }
 
 func init() {
 	datamanagerImportCmd.Flags().StringVar(&dmImportPath, "dat", "", "path to dataman.dat (required)")
-	datamanagerImportCmd.Flags().BoolVar(&dmImportForce, "force", false, "import even if config.db already has Data Manager rules")
+	datamanagerImportCmd.Flags().BoolVar(&dmImportForce, "force", false, "wipe existing Data Manager rules and replace them with this import")
 	_ = datamanagerImportCmd.MarkFlagRequired("dat")
 	datamanagerCmd.AddCommand(datamanagerImportCmd)
 }
@@ -65,7 +69,7 @@ func runDatamanagerImport(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to check for existing Data Manager rules: %w", err)
 		}
 		if len(existing) > 0 || len(existingRulesets) > 0 {
-			return fmt.Errorf("config.db already has Data Manager rules - pass --force to import anyway (this will duplicate them, not merge)")
+			return fmt.Errorf("config.db already has Data Manager rules - pass --force to wipe them and import fresh (this replaces, it does not merge)")
 		}
 	}
 
@@ -104,10 +108,14 @@ func runDatamanagerImport(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if err := db.ImportDataManagerRules(groups, rulesets); err != nil {
+	if err := db.ImportDataManagerRules(groups, rulesets, dmImportForce); err != nil {
 		return fmt.Errorf("failed to import Data Manager rules: %w", err)
 	}
 
-	fmt.Printf("Imported %d groups and %d rulesets from %s\n", len(groups), len(rulesets), dmImportPath)
+	verb := "Imported"
+	if dmImportForce {
+		verb = "Replaced existing Data Manager rules with"
+	}
+	fmt.Printf("%s %d groups and %d rulesets from %s\n", verb, len(groups), len(rulesets), dmImportPath)
 	return nil
 }
