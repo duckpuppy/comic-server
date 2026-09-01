@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -141,6 +142,17 @@ func (s *Server) buildListTree(items []library.ComicListItem) []ListTreeNode {
 
 		nodes = append(nodes, node)
 	}
+
+	// Folders before lists at each level, alphabetical (case-insensitive)
+	// within each group - matches the requested "folders first, then
+	// lists, both A-Z" tree ordering. Applies recursively since each
+	// folder's own Children slice went through this same sort above.
+	sort.SliceStable(nodes, func(i, j int) bool {
+		if nodes[i].IsFolder != nodes[j].IsFolder {
+			return nodes[i].IsFolder
+		}
+		return strings.ToLower(nodes[i].Name) < strings.ToLower(nodes[j].Name)
+	})
 
 	return nodes
 }

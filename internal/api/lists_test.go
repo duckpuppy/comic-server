@@ -205,6 +205,64 @@ func TestHandleGetListTree_MatchesHandleGetLists(t *testing.T) {
 	}
 }
 
+// TestBuildListTree_FoldersBeforeListsAlphabetical guards the tree ordering
+// requested for the sidebar tree, the file-browser grid, and every picker
+// dialog that reads /api/library/lists/tree (listPicker.js, dialogs.js's
+// pickFolder) - they all share this one endpoint, so sorting once here
+// covers all of them. At every level: folders first (A-Z), then lists
+// (A-Z), recursively - the input here is deliberately out of order (not
+// already alphabetical, not already folders-first) to prove the sort
+// actually runs rather than happening to match insertion order.
+func TestBuildListTree_FoldersBeforeListsAlphabetical(t *testing.T) {
+	items := []library.ComicListItem{
+		{ID: "list-zebra", Name: "Zebra List", Type: "ComicSmartListItem"},
+		{
+			ID: "folder-zeta", Name: "Zeta Folder", Type: "ComicListItemFolder",
+			ChildItems: []library.ComicListItem{
+				{ID: "nested-list-b", Name: "Bravo", Type: "ComicSmartListItem"},
+				{ID: "nested-folder", Name: "Nested Folder", Type: "ComicListItemFolder"},
+				{ID: "nested-list-a", Name: "Alpha", Type: "ComicSmartListItem"},
+			},
+		},
+		{ID: "list-alpha", Name: "Alpha List", Type: "ComicSmartListItem"},
+		{ID: "folder-alpha", Name: "Alpha Folder", Type: "ComicListItemFolder"},
+	}
+
+	backend := library.NewXMLBackendFromLibrary(&library.ComicLibrary{}, "", nil)
+	server := &Server{backend: backend, listCache: library.NewListCache(5 * time.Minute)}
+	tree := server.buildListTree(items)
+
+	if len(tree) != 4 {
+		t.Fatalf("expected 4 top-level nodes, got %d", len(tree))
+	}
+	gotNames := []string{tree[0].Name, tree[1].Name, tree[2].Name, tree[3].Name}
+	wantNames := []string{"Alpha Folder", "Zeta Folder", "Alpha List", "Zebra List"}
+	for i := range wantNames {
+		if gotNames[i] != wantNames[i] {
+			t.Fatalf("top-level order = %v, want %v", gotNames, wantNames)
+		}
+	}
+	if !tree[0].IsFolder || !tree[1].IsFolder {
+		t.Errorf("expected the first two top-level nodes to be folders, got IsFolder=%v, %v", tree[0].IsFolder, tree[1].IsFolder)
+	}
+	if tree[2].IsFolder || tree[3].IsFolder {
+		t.Errorf("expected the last two top-level nodes to be lists, got IsFolder=%v, %v", tree[2].IsFolder, tree[3].IsFolder)
+	}
+
+	// The nested level (inside "Zeta Folder") must be sorted too.
+	zeta := tree[1]
+	if len(zeta.Children) != 3 {
+		t.Fatalf("expected 3 children under Zeta Folder, got %d", len(zeta.Children))
+	}
+	gotChildNames := []string{zeta.Children[0].Name, zeta.Children[1].Name, zeta.Children[2].Name}
+	wantChildNames := []string{"Nested Folder", "Alpha", "Bravo"}
+	for i := range wantChildNames {
+		if gotChildNames[i] != wantChildNames[i] {
+			t.Fatalf("nested order = %v, want %v", gotChildNames, wantChildNames)
+		}
+	}
+}
+
 // TestHandleCreateList_ResponseHasLowercaseID is the regression test for
 // comic-server-3rb: handleCreateList used to Encode() the raw
 // library.ComicListItem directly, whose fields are only XML-tagged, so
