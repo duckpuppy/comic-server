@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.0](https://github.com/duckpuppy/comic-server/compare/v1.13.0...v1.14.0) (2026-09-01)
+
+
+### Features
+
+* add a settings-section header style to call out panel purpose ([044eb52](https://github.com/duckpuppy/comic-server/commit/044eb524a1512b0995962fa2889726d3a69331ed))
+
 ## [1.13.0](https://github.com/duckpuppy/comic-server/compare/v1.12.0...v1.13.0) (2026-09-01)
 
 
