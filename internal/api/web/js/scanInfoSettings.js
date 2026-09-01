@@ -45,7 +45,6 @@ class ScanInfoSettings {
             <div class="scan-info-settings-page">
                 <div class="scan-info-settings-header">
                     <h1>Settings</h1>
-                    <p class="scan-info-settings-subtitle">Scan information detection (ComicRack's ScanInformationFromFilename)</p>
                 </div>
                 ${this.renderBody()}
             </div>
@@ -64,6 +63,11 @@ class ScanInfoSettings {
 
         return `
             <div class="panel scan-info-panel">
+                <div class="settings-section-header">
+                    <h2>Scan Information Detection</h2>
+                    <p class="settings-section-description">ComicRack's ScanInformationFromFilename</p>
+                </div>
+
                 <div class="form-group">
                     <label class="toggle-switch">
                         <input type="checkbox" id="scan-info-enabled" ${c.enabled ? 'checked' : ''}>

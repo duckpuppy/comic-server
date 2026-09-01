@@ -15,9 +15,30 @@
     margin: 0;
 }
 
-.scan-info-settings-subtitle {
+/* Settings section header - a bold title + description at the top of a
+   settings panel, calling out what that panel's controls are for. Reusable
+   for any future settings section (not scan-info-specific), so more
+   sections can land on /settings (or elsewhere) without re-deriving this
+   pattern. Overrides .panel h2's own border-bottom (style.css) so the
+   divider sits under the description too, not wedged between title and
+   description. */
+.settings-section-header {
+    margin-bottom: 1.5rem;
+    padding-bottom: 1.25rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.settings-section-header h2 {
+    margin: 0;
+    padding: 0;
+    border: none;
+    font-size: 1.375rem;
+    font-weight: 700;
+}
+
+.settings-section-description {
+    margin: 0.375rem 0 0;
     color: var(--text-secondary);
-    margin: 0.5rem 0 0;
 }
 
 .scan-info-panel .form-group {
