@@ -1,0 +1,90 @@
+/* Shared dialogs (confirm/prompt/pickFolder/toast) - see dialogs.js and
+   comic-server-orl. Reuses .modal-overlay/.modal-content/.modal-header/
+   .modal-close/.btn from deviceDetail.css rather than redefining them. */
+
+.dialog-content {
+    max-width: 26rem;
+}
+
+.dialog-input {
+    width: 100%;
+    padding: 0.625rem 0.875rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.375rem;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 0.9375rem;
+}
+
+.dialog-folder-tree {
+    max-height: 20rem;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 0.375rem;
+}
+
+.dialog-folder-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.dialog-folder-row:hover {
+    background: var(--bg-primary);
+}
+
+.dialog-folder-icon {
+    flex-shrink: 0;
+}
+
+.dialog-folder-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Toasts - non-blocking, auto-dismissing feedback (replaces alert() for
+   transient success/error messages). Stack bottom-right, newest on top. */
+.toast-container {
+    position: fixed;
+    bottom: 1.5rem;
+    right: 1.5rem;
+    z-index: 2000;
+    display: flex;
+    flex-direction: column-reverse;
+    gap: 0.5rem;
+    max-width: 24rem;
+}
+
+.toast {
+    padding: 0.875rem 1.125rem;
+    border-radius: 0.5rem;
+    box-shadow: var(--shadow-lg);
+    color: white;
+    font-size: 0.9375rem;
+    line-height: 1.4;
+    opacity: 0;
+    transform: translateY(0.5rem);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.toast-visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.toast-success {
+    background-color: var(--success-color);
+}
+
+.toast-error {
+    background-color: var(--danger-color);
+}
+
+.toast-info {
+    background-color: var(--primary-color);
+}

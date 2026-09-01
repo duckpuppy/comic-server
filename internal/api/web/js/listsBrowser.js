@@ -434,15 +434,15 @@ class ListsBrowser {
     }
 
     async showNewListDialog() {
-        const name = prompt('New smart list name:');
-        if (!name || !name.trim()) return;
+        const name = await dialogs.prompt({ title: 'New Smart List', placeholder: 'e.g. Currently Reading' });
+        if (!name) return;
 
         const parentID = this.currentFolderID();
         try {
             const resp = await fetch('/api/library/lists', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: name.trim(), type: 'ComicSmartListItem', matcher_mode: 'And', matchers: [] })
+                body: JSON.stringify({ name: name, type: 'ComicSmartListItem', matcher_mode: 'And', matchers: [] })
             });
             if (!resp.ok) throw new Error(await resp.text() || 'Create failed');
             const created = await resp.json();
@@ -457,39 +457,39 @@ class ListsBrowser {
             router.navigate(`/lists/${created.id}`);
         } catch (e) {
             console.error('Failed to create list:', e);
-            alert('Failed to create list: ' + e.message);
+            dialogs.toast('Failed to create list: ' + e.message, 'error');
         }
     }
 
     async showNewFolderDialog() {
-        const name = prompt('New folder name:');
-        if (!name || !name.trim()) return;
+        const name = await dialogs.prompt({ title: 'New Folder', placeholder: 'e.g. Reading Order' });
+        if (!name) return;
 
         const parentID = this.currentFolderID();
         try {
             const resp = await fetch('/api/library/folders', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: name.trim(), parent_id: parentID || '' })
+                body: JSON.stringify({ name: name, parent_id: parentID || '' })
             });
             if (!resp.ok) throw new Error(await resp.text() || 'Create failed');
             await this.reloadTree();
         } catch (e) {
             console.error('Failed to create folder:', e);
-            alert('Failed to create folder: ' + e.message);
+            dialogs.toast('Failed to create folder: ' + e.message, 'error');
         }
     }
 
     async showRenameFolderDialog(id, currentName) {
-        const name = prompt('Rename folder:', currentName);
-        if (!name || !name.trim() || name.trim() === currentName) return;
+        const name = await dialogs.prompt({ title: 'Rename Folder', defaultValue: currentName });
+        if (!name || name === currentName) return;
 
         try {
             // Fetch current list state then update name
             const resp = await fetch(`/api/library/lists/${id}/raw`);
             if (!resp.ok) throw new Error('Failed to fetch folder');
             const folder = await resp.json();
-            folder.Name = name.trim();
+            folder.Name = name;
             const updateResp = await fetch(`/api/library/lists/${id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
@@ -499,58 +499,48 @@ class ListsBrowser {
             await this.reloadTree();
         } catch (e) {
             console.error('Failed to rename folder:', e);
-            alert('Failed to rename folder: ' + e.message);
+            dialogs.toast('Failed to rename folder: ' + e.message, 'error');
         }
     }
 
     async showDeleteFolderDialog(id, name) {
-        if (!confirm(`Delete folder "${name}" and all its contents? This cannot be undone.`)) return;
+        const ok = await dialogs.confirm({
+            title: 'Delete Folder',
+            message: `Delete folder "${name}" and all its contents? This cannot be undone.`,
+            confirmLabel: 'Delete',
+            danger: true,
+        });
+        if (!ok) return;
         try {
             const resp = await fetch(`/api/library/lists/${id}`, { method: 'DELETE' });
             if (!resp.ok) throw new Error(await resp.text() || 'Delete failed');
             await this.reloadTree();
         } catch (e) {
             console.error('Failed to delete folder:', e);
-            alert('Failed to delete folder: ' + e.message);
+            dialogs.toast('Failed to delete folder: ' + e.message, 'error');
         }
     }
 
     async showMoveDialog(id, name) {
-        // Build a flat list of all folders the item can be moved to
-        const allFolders = this.collectFolders(this.tree ? (this.tree.tree || []) : [], id);
-        const options = [{ id: '', name: '(Root)' }, ...allFolders];
-        const lines = options.map((f, i) => `${i + 1}. ${f.name}`).join('\n');
-        const sel = prompt(`Move "${name}" to:\n\n${lines}\n\nEnter number:`);
-        if (!sel) return;
-        const idx = parseInt(sel) - 1;
-        if (isNaN(idx) || idx < 0 || idx >= options.length) return;
+        const picked = await dialogs.pickFolder({
+            title: `Move "${name}" to...`,
+            tree: this.tree ? (this.tree.tree || []) : [],
+            excludeId: id,
+        });
+        if (!picked) return;
 
-        const parentID = options[idx].id;
         try {
             const resp = await fetch(`/api/library/lists/${id}/parent`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ parent_id: parentID })
+                body: JSON.stringify({ parent_id: picked.id })
             });
             if (!resp.ok) throw new Error(await resp.text() || 'Move failed');
             await this.reloadTree();
         } catch (e) {
             console.error('Failed to move item:', e);
-            alert('Failed to move: ' + e.message);
+            dialogs.toast('Failed to move: ' + e.message, 'error');
         }
-    }
-
-    // Returns a flat list of all folders, excluding the given id and its descendants.
-    collectFolders(items, excludeId, prefix) {
-        prefix = prefix || '';
-        const result = [];
-        for (const node of items) {
-            if (!node.is_folder || node.id === excludeId) continue;
-            const label = prefix ? `${prefix} / ${node.name}` : node.name;
-            result.push({ id: node.id, name: label });
-            result.push(...this.collectFolders(node.children || [], excludeId, label));
-        }
-        return result;
     }
 
     // Returns the ID of the current folder (deepest path segment), or '' for root.
