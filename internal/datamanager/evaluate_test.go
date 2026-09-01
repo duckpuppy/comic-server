@@ -185,6 +185,37 @@ func TestRuleset_Matches_RealRules(t *testing.T) {
 			want: false,
 		},
 		{
+			// Real ruleset "X-Men" (Marvel group): bare "Not" used on a
+			// BUILT-IN string field, not a custom one - distinct from the
+			// "Concept Not ANAD" case above, which exercises the
+			// custom-field path that already worked. This was a real bug
+			// (comic-server-764.6): translateStringRule's HasPrefix/
+			// TrimPrefix split turned bare "not" into base="", which
+			// matched no case and errored as "unsupported string modifier
+			// Not" - found by running the real dataman.dat's rules against
+			// the test library, not by inspection.
+			name: "bare Not on a built-in string field - match",
+			ruleset: Ruleset{
+				Mode: "AND",
+				Rules: []Rule{
+					{Field: "SeriesGroup", Modifier: "Not", Value: "Ultimate Marvel"},
+				},
+			},
+			book: &library.ComicBook{SeriesGroup: "X-Men"},
+			want: true,
+		},
+		{
+			name: "bare Not on a built-in string field - no match",
+			ruleset: Ruleset{
+				Mode: "AND",
+				Rules: []Rule{
+					{Field: "SeriesGroup", Modifier: "Not", Value: "Ultimate Marvel"},
+				},
+			},
+			book: &library.ComicBook{SeriesGroup: "Ultimate Marvel"},
+			want: false,
+		},
+		{
 			name:    "zero rules matches everything",
 			ruleset: Ruleset{Mode: "AND"},
 			book:    &library.ComicBook{},

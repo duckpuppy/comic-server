@@ -180,8 +180,25 @@ func translateCustomFieldRule(r Rule) (library.ComicBookMatcher, error) {
 	}, nil
 }
 
+// normalizeBareNot lowercases modifier and folds Data Manager's bare "Not"
+// (negated-equals shorthand, confirmed real usage on built-in string
+// fields like "SeriesGroup Not Ultimate Marvel" - see comic-server-764.6's
+// design notes) into "notis", so the shared not/base HasPrefix/TrimPrefix
+// split below produces base="is" instead of an empty base that matches no
+// case and errors as unsupported. translateCustomFieldRule and
+// translateBoolRule handle this same shorthand their own way already;
+// this covers the remaining kinds (string/numeric/date/language) that
+// share this modifier-parsing shape.
+func normalizeBareNot(modifier string) string {
+	mod := strings.ToLower(modifier)
+	if mod == "not" {
+		return "notis"
+	}
+	return mod
+}
+
 func translateStringRule(mt library.MatcherType, r Rule) (library.ComicBookMatcher, error) {
-	mod := strings.ToLower(r.Modifier)
+	mod := normalizeBareNot(r.Modifier)
 	not := strings.HasPrefix(mod, "not")
 	base := strings.TrimPrefix(mod, "not")
 
@@ -224,7 +241,7 @@ func orGroupOfStartsWith(mt library.MatcherType, not bool, values []string) libr
 }
 
 func translateNumericRule(mt library.MatcherType, r Rule) (library.ComicBookMatcher, error) {
-	mod := strings.ToLower(r.Modifier)
+	mod := normalizeBareNot(r.Modifier)
 	not := strings.HasPrefix(mod, "not")
 	base := strings.TrimPrefix(mod, "not")
 
@@ -261,7 +278,7 @@ func translateNumericRule(mt library.MatcherType, r Rule) (library.ComicBookMatc
 }
 
 func translateDateRule(mt library.MatcherType, r Rule) (library.ComicBookMatcher, error) {
-	mod := strings.ToLower(r.Modifier)
+	mod := normalizeBareNot(r.Modifier)
 	not := strings.HasPrefix(mod, "not")
 	base := strings.TrimPrefix(mod, "not")
 
@@ -345,7 +362,7 @@ func translateBoolRule(def FieldDef, r Rule) (library.ComicBookMatcher, error) {
 }
 
 func translateLanguageRule(mt library.MatcherType, r Rule) (library.ComicBookMatcher, error) {
-	mod := strings.ToLower(r.Modifier)
+	mod := normalizeBareNot(r.Modifier)
 	not := strings.HasPrefix(mod, "not")
 	base := strings.TrimPrefix(mod, "not")
 
