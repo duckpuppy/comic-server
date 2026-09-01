@@ -47,6 +47,24 @@
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
+/* Left-border status accent, matching the Sync History page's
+   .sync-status-completed/-failed/-aborted (devicesBrowser.css) - green
+   for a clean push, amber for a push that succeeded but skipped some
+   books, red for a hard failure. Named komga-target-card-* (not
+   komga-target-*) to avoid colliding with .komga-target-error below,
+   which styles the inline error message text, not the card itself. */
+.komga-target-card-ok {
+    border-left: 4px solid var(--status-success);
+}
+
+.komga-target-card-warning {
+    border-left: 4px solid var(--status-warning);
+}
+
+.komga-target-card-error {
+    border-left: 4px solid var(--status-error);
+}
+
 .komga-target-header {
     display: flex;
     justify-content: space-between;

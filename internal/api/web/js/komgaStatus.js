@@ -88,8 +88,16 @@ class KomgaStatus {
         const unmatched = target.unmatched || [];
         const readStatusFailed = target.read_status_failed || [];
         const syncsReadStatus = !!target.sync_read_status;
+        // Left-border status accent, matching the Sync History page - a
+        // hard error wins over a partial-success warning, which wins over
+        // a clean push, mirroring completed/failed/aborted there.
+        const statusClass = target.error
+            ? 'komga-target-card-error'
+            : (unmatched.length > 0 || readStatusFailed.length > 0)
+                ? 'komga-target-card-warning'
+                : 'komga-target-card-ok';
         return `
-            <div class="komga-target-card">
+            <div class="komga-target-card ${statusClass}">
                 <div class="komga-target-header">
                     <div>
                         <strong>${this.escapeHtml(target.komga_name)}</strong>
