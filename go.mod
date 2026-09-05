@@ -5,6 +5,7 @@ go 1.25.1
 require (
 	github.com/bodgit/sevenzip v1.6.5
 	github.com/dlclark/regexp2 v1.12.0
+	github.com/dlclark/regexp2/v2 v2.7.2
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
