@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.17.0](https://github.com/duckpuppy/comic-server/compare/v1.16.1...v1.17.0) (2026-09-06)
+
+
+### Features
+
+* Data Manager "Apply All" (whole-library) + per-book selective apply ([29e2f65](https://github.com/duckpuppy/comic-server/commit/29e2f65c9a6e1b77da83bf0e7b43d69d7b151e4c))
+
+
+### Bug Fixes
+
+* preview 500s for a smart list with zero matchers ([722f2e5](https://github.com/duckpuppy/comic-server/commit/722f2e5938af1bc052cae7b7b98d117f07b44ed5))
+
 ## [1.16.1](https://github.com/duckpuppy/comic-server/compare/v1.16.0...v1.16.1) (2026-09-01)
 
 
