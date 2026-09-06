@@ -603,6 +603,53 @@ func TestHandleGetListPreview_UnreadField(t *testing.T) {
 	}
 }
 
+// TestHandleGetListPreview_ZeroMatchersReturnsEmptyNot500 guards against
+// comic-server-haz: a smart list with zero matchers is normal, valid state
+// (what every list looks like right after "+ New List", before any
+// conditions are added) - library.MatchBooks deliberately errors on it as
+// a safety net for OTHER callers (sync, scan-info, cbz-convert, Data
+// Manager apply), but the read-only preview endpoint has no such risk and
+// must not 500 just because the list is still empty.
+func TestHandleGetListPreview_ZeroMatchersReturnsEmptyNot500(t *testing.T) {
+	lib := &library.ComicLibrary{
+		Books: []library.ComicBook{
+			{ID: "comic-1", Series: "Batman"},
+		},
+		ComicLists: []library.ComicListItem{
+			{
+				ID:          "list-empty",
+				Name:        "New List",
+				Type:        "ComicSmartListItem",
+				MatcherMode: "And",
+				Matchers:    []library.ComicBookMatcher{},
+			},
+		},
+	}
+
+	cache := library.NewListCache(5 * time.Minute)
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	server := &Server{backend: backend, listCache: cache}
+
+	req := httptest.NewRequest("GET", "/api/library/lists/list-empty/preview", nil)
+	w := httptest.NewRecorder()
+	server.handleGetListPreview(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var response struct {
+		Comics []any `json:"comics"`
+		Total  int   `json:"total"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+	if response.Total != 0 || len(response.Comics) != 0 {
+		t.Errorf("expected an empty result, got total=%d comics=%v", response.Total, response.Comics)
+	}
+}
+
 func TestHandleGetListDevices(t *testing.T) {
 	// Create config.db with devices assigned to lists
 	configDB, err := configdb.Open(filepath.Join(t.TempDir(), "config.db"))

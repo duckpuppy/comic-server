@@ -490,12 +490,25 @@ func (s *Server) handleGetListPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Evaluate list
-	matches, err := s.backend.GetBooksForList(targetList)
-	if err != nil {
-		log.Error().Err(err).Str("list_id", listID).Msg("Failed to get books for list")
-		http.Error(w, "Failed to evaluate list", http.StatusInternalServerError)
-		return
+	// Evaluate list. A smart list with zero matchers is normal, valid
+	// state (what every list looks like right after "+ New List", before
+	// any conditions are added) - library.MatchBooks deliberately errors
+	// on it rather than silently matching everything or nothing, since
+	// other callers (sync, scan-info, cbz-convert, Data Manager apply)
+	// want that refusal as a safety net against an accidental
+	// whole-library action. A read-only preview has no such risk, so it
+	// treats zero matchers as "0 matches" instead of failing - see
+	// comic-server-haz.
+	var matches []*library.ComicBook
+	if strings.Contains(targetList.Type, "SmartList") && len(targetList.Matchers) == 0 {
+		matches = nil
+	} else {
+		matches, err = s.backend.GetBooksForList(targetList)
+		if err != nil {
+			log.Error().Err(err).Str("list_id", listID).Msg("Failed to get books for list")
+			http.Error(w, "Failed to evaluate list", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	total := len(matches)
