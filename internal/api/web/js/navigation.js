@@ -37,6 +37,10 @@ class Navigation {
                     <span class="nav-icon">📖</span>
                     <span class="nav-label">Komga</span>
                 </a>
+                <a href="/datamanager" class="nav-tab" data-tab="datamanager">
+                    <span class="nav-icon">🛠️</span>
+                    <span class="nav-label">Data Manager</span>
+                </a>
                 <a href="/trash" class="nav-tab" data-tab="trash">
                     <span class="nav-icon">🗑️</span>
                     <span class="nav-label">Trash</span>

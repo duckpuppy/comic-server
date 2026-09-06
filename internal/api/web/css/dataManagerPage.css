@@ -1,0 +1,25 @@
+/* Data Manager Page (whole-library "Apply All" + selective apply) - layout
+   mirrors scanInfoSettings.css's page wrapper; the diff table itself
+   reuses .datamanager-diff-table/.datamanager-actions/.datamanager-errors
+   already defined in lists.css for the per-list Data Manager tab, so both
+   surfaces look identical. */
+.datamanager-page {
+    padding: 2rem;
+    max-width: 1000px;
+    margin: 0 auto;
+}
+
+.datamanager-page-header {
+    margin-bottom: 2rem;
+}
+
+.datamanager-page-header h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    margin: 0 0 0.5rem 0;
+}
+
+.datamanager-summary {
+    font-weight: 600;
+    margin-bottom: 1rem;
+}

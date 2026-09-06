@@ -170,6 +170,11 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/library/lists", s.handleGetLists)
 	s.mux.HandleFunc("/api/library/lists/", s.handleListsRouter)
 
+	// Data Manager whole-library endpoints (comic-server-dpq's "Apply
+	// All" - the list-scoped equivalents are under /api/library/lists/).
+	s.mux.HandleFunc("/api/library/datamanager-preview", s.handleDataManagerPreviewLibrary)
+	s.mux.HandleFunc("/api/library/datamanager-apply", s.handleDataManagerApplyLibrary)
+
 	// Trash browser endpoints (comic-server-tfs)
 	s.mux.HandleFunc("/api/trash", s.handleListTrash)
 	s.mux.HandleFunc("/api/trash/restore", s.handlePostTrashRestore)

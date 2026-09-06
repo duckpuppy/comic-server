@@ -1,9 +1,12 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/duckpuppy/comic-server/internal/configdb"
@@ -31,15 +34,38 @@ type DMBookChange struct {
 	Changes []DMFieldChange `json:"changes"`
 }
 
-// DMRunResult is the response for both preview and apply - Applied is
-// false for a preview (nothing was written) and true once a run has
-// actually been committed via the backend.
+// DMRunResult is the response for both preview and apply. Applied is false
+// for a preview (nothing was written) and true once a run has actually
+// been committed via the backend. For apply, Changed/Books describe what
+// was ACTUALLY COMMITTED (the selected subset, or everything if no
+// selection was given), not the full set of books that matched - see
+// selectForApply.
 type DMRunResult struct {
 	Processed int            `json:"processed"`
 	Changed   int            `json:"changed"`
 	Applied   bool           `json:"applied"`
 	Books     []DMBookChange `json:"books"`
 	Errors    []string       `json:"errors,omitempty"`
+
+	// Limit/Offset/HasMore are set only by the whole-library preview
+	// (comic-server-dpq), which pages through Books to keep the response
+	// bounded for a ~66K-book library - Changed always reports the TOTAL
+	// count of books that would change, even when Books is just one page
+	// of that total. Zero-valued for the list-scoped endpoints, which
+	// don't paginate (a single smart list's match set is already bounded
+	// by the list itself).
+	Limit   int  `json:"limit,omitempty"`
+	Offset  int  `json:"offset,omitempty"`
+	HasMore bool `json:"has_more,omitempty"`
+}
+
+// DMApplyRequest is the optional JSON body for an apply request -
+// selective apply (comic-server-dpq): when BookIDs is non-empty, only
+// those books are committed even if more books matched and changed;
+// omitted or empty means "apply everything that changed", matching the
+// original whole-run-at-once behavior.
+type DMApplyRequest struct {
+	BookIDs []string `json:"book_ids,omitempty"`
 }
 
 // handleDataManagerPreview runs every enabled Data Manager ruleset against
@@ -51,19 +77,19 @@ type DMRunResult struct {
 // run works on its own copy.
 // POST /api/library/lists/:listId/datamanager-preview
 func (s *Server) handleDataManagerPreview(w http.ResponseWriter, r *http.Request) {
-	s.runDataManager(w, r, "/datamanager-preview", false)
+	s.runDataManagerList(w, r, "/datamanager-preview", false)
 }
 
 // handleDataManagerApply does the same full rule run as
-// handleDataManagerPreview, then commits every changed book in one action
-// via Backend.UpdateBooks - matching the original plugin's own
-// whole-run-at-once behavior (no per-book cherry-picking).
+// handleDataManagerPreview, then commits the resulting changes via
+// Backend.UpdateBooks - every changed book by default, or only the
+// caller's selected book_ids (comic-server-dpq's selective apply).
 // POST /api/library/lists/:listId/datamanager-apply
 func (s *Server) handleDataManagerApply(w http.ResponseWriter, r *http.Request) {
-	s.runDataManager(w, r, "/datamanager-apply", true)
+	s.runDataManagerList(w, r, "/datamanager-apply", true)
 }
 
-func (s *Server) runDataManager(w http.ResponseWriter, r *http.Request, suffix string, apply bool) {
+func (s *Server) runDataManagerList(w http.ResponseWriter, r *http.Request, suffix string, apply bool) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -107,49 +133,238 @@ func (s *Server) runDataManager(w http.ResponseWriter, r *http.Request, suffix s
 		return
 	}
 
-	result := DMRunResult{Processed: len(books), Applied: apply}
-	var toUpdate []*library.ComicBook
-
-	for _, book := range books {
-		// Always work on a copy, never the pointer MatchBooks returned -
-		// that pointer may be shared with the backend's cached library
-		// snapshot (see SQLiteBackend.cachedLibrary's own doc comment on
-		// why nothing may mutate a cached book in place).
-		working := *book
-		changes, err := datamanager.ApplyAll(&working, rulesets)
+	var bookIDs []string
+	if apply {
+		req, err := parseDMApplyRequest(r)
 		if err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", book.ID, err))
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
 		}
-		if len(changes) == 0 {
+		bookIDs = req.BookIDs
+	}
+
+	result := s.runDataManagerOverBooks(books, rulesets, apply, bookIDs)
+	s.writeJSON(w, http.StatusOK, result)
+}
+
+// handleDataManagerPreviewLibrary is handleDataManagerPreview's
+// whole-library counterpart (comic-server-dpq's "Apply All"): the real
+// dataman.dat's rules (series-grouping, tagging) are meant to apply
+// globally, not just to whatever smart list happens to already exist, so
+// this scans every book in the library rather than one list's match set.
+// Paginated (limit/offset, same convention as the list preview endpoint)
+// since a full diff table for a ~66K-book library would be far too much
+// to load in the browser at once - Changed always reports the total
+// count, Books is just the requested page of it.
+// POST /api/library/datamanager-preview
+func (s *Server) handleDataManagerPreviewLibrary(w http.ResponseWriter, r *http.Request) {
+	s.runDataManagerLibrary(w, r, false)
+}
+
+// handleDataManagerApplyLibrary is handleDataManagerApply's whole-library
+// counterpart. Unlike the paginated preview, apply is not paginated: with
+// no book_ids given it commits every changed book in the library in one
+// action (the literal "Apply All"), and with book_ids given it commits
+// only that (typically much smaller, user-selected) set - see
+// selectForApply.
+// POST /api/library/datamanager-apply
+func (s *Server) handleDataManagerApplyLibrary(w http.ResponseWriter, r *http.Request) {
+	s.runDataManagerLibrary(w, r, true)
+}
+
+func (s *Server) runDataManagerLibrary(w http.ResponseWriter, r *http.Request, apply bool) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if s.backend == nil {
+		http.Error(w, "Library not available", http.StatusServiceUnavailable)
+		return
+	}
+	if s.configDB == nil {
+		http.Error(w, "Configuration database not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	rulesets, err := loadEnabledDMRulesets(s.configDB)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to load Data Manager rules")
+		http.Error(w, "Failed to load Data Manager rules", http.StatusInternalServerError)
+		return
+	}
+	if len(rulesets) == 0 {
+		http.Error(w, "No Data Manager rules configured - import a dataman.dat file first", http.StatusUnprocessableEntity)
+		return
+	}
+
+	allBooks, err := s.backend.GetAllBooks()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to load library: %v", err), http.StatusInternalServerError)
+		return
+	}
+	books := make([]*library.ComicBook, len(allBooks))
+	for i := range allBooks {
+		books[i] = &allBooks[i]
+	}
+
+	var bookIDs []string
+	if apply {
+		req, err := parseDMApplyRequest(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		bookIDs = req.BookIDs
+	}
+
+	result := s.runDataManagerOverBooks(books, rulesets, apply, bookIDs)
+
+	if !apply {
+		result.Limit, result.Offset = parseLimitOffset(r, 20, 100)
+		total := len(result.Books)
+		start := min(result.Offset, total)
+		end := min(start+result.Limit, total)
+		result.HasMore = end < total
+		result.Books = result.Books[start:end]
+	}
+
+	s.writeJSON(w, http.StatusOK, result)
+}
+
+// runDataManagerOverBooks evaluates rulesets against candidates and,
+// if apply is true, commits the result via Backend.UpdateBooks - either
+// every changed book (bookIDs empty) or only the requested ids
+// (comic-server-dpq's selective apply), re-verified against this fresh
+// run rather than trusting a possibly-stale client-held preview.
+func (s *Server) runDataManagerOverBooks(candidates []*library.ComicBook, rulesets []datamanager.Ruleset, apply bool, bookIDs []string) DMRunResult {
+	changes, errs, updated := dmEvaluate(candidates, rulesets)
+	result := DMRunResult{Processed: len(candidates), Applied: apply, Errors: errs}
+
+	if !apply {
+		result.Changed = len(changes)
+		result.Books = changes
+		return result
+	}
+
+	selectedChanges, toUpdate := selectForApply(changes, updated, bookIDs)
+	result.Changed = len(toUpdate)
+	result.Books = selectedChanges
+
+	if len(toUpdate) > 0 {
+		if err := s.backend.UpdateBooks(toUpdate); err != nil {
+			log.Error().Err(err).Msg("Failed to save Data Manager rule run")
+			result.Errors = append(result.Errors, err.Error())
+		}
+	}
+	return result
+}
+
+// dmEvaluate runs rulesets against every book in candidates, working on a
+// copy of each (never the pointer the caller passed in, which may be
+// shared with the backend's cached library snapshot - see
+// SQLiteBackend.cachedLibrary's own doc comment on why nothing may mutate
+// a cached book in place). Returns every book with at least one change,
+// plus the working copy for each (keyed by book ID) so a caller can decide
+// which subset to actually persist without re-running the rules.
+func dmEvaluate(candidates []*library.ComicBook, rulesets []datamanager.Ruleset) (changes []DMBookChange, errs []string, updated map[string]*library.ComicBook) {
+	updated = make(map[string]*library.ComicBook)
+	for _, book := range candidates {
+		working := *book
+		cs, err := datamanager.ApplyAll(&working, rulesets)
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", book.ID, err))
+		}
+		if len(cs) == 0 {
 			continue
 		}
 
-		wireChanges := make([]DMFieldChange, len(changes))
-		for i, c := range changes {
+		wireChanges := make([]DMFieldChange, len(cs))
+		for i, c := range cs {
 			wireChanges[i] = DMFieldChange{Field: c.Field, Custom: c.Custom, Old: c.Old, New: c.New}
 		}
-		result.Books = append(result.Books, DMBookChange{
+		changes = append(changes, DMBookChange{
 			BookID:  book.ID,
 			Series:  book.Series,
 			Number:  book.Number,
 			Title:   book.Title,
 			Changes: wireChanges,
 		})
-		result.Changed++
+		updated[book.ID] = &working
+	}
+	return changes, errs, updated
+}
 
-		if apply {
-			toUpdate = append(toUpdate, &working)
+// selectForApply picks which of changes/updated to actually persist.
+// bookIDs empty means "apply all" (the original whole-run-at-once
+// behavior); otherwise only the requested ids are committed, and any
+// requested id no longer present in updated (the book stopped matching or
+// stopped needing a change between preview and apply) is silently
+// skipped rather than erroring - selection is re-verified against this
+// run's own fresh results, not the client's possibly-stale preview.
+func selectForApply(changes []DMBookChange, updated map[string]*library.ComicBook, bookIDs []string) (selected []DMBookChange, toUpdate []*library.ComicBook) {
+	if len(bookIDs) == 0 {
+		for _, c := range changes {
+			selected = append(selected, c)
+			toUpdate = append(toUpdate, updated[c.BookID])
 		}
+		return selected, toUpdate
 	}
 
-	if apply && len(toUpdate) > 0 {
-		if err := s.backend.UpdateBooks(toUpdate); err != nil {
-			log.Error().Err(err).Msg("Failed to save Data Manager rule run")
-			result.Errors = append(result.Errors, err.Error())
+	want := make(map[string]bool, len(bookIDs))
+	for _, id := range bookIDs {
+		want[id] = true
+	}
+	for _, c := range changes {
+		if !want[c.BookID] {
+			continue
+		}
+		selected = append(selected, c)
+		toUpdate = append(toUpdate, updated[c.BookID])
+	}
+	return selected, toUpdate
+}
+
+// parseDMApplyRequest reads an optional JSON body for an apply request -
+// a missing or empty body is not an error (means "apply everything"),
+// matching apply's pre-selective-apply behavior of taking no body at all.
+func parseDMApplyRequest(r *http.Request) (DMApplyRequest, error) {
+	var req DMApplyRequest
+	if r.Body == nil {
+		return req, nil
+	}
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		return req, fmt.Errorf("failed to read request body: %w", err)
+	}
+	if len(data) == 0 {
+		return req, nil
+	}
+	if err := json.Unmarshal(data, &req); err != nil {
+		return req, fmt.Errorf("invalid request body: %w", err)
+	}
+	return req, nil
+}
+
+// parseLimitOffset reads ?limit=&offset= query params with the same
+// clamping convention handleGetListPreview already uses.
+func parseLimitOffset(r *http.Request, defaultLimit, maxLimit int) (limit, offset int) {
+	limit = defaultLimit
+	query := r.URL.Query()
+	if l := query.Get("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
+			limit = parsed
+			if limit > maxLimit {
+				limit = maxLimit
+			}
 		}
 	}
-
-	s.writeJSON(w, http.StatusOK, result)
+	if o := query.Get("offset"); o != "" {
+		if parsed, err := strconv.Atoi(o); err == nil && parsed >= 0 {
+			offset = parsed
+		}
+	}
+	return limit, offset
 }
 
 func listIDFromSubPath(path, suffix string) string {

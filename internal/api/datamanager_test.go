@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/duckpuppy/comic-server/internal/configdb"
@@ -191,5 +192,172 @@ func TestHandleDataManagerPreview_MethodNotAllowed(t *testing.T) {
 
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Errorf("expected 405, got %d", w.Code)
+	}
+}
+
+// TestHandleDataManagerApply_SelectiveBookIDsOnlyCommitsThose covers
+// comic-server-dpq's per-book selective apply: a book_ids body should
+// commit only the requested books, leaving other matched-and-changed
+// books untouched.
+func TestHandleDataManagerApply_SelectiveBookIDsOnlyCommitsThose(t *testing.T) {
+	books := []library.ComicBook{
+		{ID: "1", Series: "Batman", Number: "1"},
+		{ID: "2", Series: "Batman", Number: "2"},
+	}
+	s, db := newDataManagerTestServer(t, books)
+	seedBatmanRuleset(t, db)
+
+	body := strings.NewReader(`{"book_ids":["1"]}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/library/lists/list-1/datamanager-apply", body)
+	w := httptest.NewRecorder()
+	s.handleListsRouter(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var result DMRunResult
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if result.Changed != 1 || len(result.Books) != 1 || result.Books[0].BookID != "1" {
+		t.Fatalf("expected exactly book 1 committed, got %+v", result)
+	}
+
+	book1, _ := s.backend.GetBook("1")
+	book2, _ := s.backend.GetBook("2")
+	if book1.SeriesGroup != "Batman Family" {
+		t.Errorf("book 1 SeriesGroup = %q, want %q (selected)", book1.SeriesGroup, "Batman Family")
+	}
+	if book2.SeriesGroup != "" {
+		t.Errorf("book 2 SeriesGroup = %q, want empty (not selected, must be untouched)", book2.SeriesGroup)
+	}
+}
+
+// TestHandleDataManagerApply_UnknownBookIDIsSilentlySkipped covers the
+// re-verification design note from comic-server-dpq: a requested book_id
+// that no longer needs a change (or never existed) between preview and
+// apply must be skipped, not error the whole request.
+func TestHandleDataManagerApply_UnknownBookIDIsSilentlySkipped(t *testing.T) {
+	books := []library.ComicBook{{ID: "1", Series: "Batman"}}
+	s, db := newDataManagerTestServer(t, books)
+	seedBatmanRuleset(t, db)
+
+	body := strings.NewReader(`{"book_ids":["1","does-not-exist"]}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/library/lists/list-1/datamanager-apply", body)
+	w := httptest.NewRecorder()
+	s.handleListsRouter(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var result DMRunResult
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if result.Changed != 1 {
+		t.Errorf("expected 1 committed (unknown id silently skipped), got %d: %+v", result.Changed, result)
+	}
+}
+
+func newDataManagerLibraryTestServer(t *testing.T, books []library.ComicBook) (*Server, *configdb.DB) {
+	t.Helper()
+	lib := &library.ComicLibrary{Books: books}
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+	db := newTestConfigDB(t)
+	return &Server{backend: backend, configDB: db}, db
+}
+
+// TestHandleDataManagerPreviewLibrary_ScansWholeLibraryNotJustOneList
+// covers comic-server-dpq's "Apply All": the library-scope preview must
+// evaluate every book, including ones no existing smart list happens to
+// match, unlike the list-scoped preview.
+func TestHandleDataManagerPreviewLibrary_ScansWholeLibraryNotJustOneList(t *testing.T) {
+	books := []library.ComicBook{
+		{ID: "1", Series: "Batman"},
+		{ID: "2", Series: "Some Unrelated Series"},
+	}
+	s, db := newDataManagerLibraryTestServer(t, books)
+	seedBatmanRuleset(t, db)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/library/datamanager-preview", nil)
+	w := httptest.NewRecorder()
+	s.handleDataManagerPreviewLibrary(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var result DMRunResult
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if result.Processed != 2 {
+		t.Errorf("Processed = %d, want 2 (whole library, not one list)", result.Processed)
+	}
+	if result.Changed != 1 || len(result.Books) != 1 || result.Books[0].BookID != "1" {
+		t.Fatalf("expected exactly book 1 to have changed, got %+v", result)
+	}
+}
+
+// TestHandleDataManagerPreviewLibrary_Paginates covers the summary-first
+// pagination design (comic-server-dpq): Changed reports the TOTAL that
+// would change, while Books is only the requested page.
+func TestHandleDataManagerPreviewLibrary_Paginates(t *testing.T) {
+	books := make([]library.ComicBook, 5)
+	for i := range books {
+		books[i] = library.ComicBook{ID: string(rune('1' + i)), Series: "Batman"}
+	}
+	s, db := newDataManagerLibraryTestServer(t, books)
+	seedBatmanRuleset(t, db)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/library/datamanager-preview?limit=2&offset=1", nil)
+	w := httptest.NewRecorder()
+	s.handleDataManagerPreviewLibrary(w, req)
+
+	var result DMRunResult
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if result.Changed != 5 {
+		t.Errorf("Changed = %d, want 5 (total, not page size)", result.Changed)
+	}
+	if len(result.Books) != 2 {
+		t.Fatalf("expected a page of 2 books, got %d", len(result.Books))
+	}
+	if result.Limit != 2 || result.Offset != 1 || !result.HasMore {
+		t.Errorf("pagination fields = limit=%d offset=%d hasMore=%v, want limit=2 offset=1 hasMore=true", result.Limit, result.Offset, result.HasMore)
+	}
+}
+
+// TestHandleDataManagerApplyLibrary_ApplyAllCommitsEveryChangedBook is the
+// literal "Apply All" case: no book_ids body means commit everything that
+// changed across the whole library.
+func TestHandleDataManagerApplyLibrary_ApplyAllCommitsEveryChangedBook(t *testing.T) {
+	books := []library.ComicBook{
+		{ID: "1", Series: "Batman"},
+		{ID: "2", Series: "Batman"},
+		{ID: "3", Series: "Unrelated"},
+	}
+	s, db := newDataManagerLibraryTestServer(t, books)
+	seedBatmanRuleset(t, db)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/library/datamanager-apply", nil)
+	w := httptest.NewRecorder()
+	s.handleDataManagerApplyLibrary(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var result DMRunResult
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !result.Applied || result.Changed != 2 {
+		t.Fatalf("expected Applied=true Changed=2, got %+v", result)
+	}
+
+	book1, _ := s.backend.GetBook("1")
+	book2, _ := s.backend.GetBook("2")
+	if book1.SeriesGroup != "Batman Family" || book2.SeriesGroup != "Batman Family" {
+		t.Errorf("expected both Batman books updated, got book1=%q book2=%q", book1.SeriesGroup, book2.SeriesGroup)
 	}
 }

@@ -95,6 +95,7 @@ let syncHistoryBrowser = null;
 let komgaStatus = null;
 let trashBrowser = null;
 let scanInfoSettings = null;
+let dataManagerPage = null;
 let deviceDetail = null; // Current device detail view
 let deviceSettings = null; // Current device settings view
 let listsTree = null; // Shared tree instance for lists pages
@@ -213,6 +214,15 @@ document.addEventListener('DOMContentLoaded', () => {
             komgaStatus = new KomgaStatus();
         }
         await komgaStatus.init(ctx);
+    });
+
+    router.register('/datamanager', async (params, ctx) => {
+        navigation.setActive('datamanager');
+        dashboard.hide();
+        if (!dataManagerPage) {
+            dataManagerPage = new DataManagerPage();
+        }
+        await dataManagerPage.init(ctx);
     });
 
     router.register('/settings', async (params, ctx) => {
