@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/duckpuppy/comic-server/internal/library"
+	"github.com/duckpuppy/comic-server/internal/workflow"
 )
 
 // ScraperConfig controls which ComicBook fields the metadata writer updates
@@ -178,11 +179,24 @@ type WriteResult struct {
 
 // WriteMetadata maps ComicVine volume/issue data onto book and, if anything
 // changed, persists it via the backend.
+//
+// A successful scrape always advances the book's workflow stage
+// (comic-server-1iv.2), since ApplyMetadata's identity tracking
+// (comicvine_volume/comicvine_issue) always runs regardless of the
+// per-field toggles - "scraped" is unconditional here the same way it is
+// in ApplyMetadata. rulesets is passed as nil rather than plumbed through
+// from config.db: it's only consulted by InferStage's own Data Manager
+// check, which this call path essentially never reaches (a book just
+// tagged with comicvine_volume for the first time resolves to StageScrape
+// or StageScanInfo before InferStage gets that far), so the cost of
+// threading config.db through Scraper for this marginal case isn't
+// justified.
 func WriteMetadata(backend library.Backend, book *library.ComicBook, volume Volume, detail *IssueDetail, cfg ScraperConfig) (WriteResult, error) {
 	result := ApplyMetadata(book, volume, detail, cfg)
 	if !result.Changed {
 		return result, nil
 	}
+	workflow.AdvanceIfAtOrBefore(book, workflow.StageScrape, nil)
 	if err := backend.UpdateBook(book); err != nil {
 		return result, fmt.Errorf("update book: %w", err)
 	}

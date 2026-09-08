@@ -9,6 +9,7 @@ import (
 
 	"github.com/duckpuppy/comic-server/internal/configdb"
 	"github.com/duckpuppy/comic-server/internal/library"
+	"github.com/duckpuppy/comic-server/internal/workflow"
 )
 
 func newDataManagerTestServer(t *testing.T, books []library.ComicBook) (*Server, *configdb.DB) {
@@ -172,6 +173,31 @@ func TestHandleDataManagerApply_PersistsChanges(t *testing.T) {
 	}
 	if book1.SeriesGroup != "Batman Family" {
 		t.Errorf("SeriesGroup = %q, want %q to be persisted", book1.SeriesGroup, "Batman Family")
+	}
+}
+
+// TestHandleDataManagerApply_AdvancesWorkflowStage covers
+// comic-server-1iv.2: a book explicitly tracked at StageDataManager
+// advances to StageToMove once its changes are actually committed.
+func TestHandleDataManagerApply_AdvancesWorkflowStage(t *testing.T) {
+	book := library.ComicBook{ID: "1", Series: "Batman", Number: "1"}
+	workflow.SetStage(&book, workflow.StageDataManager)
+	s, db := newDataManagerTestServer(t, []library.ComicBook{book})
+	seedBatmanRuleset(t, db)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/library/lists/list-1/datamanager-apply", nil)
+	w := httptest.NewRecorder()
+	s.handleListsRouter(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	book1, err := s.backend.GetBook("1")
+	if err != nil || book1 == nil {
+		t.Fatalf("GetBook(1): %v", err)
+	}
+	if got := workflow.GetStage(book1); got != workflow.StageToMove {
+		t.Errorf("workflow stage = %v, want StageToMove", got)
 	}
 }
 

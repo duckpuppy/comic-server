@@ -9,6 +9,7 @@ import (
 	"github.com/duckpuppy/comic-server/internal/library"
 	"github.com/duckpuppy/comic-server/internal/log"
 	"github.com/duckpuppy/comic-server/internal/trash"
+	"github.com/duckpuppy/comic-server/internal/workflow"
 )
 
 // CBZConvertResult is the response for POST .../convert-cbz.
@@ -74,6 +75,7 @@ func (s *Server) handleRunCBZConvert(w http.ResponseWriter, r *http.Request) {
 
 	result := CBZConvertResult{Processed: len(books)}
 	var toUpdate []*library.ComicBook
+	rulesets := s.loadWorkflowRulesets()
 
 	for _, book := range books {
 		converted, err := cbzconvert.Convert(book, s.resolveBookFilePath, tr)
@@ -84,6 +86,7 @@ func (s *Server) handleRunCBZConvert(w http.ResponseWriter, r *http.Request) {
 		}
 		book.FilePath = converted.NewFilePath
 		book.PageCount = converted.PageCount
+		workflow.AdvanceIfAtOrBefore(book, workflow.StageConvertToCBZ, rulesets)
 		toUpdate = append(toUpdate, book)
 		result.Converted++
 	}

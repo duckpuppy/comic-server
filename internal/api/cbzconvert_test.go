@@ -11,6 +11,7 @@ import (
 
 	"github.com/duckpuppy/comic-server/internal/config"
 	"github.com/duckpuppy/comic-server/internal/library"
+	"github.com/duckpuppy/comic-server/internal/workflow"
 )
 
 func writeTestCBZFixture(t *testing.T, path string) {
@@ -112,6 +113,36 @@ func TestHandleRunCBZConvert_ConvertsAndUpdatesBooks(t *testing.T) {
 	}
 	if book1.PageCount != 1 {
 		t.Errorf("PageCount = %d, want 1", book1.PageCount)
+	}
+}
+
+// TestHandleRunCBZConvert_AdvancesWorkflowStage covers comic-server-1iv.2:
+// a book explicitly tracked at StageConvertToCBZ (the real production
+// state a backfilled book would have) advances to StageScrape once
+// conversion succeeds.
+func TestHandleRunCBZConvert_AdvancesWorkflowStage(t *testing.T) {
+	libDir := t.TempDir()
+	trashDir := t.TempDir()
+	src := filepath.Join(libDir, "book.cbz")
+	writeTestCBZFixture(t, src)
+
+	book := library.ComicBook{ID: "1", Series: "Batman", FilePath: src}
+	workflow.SetStage(&book, workflow.StageConvertToCBZ)
+	s := newCBZConvertTestServer(t, config.CBZConvertConfig{Enabled: true}, trashDir, []library.ComicBook{book})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/library/lists/list-1/convert-cbz", nil)
+	w := httptest.NewRecorder()
+	s.handleListsRouter(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	book1, err := s.backend.GetBook("1")
+	if err != nil || book1 == nil {
+		t.Fatalf("GetBook(1) error = %v", err)
+	}
+	if got := workflow.GetStage(book1); got != workflow.StageScrape {
+		t.Errorf("workflow stage = %v, want StageScrape", got)
 	}
 }
 

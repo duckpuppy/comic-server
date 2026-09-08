@@ -9,6 +9,7 @@ import (
 
 	"github.com/duckpuppy/comic-server/internal/config"
 	"github.com/duckpuppy/comic-server/internal/library"
+	"github.com/duckpuppy/comic-server/internal/workflow"
 )
 
 func newScanInfoTestServer(t *testing.T, scanInfoCfg config.ScanInfoConfig, books []library.ComicBook) *Server {
@@ -103,6 +104,42 @@ func TestHandleRunScanInfo_DetectsAndUpdatesBooks(t *testing.T) {
 	}
 	if book2.ScanInformation != "Scanner:Unknown" {
 		t.Errorf("book 2 ScanInformation changed unexpectedly: %q", book2.ScanInformation)
+	}
+}
+
+// TestHandleRunScanInfo_AdvancesWorkflowStage covers comic-server-1iv.2:
+// a book that gets a NEW scan-info tag, and one that already had a
+// correct tag (detection still succeeds, nothing changes), must BOTH
+// advance to StageDataManager - success is defined by detection
+// succeeding, not by whether this specific run wrote a new value.
+func TestHandleRunScanInfo_AdvancesWorkflowStage(t *testing.T) {
+	scanInfoCfg := config.ScanInfoConfig{
+		Enabled:  true,
+		Scanners: []string{"FakeScanCo"},
+		Prefix:   "Scanner:",
+		Unknown:  "Unknown",
+	}
+	books := []library.ComicBook{
+		{ID: "1", Series: "Batman", FilePath: `Batman 001 (2016) (Zeta-Fictscans).cbz`},
+		{ID: "2", Series: "Batman", FilePath: `Batman 002 (2016).cbz`, ScanInformation: "Scanner:Unknown"},
+	}
+	s := newScanInfoTestServer(t, scanInfoCfg, books)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/library/lists/list-1/scan-info", nil)
+	w := httptest.NewRecorder()
+	s.handleListsRouter(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	for _, id := range []string{"1", "2"} {
+		book, err := s.backend.GetBook(id)
+		if err != nil || book == nil {
+			t.Fatalf("GetBook(%s) error = %v", id, err)
+		}
+		if got := workflow.GetStage(book); got != workflow.StageDataManager {
+			t.Errorf("book %s workflow stage = %v, want StageDataManager", id, got)
+		}
 	}
 }
 

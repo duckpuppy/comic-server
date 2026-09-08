@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/duckpuppy/comic-server/internal/library"
+	"github.com/duckpuppy/comic-server/internal/workflow"
 )
 
 var errTest = errors.New("update failed")
@@ -377,6 +378,10 @@ func TestApplyMetadata_NoteScrapeDate(t *testing.T) {
 func TestWriteMetadata_PersistsOnChange(t *testing.T) {
 	backend := &fakeBackend{}
 	book := &library.ComicBook{ID: "book-1"}
+	// Explicit stage matching the real production scenario: a backfilled
+	// book sitting at StageScrape, about to actually get scraped -
+	// comic-server-1iv.2.
+	workflow.SetStage(book, workflow.StageScrape)
 
 	result, err := WriteMetadata(backend, book, testVolume(), testIssueDetail(), DefaultScraperConfig())
 	if err != nil {
@@ -390,6 +395,9 @@ func TestWriteMetadata_PersistsOnChange(t *testing.T) {
 	}
 	if len(backend.dirty) != 1 || backend.dirty[0] != "book-1" {
 		t.Errorf("MarkDirty not called with book-1: %+v", backend.dirty)
+	}
+	if got := workflow.GetStage(book); got != workflow.StageScanInfo {
+		t.Errorf("workflow stage = %v, want StageScanInfo", got)
 	}
 }
 

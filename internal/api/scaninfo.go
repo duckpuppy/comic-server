@@ -9,6 +9,7 @@ import (
 	"github.com/duckpuppy/comic-server/internal/library"
 	"github.com/duckpuppy/comic-server/internal/log"
 	"github.com/duckpuppy/comic-server/internal/scaninfo"
+	"github.com/duckpuppy/comic-server/internal/workflow"
 )
 
 // ScanInfoResult is the response for POST .../scan-info.
@@ -76,6 +77,7 @@ func (s *Server) handleRunScanInfo(w http.ResponseWriter, r *http.Request) {
 
 	result := ScanInfoResult{Processed: len(books)}
 	var toUpdate []*library.ComicBook
+	rulesets := s.loadWorkflowRulesets()
 
 	for _, book := range books {
 		tag, ok := detector.DetectTag(toScanInfoBook(book))
@@ -84,13 +86,22 @@ func (s *Server) handleRunScanInfo(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		merged, changed := scaninfo.MergeTag(book.ScanInformation, tag)
-		if !changed {
+		if changed {
+			book.ScanInformation = merged
+			result.Updated++
+		} else {
 			result.Skipped++
-			continue
 		}
-		book.ScanInformation = merged
-		toUpdate = append(toUpdate, book)
-		result.Updated++
+
+		// A successful detection (ok=true) means scan info is now known-
+		// good for this book, whether or not THIS run changed the stored
+		// value - so the workflow stage should advance either way
+		// (comic-server-1iv.2). The book needs re-persisting if the
+		// field changed, the stage changed, or both.
+		stageAdvanced := workflow.AdvanceIfAtOrBefore(book, workflow.StageScanInfo, rulesets)
+		if changed || stageAdvanced {
+			toUpdate = append(toUpdate, book)
+		}
 	}
 
 	if len(toUpdate) > 0 {

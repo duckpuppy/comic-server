@@ -11,6 +11,7 @@ import (
 	"github.com/duckpuppy/comic-server/internal/datamanager"
 	"github.com/duckpuppy/comic-server/internal/library"
 	"github.com/duckpuppy/comic-server/internal/log"
+	"github.com/duckpuppy/comic-server/internal/workflow"
 )
 
 // DMFieldChange is the wire shape of one datamanager.FieldChange.
@@ -277,6 +278,14 @@ func (s *Server) runDataManagerOverBooks(candidates []*library.ComicBook, rulese
 	}
 	result.Changed = len(toUpdate)
 	result.Books = selectedChanges
+
+	// Every book actually committed here just had Data Manager's current
+	// rules successfully applied - advance its workflow stage
+	// (comic-server-1iv.2) using the SAME rulesets already loaded for
+	// this run, not a fresh load.
+	for _, book := range toUpdate {
+		workflow.AdvanceIfAtOrBefore(book, workflow.StageDataManager, rulesets)
+	}
 
 	if len(toUpdate) > 0 {
 		if err := s.backend.UpdateBooks(toUpdate); err != nil {
