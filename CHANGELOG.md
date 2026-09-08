@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.0](https://github.com/duckpuppy/comic-server/compare/v1.17.0...v1.18.0) (2026-09-08)
+
+
+### Features
+
+* Data Manager per-field-change selective apply ([71dd640](https://github.com/duckpuppy/comic-server/commit/71dd640d3f5d848b0e8ad8c31e626af8e6a6fcd2))
+
 ## [1.17.0](https://github.com/duckpuppy/comic-server/compare/v1.16.1...v1.17.0) (2026-09-06)
 
 
