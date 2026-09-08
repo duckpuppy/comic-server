@@ -52,6 +52,30 @@ func seedBatmanRuleset(t *testing.T, db *configdb.DB) {
 	}
 }
 
+// seedBatmanRulesetTwoActions is seedBatmanRuleset's sibling with TWO
+// actions on the same rule (SeriesGroup and a custom "Concept" value), so
+// a single matching book gets two field changes at once - needed to
+// exercise field-level selective apply (comic-server-z93), which
+// specifically needs "keep one field, skip the other on the same book".
+func seedBatmanRulesetTwoActions(t *testing.T, db *configdb.DB) {
+	t.Helper()
+	if err := db.CreateDMGroup(configdb.DMGroup{ID: "g-quality", Name: "Quality", SortOrder: 0}); err != nil {
+		t.Fatalf("CreateDMGroup: %v", err)
+	}
+	if err := db.CreateDMRuleset(configdb.DMRuleset{ID: "rs-batman", GroupID: "g-quality", Name: "Batman Family", Mode: "AND", SortOrder: 1}); err != nil {
+		t.Fatalf("CreateDMRuleset: %v", err)
+	}
+	if _, err := db.CreateDMRule(configdb.DMRule{RulesetID: "rs-batman", Field: "Series", Modifier: "Is", Value: "Batman", SortOrder: 0}); err != nil {
+		t.Fatalf("CreateDMRule: %v", err)
+	}
+	if _, err := db.CreateDMAction(configdb.DMAction{RulesetID: "rs-batman", Field: "SeriesGroup", Modifier: "SetValue", Value: "Batman Family", SortOrder: 0}); err != nil {
+		t.Fatalf("CreateDMAction(SeriesGroup): %v", err)
+	}
+	if _, err := db.CreateDMAction(configdb.DMAction{RulesetID: "rs-batman", Field: "Concept", Modifier: "SetValue", Value: "Dark Knight", SortOrder: 1}); err != nil {
+		t.Fatalf("CreateDMAction(Concept): %v", err)
+	}
+}
+
 func TestHandleDataManagerPreview_NoRulesReturns422(t *testing.T) {
 	s, _ := newDataManagerTestServer(t, []library.ComicBook{{ID: "1", Series: "Batman"}})
 
@@ -360,4 +384,106 @@ func TestHandleDataManagerApplyLibrary_ApplyAllCommitsEveryChangedBook(t *testin
 	if book1.SeriesGroup != "Batman Family" || book2.SeriesGroup != "Batman Family" {
 		t.Errorf("expected both Batman books updated, got book1=%q book2=%q", book1.SeriesGroup, book2.SeriesGroup)
 	}
+}
+
+// TestHandleDataManagerApply_FieldLevelSelectiveApply is
+// comic-server-z93's core case: a book with TWO changed fields
+// (SeriesGroup, a built-in field; Concept, a custom value) should let the
+// caller commit just one of them and leave the other at its original
+// value, even though both matched the same ruleset run.
+func TestHandleDataManagerApply_FieldLevelSelectiveApply(t *testing.T) {
+	books := []library.ComicBook{{ID: "1", Series: "Batman"}}
+	s, db := newDataManagerTestServer(t, books)
+	seedBatmanRulesetTwoActions(t, db)
+
+	body := strings.NewReader(`{"fields":[{"book_id":"1","field":"SeriesGroup","custom":false}]}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/library/lists/list-1/datamanager-apply", body)
+	w := httptest.NewRecorder()
+	s.handleListsRouter(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var result DMRunResult
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if result.Changed != 1 || len(result.Books) != 1 || len(result.Books[0].Changes) != 1 {
+		t.Fatalf("expected exactly 1 book with 1 committed field, got %+v", result)
+	}
+	if result.Books[0].Changes[0].Field != "SeriesGroup" {
+		t.Errorf("committed field = %q, want %q", result.Books[0].Changes[0].Field, "SeriesGroup")
+	}
+
+	book1, err := s.backend.GetBook("1")
+	if err != nil || book1 == nil {
+		t.Fatalf("GetBook(1): %v", err)
+	}
+	if book1.SeriesGroup != "Batman Family" {
+		t.Errorf("SeriesGroup = %q, want %q (selected field)", book1.SeriesGroup, "Batman Family")
+	}
+	if _, hasConcept := getCustomValueForTest(book1, "Concept"); hasConcept {
+		t.Errorf("Concept custom value should be untouched (not selected), got a value")
+	}
+}
+
+// TestHandleDataManagerApply_FieldSelectorsTakePrecedenceOverBookIDs
+// covers DMApplyRequest's documented precedence: when Fields is
+// non-empty, BookIDs is ignored entirely, even if it also names the book.
+func TestHandleDataManagerApply_FieldSelectorsTakePrecedenceOverBookIDs(t *testing.T) {
+	books := []library.ComicBook{{ID: "1", Series: "Batman"}}
+	s, db := newDataManagerTestServer(t, books)
+	seedBatmanRulesetTwoActions(t, db)
+
+	// BookIDs also present, but Fields must win - only SeriesGroup should
+	// land, not the whole book (which would also set Concept).
+	body := strings.NewReader(`{"book_ids":["1"],"fields":[{"book_id":"1","field":"SeriesGroup","custom":false}]}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/library/lists/list-1/datamanager-apply", body)
+	w := httptest.NewRecorder()
+	s.handleListsRouter(w, req)
+
+	var result DMRunResult
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(result.Books) != 1 || len(result.Books[0].Changes) != 1 {
+		t.Fatalf("expected Fields selection (1 field) to win over BookIDs (whole book), got %+v", result)
+	}
+}
+
+// TestHandleDataManagerApply_StaleFieldSelectorIsSilentlySkipped mirrors
+// the book-level re-verification test: a field selector that no longer
+// matches a fresh change (unknown field name here) must be skipped, not
+// error the whole request.
+func TestHandleDataManagerApply_StaleFieldSelectorIsSilentlySkipped(t *testing.T) {
+	books := []library.ComicBook{{ID: "1", Series: "Batman"}}
+	s, db := newDataManagerTestServer(t, books)
+	seedBatmanRuleset(t, db) // single-action ruleset - only SeriesGroup changes
+
+	body := strings.NewReader(`{"fields":[{"book_id":"1","field":"SeriesGroup","custom":false},{"book_id":"1","field":"Notes","custom":false}]}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/library/lists/list-1/datamanager-apply", body)
+	w := httptest.NewRecorder()
+	s.handleListsRouter(w, req)
+
+	var result DMRunResult
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if result.Changed != 1 || len(result.Books[0].Changes) != 1 {
+		t.Fatalf("expected only the real SeriesGroup change committed, stale Notes selector skipped, got %+v", result)
+	}
+}
+
+func getCustomValueForTest(book *library.ComicBook, key string) (string, bool) {
+	for pair := range strings.SplitSeq(book.CustomValuesStore, ",") {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		k, v, found := strings.Cut(pair, "=")
+		if found && strings.TrimSpace(k) == key {
+			return strings.TrimSpace(v), true
+		}
+	}
+	return "", false
 }

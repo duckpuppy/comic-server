@@ -59,13 +59,26 @@ type DMRunResult struct {
 	HasMore bool `json:"has_more,omitempty"`
 }
 
+// DMFieldSelector identifies one field change within one book, for
+// field-level selective apply (comic-server-z93) - the finer-grained
+// sibling of book-level selection (comic-server-dpq): "keep the
+// SeriesGroup change but skip the Tags change on the same book".
+type DMFieldSelector struct {
+	BookID string `json:"book_id"`
+	Field  string `json:"field"`
+	Custom bool   `json:"custom"`
+}
+
 // DMApplyRequest is the optional JSON body for an apply request -
-// selective apply (comic-server-dpq): when BookIDs is non-empty, only
-// those books are committed even if more books matched and changed;
-// omitted or empty means "apply everything that changed", matching the
-// original whole-run-at-once behavior.
+// selective apply (comic-server-dpq, comic-server-z93). Fields takes
+// precedence when non-empty: only those exact book+field pairs are
+// committed, and BookIDs is ignored. Otherwise BookIDs selects whole
+// books (every one of that book's changes). Both empty means "apply
+// everything that changed", matching the original whole-run-at-once
+// behavior.
 type DMApplyRequest struct {
-	BookIDs []string `json:"book_ids,omitempty"`
+	BookIDs []string          `json:"book_ids,omitempty"`
+	Fields  []DMFieldSelector `json:"fields,omitempty"`
 }
 
 // handleDataManagerPreview runs every enabled Data Manager ruleset against
@@ -134,6 +147,7 @@ func (s *Server) runDataManagerList(w http.ResponseWriter, r *http.Request, suff
 	}
 
 	var bookIDs []string
+	var fields []DMFieldSelector
 	if apply {
 		req, err := parseDMApplyRequest(r)
 		if err != nil {
@@ -141,9 +155,10 @@ func (s *Server) runDataManagerList(w http.ResponseWriter, r *http.Request, suff
 			return
 		}
 		bookIDs = req.BookIDs
+		fields = req.Fields
 	}
 
-	result := s.runDataManagerOverBooks(books, rulesets, apply, bookIDs)
+	result := s.runDataManagerOverBooks(books, rulesets, apply, bookIDs, fields)
 	s.writeJSON(w, http.StatusOK, result)
 }
 
@@ -163,10 +178,10 @@ func (s *Server) handleDataManagerPreviewLibrary(w http.ResponseWriter, r *http.
 
 // handleDataManagerApplyLibrary is handleDataManagerApply's whole-library
 // counterpart. Unlike the paginated preview, apply is not paginated: with
-// no book_ids given it commits every changed book in the library in one
-// action (the literal "Apply All"), and with book_ids given it commits
-// only that (typically much smaller, user-selected) set - see
-// selectForApply.
+// no selection given it commits every changed book in the library in one
+// action (the literal "Apply All"), and with book_ids or fields given it
+// commits only that (typically much smaller, user-selected) set - see
+// selectForApply and selectForApplyFields.
 // POST /api/library/datamanager-apply
 func (s *Server) handleDataManagerApplyLibrary(w http.ResponseWriter, r *http.Request) {
 	s.runDataManagerLibrary(w, r, true)
@@ -209,6 +224,7 @@ func (s *Server) runDataManagerLibrary(w http.ResponseWriter, r *http.Request, a
 	}
 
 	var bookIDs []string
+	var fields []DMFieldSelector
 	if apply {
 		req, err := parseDMApplyRequest(r)
 		if err != nil {
@@ -216,9 +232,10 @@ func (s *Server) runDataManagerLibrary(w http.ResponseWriter, r *http.Request, a
 			return
 		}
 		bookIDs = req.BookIDs
+		fields = req.Fields
 	}
 
-	result := s.runDataManagerOverBooks(books, rulesets, apply, bookIDs)
+	result := s.runDataManagerOverBooks(books, rulesets, apply, bookIDs, fields)
 
 	if !apply {
 		result.Limit, result.Offset = parseLimitOffset(r, 20, 100)
@@ -233,11 +250,13 @@ func (s *Server) runDataManagerLibrary(w http.ResponseWriter, r *http.Request, a
 }
 
 // runDataManagerOverBooks evaluates rulesets against candidates and,
-// if apply is true, commits the result via Backend.UpdateBooks - either
-// every changed book (bookIDs empty) or only the requested ids
-// (comic-server-dpq's selective apply), re-verified against this fresh
-// run rather than trusting a possibly-stale client-held preview.
-func (s *Server) runDataManagerOverBooks(candidates []*library.ComicBook, rulesets []datamanager.Ruleset, apply bool, bookIDs []string) DMRunResult {
+// if apply is true, commits the result via Backend.UpdateBooks. Selection
+// precedence matches DMApplyRequest: non-empty fieldSelectors commits only
+// those exact book+field pairs (comic-server-z93); otherwise non-empty
+// bookIDs commits whole books (comic-server-dpq); otherwise every changed
+// book is committed. Every path re-verifies the selection against this
+// fresh run rather than trusting a possibly-stale client-held preview.
+func (s *Server) runDataManagerOverBooks(candidates []*library.ComicBook, rulesets []datamanager.Ruleset, apply bool, bookIDs []string, fieldSelectors []DMFieldSelector) DMRunResult {
 	changes, errs, updated := dmEvaluate(candidates, rulesets)
 	result := DMRunResult{Processed: len(candidates), Applied: apply, Errors: errs}
 
@@ -247,7 +266,17 @@ func (s *Server) runDataManagerOverBooks(candidates []*library.ComicBook, rulese
 		return result
 	}
 
-	selectedChanges, toUpdate := selectForApply(changes, updated, bookIDs)
+	var selectedChanges []DMBookChange
+	var toUpdate []*library.ComicBook
+	if len(fieldSelectors) > 0 {
+		originals := make(map[string]*library.ComicBook, len(candidates))
+		for _, b := range candidates {
+			originals[b.ID] = b
+		}
+		selectedChanges, toUpdate = selectForApplyFields(changes, originals, fieldSelectors)
+	} else {
+		selectedChanges, toUpdate = selectForApply(changes, updated, bookIDs)
+	}
 	result.Changed = len(toUpdate)
 	result.Books = selectedChanges
 
@@ -323,6 +352,92 @@ func selectForApply(changes []DMBookChange, updated map[string]*library.ComicBoo
 		toUpdate = append(toUpdate, updated[c.BookID])
 	}
 	return selected, toUpdate
+}
+
+// selectForApplyFields builds a partial commit set for field-level
+// selective apply (comic-server-z93): for each requested (book_id, field,
+// custom) selector, if that exact field change is still present in this
+// run's fresh changes, apply ONLY that field's new value onto a copy of
+// the book's ORIGINAL (pre-rule-run) state - not the working copy every
+// changed field was written into - so any of that book's OTHER changed
+// fields are left untouched, even ones that also matched. A selector that
+// no longer matches a fresh change (the book stopped matching, or that
+// specific field stopped needing a change) is silently skipped, same
+// re-verification policy as selectForApply's book-level selection.
+func selectForApplyFields(changes []DMBookChange, originals map[string]*library.ComicBook, selectors []DMFieldSelector) (selected []DMBookChange, toUpdate []*library.ComicBook) {
+	byBook := make(map[string]DMBookChange, len(changes))
+	for _, c := range changes {
+		byBook[c.BookID] = c
+	}
+
+	wantByBook := make(map[string][]DMFieldSelector)
+	var order []string
+	for _, sel := range selectors {
+		if _, seen := wantByBook[sel.BookID]; !seen {
+			order = append(order, sel.BookID)
+		}
+		wantByBook[sel.BookID] = append(wantByBook[sel.BookID], sel)
+	}
+
+	for _, bookID := range order {
+		bookChange, ok := byBook[bookID]
+		if !ok {
+			continue
+		}
+		original, ok := originals[bookID]
+		if !ok {
+			continue
+		}
+
+		working := *original
+		var appliedChanges []DMFieldChange
+		for _, sel := range wantByBook[bookID] {
+			var match *DMFieldChange
+			for i := range bookChange.Changes {
+				if bookChange.Changes[i].Field == sel.Field && bookChange.Changes[i].Custom == sel.Custom {
+					match = &bookChange.Changes[i]
+					break
+				}
+			}
+			if match == nil {
+				continue
+			}
+			if err := applyFieldValue(&working, match.Field, match.Custom, match.New); err != nil {
+				// Already validated once during the rules run that produced
+				// this exact field change, so a write error here would mean
+				// something changed underneath us - skip defensively rather
+				// than fail the whole request over one field.
+				continue
+			}
+			appliedChanges = append(appliedChanges, *match)
+		}
+		if len(appliedChanges) == 0 {
+			continue
+		}
+
+		selected = append(selected, DMBookChange{
+			BookID:  bookChange.BookID,
+			Series:  bookChange.Series,
+			Number:  bookChange.Number,
+			Title:   bookChange.Title,
+			Changes: appliedChanges,
+		})
+		toUpdate = append(toUpdate, &working)
+	}
+	return selected, toUpdate
+}
+
+// applyFieldValue writes value to field on book as either a built-in field
+// (via datamanager.SetFieldString) or a custom value (via
+// library.SetCustomValue), matching how datamanager.ApplyAll itself
+// distinguishes the two - see internal/datamanager/actions.go's
+// writeAnyField for the same split.
+func applyFieldValue(book *library.ComicBook, field string, custom bool, value string) error {
+	if custom {
+		book.CustomValuesStore = library.SetCustomValue(book.CustomValuesStore, field, value)
+		return nil
+	}
+	return datamanager.SetFieldString(book, field, value)
 }
 
 // parseDMApplyRequest reads an optional JSON body for an apply request -
