@@ -161,7 +161,7 @@ const ListManager = {
 
             if (!response.ok) {
                 const error = await response.text();
-                throw new Error(error);
+                throw new Error(friendlyErrorText(response, error));
             }
 
             // Reload and re-render
@@ -186,7 +186,7 @@ const ListManager = {
 
             if (!response.ok) {
                 const error = await response.text();
-                throw new Error(error);
+                throw new Error(friendlyErrorText(response, error));
             }
 
             // Reload and re-render

@@ -733,7 +733,7 @@ class ListDetail {
 
             if (!resp.ok) {
                 const text = await resp.text();
-                throw new Error(text || 'Save failed');
+                throw new Error(friendlyErrorText(resp, text, 'Save failed'));
             }
 
             // Reload and exit edit mode
@@ -762,7 +762,7 @@ class ListDetail {
             const resp = await fetch(`/api/library/lists/${this.listId}`, { method: 'DELETE' });
             if (!resp.ok) {
                 const text = await resp.text();
-                throw new Error(text || 'Delete failed');
+                throw new Error(friendlyErrorText(resp, text, 'Delete failed'));
             }
             router.navigate('/lists');
         } catch (e) {
@@ -917,7 +917,7 @@ class ListDetail {
             const response = await fetch(`/api/library/lists/${this.listId}/${suffix}`, { method: 'POST' });
             const text = await response.text();
             if (!response.ok) {
-                throw new Error(text || `Failed to run Data Manager ${apply ? 'apply' : 'preview'}`);
+                throw new Error(friendlyErrorText(response, text, `Failed to run Data Manager ${apply ? 'apply' : 'preview'}`));
             }
             this.dmResult = JSON.parse(text);
         } catch (error) {
@@ -945,7 +945,7 @@ class ListDetail {
             const response = await fetch(`/api/library/lists/${this.listId}/scan-info`, { method: 'POST' });
             const text = await response.text();
             if (!response.ok) {
-                throw new Error(text || 'Failed to run scan info detection');
+                throw new Error(friendlyErrorText(response, text, 'Failed to run scan info detection'));
             }
             const result = JSON.parse(text);
             resultEl.textContent = `Processed ${result.processed}, updated ${result.updated}, skipped ${result.skipped}.`;
@@ -976,7 +976,7 @@ class ListDetail {
             const response = await fetch(`/api/library/lists/${this.listId}/convert-cbz`, { method: 'POST' });
             const text = await response.text();
             if (!response.ok) {
-                throw new Error(text || 'Failed to run CBZ conversion');
+                throw new Error(friendlyErrorText(response, text, 'Failed to run CBZ conversion'));
             }
             const result = JSON.parse(text);
             resultEl.textContent = `Processed ${result.processed}, converted ${result.converted}.`;
@@ -1272,7 +1272,7 @@ class ListDetail {
 
             if (!response.ok) {
                 const text = await response.text();
-                throw new Error(text || 'Failed to save Komga target');
+                throw new Error(friendlyErrorText(response, text, 'Failed to save Komga target'));
             }
 
             await this.loadKomgaTarget();

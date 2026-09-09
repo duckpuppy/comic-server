@@ -220,7 +220,7 @@ class WorkflowPage {
             const response = await fetch(url, { method: 'POST' });
             const text = await response.text();
             if (!response.ok && response.status !== 202) {
-                throw new Error(text || `Failed to run ${stage}`);
+                throw new Error(friendlyErrorText(response, text, `Failed to run ${stage}`));
             }
             const result = text ? JSON.parse(text) : {};
             this.lastResult = describe(result);

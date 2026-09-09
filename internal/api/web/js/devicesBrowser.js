@@ -252,7 +252,7 @@ class DevicesBrowser {
             }
 
             const error = await response.text();
-            throw new Error(error || `HTTP ${response.status}`);
+            throw new Error(friendlyErrorText(response, error));
         } catch (error) {
             console.error('Failed to trigger sync:', error);
             dialogs.toast(`Failed to start sync: ${error.message}`, 'error');
@@ -423,7 +423,7 @@ class DevicesBrowser {
             } else {
                 const error = await response.text();
                 console.error('Failed to register device:', error);
-                dialogs.toast(`Failed to register device: ${error}`, 'error');
+                dialogs.toast(`Failed to register device: ${friendlyErrorText(response, error)}`, 'error');
             }
         } catch (error) {
             console.error('Error registering device:', error);
@@ -457,7 +457,7 @@ class DevicesBrowser {
             } else {
                 const error = await response.text();
                 console.error('Failed to unregister device:', error);
-                dialogs.toast(`Failed to unregister device: ${error}`, 'error');
+                dialogs.toast(`Failed to unregister device: ${friendlyErrorText(response, error)}`, 'error');
             }
         } catch (error) {
             console.error('Error unregistering device:', error);

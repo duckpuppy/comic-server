@@ -488,7 +488,7 @@ class DeviceSettings {
 
             if (!response.ok) {
                 const error = await response.text();
-                throw new Error(error || `HTTP ${response.status}`);
+                throw new Error(friendlyErrorText(response, error));
             }
 
             this.device.friendly_name = newName;
@@ -525,7 +525,7 @@ class DeviceSettings {
 
             if (!response.ok) {
                 const error = await response.text();
-                throw new Error(error || `HTTP ${response.status}`);
+                throw new Error(friendlyErrorText(response, error));
             }
 
             // Reload device info to show the new list
@@ -554,7 +554,7 @@ class DeviceSettings {
 
             if (!response.ok) {
                 const error = await response.text();
-                throw new Error(error || `HTTP ${response.status}`);
+                throw new Error(friendlyErrorText(response, error));
             }
 
             // Update local state
@@ -591,7 +591,7 @@ class DeviceSettings {
 
             if (!response.ok) {
                 const error = await response.text();
-                throw new Error(error || `HTTP ${response.status}`);
+                throw new Error(friendlyErrorText(response, error));
             }
 
             // Reload device info to show updated lists
@@ -749,7 +749,7 @@ class DeviceSettings {
 
             if (!response.ok) {
                 const error = await response.text();
-                throw new Error(error || `HTTP ${response.status}`);
+                throw new Error(friendlyErrorText(response, error));
             }
 
             // Update local state

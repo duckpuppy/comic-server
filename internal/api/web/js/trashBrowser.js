@@ -190,7 +190,7 @@ class TrashBrowser {
             });
             const text = await response.text();
             if (!response.ok) {
-                throw new Error(text || 'Failed to restore');
+                throw new Error(friendlyErrorText(response, text, 'Failed to restore'));
             }
             const result = JSON.parse(text);
             if (result.errors && result.errors.length > 0) {

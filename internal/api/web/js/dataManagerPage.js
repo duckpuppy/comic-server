@@ -196,7 +196,7 @@ class DataManagerPage {
             const response = await fetch(url, { method: 'POST' });
             const text = await response.text();
             if (!response.ok) {
-                throw new Error(text || 'Failed to preview Data Manager rules');
+                throw new Error(friendlyErrorText(response, text, 'Failed to preview Data Manager rules'));
             }
             const result = JSON.parse(text);
             this.summary = { processed: result.processed, changed: result.changed };
@@ -243,7 +243,7 @@ class DataManagerPage {
             });
             const text = await response.text();
             if (!response.ok) {
-                throw new Error(text || 'Failed to apply Data Manager rules');
+                throw new Error(friendlyErrorText(response, text, 'Failed to apply Data Manager rules'));
             }
             this.lastResult = JSON.parse(text);
             // Refresh from offset 0 so the table reflects post-apply

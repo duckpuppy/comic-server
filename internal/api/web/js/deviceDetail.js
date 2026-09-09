@@ -239,7 +239,7 @@ class DeviceDetail {
             }
 
             const text = await response.text();
-            throw new Error(text || `HTTP ${response.status}`);
+            throw new Error(friendlyErrorText(response, text));
         } catch (error) {
             console.error('Failed to trigger sync:', error);
             dialogs.toast('Failed to start sync. Please try again.', 'error');
@@ -585,7 +585,7 @@ class DeviceDetail {
 
             if (!response.ok) {
                 const error = await response.text();
-                throw new Error(error || `HTTP ${response.status}`);
+                throw new Error(friendlyErrorText(response, error));
             }
 
             // Reload device info to show the new list
@@ -616,7 +616,7 @@ class DeviceDetail {
 
             if (!response.ok) {
                 const error = await response.text();
-                throw new Error(error || `HTTP ${response.status}`);
+                throw new Error(friendlyErrorText(response, error));
             }
 
             // Update local state
@@ -655,7 +655,7 @@ class DeviceDetail {
 
             if (!response.ok) {
                 const error = await response.text();
-                throw new Error(error || `HTTP ${response.status}`);
+                throw new Error(friendlyErrorText(response, error));
             }
 
             // Reload device info to show updated lists

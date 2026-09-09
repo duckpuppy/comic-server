@@ -186,7 +186,7 @@ class OrganizePage {
             const response = await fetch(`/api/library/workflow/organize-preview?profile=${encodeURIComponent(this.profileId)}`);
             const text = await response.text();
             if (!response.ok) {
-                throw new Error(text || 'Failed to preview Library Organizer plan');
+                throw new Error(friendlyErrorText(response, text, 'Failed to preview Library Organizer plan'));
             }
             const result = JSON.parse(text);
             this.moves = result.moves || [];
@@ -225,7 +225,7 @@ class OrganizePage {
             });
             const text = await response.text();
             if (!response.ok) {
-                throw new Error(text || 'Failed to apply Library Organizer plan');
+                throw new Error(friendlyErrorText(response, text, 'Failed to apply Library Organizer plan'));
             }
             this.lastResult = JSON.parse(text);
             await this.preview();
