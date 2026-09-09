@@ -177,6 +177,11 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/library/lists", s.handleGetLists)
 	s.mux.HandleFunc("/api/library/lists/", s.handleListsRouter)
 
+	// Ad-hoc filtered browsing (comic-server-joj) - the same matcher
+	// engine every saved smart list uses, evaluated on the fly with
+	// nothing created or saved.
+	s.mux.HandleFunc("/api/library/browse", s.handleBrowse)
+
 	// Data Manager whole-library endpoints (comic-server-dpq's "Apply
 	// All" - the list-scoped equivalents are under /api/library/lists/).
 	// Both start a background job (202 + job_id) rather than blocking -

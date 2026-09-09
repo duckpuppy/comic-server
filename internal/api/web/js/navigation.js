@@ -24,6 +24,10 @@ class Navigation {
                     <span class="nav-label">Lists</span>
                     <span class="nav-badge" id="lists-count">0</span>
                 </a>
+                <a href="/browse" class="nav-tab" data-tab="browse">
+                    <span class="nav-icon">🔍</span>
+                    <span class="nav-label">Browse</span>
+                </a>
                 <a href="/devices" class="nav-tab" data-tab="devices">
                     <span class="nav-icon">📱</span>
                     <span class="nav-label">Devices</span>
