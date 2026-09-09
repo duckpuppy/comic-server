@@ -192,3 +192,37 @@ func TestMigrateV5ToV6_AddsDataManagerTables(t *testing.T) {
 		}
 	}
 }
+
+func TestMigrateV6ToV7_AddsLibraryOrganizerTables(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+
+	raw, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open raw db: %v", err)
+	}
+	if _, err := raw.Exec("PRAGMA user_version = 6"); err != nil {
+		t.Fatalf("set v6: %v", err)
+	}
+	raw.Close()
+
+	db, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer db.Close()
+
+	var version int
+	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
+		t.Fatalf("query user_version: %v", err)
+	}
+	if version != schemaVersion {
+		t.Errorf("expected schema version %d after migration, got %d", schemaVersion, version)
+	}
+
+	for _, table := range []string{"lo_profiles", "lo_profile_items", "lo_exclude_rules"} {
+		var name string
+		if err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&name); err != nil {
+			t.Errorf("expected table %s to exist after migration: %v", table, err)
+		}
+	}
+}

@@ -7,8 +7,9 @@ import "fmt"
 // (comic-server-3ek). Version 3 adds komga_targets (comic-server-cde).
 // Version 4 adds sync_history (comic-server-7vu). Version 5 adds scan_info
 // (comic-server-4ms). Version 6 adds dm_groups/dm_rulesets/dm_rules/
-// dm_actions (comic-server-764.4).
-const schemaVersion = 6
+// dm_actions (comic-server-764.4). Version 7 adds lo_profiles/
+// lo_profile_items/lo_exclude_rules (comic-server-3bz.2).
+const schemaVersion = 7
 
 // initSchema brings the database up to schemaVersion. No-ops if already
 // current - safe to call on every Open, every server startup.
@@ -52,6 +53,11 @@ func (db *DB) initSchema() error {
 				return fmt.Errorf("migrate v5→v6: %w", err)
 			}
 		}
+		if version < 7 {
+			if err := db.migrateV6ToV7(); err != nil {
+				return fmt.Errorf("migrate v6→v7: %w", err)
+			}
+		}
 	}
 
 	if _, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
@@ -75,7 +81,10 @@ func (db *DB) createTables() error {
 	if err := db.createScanInfoTable(); err != nil {
 		return err
 	}
-	return db.createDataManagerTables()
+	if err := db.createDataManagerTables(); err != nil {
+		return err
+	}
+	return db.createLibraryOrganizerTables()
 }
 
 // migrateV1ToV2 adds the devices/device_lists tables for a database that
@@ -139,6 +148,12 @@ func (db *DB) migrateV4ToV5() error {
 // devices/device_lists/komga_targets/sync_history/scan_info only).
 func (db *DB) migrateV5ToV6() error {
 	return db.createDataManagerTables()
+}
+
+// migrateV6ToV7 adds the lo_profiles/lo_profile_items/lo_exclude_rules
+// tables for a database created under schemaVersion 6.
+func (db *DB) migrateV6ToV7() error {
+	return db.createLibraryOrganizerTables()
 }
 
 // createDataManagerTables creates the tables backing the Data Manager rule
@@ -208,6 +223,77 @@ func (db *DB) createDataManagerTables() error {
 	for _, stmt := range stmts {
 		if _, err := db.Exec(stmt); err != nil {
 			return fmt.Errorf("create data manager tables: %w", err)
+		}
+	}
+	return nil
+}
+
+// createLibraryOrganizerTables creates the tables backing the Library
+// Organizer file-mover port (comic-server-3bz): lo_profiles holds each
+// profile's scalar settings (BaseFolder, FolderTemplate/FileTemplate,
+// Mode, etc - see internal/libraryorganizer.Profile for the engine that
+// consumes them; configdb intentionally doesn't import that package,
+// same separation KomgaTarget established from internal/config).
+//
+// The real losettingsx.dat has SEVEN distinct Item-list collections per
+// profile (IllegalCharacters, Months, Prefix, Postfix, Seperator,
+// TextBox, EmptyData) plus ExcludedEmptyFolder/ExcludeFolders/
+// FailedFields - all structurally identical "Name -> Value" pairs. Rather
+// than one table per collection, lo_profile_items is one generic
+// key-value side table with a `category` column distinguishing which
+// collection a row belongs to - the same "one flexible table instead of
+// seven near-identical ones" call already made for book_custom_values
+// (internal/storage) elsewhere in this codebase.
+//
+// lo_exclude_rules is its own table (not folded into lo_profile_items)
+// since it has real structure of its own (Field/Operator/Value, not just
+// Name/Value) - see comic-server-3bz.3.
+func (db *DB) createLibraryOrganizerTables() error {
+	stmts := []string{
+		`CREATE TABLE IF NOT EXISTS lo_profiles (
+			id                      TEXT PRIMARY KEY,
+			name                    TEXT NOT NULL,
+			base_folder             TEXT NOT NULL DEFAULT '',
+			folder_template         TEXT NOT NULL DEFAULT '',
+			file_template           TEXT NOT NULL DEFAULT '',
+			empty_folder            TEXT NOT NULL DEFAULT '',
+			mode                    TEXT NOT NULL DEFAULT 'Move',
+			copy_mode               INTEGER NOT NULL DEFAULT 0,
+			use_folder              INTEGER NOT NULL DEFAULT 1,
+			use_filename            INTEGER NOT NULL DEFAULT 1,
+			replace_multiple_spaces INTEGER NOT NULL DEFAULT 1,
+			auto_space_fields       INTEGER NOT NULL DEFAULT 1,
+			remove_empty_folder     INTEGER NOT NULL DEFAULT 1,
+			move_fileless           INTEGER NOT NULL DEFAULT 0,
+			fileless_format         TEXT NOT NULL DEFAULT '',
+			fail_empty_values       INTEGER NOT NULL DEFAULT 0,
+			move_failed             INTEGER NOT NULL DEFAULT 0,
+			failed_folder           TEXT NOT NULL DEFAULT '',
+			exclude_mode            TEXT NOT NULL DEFAULT 'Do not',
+			exclude_operator        TEXT NOT NULL DEFAULT 'Any',
+			sort_order              INTEGER NOT NULL DEFAULT 0
+		)`,
+		`CREATE TABLE IF NOT EXISTS lo_profile_items (
+			id         INTEGER PRIMARY KEY AUTOINCREMENT,
+			profile_id TEXT NOT NULL REFERENCES lo_profiles(id) ON DELETE CASCADE,
+			category   TEXT NOT NULL,
+			name       TEXT NOT NULL,
+			value      TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_lo_profile_items_profile ON lo_profile_items(profile_id, category)`,
+		`CREATE TABLE IF NOT EXISTS lo_exclude_rules (
+			id         INTEGER PRIMARY KEY AUTOINCREMENT,
+			profile_id TEXT NOT NULL REFERENCES lo_profiles(id) ON DELETE CASCADE,
+			field      TEXT NOT NULL,
+			operator   TEXT NOT NULL,
+			value      TEXT NOT NULL DEFAULT '',
+			sort_order INTEGER NOT NULL DEFAULT 0
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_lo_exclude_rules_profile ON lo_exclude_rules(profile_id)`,
+	}
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			return fmt.Errorf("create library organizer tables: %w", err)
 		}
 	}
 	return nil
