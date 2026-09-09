@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.19.0](https://github.com/duckpuppy/comic-server/compare/v1.18.0...v1.19.0) (2026-09-09)
+
+
+### Features
+
+* auto-advance WorkflowStage from the 4 real pipeline actions (comic-server-1iv.2) ([d272926](https://github.com/duckpuppy/comic-server/commit/d272926883f5c76c88346619501180083d7fec1b))
+* Workflow dashboard (comic-server-1iv.3) ([8e2f939](https://github.com/duckpuppy/comic-server/commit/8e2f9395c8e38b010de0516554da75191d0b506b))
+* WorkflowStage tracking + one-time backfill (comic-server-1iv.1) ([67ad7da](https://github.com/duckpuppy/comic-server/commit/67ad7dad3f214afc019d6708bd74a04325a30803))
+
 ## [1.18.0](https://github.com/duckpuppy/comic-server/compare/v1.17.0...v1.18.0) (2026-09-08)
 
 
