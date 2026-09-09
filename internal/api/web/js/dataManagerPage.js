@@ -43,12 +43,44 @@ class DataManagerPage {
         this.jobProcessed = 0;
         this.pollTimer = null;
         this.pollCtx = null; // captured router._navCtx, see stopPolling
+        this.lastHandledJobId = null; // see handleJobStatus's completed branch
     }
 
     async init(ctx) {
         if (ctx && ctx.aborted) return;
         this.render();
         this.attachListeners();
+        await this.resumeJobIfAny(ctx);
+    }
+
+    // resumeJobIfAny checks the server for whatever the current whole-
+    // library job actually is and picks progress display back up if it's
+    // still running (or shows the result immediately if it finished while
+    // the user was away) - covers both a plain SPA navigation away and
+    // back (this page instance survives that, but its polling interval
+    // was stopped the moment the router context it captured got marked
+    // aborted) and a hard browser refresh (a brand new instance with no
+    // memory of ever having started a job at all). Without this, the job
+    // keeps running server-side exactly as before, but the tab has
+    // nothing telling it that, or to keep checking.
+    async resumeJobIfAny(ctx) {
+        let status;
+        try {
+            const response = await fetch(`/api/library/datamanager-job?limit=${this.limit}&offset=0`);
+            if (ctx && ctx.aborted) return;
+            if (!response.ok) return;
+            status = await response.json();
+        } catch (error) {
+            console.error('Failed to check Data Manager job status:', error);
+            return;
+        }
+        this.pollCtx = ctx;
+        const wasRunning = status.status === 'running';
+        this.handleJobStatus(status);
+        if (wasRunning) {
+            this.stopPolling();
+            this.pollTimer = setInterval(() => this.pollJob(), 1000);
+        }
     }
 
     fieldKey(bookId, field, custom) {
@@ -328,11 +360,26 @@ class DataManagerPage {
             return; // transient - next tick will retry
         }
 
+        this.handleJobStatus(status);
+    }
+
+    // handleJobStatus applies one DMJobStatus reading, shared by the
+    // regular poll loop and resumeJobIfAny's one-shot check on page
+    // load/return - status.apply (the server's own record of what kind of
+    // run this is) drives the post-completion branch rather than this
+    // page's own this.jobKind, since a resumed job's this.jobKind may
+    // still be whatever it was left at (a stale SPA-navigation-away
+    // instance) or simply null (a fresh instance after a hard refresh).
+    handleJobStatus(status) {
         if (status.status === 'none') {
             this.stopPolling();
+            this.jobKind = null;
+            this.render();
+            this.attachListeners();
             return;
         }
 
+        this.jobKind = status.apply ? 'apply' : 'preview';
         this.jobTotal = status.total || 0;
         this.jobProcessed = status.processed || 0;
 
@@ -343,9 +390,21 @@ class DataManagerPage {
         }
 
         this.stopPolling();
-        const wasApply = this.jobKind === 'apply';
         this.jobKind = null;
 
+        // A completed job's status stays "completed" server-side until
+        // the next one starts, so a plain page revisit (or
+        // resumeJobIfAny catching up on load) would otherwise see the
+        // same job every time and re-run the wasApply auto-refresh below
+        // forever. Only react to a given job_id once.
+        if (status.job_id && status.job_id === this.lastHandledJobId) {
+            this.render();
+            this.attachListeners();
+            return;
+        }
+        this.lastHandledJobId = status.job_id;
+
+        const wasApply = !!status.apply;
         this.summary = { processed: status.total, changed: status.changed };
         this.hasMore = !!status.has_more;
         const page = status.books || [];
