@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.20.0](https://github.com/duckpuppy/comic-server/compare/v1.19.0...v1.20.0) (2026-09-09)
+
+
+### Features
+
+* Library Organizer apply - execute moves/copies safely (comic-server-3bz.5) ([ed11adf](https://github.com/duckpuppy/comic-server/commit/ed11adfb686e68fe54bf28f99508d33038f5c35a))
+* Library Organizer exclude-rule evaluation (comic-server-3bz.3) ([6d05958](https://github.com/duckpuppy/comic-server/commit/6d059584010ca8758de61c6c64fc8ed31ca8314f))
+* Library Organizer preview - plan moves, flag collisions (comic-server-3bz.4) ([c018e9c](https://github.com/duckpuppy/comic-server/commit/c018e9cea299bc468bb11010047c0341e55a734b))
+* Library Organizer profile storage + losettingsx.dat import (comic-server-3bz.2) ([99d1068](https://github.com/duckpuppy/comic-server/commit/99d106841868d49059088bd1dddd244b41984e9f))
+* Library Organizer template engine (comic-server-3bz.1) ([753a686](https://github.com/duckpuppy/comic-server/commit/753a68634d4cfe28150db8a4171af01d58d79670))
+* Library Organizer UI - profile picker, preview/apply page (comic-server-3bz.6) ([76a870e](https://github.com/duckpuppy/comic-server/commit/76a870e502d739bbba724ff28ca10b2c8c1d3a6c))
+
 ## [1.19.0](https://github.com/duckpuppy/comic-server/compare/v1.18.0...v1.19.0) (2026-09-09)
 
 
