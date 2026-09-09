@@ -395,8 +395,8 @@ class DataManagerPage {
         // A completed job's status stays "completed" server-side until
         // the next one starts, so a plain page revisit (or
         // resumeJobIfAny catching up on load) would otherwise see the
-        // same job every time and re-run the wasApply auto-refresh below
-        // forever. Only react to a given job_id once.
+        // same job every time and re-apply the effects below repeatedly.
+        // Only react to a given job_id once.
         if (status.job_id && status.job_id === this.lastHandledJobId) {
             this.render();
             this.attachListeners();
@@ -404,7 +404,20 @@ class DataManagerPage {
         }
         this.lastHandledJobId = status.job_id;
 
-        const wasApply = !!status.apply;
+        if (status.apply) {
+            // An apply job's own Books IS exactly what got committed
+            // (comic-server-c9v) - no need to re-run a whole fresh
+            // preview just to find out the diff table should now be
+            // smaller by exactly that much. That used to mean every
+            // apply - even a 32-book selective one - triggered a THIRD
+            // full-library evaluation pass just to refresh the table.
+            this.lastResult = { applied: true, changed: status.changed, errors: status.errors };
+            this.removeAppliedChanges(status.books || []);
+            this.render();
+            this.attachListeners();
+            return;
+        }
+
         this.summary = { processed: status.total, changed: status.changed };
         this.hasMore = !!status.has_more;
         const page = status.books || [];
@@ -417,19 +430,37 @@ class DataManagerPage {
             }
         }
 
-        if (wasApply) {
-            this.lastResult = { applied: true, changed: status.changed, errors: status.errors };
-            // Refresh with a fresh preview job so the table reflects
-            // post-apply state (committed fields should no longer show a
-            // diff) - fire and forget, same as the old synchronous
-            // version's "await this.preview(true)" but as its own job
-            // rather than blocking this poll tick.
-            this.preview(true);
-            return;
-        }
-
         this.render();
         this.attachListeners();
+    }
+
+    // removeAppliedChanges drops exactly the field-changes an apply job
+    // just committed from the currently displayed diff table (and their
+    // selection state) - a book with no changes left after that is
+    // dropped entirely - and corrects the running "N would change" total
+    // by the same amount, all without touching the server again.
+    removeAppliedChanges(appliedBooks) {
+        // "N books would change" only drops for a book that's now FULLY
+        // resolved - a book selectively applied on just one of its two
+        // changed fields still has a pending change and must stay
+        // counted, not silently vanish from the total.
+        let resolvedCount = 0;
+        for (const applied of appliedBooks) {
+            const bookEntry = this.books.find(b => b.book_id === applied.book_id);
+            if (!bookEntry) continue;
+            const appliedKeys = new Set(applied.changes.map(c => `${c.field} ${c.custom}`));
+            bookEntry.changes = bookEntry.changes.filter(c => !appliedKeys.has(`${c.field} ${c.custom}`));
+            for (const c of applied.changes) {
+                this.selected.delete(this.fieldKey(applied.book_id, c.field, c.custom));
+            }
+            if (bookEntry.changes.length === 0) {
+                resolvedCount++;
+            }
+        }
+        this.books = this.books.filter(b => b.changes.length > 0);
+        if (this.summary) {
+            this.summary.changed = Math.max(0, this.summary.changed - resolvedCount);
+        }
     }
 
     // fetchPage re-reads a later page of an already-completed job's

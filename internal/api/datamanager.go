@@ -239,14 +239,31 @@ func (s *Server) handleDataManagerJobStart(w http.ResponseWriter, r *http.Reques
 		fields = req.Fields
 	}
 
-	allBooks, err := s.backend.GetAllBooks()
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to load library: %v", err), http.StatusInternalServerError)
-		return
-	}
-	books := make([]*library.ComicBook, len(allBooks))
-	for i := range allBooks {
-		books[i] = &allBooks[i]
+	// A selective apply (specific book_ids or field selectors, as opposed
+	// to "Apply All") only needs to re-evaluate the books actually being
+	// committed, not the whole library - fetching just those by ID keeps
+	// both the job's reported Total and the real work proportional to
+	// what the user selected. Selecting 32 books out of a 66K-book
+	// library used to still run the full-library evaluation twice (once
+	// here, once again for the post-apply auto-refresh this same commit
+	// removes) - see comic-server-c9v.
+	var books []*library.ComicBook
+	if apply && (len(bookIDs) > 0 || len(fields) > 0) {
+		books, err = s.fetchDMSelectedBooks(bookIDs, fields)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to load selected books: %v", err), http.StatusInternalServerError)
+			return
+		}
+	} else {
+		allBooks, err := s.backend.GetAllBooks()
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to load library: %v", err), http.StatusInternalServerError)
+			return
+		}
+		books = make([]*library.ComicBook, len(allBooks))
+		for i := range allBooks {
+			books[i] = &allBooks[i]
+		}
 	}
 
 	s.dmJobMu.Lock()
@@ -268,6 +285,45 @@ func (s *Server) handleDataManagerJobStart(w http.ResponseWriter, r *http.Reques
 	go s.runDataManagerJob(job, books, rulesets, apply, bookIDs, fields)
 
 	s.writeJSON(w, http.StatusAccepted, map[string]string{"job_id": job.JobID})
+}
+
+// fetchDMSelectedBooks resolves a selective apply's book_ids/fields into
+// the actual books to evaluate, by ID rather than a full-library scan -
+// bookIDs and fields' own BookIDs are merged into one deduplicated set,
+// since either or both may be present (fields takes precedence in
+// selection logic, but both name real books that need fetching here). A
+// book_id that no longer exists is silently skipped, same as the rest of
+// this package's re-verification policy (selectForApply/
+// selectForApplyFields already skip a selector that doesn't match a
+// fresh result).
+func (s *Server) fetchDMSelectedBooks(bookIDs []string, fields []DMFieldSelector) ([]*library.ComicBook, error) {
+	want := make(map[string]bool, len(bookIDs)+len(fields))
+	for _, id := range bookIDs {
+		want[id] = true
+	}
+	for _, f := range fields {
+		want[f.BookID] = true
+	}
+
+	books := make([]*library.ComicBook, 0, len(want))
+	for id := range want {
+		book, err := s.backend.GetBook(id)
+		if err != nil {
+			return nil, err
+		}
+		if book == nil {
+			continue
+		}
+		// Copy immediately rather than keeping the pointer GetBook
+		// returned - for the XML backend that pointer aliases the live
+		// in-memory library directly (unlike GetAllBooks, which already
+		// returns a fresh []ComicBook copy), and this job runs in a
+		// goroutine that won't actually read from it until well after
+		// this call returns.
+		copied := *book
+		books = append(books, &copied)
+	}
+	return books, nil
 }
 
 // runDataManagerJob runs to completion in its own goroutine, updating

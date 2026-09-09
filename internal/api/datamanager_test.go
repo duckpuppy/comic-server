@@ -451,6 +451,40 @@ func TestHandleDataManagerApplyLibrary_ApplyAllCommitsEveryChangedBook(t *testin
 	}
 }
 
+// TestHandleDataManagerJobStart_SelectiveApplyOnlyEvaluatesSelectedBooks
+// covers a real user report (comic-server-c9v): selecting a handful of
+// books out of a large library and hitting Apply should not re-evaluate
+// the WHOLE library again just to verify the selection - Total (and the
+// live progress bar it drives) must reflect only the selected books.
+func TestHandleDataManagerJobStart_SelectiveApplyOnlyEvaluatesSelectedBooks(t *testing.T) {
+	books := []library.ComicBook{
+		{ID: "1", Series: "Batman"},
+		{ID: "2", Series: "Batman"},
+		{ID: "3", Series: "Batman"},
+	}
+	s, db := newDataManagerLibraryTestServer(t, books)
+	seedBatmanRuleset(t, db)
+
+	startDMJob(t, s, true, `{"book_ids":["1"]}`)
+	result := waitForDMJob(t, s, "")
+
+	if result.Total != 1 {
+		t.Errorf("Total = %d, want 1 (only the selected book, not the whole library)", result.Total)
+	}
+	if !result.Apply || result.Changed != 1 {
+		t.Fatalf("expected Apply=true Changed=1, got %+v", result)
+	}
+
+	book1, _ := s.backend.GetBook("1")
+	book2, _ := s.backend.GetBook("2")
+	if book1.SeriesGroup != "Batman Family" {
+		t.Errorf("expected book 1 (selected) to be updated, got %q", book1.SeriesGroup)
+	}
+	if book2.SeriesGroup != "" {
+		t.Errorf("expected book 2 (not selected) to be untouched, got %q", book2.SeriesGroup)
+	}
+}
+
 // TestHandleDataManagerJobStart_ConflictWhileRunning covers the single-
 // job-slot design: starting a second whole-library run while one is still
 // in progress must be rejected, not silently queued or run concurrently -
