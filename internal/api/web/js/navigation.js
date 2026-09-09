@@ -41,6 +41,10 @@ class Navigation {
                     <span class="nav-icon">🛠️</span>
                     <span class="nav-label">Data Manager</span>
                 </a>
+                <a href="/workflow" class="nav-tab" data-tab="workflow">
+                    <span class="nav-icon">🧭</span>
+                    <span class="nav-label">Workflow</span>
+                </a>
                 <a href="/trash" class="nav-tab" data-tab="trash">
                     <span class="nav-icon">🗑️</span>
                     <span class="nav-label">Trash</span>

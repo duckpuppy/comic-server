@@ -175,6 +175,13 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/library/datamanager-preview", s.handleDataManagerPreviewLibrary)
 	s.mux.HandleFunc("/api/library/datamanager-apply", s.handleDataManagerApplyLibrary)
 
+	// Workflow dashboard (comic-server-1iv.3) - the native replacement
+	// for the manual ingest-pipeline smart lists.
+	s.mux.HandleFunc("/api/library/workflow", s.handleGetWorkflowSummary)
+	s.mux.HandleFunc("/api/library/workflow/scan-info", s.handleRunScanInfoWorkflow)
+	s.mux.HandleFunc("/api/library/workflow/convert-cbz", s.handleRunCBZConvertWorkflow)
+	s.mux.HandleFunc("/api/library/workflow/", s.handleWorkflowStageSubRouter)
+
 	// Trash browser endpoints (comic-server-tfs)
 	s.mux.HandleFunc("/api/trash", s.handleListTrash)
 	s.mux.HandleFunc("/api/trash/restore", s.handlePostTrashRestore)

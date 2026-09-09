@@ -146,6 +146,48 @@ func TestHandleRunCBZConvert_AdvancesWorkflowStage(t *testing.T) {
 	}
 }
 
+// TestHandleRunCBZConvertWorkflow_OnlyProcessesBooksAtThatStage covers
+// comic-server-1iv.3: the whole-library workflow entry point must only
+// convert books currently at StageConvertToCBZ.
+func TestHandleRunCBZConvertWorkflow_OnlyProcessesBooksAtThatStage(t *testing.T) {
+	libDir := t.TempDir()
+	trashDir := t.TempDir()
+	src1 := filepath.Join(libDir, "book1.cbz")
+	src2 := filepath.Join(libDir, "book2.cbz")
+	writeTestCBZFixture(t, src1)
+	writeTestCBZFixture(t, src2)
+
+	atStage := library.ComicBook{ID: "1", Series: "Batman", FilePath: src1}
+	workflow.SetStage(&atStage, workflow.StageConvertToCBZ)
+	notAtStage := library.ComicBook{ID: "2", Series: "Batman", FilePath: src2}
+	workflow.SetStage(&notAtStage, workflow.StageScrape)
+
+	s := newCBZConvertTestServer(t, config.CBZConvertConfig{Enabled: true}, trashDir, []library.ComicBook{atStage, notAtStage})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/library/workflow/convert-cbz", nil)
+	w := httptest.NewRecorder()
+	s.handleRunCBZConvertWorkflow(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var result CBZConvertResult
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if result.Processed != 1 || result.Converted != 1 {
+		t.Errorf("unexpected result: %+v", result)
+	}
+
+	book2, err := s.backend.GetBook("2")
+	if err != nil || book2 == nil {
+		t.Fatalf("GetBook(2): %v", err)
+	}
+	if book2.PageCount != 0 {
+		t.Errorf("book at a different stage must be untouched, got PageCount=%d", book2.PageCount)
+	}
+}
+
 func TestHandleRunCBZConvert_MissingSourceFileIsReportedNotFatal(t *testing.T) {
 	trashDir := t.TempDir()
 	books := []library.ComicBook{

@@ -96,6 +96,7 @@ let komgaStatus = null;
 let trashBrowser = null;
 let scanInfoSettings = null;
 let dataManagerPage = null;
+let workflowPage = null;
 let deviceDetail = null; // Current device detail view
 let deviceSettings = null; // Current device settings view
 let listsTree = null; // Shared tree instance for lists pages
@@ -223,6 +224,15 @@ document.addEventListener('DOMContentLoaded', () => {
             dataManagerPage = new DataManagerPage();
         }
         await dataManagerPage.init(ctx);
+    });
+
+    router.register('/workflow', async (params, ctx) => {
+        navigation.setActive('workflow');
+        dashboard.hide();
+        if (!workflowPage) {
+            workflowPage = new WorkflowPage();
+        }
+        await workflowPage.init(ctx);
     });
 
     router.register('/settings', async (params, ctx) => {

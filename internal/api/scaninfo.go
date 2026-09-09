@@ -75,6 +75,78 @@ func (s *Server) handleRunScanInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	result, toUpdate := s.runScanInfoOverBooks(books, detector)
+
+	if len(toUpdate) > 0 {
+		if err := s.backend.UpdateBooks(toUpdate); err != nil {
+			log.Error().Err(err).Msg("Failed to save scan-info updates")
+			result.Errors = append(result.Errors, err.Error())
+		}
+	}
+
+	s.writeJSON(w, http.StatusOK, result)
+}
+
+// handleRunScanInfoWorkflow is handleRunScanInfo's whole-library
+// counterpart (comic-server-1iv.3): runs scan-info detection over every
+// book currently at workflow.StageScanInfo, replacing "select the
+// '03 Add Scanner Info' smart list, run scan-info" with a single button
+// on the workflow dashboard.
+// POST /api/library/workflow/scan-info
+func (s *Server) handleRunScanInfoWorkflow(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	cfg, err := s.effectiveScanInfo()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to load scan info config")
+		http.Error(w, "Failed to load scan info config", http.StatusInternalServerError)
+		return
+	}
+	if !cfg.Enabled {
+		http.Error(w, "scan_info is not enabled in config", http.StatusServiceUnavailable)
+		return
+	}
+	detector, err := scaninfo.NewDetector(cfg.Scanners, cfg.Blacklist, cfg.Prefix, cfg.Unknown)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to build scan-info detector from config")
+		http.Error(w, "Invalid scan_info configuration", http.StatusInternalServerError)
+		return
+	}
+	if s.backend == nil {
+		http.Error(w, "Library not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	books, err := s.booksAtStage(workflow.StageScanInfo)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to load books: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	result, toUpdate := s.runScanInfoOverBooks(books, detector)
+
+	if len(toUpdate) > 0 {
+		if err := s.backend.UpdateBooks(toUpdate); err != nil {
+			log.Error().Err(err).Msg("Failed to save scan-info updates")
+			result.Errors = append(result.Errors, err.Error())
+		}
+	}
+
+	s.writeJSON(w, http.StatusOK, result)
+}
+
+// runScanInfoOverBooks is the shared core both scan-info entry points
+// (one smart list, or every book at StageScanInfo) run: detect a tag for
+// each book, merge it in, and advance the workflow stage on every
+// SUCCESSFUL detection (comic-server-1iv.2) whether or not the stored
+// value actually changed. Returns the result plus every book that needs
+// persisting - callers own the actual UpdateBooks call and its own error
+// handling, since only the caller knows which log/response context it's
+// in.
+func (s *Server) runScanInfoOverBooks(books []*library.ComicBook, detector *scaninfo.Detector) (ScanInfoResult, []*library.ComicBook) {
 	result := ScanInfoResult{Processed: len(books)}
 	var toUpdate []*library.ComicBook
 	rulesets := s.loadWorkflowRulesets()
@@ -93,25 +165,13 @@ func (s *Server) handleRunScanInfo(w http.ResponseWriter, r *http.Request) {
 			result.Skipped++
 		}
 
-		// A successful detection (ok=true) means scan info is now known-
-		// good for this book, whether or not THIS run changed the stored
-		// value - so the workflow stage should advance either way
-		// (comic-server-1iv.2). The book needs re-persisting if the
-		// field changed, the stage changed, or both.
 		stageAdvanced := workflow.AdvanceIfAtOrBefore(book, workflow.StageScanInfo, rulesets)
 		if changed || stageAdvanced {
 			toUpdate = append(toUpdate, book)
 		}
 	}
 
-	if len(toUpdate) > 0 {
-		if err := s.backend.UpdateBooks(toUpdate); err != nil {
-			log.Error().Err(err).Msg("Failed to save scan-info updates")
-			result.Errors = append(result.Errors, err.Error())
-		}
-	}
-
-	s.writeJSON(w, http.StatusOK, result)
+	return result, toUpdate
 }
 
 func listIDFromScanInfoSubPath(path string) string {

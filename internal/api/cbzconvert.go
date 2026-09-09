@@ -73,6 +73,70 @@ func (s *Server) handleRunCBZConvert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	result, toUpdate := s.runCBZConvertOverBooks(books, tr)
+
+	if len(toUpdate) > 0 {
+		if err := s.backend.UpdateBooks(toUpdate); err != nil {
+			log.Error().Err(err).Msg("Failed to save cbz-convert updates")
+			result.Errors = append(result.Errors, err.Error())
+		}
+	}
+
+	s.writeJSON(w, http.StatusOK, result)
+}
+
+// handleRunCBZConvertWorkflow is handleRunCBZConvert's whole-library
+// counterpart (comic-server-1iv.3): converts every book currently at
+// workflow.StageConvertToCBZ, replacing "select the '01 Convert to CBZ'
+// smart list, run convert" with a single button on the workflow
+// dashboard.
+// POST /api/library/workflow/convert-cbz
+func (s *Server) handleRunCBZConvertWorkflow(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	s.configMu.RLock()
+	cfg := s.config
+	s.configMu.RUnlock()
+
+	if cfg == nil || !cfg.Server.CBZConvert.Enabled {
+		http.Error(w, "cbz_convert is not enabled in config", http.StatusServiceUnavailable)
+		return
+	}
+	tr, err := trash.New(cfg.Server.TrashPath, cfg.Server.TrashRetentionDays)
+	if err != nil {
+		log.Error().Err(err).Msg("Invalid trash configuration for cbz-convert")
+		http.Error(w, "Invalid trash configuration", http.StatusInternalServerError)
+		return
+	}
+	if s.backend == nil {
+		http.Error(w, "Library not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	books, err := s.booksAtStage(workflow.StageConvertToCBZ)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to load books: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	result, toUpdate := s.runCBZConvertOverBooks(books, tr)
+
+	if len(toUpdate) > 0 {
+		if err := s.backend.UpdateBooks(toUpdate); err != nil {
+			log.Error().Err(err).Msg("Failed to save cbz-convert updates")
+			result.Errors = append(result.Errors, err.Error())
+		}
+	}
+
+	s.writeJSON(w, http.StatusOK, result)
+}
+
+// runCBZConvertOverBooks is the shared core both cbz-convert entry points
+// (one smart list, or every book at StageConvertToCBZ) run.
+func (s *Server) runCBZConvertOverBooks(books []*library.ComicBook, tr *trash.Trash) (CBZConvertResult, []*library.ComicBook) {
 	result := CBZConvertResult{Processed: len(books)}
 	var toUpdate []*library.ComicBook
 	rulesets := s.loadWorkflowRulesets()
@@ -91,14 +155,7 @@ func (s *Server) handleRunCBZConvert(w http.ResponseWriter, r *http.Request) {
 		result.Converted++
 	}
 
-	if len(toUpdate) > 0 {
-		if err := s.backend.UpdateBooks(toUpdate); err != nil {
-			log.Error().Err(err).Msg("Failed to save cbz-convert updates")
-			result.Errors = append(result.Errors, err.Error())
-		}
-	}
-
-	s.writeJSON(w, http.StatusOK, result)
+	return result, toUpdate
 }
 
 func listIDFromCBZConvertSubPath(path string) string {
