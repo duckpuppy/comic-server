@@ -5,12 +5,15 @@
 // that stage's action directly - no smart list ever needs to be created
 // or maintained just to track pipeline progress.
 //
-// Only 4 of the 5 stages have a "Run" button: ToMove has no native action
-// yet (comic-server-3bz's Library Organizer isn't built). Scrape's button
-// starts the existing background scrape job (POST /api/scrape, already
-// whole-library-scoped by default - untagged books only) rather than a
-// new endpoint; the other three call new whole-library workflow endpoints
-// added alongside this page.
+// Scrape's button starts the existing background scrape job (POST
+// /api/scrape, already whole-library-scoped by default - untagged books
+// only) rather than a new endpoint; convert_cbz/scan_info/data_manager
+// call new whole-library workflow endpoints added alongside this page.
+// ToMove's button is different from the rest: it needs a profile picker
+// and a preview/approve step first (multiple Library Organizer profiles,
+// and this is comic-server's first feature that moves/renames the user's
+// own files), so instead of running in place it navigates to a dedicated
+// page (comic-server-3bz.6) rather than firing one POST.
 class WorkflowPage {
     constructor() {
         this.summary = null; // { stages: [...], cvdb_skip }
@@ -81,12 +84,15 @@ class WorkflowPage {
         for (const s of this.summary.stages) {
             const btnId = actionFor[s.stage];
             const running = this.running === s.stage;
+            const isToMove = s.stage === 'to_move';
             html += `
                 <div class="panel workflow-card">
                     <h2>${this.escapeHtml(s.label)}</h2>
                     <p class="workflow-card-count">${s.count}</p>
                     <div class="workflow-card-actions">
                         <button class="btn btn-secondary workflow-view-btn" data-stage="${s.stage}" data-label="${this.escapeAttr(s.label)}" ${s.count === 0 ? 'disabled' : ''}>View</button>
+                        ${isToMove ? `
+                        <button class="btn btn-primary" id="workflow-organize-btn" ${s.count === 0 ? 'disabled' : ''}>Organize</button>` : ''}
                         ${btnId ? `
                         <button class="btn btn-primary" id="${btnId}" data-stage="${s.stage}" ${running || s.count === 0 ? 'disabled' : ''}>
                             ${running ? 'Running…' : labelFor[s.stage]}
@@ -162,6 +168,9 @@ class WorkflowPage {
         if (scrapeBtn) {
             scrapeBtn.addEventListener('click', () => this.runAction('scrape', '/api/scrape', () => 'Scrape job started - see Dashboard for progress.'));
         }
+
+        const organizeBtn = document.getElementById('workflow-organize-btn');
+        if (organizeBtn) organizeBtn.addEventListener('click', () => router.navigate('/organize'));
     }
 
     async openDrillIn(stage, label) {

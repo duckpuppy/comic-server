@@ -97,6 +97,7 @@ let trashBrowser = null;
 let scanInfoSettings = null;
 let dataManagerPage = null;
 let workflowPage = null;
+let organizePage = null;
 let deviceDetail = null; // Current device detail view
 let deviceSettings = null; // Current device settings view
 let listsTree = null; // Shared tree instance for lists pages
@@ -233,6 +234,15 @@ document.addEventListener('DOMContentLoaded', () => {
             workflowPage = new WorkflowPage();
         }
         await workflowPage.init(ctx);
+    });
+
+    router.register('/organize', async (params, ctx) => {
+        navigation.setActive('workflow');
+        dashboard.hide();
+        if (!organizePage) {
+            organizePage = new OrganizePage();
+        }
+        await organizePage.init(ctx);
     });
 
     router.register('/settings', async (params, ctx) => {

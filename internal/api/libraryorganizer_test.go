@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -154,6 +155,55 @@ func TestHandleOrganizeApply_MovesFileAndAdvancesStage(t *testing.T) {
 	}
 	if got := workflow.GetStage(updated); got != workflow.StageOrganized {
 		t.Errorf("workflow stage = %v, want StageOrganized", got)
+	}
+}
+
+func TestHandleOrganizeApply_BookIDsFiltersToSelectedSubset(t *testing.T) {
+	dir := t.TempDir()
+	trashDir := t.TempDir()
+	src1 := filepath.Join(dir, "book1.cbz")
+	src2 := filepath.Join(dir, "book2.cbz")
+	if err := os.WriteFile(src1, []byte("bytes"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(src2, []byte("bytes"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	book1 := library.ComicBook{ID: "1", Series: "Sandman", Publisher: "DC", FilePath: src1}
+	workflow.SetStage(&book1, workflow.StageToMove)
+	book2 := library.ComicBook{ID: "2", Series: "Preacher", Publisher: "DC", FilePath: src2}
+	workflow.SetStage(&book2, workflow.StageToMove)
+
+	s := newLibraryOrganizerTestServer(t, trashDir, []library.ComicBook{book1, book2})
+	profileID := createTestLOProfile(t, s, dir)
+
+	body, _ := json.Marshal(map[string]any{"book_ids": []string{"1"}})
+	req := httptest.NewRequest(http.MethodPost, "/api/library/workflow/organize-apply?profile="+profileID, bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	s.handleOrganizeApply(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var result LOOrganizeApplyResult
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if result.Applied != 1 || result.Skipped != 1 {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+
+	updated1, _ := s.backend.GetBook("1")
+	if updated1.FilePath == src1 {
+		t.Error("book 1 should have been moved (was selected)")
+	}
+	updated2, _ := s.backend.GetBook("2")
+	if updated2.FilePath != src2 {
+		t.Error("book 2 should NOT have been moved (was not selected)")
+	}
+	if _, err := os.Stat(src2); err != nil {
+		t.Errorf("book 2's source file should still exist: %v", err)
 	}
 }
 

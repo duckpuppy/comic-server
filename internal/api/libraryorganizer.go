@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -132,6 +133,22 @@ func (s *Server) handleOrganizeApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// An optional JSON body {"book_ids": [...]} scopes the apply to a
+	// user-approved subset of the preview (mirrors Data Manager's
+	// selective apply, at book granularity rather than field granularity
+	// since a Library Organizer move is a single all-or-nothing per-book
+	// operation). No body, or an absent/null book_ids, applies every move
+	// Plan itself approves - the same as the preview showed.
+	var body struct {
+		BookIDs []string `json:"book_ids"`
+	}
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err.Error() != "EOF" {
+			http.Error(w, fmt.Sprintf("Invalid request body: %v", err), http.StatusBadRequest)
+			return
+		}
+	}
+
 	books, err := s.booksAtStage(workflow.StageToMove)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to load books: %v", err), http.StatusInternalServerError)
@@ -140,6 +157,17 @@ func (s *Server) handleOrganizeApply(w http.ResponseWriter, r *http.Request) {
 	opts.FileExists = s.libraryOrganizerFileExists
 
 	moves := libraryorganizer.Plan(books, opts)
+	if body.BookIDs != nil {
+		selected := make(map[string]bool, len(body.BookIDs))
+		for _, id := range body.BookIDs {
+			selected[id] = true
+		}
+		for i := range moves {
+			if !selected[moves[i].BookID] {
+				moves[i].Skipped = true
+			}
+		}
+	}
 
 	byID := make(map[string]*library.ComicBook, len(books))
 	for _, b := range books {
@@ -298,6 +326,15 @@ func (s *Server) loLoadIllegalCharacters(profileID string) (libraryorganizer.Ill
 	return illegal, nil
 }
 
+// LOProfileSummary is the JSON shape for one profile in the picker list -
+// just enough for a UI to display and select a profile, not every
+// persistence-layer field configdb.LOProfile carries.
+type LOProfileSummary struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	CopyMode bool   `json:"copy_mode"`
+}
+
 // handleListLOProfiles returns every configured Library Organizer profile,
 // for a UI profile picker (comic-server-3bz.6).
 // GET /api/library/organize-profiles
@@ -315,5 +352,9 @@ func (s *Server) handleListLOProfiles(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Failed to list profiles: %v", err), http.StatusInternalServerError)
 		return
 	}
-	s.writeJSON(w, http.StatusOK, map[string]any{"profiles": profiles})
+	summaries := make([]LOProfileSummary, len(profiles))
+	for i, p := range profiles {
+		summaries[i] = LOProfileSummary{ID: p.ID, Name: p.Name, CopyMode: p.CopyMode}
+	}
+	s.writeJSON(w, http.StatusOK, map[string]any{"profiles": summaries})
 }
