@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.21.0](https://github.com/duckpuppy/comic-server/compare/v1.20.0...v1.21.0) (2026-09-09)
+
+
+### Features
+
+* run whole-library Data Manager preview/apply as a background job ([25c4767](https://github.com/duckpuppy/comic-server/commit/25c4767bcdfaceca52e8e1746880f2de7549c5cc))
+
+
+### Bug Fixes
+
+* don't dump raw reverse-proxy error pages into the UI ([ceca6fb](https://github.com/duckpuppy/comic-server/commit/ceca6fb5fc6770f697ed79918dfb57cc6892f95f))
+* show Loading state immediately when opening Workflow tab ([13fc7a4](https://github.com/duckpuppy/comic-server/commit/13fc7a451edfa5c9024b7b03084e751742315596))
+* strip stray NUL bytes from dataManagerPage.js ([249a231](https://github.com/duckpuppy/comic-server/commit/249a2310a826398ed7672375cfbcf9a052ff198e))
+
 ## [1.20.0](https://github.com/duckpuppy/comic-server/compare/v1.19.0...v1.20.0) (2026-09-09)
 
 
