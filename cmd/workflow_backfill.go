@@ -16,7 +16,7 @@ var workflowBackfillLibraryPath string
 var workflowBackfillCmd = &cobra.Command{
 	Use:   "backfill",
 	Short: "Assign a starting pipeline stage to every book that doesn't have one yet",
-	Long: `One-time backfill (comic-server-1iv.1): every book that has never had an
+	Long: `One-time backfill: every book that has never had an
 explicit workflow stage set gets one inferred from its current data shape
 (file extension, ComicVine tag, ScanInformation, and whether the
 currently-configured Data Manager rules would still change it). Safe to

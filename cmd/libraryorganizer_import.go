@@ -25,9 +25,9 @@ all seven Name/Value collections) into config.db.
 This only ever reads the source file, never modifies it. Running import
 again on a config.db that already has Library Organizer profiles is
 refused unless --force is passed - matching comic-server datamanager
-import's own re-import semantics (comic-server-cge): --force WIPES every
-existing profile and replaces them with the freshly parsed file,
-atomically, rather than merging.`,
+import's own re-import semantics: --force WIPES every existing profile
+and replaces them with the freshly parsed file, atomically, rather than
+merging.`,
 	RunE: runLibraryOrganizerImport,
 }
 

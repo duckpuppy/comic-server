@@ -255,7 +255,7 @@ class ListDetail {
                 <!-- Scan Info Panel -->
                 <div class="panel scaninfo-panel${this.tabPanelActiveClass('scaninfo')}" data-tab-panel="scaninfo">
                     <h2>Scan Info Detection</h2>
-                    <p class="empty-message">Detects a scan-group tag from each book's filename and writes it to ScanInformation (comic-server-pkk.1).</p>
+                    <p class="empty-message">Detects a scan-group tag from each book's filename and writes it to ScanInformation.</p>
                     <button class="btn btn-primary" id="run-scan-info-btn">Run on this list</button>
                     <div id="scan-info-result"></div>
                 </div>
@@ -263,7 +263,7 @@ class ListDetail {
                 <!-- Convert to CBZ Panel -->
                 <div class="panel cbzconvert-panel${this.tabPanelActiveClass('convert')}" data-tab-panel="convert">
                     <h2>Convert to CBZ</h2>
-                    <p class="empty-message">Repacks each book's archive as CBZ and embeds ComicInfo.xml. Replaces the original file (comic-server-43b) - the original is moved to the server's trash folder, not deleted.</p>
+                    <p class="empty-message">Repacks each book's archive as CBZ and embeds ComicInfo.xml. Replaces the original file - the original is moved to the server's trash folder, not deleted.</p>
                     ${this.renderCBZConvertButton()}
                     <div id="cbz-convert-result"></div>
                 </div>
@@ -271,7 +271,7 @@ class ListDetail {
                 <!-- Data Manager Panel -->
                 <div class="panel datamanager-panel${this.tabPanelActiveClass('datamanager')}" data-tab-panel="datamanager">
                     <h2>Data Manager Rules</h2>
-                    <p class="empty-message">Runs every enabled Data Manager rule (comic-server-764) against this list's books and previews every field it would change before anything is written.</p>
+                    <p class="empty-message">Runs every enabled Data Manager rule against this list's books and previews every field it would change before anything is written.</p>
                     <div class="datamanager-actions">
                         <button class="btn btn-primary" id="run-dm-preview-btn">Preview Changes</button>
                         <button class="btn btn-primary" id="run-dm-apply-btn" ${this.dmResult && this.dmResult.changed > 0 && !this.dmResult.applied ? '' : 'disabled'}>Apply Changes</button>
