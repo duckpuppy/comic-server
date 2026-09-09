@@ -144,6 +144,7 @@ type Profile struct {
 	IllegalCharacters     IllegalCharacters
 	ReplaceMultipleSpaces bool
 	EmptyFolder           string // fallback text for a folder segment that resolves empty
+	FilelessFormat        string // extension used for a book with no FilePath, e.g. ".jpg"
 }
 
 // multipleSpaceRegex mirrors the Python's own `\s\s+` collapse.
