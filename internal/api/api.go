@@ -180,6 +180,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/library/workflow", s.handleGetWorkflowSummary)
 	s.mux.HandleFunc("/api/library/workflow/scan-info", s.handleRunScanInfoWorkflow)
 	s.mux.HandleFunc("/api/library/workflow/convert-cbz", s.handleRunCBZConvertWorkflow)
+	s.mux.HandleFunc("/api/library/workflow/organize-preview", s.handleOrganizePreview)
+	s.mux.HandleFunc("/api/library/workflow/organize-apply", s.handleOrganizeApply)
+	s.mux.HandleFunc("/api/library/organize-profiles", s.handleListLOProfiles)
 	s.mux.HandleFunc("/api/library/workflow/", s.handleWorkflowStageSubRouter)
 
 	// Trash browser endpoints (comic-server-tfs)

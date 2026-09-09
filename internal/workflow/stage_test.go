@@ -169,14 +169,25 @@ func TestAdvanceIfAtOrBefore_MovesForwardOnly(t *testing.T) {
 	}
 }
 
-func TestAdvanceIfAtOrBefore_TerminalStageStaysPut(t *testing.T) {
+func TestAdvanceIfAtOrBefore_ToMoveAdvancesToOrganized(t *testing.T) {
 	book := &library.ComicBook{}
 	SetStage(book, StageToMove)
-	if AdvanceIfAtOrBefore(book, StageToMove, nil) {
-		t.Error("expected no change - StageToMove has nothing after it yet (comic-server-3bz)")
+	if !AdvanceIfAtOrBefore(book, StageToMove, nil) {
+		t.Error("expected ToMove to advance now that comic-server-3bz.5 exists to complete it")
 	}
-	if got := GetStage(book); got != StageToMove {
-		t.Errorf("GetStage = %v, want StageToMove unchanged", got)
+	if got := GetStage(book); got != StageOrganized {
+		t.Errorf("GetStage = %v, want StageOrganized", got)
+	}
+}
+
+func TestAdvanceIfAtOrBefore_TerminalStageStaysPut(t *testing.T) {
+	book := &library.ComicBook{}
+	SetStage(book, StageOrganized)
+	if AdvanceIfAtOrBefore(book, StageOrganized, nil) {
+		t.Error("expected no change - StageOrganized is the true terminal stage")
+	}
+	if got := GetStage(book); got != StageOrganized {
+		t.Errorf("GetStage = %v, want StageOrganized unchanged", got)
 	}
 }
 
@@ -205,7 +216,7 @@ func TestStageIndex(t *testing.T) {
 	if StageIndex(StageConvertToCBZ) != 1 {
 		t.Errorf("StageIndex(StageConvertToCBZ) = %d, want 1", StageIndex(StageConvertToCBZ))
 	}
-	if StageIndex(StageToMove) != len(Stages) {
-		t.Errorf("StageIndex(StageToMove) = %d, want %d", StageIndex(StageToMove), len(Stages))
+	if StageIndex(StageOrganized) != len(Stages) {
+		t.Errorf("StageIndex(StageOrganized) = %d, want %d", StageIndex(StageOrganized), len(Stages))
 	}
 }

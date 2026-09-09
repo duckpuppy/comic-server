@@ -17,12 +17,11 @@
 //     unaffected. The SQLite backend needs no schema change either: it
 //     already decomposes every CustomValuesStore key into the
 //     book_custom_values(key, value) index table.
-//   - Only 5 stages are tracked (the other 4 original pipeline lists -
+//   - Only 6 stages are tracked (the other 4 original pipeline lists -
 //     Day Folder, CVDBSKIP, Proposed Values, Duplicates Manager - are
 //     tracked separately as comic-server-3x3, not part of this package).
-//     ToMove is the terminal stage; comic-server-3bz (Library Organizer)
-//     isn't built yet, so nothing currently advances a book OUT of ToMove
-//   - it just sits there until that feature exists.
+//     Organized is the true terminal stage - comic-server-3bz.5's Library
+//     Organizer apply is what advances a book out of ToMove into it.
 package workflow
 
 import (
@@ -45,10 +44,21 @@ const (
 	StageScanInfo
 	StageDataManager
 	StageToMove
+	// StageOrganized is the true terminal stage, added once
+	// comic-server-3bz.5 (Library Organizer apply) actually existed to
+	// advance a book OUT of StageToMove - before that, ToMove was
+	// documented as terminal purely because nothing yet did the moving.
+	// InferStage still caps its one-time backfill inference at
+	// StageToMove (see its own doc comment) rather than trying to guess
+	// "already organized" from data alone; a book already sitting at its
+	// own planned destination self-heals to StageOrganized the first
+	// time libraryorganizer.Apply actually runs against it (Plan's own
+	// no-op detection), even though no file operation happens for it.
+	StageOrganized
 )
 
 // Stages is every real stage in pipeline order (excludes StageUnknown).
-var Stages = []Stage{StageConvertToCBZ, StageScrape, StageScanInfo, StageDataManager, StageToMove}
+var Stages = []Stage{StageConvertToCBZ, StageScrape, StageScanInfo, StageDataManager, StageToMove, StageOrganized}
 
 // String returns the stable string form stored in CustomValuesStore -
 // deliberately distinct from any display label so a future label wording
@@ -65,6 +75,8 @@ func (s Stage) String() string {
 		return "data_manager"
 	case StageToMove:
 		return "to_move"
+	case StageOrganized:
+		return "organized"
 	default:
 		return ""
 	}
@@ -83,6 +95,8 @@ func (s Stage) Label() string {
 		return "Data Manager"
 	case StageToMove:
 		return "To Move"
+	case StageOrganized:
+		return "Organized"
 	default:
 		return "Unknown"
 	}
@@ -226,8 +240,7 @@ func AdvanceIfAtOrBefore(book *library.ComicBook, completed Stage, rulesets []da
 }
 
 // nextStage returns the stage after s, or s itself if s is already the
-// terminal stage (StageToMove has nothing after it yet - comic-server-3bz
-// isn't built).
+// terminal stage (StageOrganized).
 func nextStage(s Stage) Stage {
 	for i, st := range Stages {
 		if st == s {
