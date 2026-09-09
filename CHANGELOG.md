@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.22.0](https://github.com/duckpuppy/comic-server/compare/v1.21.0...v1.22.0) (2026-09-09)
+
+
+### Features
+
+* ad-hoc filtered library browsing (comic-server-joj) ([f85fac9](https://github.com/duckpuppy/comic-server/commit/f85fac9d9ae2a4f2a249ebaf3d989bfd27457e76))
+
+
+### Bug Fixes
+
+* resume Data Manager job progress display after navigating away and back ([87f6e04](https://github.com/duckpuppy/comic-server/commit/87f6e0491d6ad78de1c8300ae029257fc556db0a))
+* selective Data Manager apply re-evaluated the whole library, not the selection ([fa7163f](https://github.com/duckpuppy/comic-server/commit/fa7163fafd1558e6d92c68f2a3810a081828ff42))
+* Workflow stage drill-in shows 0 books during load instead of loading state ([23a0b2b](https://github.com/duckpuppy/comic-server/commit/23a0b2b09e787a3acfb62b52976b5f9f60a478f6))
+
 ## [1.21.0](https://github.com/duckpuppy/comic-server/compare/v1.20.0...v1.21.0) (2026-09-09)
 
 
