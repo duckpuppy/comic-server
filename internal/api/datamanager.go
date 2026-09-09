@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/duckpuppy/comic-server/internal/datamanager"
 	"github.com/duckpuppy/comic-server/internal/library"
@@ -157,36 +158,50 @@ func (s *Server) runDataManagerList(w http.ResponseWriter, r *http.Request, suff
 		fields = req.Fields
 	}
 
-	result := s.runDataManagerOverBooks(books, rulesets, apply, bookIDs, fields)
+	result := s.runDataManagerOverBooks(books, rulesets, apply, bookIDs, fields, nil)
 	s.writeJSON(w, http.StatusOK, result)
 }
 
-// handleDataManagerPreviewLibrary is handleDataManagerPreview's
-// whole-library counterpart (comic-server-dpq's "Apply All"): the real
-// dataman.dat's rules (series-grouping, tagging) are meant to apply
-// globally, not just to whatever smart list happens to already exist, so
-// this scans every book in the library rather than one list's match set.
-// Paginated (limit/offset, same convention as the list preview endpoint)
-// since a full diff table for a ~66K-book library would be far too much
-// to load in the browser at once - Changed always reports the total
-// count, Books is just the requested page of it.
+// DMJobStatus is the async job state for the whole-library preview/apply
+// (comic-server-dpq's "Apply All") - see handleDataManagerJobStart's doc
+// comment for why this runs as a background job rather than blocking the
+// HTTP request: evaluating every rule against every book in a ~66K-book
+// library takes long enough to trip a reverse proxy's own gateway timeout
+// (openresty/nginx default 504 after 60s) well before comic-server itself
+// would ever finish or error. Total/Processed track live progress while
+// Status is "running"; Changed/Books/Errors are populated once Status
+// becomes "completed". Only one job runs at a time - a new job replaces
+// whatever the previous one left behind, same "single current job"
+// simplicity as comicvine.Scraper.CurrentJob().
+type DMJobStatus struct {
+	JobID       string         `json:"job_id"`
+	Apply       bool           `json:"apply"`
+	Status      string         `json:"status"` // "running" or "completed"
+	Total       int            `json:"total"`
+	Processed   int            `json:"processed"`
+	Changed     int            `json:"changed"`
+	Books       []DMBookChange `json:"books,omitempty"`
+	Errors      []string       `json:"errors,omitempty"`
+	Limit       int            `json:"limit,omitempty"`
+	Offset      int            `json:"offset,omitempty"`
+	HasMore     bool           `json:"has_more,omitempty"`
+	StartedAt   time.Time      `json:"started_at"`
+	CompletedAt *time.Time     `json:"completed_at,omitempty"`
+}
+
+// handleDataManagerJobStart starts a background whole-library Data
+// Manager run (preview when apply is false, apply when true) and returns
+// immediately with a job id - the actual rule evaluation (and, for apply,
+// the backend commit) happens in a goroutine, polled via
+// handleDataManagerJobStatus. Replaces the old synchronous
+// handleDataManagerPreviewLibrary/handleDataManagerApplyLibrary, which
+// blocked the whole HTTP request for as long as the full-library
+// evaluation took - long enough on a real ~66K-book library to hit a
+// reverse proxy's own gateway timeout before comic-server ever got a
+// chance to answer.
 // POST /api/library/datamanager-preview
-func (s *Server) handleDataManagerPreviewLibrary(w http.ResponseWriter, r *http.Request) {
-	s.runDataManagerLibrary(w, r, false)
-}
-
-// handleDataManagerApplyLibrary is handleDataManagerApply's whole-library
-// counterpart. Unlike the paginated preview, apply is not paginated: with
-// no selection given it commits every changed book in the library in one
-// action (the literal "Apply All"), and with book_ids or fields given it
-// commits only that (typically much smaller, user-selected) set - see
-// selectForApply and selectForApplyFields.
 // POST /api/library/datamanager-apply
-func (s *Server) handleDataManagerApplyLibrary(w http.ResponseWriter, r *http.Request) {
-	s.runDataManagerLibrary(w, r, true)
-}
-
-func (s *Server) runDataManagerLibrary(w http.ResponseWriter, r *http.Request, apply bool) {
+func (s *Server) handleDataManagerJobStart(w http.ResponseWriter, r *http.Request, apply bool) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -212,16 +227,6 @@ func (s *Server) runDataManagerLibrary(w http.ResponseWriter, r *http.Request, a
 		return
 	}
 
-	allBooks, err := s.backend.GetAllBooks()
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to load library: %v", err), http.StatusInternalServerError)
-		return
-	}
-	books := make([]*library.ComicBook, len(allBooks))
-	for i := range allBooks {
-		books[i] = &allBooks[i]
-	}
-
 	var bookIDs []string
 	var fields []DMFieldSelector
 	if apply {
@@ -234,18 +239,98 @@ func (s *Server) runDataManagerLibrary(w http.ResponseWriter, r *http.Request, a
 		fields = req.Fields
 	}
 
-	result := s.runDataManagerOverBooks(books, rulesets, apply, bookIDs, fields)
-
-	if !apply {
-		result.Limit, result.Offset = parseLimitOffset(r, 20, 100)
-		total := len(result.Books)
-		start := min(result.Offset, total)
-		end := min(start+result.Limit, total)
-		result.HasMore = end < total
-		result.Books = result.Books[start:end]
+	allBooks, err := s.backend.GetAllBooks()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to load library: %v", err), http.StatusInternalServerError)
+		return
+	}
+	books := make([]*library.ComicBook, len(allBooks))
+	for i := range allBooks {
+		books[i] = &allBooks[i]
 	}
 
-	s.writeJSON(w, http.StatusOK, result)
+	s.dmJobMu.Lock()
+	if s.dmJob != nil && s.dmJob.Status == "running" {
+		s.dmJobMu.Unlock()
+		http.Error(w, "A Data Manager run is already in progress", http.StatusConflict)
+		return
+	}
+	job := &DMJobStatus{
+		JobID:     fmt.Sprintf("dm-%d", time.Now().UnixNano()),
+		Apply:     apply,
+		Status:    "running",
+		Total:     len(books),
+		StartedAt: time.Now(),
+	}
+	s.dmJob = job
+	s.dmJobMu.Unlock()
+
+	go s.runDataManagerJob(job, books, rulesets, apply, bookIDs, fields)
+
+	s.writeJSON(w, http.StatusAccepted, map[string]string{"job_id": job.JobID})
+}
+
+// runDataManagerJob runs to completion in its own goroutine, updating
+// job.Processed as it goes (via onProgress, threaded down into dmEvaluate)
+// so handleDataManagerJobStatus has something live to report while it
+// runs. Every field write on job goes through s.dmJobMu, the same lock
+// handleDataManagerJobStatus reads through.
+func (s *Server) runDataManagerJob(job *DMJobStatus, candidates []*library.ComicBook, rulesets []datamanager.Ruleset, apply bool, bookIDs []string, fields []DMFieldSelector) {
+	onProgress := func(processed int) {
+		s.dmJobMu.Lock()
+		job.Processed = processed
+		s.dmJobMu.Unlock()
+	}
+	result := s.runDataManagerOverBooks(candidates, rulesets, apply, bookIDs, fields, onProgress)
+
+	s.dmJobMu.Lock()
+	job.Status = "completed"
+	job.Processed = job.Total
+	job.Changed = result.Changed
+	job.Books = result.Books
+	job.Errors = result.Errors
+	now := time.Now()
+	job.CompletedAt = &now
+	s.dmJobMu.Unlock()
+}
+
+// handleDataManagerJobStatus reports the current (or most recently
+// completed) whole-library Data Manager job - what the UI polls to drive
+// its progress bar and, once Status is "completed", to page through
+// Books (limit/offset, same convention the old synchronous preview
+// endpoint used) without re-running the evaluation.
+// GET /api/library/datamanager-job
+func (s *Server) handleDataManagerJobStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	s.dmJobMu.RLock()
+	job := s.dmJob
+	var snapshot DMJobStatus
+	if job != nil {
+		snapshot = *job
+	}
+	s.dmJobMu.RUnlock()
+
+	if job == nil {
+		s.writeJSON(w, http.StatusOK, map[string]string{"status": "none"})
+		return
+	}
+
+	if snapshot.Status == "completed" {
+		limit, offset := parseLimitOffset(r, 20, 100)
+		total := len(snapshot.Books)
+		start := min(offset, total)
+		end := min(start+limit, total)
+		snapshot.Limit = limit
+		snapshot.Offset = offset
+		snapshot.HasMore = end < total
+		snapshot.Books = snapshot.Books[start:end]
+	}
+
+	s.writeJSON(w, http.StatusOK, snapshot)
 }
 
 // runDataManagerOverBooks evaluates rulesets against candidates and,
@@ -255,8 +340,14 @@ func (s *Server) runDataManagerLibrary(w http.ResponseWriter, r *http.Request, a
 // bookIDs commits whole books (comic-server-dpq); otherwise every changed
 // book is committed. Every path re-verifies the selection against this
 // fresh run rather than trusting a possibly-stale client-held preview.
-func (s *Server) runDataManagerOverBooks(candidates []*library.ComicBook, rulesets []datamanager.Ruleset, apply bool, bookIDs []string, fieldSelectors []DMFieldSelector) DMRunResult {
-	changes, errs, updated := dmEvaluate(candidates, rulesets)
+//
+// onProgress, when non-nil, is called after every book is evaluated with
+// the running count - the whole-library async job (handleDataManagerJob
+// Start) uses this to report live progress; the list-scoped synchronous
+// endpoints pass nil, since their candidate sets are small enough that a
+// progress readout would never have anything meaningful to show.
+func (s *Server) runDataManagerOverBooks(candidates []*library.ComicBook, rulesets []datamanager.Ruleset, apply bool, bookIDs []string, fieldSelectors []DMFieldSelector, onProgress func(processed int)) DMRunResult {
+	changes, errs, updated := dmEvaluate(candidates, rulesets, onProgress)
 	result := DMRunResult{Processed: len(candidates), Applied: apply, Errors: errs}
 
 	if !apply {
@@ -303,13 +394,16 @@ func (s *Server) runDataManagerOverBooks(candidates []*library.ComicBook, rulese
 // a cached book in place). Returns every book with at least one change,
 // plus the working copy for each (keyed by book ID) so a caller can decide
 // which subset to actually persist without re-running the rules.
-func dmEvaluate(candidates []*library.ComicBook, rulesets []datamanager.Ruleset) (changes []DMBookChange, errs []string, updated map[string]*library.ComicBook) {
+func dmEvaluate(candidates []*library.ComicBook, rulesets []datamanager.Ruleset, onProgress func(processed int)) (changes []DMBookChange, errs []string, updated map[string]*library.ComicBook) {
 	updated = make(map[string]*library.ComicBook)
-	for _, book := range candidates {
+	for i, book := range candidates {
 		working := *book
 		cs, err := datamanager.ApplyAll(&working, rulesets)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("%s: %v", book.ID, err))
+		}
+		if onProgress != nil {
+			onProgress(i + 1)
 		}
 		if len(cs) == 0 {
 			continue

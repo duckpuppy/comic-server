@@ -58,6 +58,13 @@ type Server struct {
 	cvCache  *comicvine.Cache
 	scraper  *comicvine.Scraper
 
+	// dmJob/dmJobMu track the current (or most recently completed)
+	// whole-library Data Manager preview/apply background job - see
+	// DMJobStatus's doc comment in datamanager.go for why this runs async
+	// instead of blocking the request.
+	dmJob   *DMJobStatus
+	dmJobMu sync.RWMutex
+
 	komgaStatus *komga.StatusStore
 	komgaSyncer *komga.Syncer
 
@@ -172,8 +179,15 @@ func (s *Server) registerRoutes() {
 
 	// Data Manager whole-library endpoints (comic-server-dpq's "Apply
 	// All" - the list-scoped equivalents are under /api/library/lists/).
-	s.mux.HandleFunc("/api/library/datamanager-preview", s.handleDataManagerPreviewLibrary)
-	s.mux.HandleFunc("/api/library/datamanager-apply", s.handleDataManagerApplyLibrary)
+	// Both start a background job (202 + job_id) rather than blocking -
+	// see DMJobStatus's doc comment.
+	s.mux.HandleFunc("/api/library/datamanager-preview", func(w http.ResponseWriter, r *http.Request) {
+		s.handleDataManagerJobStart(w, r, false)
+	})
+	s.mux.HandleFunc("/api/library/datamanager-apply", func(w http.ResponseWriter, r *http.Request) {
+		s.handleDataManagerJobStart(w, r, true)
+	})
+	s.mux.HandleFunc("/api/library/datamanager-job", s.handleDataManagerJobStatus)
 
 	// Workflow dashboard (comic-server-1iv.3) - the native replacement
 	// for the manual ingest-pipeline smart lists.

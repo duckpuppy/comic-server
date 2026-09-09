@@ -13,9 +13,17 @@
 // the diff table (one book's one changed field) has its own checkbox, so
 // "keep the SeriesGroup change but skip the Tags change on the same book"
 // is possible, not just whole-book cherry-picking.
+//
+// Preview/Apply both run as a server-side background job, not a blocking
+// request: evaluating every rule against every book in a real ~66K-book
+// library takes long enough to trip a reverse proxy's own gateway timeout
+// (a real user hit exactly this - a raw 504 HTML page landing in the
+// error banner) well before the server itself would ever answer. This
+// page starts the job, then polls GET /api/library/datamanager-job every
+// second for a live processed/total count until it completes.
 class DataManagerPage {
     constructor() {
-        this.summary = null; // { processed, changed } from the last preview
+        this.summary = null; // { processed, changed } from the last completed job
         this.books = [];     // current page of DMBookChange
         this.limit = 20;
         this.offset = 0;
@@ -24,10 +32,17 @@ class DataManagerPage {
         // one entry per checked FIELD ROW, not per book, so a book with
         // multiple changed fields can have some checked and some not.
         this.selected = new Map(); // key -> { book_id, field, custom }
-        this.previewing = false;
-        this.applying = false;
         this.lastResult = null; // last apply result, shown until the next preview
         this.error = null;
+
+        // Job/progress state - jobKind is 'preview' or 'apply' while a
+        // job is running, null otherwise; jobTotal/jobProcessed drive the
+        // progress bar.
+        this.jobKind = null;
+        this.jobTotal = 0;
+        this.jobProcessed = 0;
+        this.pollTimer = null;
+        this.pollCtx = null; // captured router._navCtx, see stopPolling
     }
 
     async init(ctx) {
@@ -50,11 +65,11 @@ class DataManagerPage {
                 </div>
                 <div class="panel">
                     <div class="datamanager-actions">
-                        <button class="btn btn-primary" id="dm-preview-btn" ${this.previewing ? 'disabled' : ''}>
-                            ${this.previewing ? 'Previewing…' : 'Preview All'}
+                        <button class="btn btn-primary" id="dm-preview-btn" ${this.jobKind ? 'disabled' : ''}>
+                            ${this.jobKind === 'preview' ? 'Previewing…' : 'Preview All'}
                         </button>
                         <button class="btn btn-primary" id="dm-apply-selected-btn" ${this.applyDisabled() ? 'disabled' : ''}>
-                            Apply Selected (${this.selected.size})
+                            ${this.jobKind === 'apply' ? 'Applying…' : `Apply Selected (${this.selected.size})`}
                         </button>
                         <button class="btn btn-secondary" id="dm-select-all-btn" ${!this.books.length ? 'disabled' : ''}>Select All Shown</button>
                         <button class="btn btn-secondary" id="dm-select-none-btn" ${!this.books.length ? 'disabled' : ''}>Select None</button>
@@ -66,10 +81,13 @@ class DataManagerPage {
     }
 
     applyDisabled() {
-        return this.applying || this.selected.size === 0;
+        return !!this.jobKind || this.selected.size === 0;
     }
 
     renderBody() {
+        if (this.jobKind) {
+            return this.renderProgress();
+        }
         if (this.error) {
             return `<p class="datamanager-errors">${this.escapeHtml(this.error)}</p>`;
         }
@@ -112,6 +130,24 @@ class DataManagerPage {
         }
 
         return html;
+    }
+
+    // renderProgress is shown in place of the diff table while a job is
+    // running - a plain "xxx / xxx books" counter plus the shared
+    // .progress-bar/.progress-fill classes the sync page already uses, so
+    // this looks consistent with the rest of the app rather than
+    // inventing new progress-bar styling.
+    renderProgress() {
+        const pct = this.jobTotal > 0 ? Math.round((this.jobProcessed / this.jobTotal) * 100) : 0;
+        const verb = this.jobKind === 'apply' ? 'Applying' : 'Evaluating';
+        return `
+            <div class="datamanager-progress">
+                <p>${verb} rules… ${this.jobProcessed} / ${this.jobTotal} books (${pct}%)</p>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: ${pct}%"></div>
+                </div>
+            </div>
+        `;
     }
 
     attachListeners() {
@@ -177,49 +213,39 @@ class DataManagerPage {
         }
     }
 
-    // reset=true starts a fresh preview from offset 0 (used by the
-    // Preview button); reset=false appends the next page (Load More).
+    // reset=true starts a FRESH background preview job (used by the
+    // Preview button); reset=false just fetches the next page of an
+    // already-completed job's stored results (Load More) - no
+    // re-evaluation needed, the server keeps the full result until the
+    // next job starts.
     async preview(reset) {
-        this.previewing = true;
-        this.error = null;
-        if (reset) {
-            this.offset = 0;
-            this.books = [];
-            this.selected = new Map();
-            this.lastResult = null;
+        if (!reset) {
+            await this.fetchPage(this.offset);
+            return;
         }
-        this.render();
-        this.attachListeners();
+
+        this.error = null;
+        this.offset = 0;
+        this.books = [];
+        this.selected = new Map();
+        this.lastResult = null;
+        this.summary = null;
 
         try {
-            const url = `/api/library/datamanager-preview?limit=${this.limit}&offset=${this.offset}`;
-            const response = await fetch(url, { method: 'POST' });
+            const response = await fetch('/api/library/datamanager-preview', { method: 'POST' });
             const text = await response.text();
             if (!response.ok) {
-                throw new Error(friendlyErrorText(response, text, 'Failed to preview Data Manager rules'));
+                throw new Error(friendlyErrorText(response, text, 'Failed to start Data Manager preview'));
             }
-            const result = JSON.parse(text);
-            this.summary = { processed: result.processed, changed: result.changed };
-            this.hasMore = !!result.has_more;
-            const page = result.books || [];
-            this.books = reset ? page : this.books.concat(page);
-            // New rows default to selected, matching "Apply Selected"
-            // being the primary action for a freshly loaded page.
-            for (const book of page) {
-                for (const c of book.changes) {
-                    const key = this.fieldKey(book.book_id, c.field, c.custom);
-                    this.selected.set(key, { book_id: book.book_id, field: c.field, custom: c.custom });
-                }
-            }
-            this.offset += this.limit;
         } catch (error) {
-            console.error('Failed to preview Data Manager rules:', error);
+            console.error('Failed to start Data Manager preview:', error);
             this.error = `Failed: ${error.message}`;
-        } finally {
-            this.previewing = false;
             this.render();
             this.attachListeners();
+            return;
         }
+
+        this.runJob('preview');
     }
 
     async applySelected() {
@@ -231,10 +257,7 @@ class DataManagerPage {
         });
         if (!ok) return;
 
-        this.applying = true;
-        this.render();
-        this.attachListeners();
-
+        this.error = null;
         try {
             const response = await fetch('/api/library/datamanager-apply', {
                 method: 'POST',
@@ -243,18 +266,137 @@ class DataManagerPage {
             });
             const text = await response.text();
             if (!response.ok) {
-                throw new Error(friendlyErrorText(response, text, 'Failed to apply Data Manager rules'));
+                throw new Error(friendlyErrorText(response, text, 'Failed to start Data Manager apply'));
             }
-            this.lastResult = JSON.parse(text);
-            // Refresh from offset 0 so the table reflects post-apply
-            // state (committed fields should no longer show a diff).
-            await this.preview(true);
-            return;
         } catch (error) {
-            console.error('Failed to apply Data Manager rules:', error);
+            console.error('Failed to start Data Manager apply:', error);
+            this.error = `Failed: ${error.message}`;
+            this.render();
+            this.attachListeners();
+            return;
+        }
+
+        this.runJob('apply');
+    }
+
+    // runJob begins polling for the job that was just started (kind is
+    // 'preview' or 'apply', purely for this page's own display - both
+    // poll the exact same status endpoint, since only one job runs at a
+    // time on the server). pollCtx is captured from the router's current
+    // navigation context so a stray tick after the user has navigated
+    // away never overwrites whatever page they're actually looking at -
+    // same pattern deviceDetail.js's sync-status polling uses, adapted
+    // for a page instance that (unlike DeviceDetail) is a session-long
+    // singleton reused across navigations rather than recreated per visit.
+    runJob(kind) {
+        this.jobKind = kind;
+        this.jobTotal = 0;
+        this.jobProcessed = 0;
+        this.pollCtx = (typeof router !== 'undefined') ? router._navCtx : null;
+        this.render();
+        this.attachListeners();
+
+        this.stopPolling();
+        this.pollJob();
+        this.pollTimer = setInterval(() => this.pollJob(), 1000);
+    }
+
+    stopPolling() {
+        if (this.pollTimer) {
+            clearInterval(this.pollTimer);
+            this.pollTimer = null;
+        }
+    }
+
+    async pollJob() {
+        if (this.pollCtx && this.pollCtx.aborted) {
+            this.stopPolling();
+            return;
+        }
+
+        let status;
+        try {
+            const response = await fetch(`/api/library/datamanager-job?limit=${this.limit}&offset=0`);
+            if (this.pollCtx && this.pollCtx.aborted) {
+                this.stopPolling();
+                return;
+            }
+            if (!response.ok) return; // transient - next tick will retry
+            status = await response.json();
+        } catch (error) {
+            console.error('Failed to poll Data Manager job status:', error);
+            return; // transient - next tick will retry
+        }
+
+        if (status.status === 'none') {
+            this.stopPolling();
+            return;
+        }
+
+        this.jobTotal = status.total || 0;
+        this.jobProcessed = status.processed || 0;
+
+        if (status.status !== 'completed') {
+            this.render();
+            this.attachListeners();
+            return;
+        }
+
+        this.stopPolling();
+        const wasApply = this.jobKind === 'apply';
+        this.jobKind = null;
+
+        this.summary = { processed: status.total, changed: status.changed };
+        this.hasMore = !!status.has_more;
+        const page = status.books || [];
+        this.books = page;
+        this.offset = this.limit;
+        for (const book of page) {
+            for (const c of book.changes) {
+                const key = this.fieldKey(book.book_id, c.field, c.custom);
+                this.selected.set(key, { book_id: book.book_id, field: c.field, custom: c.custom });
+            }
+        }
+
+        if (wasApply) {
+            this.lastResult = { applied: true, changed: status.changed, errors: status.errors };
+            // Refresh with a fresh preview job so the table reflects
+            // post-apply state (committed fields should no longer show a
+            // diff) - fire and forget, same as the old synchronous
+            // version's "await this.preview(true)" but as its own job
+            // rather than blocking this poll tick.
+            this.preview(true);
+            return;
+        }
+
+        this.render();
+        this.attachListeners();
+    }
+
+    // fetchPage re-reads a later page of an already-completed job's
+    // stored results (Load More) - cheap, no re-evaluation.
+    async fetchPage(offset) {
+        try {
+            const response = await fetch(`/api/library/datamanager-job?limit=${this.limit}&offset=${offset}`);
+            const text = await response.text();
+            if (!response.ok) {
+                throw new Error(friendlyErrorText(response, text, 'Failed to load more results'));
+            }
+            const status = JSON.parse(text);
+            const page = status.books || [];
+            this.books = this.books.concat(page);
+            this.hasMore = !!status.has_more;
+            this.offset = offset + this.limit;
+            for (const book of page) {
+                for (const c of book.changes) {
+                    const key = this.fieldKey(book.book_id, c.field, c.custom);
+                    this.selected.set(key, { book_id: book.book_id, field: c.field, custom: c.custom });
+                }
+            }
+        } catch (error) {
+            console.error('Failed to load more Data Manager results:', error);
             this.error = `Failed: ${error.message}`;
         } finally {
-            this.applying = false;
             this.render();
             this.attachListeners();
         }

@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/duckpuppy/comic-server/internal/configdb"
 	"github.com/duckpuppy/comic-server/internal/library"
@@ -321,6 +322,64 @@ func newDataManagerLibraryTestServer(t *testing.T, books []library.ComicBook) (*
 // covers comic-server-dpq's "Apply All": the library-scope preview must
 // evaluate every book, including ones no existing smart list happens to
 // match, unlike the list-scoped preview.
+// startDMJob POSTs to the whole-library job-start endpoint and returns the
+// job_id - the async replacement for directly reading a synchronous
+// DMRunResult (see DMJobStatus's doc comment on why this became a
+// background job).
+func startDMJob(t *testing.T, s *Server, apply bool, body string) string {
+	t.Helper()
+	path := "/api/library/datamanager-preview"
+	if apply {
+		path = "/api/library/datamanager-apply"
+	}
+	var req *http.Request
+	if body != "" {
+		req = httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	} else {
+		req = httptest.NewRequest(http.MethodPost, path, nil)
+	}
+	w := httptest.NewRecorder()
+	s.handleDataManagerJobStart(w, req, apply)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", w.Code, w.Body.String())
+	}
+	var started struct {
+		JobID string `json:"job_id"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&started); err != nil {
+		t.Fatalf("decode job start response: %v", err)
+	}
+	return started.JobID
+}
+
+// waitForDMJob polls the job status handler directly (no real HTTP round
+// trip needed) until the job completes, failing the test if it doesn't
+// within a generous timeout - the goroutine started by startDMJob races
+// with the test's own goroutine, so this can't just read s.dmJob once.
+func waitForDMJob(t *testing.T, s *Server, query string) DMJobStatus {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		req := httptest.NewRequest(http.MethodGet, "/api/library/datamanager-job"+query, nil)
+		w := httptest.NewRecorder()
+		s.handleDataManagerJobStatus(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("job status: expected 200, got %d: %s", w.Code, w.Body.String())
+		}
+		var status DMJobStatus
+		if err := json.NewDecoder(w.Body).Decode(&status); err != nil {
+			t.Fatalf("decode job status: %v", err)
+		}
+		if status.Status == "completed" {
+			return status
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("job did not complete within timeout, last status: %+v", status)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 func TestHandleDataManagerPreviewLibrary_ScansWholeLibraryNotJustOneList(t *testing.T) {
 	books := []library.ComicBook{
 		{ID: "1", Series: "Batman"},
@@ -329,19 +388,11 @@ func TestHandleDataManagerPreviewLibrary_ScansWholeLibraryNotJustOneList(t *test
 	s, db := newDataManagerLibraryTestServer(t, books)
 	seedBatmanRuleset(t, db)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/library/datamanager-preview", nil)
-	w := httptest.NewRecorder()
-	s.handleDataManagerPreviewLibrary(w, req)
+	startDMJob(t, s, false, "")
+	result := waitForDMJob(t, s, "")
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-	var result DMRunResult
-	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if result.Processed != 2 {
-		t.Errorf("Processed = %d, want 2 (whole library, not one list)", result.Processed)
+	if result.Total != 2 {
+		t.Errorf("Total = %d, want 2 (whole library, not one list)", result.Total)
 	}
 	if result.Changed != 1 || len(result.Books) != 1 || result.Books[0].BookID != "1" {
 		t.Fatalf("expected exactly book 1 to have changed, got %+v", result)
@@ -350,7 +401,8 @@ func TestHandleDataManagerPreviewLibrary_ScansWholeLibraryNotJustOneList(t *test
 
 // TestHandleDataManagerPreviewLibrary_Paginates covers the summary-first
 // pagination design (comic-server-dpq): Changed reports the TOTAL that
-// would change, while Books is only the requested page.
+// would change, while Books is only the requested page - now read from
+// the completed job's own stored results rather than the start response.
 func TestHandleDataManagerPreviewLibrary_Paginates(t *testing.T) {
 	books := make([]library.ComicBook, 5)
 	for i := range books {
@@ -359,14 +411,9 @@ func TestHandleDataManagerPreviewLibrary_Paginates(t *testing.T) {
 	s, db := newDataManagerLibraryTestServer(t, books)
 	seedBatmanRuleset(t, db)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/library/datamanager-preview?limit=2&offset=1", nil)
-	w := httptest.NewRecorder()
-	s.handleDataManagerPreviewLibrary(w, req)
+	startDMJob(t, s, false, "")
+	result := waitForDMJob(t, s, "?limit=2&offset=1")
 
-	var result DMRunResult
-	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
 	if result.Changed != 5 {
 		t.Errorf("Changed = %d, want 5 (total, not page size)", result.Changed)
 	}
@@ -390,25 +437,60 @@ func TestHandleDataManagerApplyLibrary_ApplyAllCommitsEveryChangedBook(t *testin
 	s, db := newDataManagerLibraryTestServer(t, books)
 	seedBatmanRuleset(t, db)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/library/datamanager-apply", nil)
-	w := httptest.NewRecorder()
-	s.handleDataManagerApplyLibrary(w, req)
+	startDMJob(t, s, true, "")
+	result := waitForDMJob(t, s, "")
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-	var result DMRunResult
-	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if !result.Applied || result.Changed != 2 {
-		t.Fatalf("expected Applied=true Changed=2, got %+v", result)
+	if !result.Apply || result.Changed != 2 {
+		t.Fatalf("expected Apply=true Changed=2, got %+v", result)
 	}
 
 	book1, _ := s.backend.GetBook("1")
 	book2, _ := s.backend.GetBook("2")
 	if book1.SeriesGroup != "Batman Family" || book2.SeriesGroup != "Batman Family" {
 		t.Errorf("expected both Batman books updated, got book1=%q book2=%q", book1.SeriesGroup, book2.SeriesGroup)
+	}
+}
+
+// TestHandleDataManagerJobStart_ConflictWhileRunning covers the single-
+// job-slot design: starting a second whole-library run while one is still
+// in progress must be rejected, not silently queued or run concurrently -
+// same convention as comicvine.Scraper's CurrentJob() conflict check.
+func TestHandleDataManagerJobStart_ConflictWhileRunning(t *testing.T) {
+	books := []library.ComicBook{{ID: "1", Series: "Batman"}}
+	s, db := newDataManagerLibraryTestServer(t, books)
+	seedBatmanRuleset(t, db)
+
+	s.dmJobMu.Lock()
+	s.dmJob = &DMJobStatus{JobID: "already-running", Status: "running"}
+	s.dmJobMu.Unlock()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/library/datamanager-preview", nil)
+	w := httptest.NewRecorder()
+	s.handleDataManagerJobStart(w, req, false)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestHandleDataManagerJobStatus_NoneWhenNeverRun covers the "nothing has
+// ever run yet" case a fresh server (or one right after startup) is in.
+func TestHandleDataManagerJobStatus_NoneWhenNeverRun(t *testing.T) {
+	s, _ := newDataManagerLibraryTestServer(t, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/library/datamanager-job", nil)
+	w := httptest.NewRecorder()
+	s.handleDataManagerJobStatus(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]string
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp["status"] != "none" {
+		t.Errorf("status = %q, want \"none\"", resp["status"])
 	}
 }
 

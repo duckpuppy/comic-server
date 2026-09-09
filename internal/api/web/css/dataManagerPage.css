@@ -23,3 +23,11 @@
     font-weight: 600;
     margin-bottom: 1rem;
 }
+
+/* Background-job progress readout (comic-server-wp9's follow-up: preview/
+   apply run server-side as an async job, not a blocking request) - reuses
+   .progress-bar/.progress-fill from style.css, same bar the sync page
+   already uses, so this doesn't invent new progress-bar styling. */
+.datamanager-progress p {
+    margin-bottom: 0.5rem;
+}
