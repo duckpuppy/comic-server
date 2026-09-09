@@ -125,11 +125,19 @@ class WorkflowPage {
 
     renderDrillIn() {
         const d = this.drillIn;
+        // Fetching this stage's real book list touches every book in the
+        // library to find which ones are at this stage, no matter how
+        // few actually match - on a large library that reliably takes
+        // several seconds. d.total starts at 0 before that finishes, so
+        // showing it unconditionally read as "0 books here" rather than
+        // "still counting" (a real user report - comic-server-x5r).
+        const initialLoad = this.loadingDrillIn && d.comics.length === 0 && d.offset === 0;
+        const countLabel = initialLoad ? '…' : d.total;
         let html = `
             <div class="panel">
                 <div class="datamanager-page-header">
                     <button class="btn btn-secondary" id="workflow-back-btn">&larr; Back</button>
-                    <h2>${this.escapeHtml(d.label)} (${d.total})</h2>
+                    <h2>${this.escapeHtml(d.label)} (${countLabel})</h2>
                 </div>
         `;
         if (this.loadingDrillIn && d.comics.length === 0) {
@@ -189,7 +197,15 @@ class WorkflowPage {
     async loadDrillInPage(reset) {
         const d = this.drillIn;
         this.loadingDrillIn = true;
-        if (!reset) { this.render(); this.attachListeners(); }
+        // Render right after flipping loadingDrillIn - openDrillIn's own
+        // render() call happens BEFORE this, so skipping this one on a
+        // reset (the old behavior) left the very first render as the
+        // last thing on screen for the whole fetch, with loadingDrillIn
+        // still false at that point - the header's book count showed a
+        // bare "0" instead of the "still counting" state for however
+        // long the fetch took (comic-server-x5r).
+        this.render();
+        this.attachListeners();
 
         try {
             const offset = reset ? 0 : d.offset;
