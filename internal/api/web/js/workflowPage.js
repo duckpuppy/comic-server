@@ -25,6 +25,12 @@ class WorkflowPage {
     }
 
     async init(ctx) {
+        // Render once BEFORE the fetch so the "Loading…" state (below, in
+        // renderBody) actually appears - this page's summary comes from a
+        // full-library GetAllBooks() scan on the server, which takes
+        // multiple seconds on a large library, so without this the tab
+        // just sits blank until the fetch resolves.
+        this.render();
         await this.load();
         if (ctx && ctx.aborted) return;
         this.render();
