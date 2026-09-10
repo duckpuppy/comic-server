@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/duckpuppy/comic-server/internal/library"
+	"github.com/duckpuppy/comic-server/internal/libraryorganizer"
+	"github.com/duckpuppy/comic-server/internal/log"
 	"github.com/duckpuppy/comic-server/internal/workflow"
 )
 
@@ -90,19 +92,35 @@ func (s *Server) handleGetWorkflowStageBooks(w http.ResponseWriter, r *http.Requ
 	total := len(matched)
 	start := min(offset, total)
 	end := min(start+limit, total)
+	page := matched[start:end]
 
-	previews := make([]ComicPreview, 0, end-start)
-	for _, book := range matched[start:end] {
-		previews = append(previews, ComicPreview{
-			ID:        book.ID,
-			Series:    book.Series,
-			Number:    book.Number,
-			Title:     book.Title,
-			Volume:    book.Volume,
-			Publisher: book.Publisher,
-			Year:      book.Year,
-			Unread:    book.IsUnread(),
-		})
+	// Current path is free (book.FilePath); target path takes an actual
+	// Library Organizer plan run, so it's only computed for the one stage
+	// where it means anything, and only for this page - not the whole
+	// (possibly much larger) matched set, same "scope the work to what's
+	// actually being shown" lesson as comic-server-n5d.
+	var planByID map[string]libraryorganizer.PlannedMove
+	if stage == workflow.StageToMove {
+		planByID = s.planToMoveBooks(page)
+	}
+
+	previews := make([]ComicPreview, 0, len(page))
+	for _, book := range page {
+		preview := ComicPreview{
+			ID:          book.ID,
+			Series:      book.Series,
+			Number:      book.Number,
+			Title:       book.Title,
+			Volume:      book.Volume,
+			Publisher:   book.Publisher,
+			Year:        book.Year,
+			Unread:      book.IsUnread(),
+			CurrentPath: book.FilePath,
+		}
+		if plan, ok := planByID[book.ID]; ok && !plan.Skipped && !plan.Failed {
+			preview.TargetPath = plan.NewRawPath
+		}
+		previews = append(previews, preview)
 	}
 
 	s.writeJSON(w, http.StatusOK, map[string]any{
@@ -112,6 +130,38 @@ func (s *Server) handleGetWorkflowStageBooks(w http.ResponseWriter, r *http.Requ
 		"offset":   offset,
 		"has_more": end < total,
 	})
+}
+
+// planToMoveBooks runs Library Organizer's Plan against books using the
+// first configured profile (by sort_order, same default selection
+// organizePage.js's own picker starts with) - this is a read-only
+// informational preview embedded in the workflow drill-in, not the real
+// apply flow, so there's no profile picker here; it silently returns nil
+// (current path still shows, target path just doesn't) if configDB isn't
+// available, no profile is configured yet, or the profile fails to load -
+// none of those are worth failing the whole book list over.
+func (s *Server) planToMoveBooks(books []*library.ComicBook) map[string]libraryorganizer.PlannedMove {
+	if s.configDB == nil {
+		return nil
+	}
+	profiles, err := s.configDB.ListLOProfiles()
+	if err != nil || len(profiles) == 0 {
+		return nil
+	}
+
+	opts, _, errMsg, _ := s.loadLOPlanOptions(profiles[0].ID)
+	if errMsg != "" {
+		log.Warn().Str("reason", errMsg).Msg("Skipping target-path preview for workflow drill-in")
+		return nil
+	}
+	opts.FileExists = s.libraryOrganizerFileExists
+
+	moves := libraryorganizer.Plan(books, opts)
+	byID := make(map[string]libraryorganizer.PlannedMove, len(moves))
+	for _, m := range moves {
+		byID[m.BookID] = m
+	}
+	return byID
 }
 
 // handleWorkflowStageSubRouter dispatches /api/library/workflow/:stage/...

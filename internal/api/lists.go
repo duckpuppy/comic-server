@@ -438,6 +438,15 @@ type ComicPreview struct {
 	Publisher string `json:"publisher"`
 	Year      int    `json:"year"`
 	Unread    bool   `json:"unread"`
+
+	// CurrentPath/TargetPath are only populated for the Workflow
+	// dashboard's "To Move" stage drill-in (handleGetWorkflowStageBooks) -
+	// where the book is going is exactly as useful to see as where it is
+	// now, and computing it is what Library Organizer's own Plan already
+	// does. Empty for every other caller of this struct (list preview,
+	// ad-hoc browse).
+	CurrentPath string `json:"current_path,omitempty"`
+	TargetPath  string `json:"target_path,omitempty"`
 }
 
 // handleGetListPreview returns a preview of comics matching the list

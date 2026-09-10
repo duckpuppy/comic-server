@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/duckpuppy/comic-server/internal/configdb"
 	"github.com/duckpuppy/comic-server/internal/library"
 	"github.com/duckpuppy/comic-server/internal/workflow"
 )
@@ -101,6 +102,110 @@ func TestHandleGetWorkflowStageBooks_ReturnsOnlyThatStagePaginated(t *testing.T)
 	}
 	if !result.HasMore {
 		t.Error("expected HasMore=true")
+	}
+}
+
+// TestHandleGetWorkflowStageBooks_CurrentPathAlwaysIncluded covers the
+// "current path" half of a real user request - every stage shows where
+// the book actually is right now, at zero extra cost (it's just
+// book.FilePath).
+func TestHandleGetWorkflowStageBooks_CurrentPathAlwaysIncluded(t *testing.T) {
+	book := library.ComicBook{ID: "1", FilePath: `G:\Comics\Batman\Batman 001.cbz`}
+	workflow.SetStage(&book, workflow.StageScrape)
+	s := newWorkflowTestServer(t, []library.ComicBook{book})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/library/workflow/scrape/books", nil)
+	w := httptest.NewRecorder()
+	s.handleWorkflowStageSubRouter(w, req)
+
+	var result struct {
+		Comics []ComicPreview `json:"comics"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(result.Comics) != 1 || result.Comics[0].CurrentPath != book.FilePath {
+		t.Fatalf("expected CurrentPath = %q, got %+v", book.FilePath, result.Comics)
+	}
+	if result.Comics[0].TargetPath != "" {
+		t.Errorf("expected no TargetPath outside the To Move stage, got %q", result.Comics[0].TargetPath)
+	}
+}
+
+// TestHandleGetWorkflowStageBooks_ToMoveIncludesTargetPath covers the
+// "target path" half - the To Move stage specifically runs Library
+// Organizer's own Plan (using whatever profile is configured) so the
+// drill-in can show where a book would actually end up, not just where
+// it is now.
+func TestHandleGetWorkflowStageBooks_ToMoveIncludesTargetPath(t *testing.T) {
+	book := library.ComicBook{
+		ID: "1", Series: "Sandman", Publisher: "DC Comics",
+		FilePath: `G:\Comics\Sandman 01.cbz`,
+	}
+	workflow.SetStage(&book, workflow.StageToMove)
+	s := newWorkflowTestServer(t, []library.ComicBook{book})
+
+	db := newTestConfigDB(t)
+	s.configDB = db
+	if err := db.CreateLOProfile(configdb.LOProfile{
+		ID:              "p1",
+		Name:            "Default",
+		BaseFolder:      `G:\Comics`,
+		FolderTemplate:  `{<publisher>}`,
+		FileTemplate:    `{<series>}`,
+		ExcludeMode:     "Only",
+		ExcludeOperator: "Any",
+	}); err != nil {
+		t.Fatalf("CreateLOProfile: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/library/workflow/to_move/books", nil)
+	w := httptest.NewRecorder()
+	s.handleWorkflowStageSubRouter(w, req)
+
+	var result struct {
+		Comics []ComicPreview `json:"comics"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(result.Comics) != 1 {
+		t.Fatalf("expected 1 comic, got %d", len(result.Comics))
+	}
+	if result.Comics[0].CurrentPath != book.FilePath {
+		t.Errorf("CurrentPath = %q, want %q", result.Comics[0].CurrentPath, book.FilePath)
+	}
+	wantTarget := `G:\Comics\DC Comics\Sandman.cbz`
+	if result.Comics[0].TargetPath != wantTarget {
+		t.Errorf("TargetPath = %q, want %q", result.Comics[0].TargetPath, wantTarget)
+	}
+}
+
+// TestHandleGetWorkflowStageBooks_ToMoveNoProfileLeavesTargetPathEmpty
+// covers the no-Library-Organizer-profile-configured-yet case - the
+// current path still shows, target path is just absent rather than the
+// whole book list failing to load.
+func TestHandleGetWorkflowStageBooks_ToMoveNoProfileLeavesTargetPathEmpty(t *testing.T) {
+	book := library.ComicBook{ID: "1", FilePath: `G:\Comics\Sandman 01.cbz`}
+	workflow.SetStage(&book, workflow.StageToMove)
+	s := newWorkflowTestServer(t, []library.ComicBook{book})
+	s.configDB = newTestConfigDB(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/library/workflow/to_move/books", nil)
+	w := httptest.NewRecorder()
+	s.handleWorkflowStageSubRouter(w, req)
+
+	var result struct {
+		Comics []ComicPreview `json:"comics"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(result.Comics) != 1 || result.Comics[0].CurrentPath != book.FilePath {
+		t.Fatalf("expected CurrentPath = %q, got %+v", book.FilePath, result.Comics)
+	}
+	if result.Comics[0].TargetPath != "" {
+		t.Errorf("expected empty TargetPath with no profile configured, got %q", result.Comics[0].TargetPath)
 	}
 }
 

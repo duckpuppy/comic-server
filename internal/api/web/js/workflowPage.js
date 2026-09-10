@@ -145,11 +145,27 @@ class WorkflowPage {
         } else if (d.comics.length === 0) {
             html += '<p class="empty-message">No books at this stage.</p>';
         } else {
-            html += '<table class="datamanager-diff-table"><thead><tr><th>Series</th><th>Number</th><th>Title</th><th>Publisher</th><th>Year</th></tr></thead><tbody>';
-            for (const c of d.comics) {
-                html += `<tr><td>${this.escapeHtml(c.series)}</td><td>${this.escapeHtml(c.number)}</td><td>${this.escapeHtml(c.title)}</td><td>${this.escapeHtml(c.publisher)}</td><td>${c.year || ''}</td></tr>`;
+            // To Move is the only stage the server computes a target path
+            // for (it's the one place "where would this end up" means
+            // anything - see ComicPreview.TargetPath's own doc comment),
+            // so it gets its own path-focused column set instead of the
+            // generic series/number/title/publisher/year table every
+            // other stage uses.
+            const showPaths = d.stage === 'to_move';
+            if (showPaths) {
+                html += '<table class="datamanager-diff-table"><thead><tr><th>Series</th><th>Current Path</th><th>Target Path</th></tr></thead><tbody>';
+                for (const c of d.comics) {
+                    const label = `${c.series}${c.number ? ' #' + c.number : ''}`;
+                    html += `<tr><td>${this.escapeHtml(label)}</td><td>${this.escapeHtml(c.current_path)}</td><td>${this.escapeHtml(c.target_path || '—')}</td></tr>`;
+                }
+                html += '</tbody></table>';
+            } else {
+                html += '<table class="datamanager-diff-table"><thead><tr><th>Series</th><th>Number</th><th>Title</th><th>Publisher</th><th>Year</th></tr></thead><tbody>';
+                for (const c of d.comics) {
+                    html += `<tr><td>${this.escapeHtml(c.series)}</td><td>${this.escapeHtml(c.number)}</td><td>${this.escapeHtml(c.title)}</td><td>${this.escapeHtml(c.publisher)}</td><td>${c.year || ''}</td></tr>`;
+                }
+                html += '</tbody></table>';
             }
-            html += '</tbody></table>';
             if (d.hasMore) {
                 html += `<div class="load-more-container"><button id="workflow-load-more-btn" class="btn btn-secondary">Load More</button></div>`;
             }
