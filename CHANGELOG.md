@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.23.0](https://github.com/duckpuppy/comic-server/compare/v1.22.0...v1.23.0) (2026-09-10)
+
+
+### Features
+
+* show current and target path in the To Move workflow drill-in ([618f7c0](https://github.com/duckpuppy/comic-server/commit/618f7c0da1d7c3c5a996978b0570cd4837e7f667))
+
+
+### Performance Improvements
+
+* cache workflow stage snapshot, invalidated by every action that can change it ([df8ae65](https://github.com/duckpuppy/comic-server/commit/df8ae6509c289455fca495326652231640ff747e))
+
 ## [1.22.0](https://github.com/duckpuppy/comic-server/compare/v1.21.0...v1.22.0) (2026-09-09)
 
 
