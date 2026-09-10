@@ -439,6 +439,7 @@ func (s *Server) runDataManagerOverBooks(candidates []*library.ComicBook, rulese
 			log.Error().Err(err).Msg("Failed to save Data Manager rule run")
 			result.Errors = append(result.Errors, err.Error())
 		}
+		s.InvalidateWorkflowCache()
 	}
 	return result
 }

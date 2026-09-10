@@ -116,6 +116,7 @@ func (s *Server) runScrapeJob(jobID string, books []*library.ComicBook, opts com
 			"failed": job.Failed, "pending_review": job.PendingReview,
 		}
 	}
+	s.InvalidateWorkflowCache()
 	s.wsHub.Broadcast(ws.EventScrapeCompleted, map[string]any{"job_id": jobID, "stats": stats})
 }
 
@@ -223,6 +224,7 @@ func (s *Server) handleScrapeReviewResolve(w http.ResponseWriter, r *http.Reques
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	s.InvalidateWorkflowCache()
 
 	s.wsHub.Broadcast(ws.EventScrapeProgress, map[string]any{
 		"job_id":  jobID,

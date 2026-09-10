@@ -37,27 +37,18 @@ func (s *Server) handleGetWorkflowSummary(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	books, err := s.backend.GetAllBooks()
+	entry, err := s.getOrBuildWorkflowCache()
 	if err != nil {
 		http.Error(w, "Failed to load books", http.StatusInternalServerError)
 		return
 	}
 
-	counts := make(map[workflow.Stage]int, len(workflow.Stages))
-	cvdbSkip := 0
-	for i := range books {
-		counts[workflow.GetStage(&books[i])]++
-		if workflow.IsCVDBSkip(&books[i]) {
-			cvdbSkip++
-		}
-	}
-
-	summary := WorkflowSummary{CVDBSkip: cvdbSkip}
+	summary := WorkflowSummary{CVDBSkip: entry.cvdbSkip}
 	for _, st := range workflow.Stages {
 		summary.Stages = append(summary.Stages, WorkflowStageSummary{
 			Stage: st.String(),
 			Label: st.Label(),
-			Count: counts[st],
+			Count: len(entry.booksByStage[st]),
 		})
 	}
 
@@ -82,11 +73,12 @@ func (s *Server) handleGetWorkflowStageBooks(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	matched, err := s.booksAtStage(stage)
+	entry, err := s.getOrBuildWorkflowCache()
 	if err != nil {
 		http.Error(w, "Failed to load books", http.StatusInternalServerError)
 		return
 	}
+	matched := entry.booksByStage[stage]
 
 	limit, offset := parseLimitOffset(r, 20, 100)
 	total := len(matched)

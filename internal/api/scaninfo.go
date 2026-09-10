@@ -82,6 +82,7 @@ func (s *Server) handleRunScanInfo(w http.ResponseWriter, r *http.Request) {
 			log.Error().Err(err).Msg("Failed to save scan-info updates")
 			result.Errors = append(result.Errors, err.Error())
 		}
+		s.InvalidateWorkflowCache()
 	}
 
 	s.writeJSON(w, http.StatusOK, result)
@@ -133,6 +134,7 @@ func (s *Server) handleRunScanInfoWorkflow(w http.ResponseWriter, r *http.Reques
 			log.Error().Err(err).Msg("Failed to save scan-info updates")
 			result.Errors = append(result.Errors, err.Error())
 		}
+		s.InvalidateWorkflowCache()
 	}
 
 	s.writeJSON(w, http.StatusOK, result)

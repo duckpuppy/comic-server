@@ -65,6 +65,12 @@ type Server struct {
 	dmJob   *DMJobStatus
 	dmJobMu sync.RWMutex
 
+	// workflowCache/workflowCacheMu cache "which book is at which
+	// workflow stage" so the dashboard summary and stage drill-in don't
+	// each independently scan the whole library - see workflow_cache.go.
+	workflowCache   *workflowCacheEntry
+	workflowCacheMu sync.RWMutex
+
 	komgaStatus *komga.StatusStore
 	komgaSyncer *komga.Syncer
 

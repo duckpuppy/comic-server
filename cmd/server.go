@@ -519,6 +519,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 		} else {
 			watcher.OnReload(func() {
 				apiServer.InvalidateListCache()
+				apiServer.InvalidateWorkflowCache()
 				wsHub.Broadcast(websocket.EventLibraryReloaded, map[string]any{
 					"book_count": reloadable.BookCount(),
 				})

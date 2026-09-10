@@ -80,6 +80,7 @@ func (s *Server) handleRunCBZConvert(w http.ResponseWriter, r *http.Request) {
 			log.Error().Err(err).Msg("Failed to save cbz-convert updates")
 			result.Errors = append(result.Errors, err.Error())
 		}
+		s.InvalidateWorkflowCache()
 	}
 
 	s.writeJSON(w, http.StatusOK, result)
@@ -129,6 +130,7 @@ func (s *Server) handleRunCBZConvertWorkflow(w http.ResponseWriter, r *http.Requ
 			log.Error().Err(err).Msg("Failed to save cbz-convert updates")
 			result.Errors = append(result.Errors, err.Error())
 		}
+		s.InvalidateWorkflowCache()
 	}
 
 	s.writeJSON(w, http.StatusOK, result)

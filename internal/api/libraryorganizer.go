@@ -206,6 +206,7 @@ func (s *Server) handleOrganizeApply(w http.ResponseWriter, r *http.Request) {
 			log.Error().Err(err).Msg("Failed to save library-organizer updates")
 			result.Errors = append(result.Errors, err.Error())
 		}
+		s.InvalidateWorkflowCache()
 	}
 
 	s.writeJSON(w, http.StatusOK, result)
