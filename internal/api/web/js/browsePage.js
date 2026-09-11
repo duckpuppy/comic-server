@@ -4,14 +4,17 @@
 // exploration: pick matchers, see results immediately, without first
 // having to create-and-save a named list just to find out what it would
 // match. Distinct from the smart-list CRUD UI (listDetail.js) - nothing
-// built here is ever persisted.
+// built here is persisted UNLESS the user explicitly clicks "Save as
+// Smart List" (comic-server-hil), which bridges the current in-progress
+// filter into that same CRUD rather than duplicating it.
 //
 // Reuses the same matcher-editor markup/CSS/schema (GET
 // /api/library/lists/schema) listDetail.js's edit mode already uses, and
 // the same matcher JSON shape (Type/Not/MatchOperator/MatchValue/
 // MatchValue2) the existing raw-matcher endpoint already speaks - a
 // matcher object built here is wire-compatible with a saved smart list's,
-// even though this page never saves one.
+// which is exactly what makes Save as Smart List a plain POST with no
+// transformation needed.
 class BrowsePage {
     constructor() {
         this.schema = null;
@@ -50,7 +53,7 @@ class BrowsePage {
             <div class="datamanager-page">
                 <div class="datamanager-page-header">
                     <h1>Browse</h1>
-                    <p class="empty-message">Build a filter on the fly and see matching books immediately - nothing here is saved. Use "Save as Smart List" on the Lists page if you want to keep a filter.</p>
+                    <p class="empty-message">Build a filter on the fly and see matching books immediately. Nothing is saved unless you click "Save as Smart List" below.</p>
                 </div>
                 <div class="panel matchers-panel">
                     <div class="matchers-editor-header">
@@ -67,7 +70,10 @@ class BrowsePage {
                     <ul class="matchers-list matchers-editor-list" id="browse-matchers-list">
                         ${this.matchers.map((m, i) => this.renderMatcherEditor(m, i)).join('')}
                     </ul>
-                    <button id="browse-add-matcher-btn" class="btn btn-secondary btn-add-matcher">+ Add Matcher</button>
+                    <div class="datamanager-actions">
+                        <button id="browse-add-matcher-btn" class="btn btn-secondary btn-add-matcher">+ Add Matcher</button>
+                        <button id="browse-save-as-list-btn" class="btn btn-primary" ${this.matchers.length === 0 ? 'disabled' : ''}>Save as Smart List</button>
+                    </div>
                 </div>
                 <div class="panel">
                     ${this.renderResults()}
@@ -181,6 +187,9 @@ class BrowsePage {
 
         const addBtn = document.getElementById('browse-add-matcher-btn');
         if (addBtn) addBtn.addEventListener('click', () => this.addMatcher());
+
+        const saveBtn = document.getElementById('browse-save-as-list-btn');
+        if (saveBtn) saveBtn.addEventListener('click', () => this.saveAsSmartList());
 
         const loadMoreBtn = document.getElementById('browse-load-more-btn');
         if (loadMoreBtn) loadMoreBtn.addEventListener('click', () => this.search(false));
@@ -305,6 +314,42 @@ class BrowsePage {
             this.loading = false;
             this.render();
             this.attachListeners();
+        }
+    }
+
+    // saveAsSmartList persists the current in-progress filter
+    // (this.matcherMode/this.matchers) as a real, saved smart list -
+    // bridges Browse's throwaway exploration into the existing smart-list
+    // CRUD (listDetail.js/listsBrowser.js) rather than duplicating it
+    // (comic-server-hil). The matcher objects are already wire-compatible
+    // with a saved list's (see this file's own header comment), so no
+    // transformation is needed beyond wrapping them with a name.
+    async saveAsSmartList() {
+        if (this.matchers.length === 0) return;
+
+        const name = await dialogs.prompt({ title: 'Save as Smart List', placeholder: 'e.g. Currently Reading' });
+        if (!name) return;
+
+        try {
+            const response = await fetch('/api/library/lists', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: name,
+                    type: 'ComicSmartListItem',
+                    matcher_mode: this.matcherMode,
+                    matchers: this.matchers,
+                }),
+            });
+            const text = await response.text();
+            if (!response.ok) {
+                throw new Error(friendlyErrorText(response, text, 'Failed to save smart list'));
+            }
+            const created = JSON.parse(text);
+            router.navigate(`/lists/${created.id}`);
+        } catch (error) {
+            console.error('Failed to save smart list:', error);
+            dialogs.toast('Failed to save smart list: ' + error.message, 'error');
         }
     }
 
