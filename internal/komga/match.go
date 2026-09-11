@@ -63,35 +63,17 @@ type UnmatchedBook struct {
 	Reason string
 }
 
-// rawFilePath reverses config.Config.ResolveLibraryFilePath's own
-// LibrarySourceRoot->LibraryMountRoot translation, recovering the raw
-// path as originally recorded (e.g. "G:\Comics\...") from book.FilePath -
-// which, for the SQLite backend since comic-server-q7f, is the already-
-// resolved mount path rather than the raw one. Komga's own LocalRoot/
-// RemoteRoot mapping has always been defined in terms of the raw path
-// (see config.KomgaConfig's doc comment), so this must run before
-// TranslatePath below. A no-op (returns book.FilePath unchanged) when
-// sourceRoot/mountRoot aren't configured, or the path isn't rooted at
-// mountRoot (e.g. the XML backend, which was never affected by
-// comic-server-q7f and still stores the raw path directly).
-func rawFilePath(filePath, sourceRoot, mountRoot string) string {
-	if raw, ok := pathmap.Resolve(mountRoot, sourceRoot, filePath); ok {
-		return raw
-	}
-	return filePath
-}
-
 // ResolveReadListBooks translates each book's path and looks it up in the
 // index, returning matched Komga book IDs (in list order, duplicates
 // removed) and any books that couldn't be resolved. Unmatched books are not
 // an error - they're skipped so the rest of the list can still sync.
-func (idx *Index) ResolveReadListBooks(books []*library.ComicBook, localRoot, remoteRoot, librarySourceRoot, libraryMountRoot string) ([]string, []UnmatchedBook) {
+func (idx *Index) ResolveReadListBooks(books []*library.ComicBook, localRoot, remoteRoot string) ([]string, []UnmatchedBook) {
 	var matched []string
 	var unmatched []UnmatchedBook
 	seen := make(map[string]bool, len(books))
 
 	for _, book := range books {
-		remotePath, err := TranslatePath(localRoot, remoteRoot, rawFilePath(book.FilePath, librarySourceRoot, libraryMountRoot))
+		remotePath, err := TranslatePath(localRoot, remoteRoot, book.FilePath)
 		if err != nil {
 			unmatched = append(unmatched, UnmatchedBook{Book: book, Reason: err.Error()})
 			continue
@@ -126,12 +108,12 @@ type BookReadStatus struct {
 // unlike ResolveReadListBooks/ResolveCollectionSeries, callers need every
 // book's own read state, not just a set of Komga IDs) and any books that
 // couldn't be resolved.
-func (idx *Index) ResolveBookReadStatus(books []*library.ComicBook, localRoot, remoteRoot, librarySourceRoot, libraryMountRoot string) ([]BookReadStatus, []UnmatchedBook) {
+func (idx *Index) ResolveBookReadStatus(books []*library.ComicBook, localRoot, remoteRoot string) ([]BookReadStatus, []UnmatchedBook) {
 	var matched []BookReadStatus
 	var unmatched []UnmatchedBook
 
 	for _, book := range books {
-		remotePath, err := TranslatePath(localRoot, remoteRoot, rawFilePath(book.FilePath, librarySourceRoot, libraryMountRoot))
+		remotePath, err := TranslatePath(localRoot, remoteRoot, book.FilePath)
 		if err != nil {
 			unmatched = append(unmatched, UnmatchedBook{Book: book, Reason: err.Error()})
 			continue
@@ -153,13 +135,13 @@ func (idx *Index) ResolveBookReadStatus(books []*library.ComicBook, localRoot, r
 // directory per series, matching Komga's own layout), and looks that up in
 // the index. Multiple books resolving to the same series are deduplicated,
 // in first-seen order.
-func (idx *Index) ResolveCollectionSeries(books []*library.ComicBook, localRoot, remoteRoot, librarySourceRoot, libraryMountRoot string) ([]string, []UnmatchedBook) {
+func (idx *Index) ResolveCollectionSeries(books []*library.ComicBook, localRoot, remoteRoot string) ([]string, []UnmatchedBook) {
 	var matched []string
 	var unmatched []UnmatchedBook
 	seen := make(map[string]bool, len(books))
 
 	for _, book := range books {
-		remotePath, err := TranslatePath(localRoot, remoteRoot, rawFilePath(book.FilePath, librarySourceRoot, libraryMountRoot))
+		remotePath, err := TranslatePath(localRoot, remoteRoot, book.FilePath)
 		if err != nil {
 			unmatched = append(unmatched, UnmatchedBook{Book: book, Reason: err.Error()})
 			continue

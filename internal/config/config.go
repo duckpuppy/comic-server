@@ -204,6 +204,19 @@ type KomgaConfig struct {
 	// Mapping. Both roots are compared/joined using forward-slash-
 	// normalized paths (matching how comic-server already normalizes
 	// Directory/File/FullPath matchers).
+	//
+	// LocalRoot must match a book's FilePath as comic-server ACTUALLY has
+	// it right now - i.e. already resolved through
+	// LibrarySourceRoot/LibraryMountRoot above, if those are configured
+	// (see ResolveLibraryFilePath and comic-server-q7f, which made the
+	// SQLite backend store that resolved path directly in library.db
+	// instead of the raw ComicRack-recorded one). The raw path from
+	// ComicDb.xml is a one-time ComicRack->comic-server migration
+	// artifact - it stops mattering the moment that one-time import
+	// finishes, and LocalRoot must NOT be set to it once comic-server has
+	// its own real root (comic-server-ye2e was exactly this mistake:
+	// papering over a stale LocalRoot by resurrecting the retired raw
+	// path in code, instead of just pointing LocalRoot at the real one).
 	LocalRoot  string `yaml:"local_root,omitempty" toml:"local_root,omitempty"`
 	RemoteRoot string `yaml:"remote_root,omitempty" toml:"remote_root,omitempty"`
 
