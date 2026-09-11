@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.25.0](https://github.com/duckpuppy/comic-server/compare/v1.24.0...v1.25.0) (2026-09-11)
+
+
+### Features
+
+* prefer embedded ComicInfo.xml over filename guessing for watch folder books ([f01a16b](https://github.com/duckpuppy/comic-server/commit/f01a16b41d91330b0fb18b52679b7565c4c9cf86))
+* round-trip MainCharacterOrTeam, Rating, and Review through ComicInfo.xml ([0af8d01](https://github.com/duckpuppy/comic-server/commit/0af8d01e9a5c8d532e1fb04102bcc9d0d98fe85e))
+* translate book FilePath through configured mount at SQLite import time ([869a71c](https://github.com/duckpuppy/comic-server/commit/869a71c5e9e5d84c567b20f6f147d9584922faf7))
+* watch folders - surface pre-library comic files as workflow stage 0 ([bc1fdd5](https://github.com/duckpuppy/comic-server/commit/bc1fdd55ed32d9bfaebf3dbb4ae632ba4308b9d6))
+
+
+### Bug Fixes
+
+* fileless books never report/advance into workflow StageToMove ([f654fbc](https://github.com/duckpuppy/comic-server/commit/f654fbcb14fd0e08eb2a299adca6ee2c344a7733))
+* top nav bar scrolls instead of wrapping when tabs don't fit ([15bd7ce](https://github.com/duckpuppy/comic-server/commit/15bd7ce874151589f3ce3abea60e8d5c9a90a747))
+
 ## [1.24.0](https://github.com/duckpuppy/comic-server/compare/v1.23.0...v1.24.0) (2026-09-11)
 
 
