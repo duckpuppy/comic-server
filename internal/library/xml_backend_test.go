@@ -102,6 +102,48 @@ func TestXMLBackend_FlushWritesAfterUpdateBook(t *testing.T) {
 	}
 }
 
+// TestXMLBackend_CreateBookPersistsAndRejectsDuplicateID is the
+// regression test for comic-server-chh (watch folders): a book
+// comic-server creates itself must be readable back and, once flushed,
+// actually present in the XML file - and creating with an ID that
+// already exists must fail rather than silently duplicating the book.
+func TestXMLBackend_CreateBookPersistsAndRejectsDuplicateID(t *testing.T) {
+	path := newTestXMLLibraryFile(t)
+
+	backend, err := NewXMLBackend(path, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	newBook := &ComicBook{ID: "book-2", Series: "New Comic", FilePath: "/watch/new.cbz"}
+	if err := backend.CreateBook(newBook); err != nil {
+		t.Fatalf("CreateBook: %v", err)
+	}
+
+	got, err := backend.GetBook("book-2")
+	if err != nil || got == nil {
+		t.Fatalf("GetBook: got=%+v err=%v", got, err)
+	}
+	if got.FilePath != newBook.FilePath {
+		t.Errorf("FilePath = %q, want %q", got.FilePath, newBook.FilePath)
+	}
+
+	if err := backend.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := LoadLibrary(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reloaded.Books) != 2 {
+		t.Errorf("expected 2 books after flush, got %d", len(reloaded.Books))
+	}
+
+	if err := backend.CreateBook(&ComicBook{ID: "book-2"}); err == nil {
+		t.Error("expected CreateBook to reject a duplicate ID, got nil error")
+	}
+}
+
 func TestXMLBackend_CloseWritesAfterUpdateBook(t *testing.T) {
 	path := newTestXMLLibraryFile(t)
 

@@ -76,6 +76,14 @@ func (c *Config) ApplyEnvironment() error {
 		c.Server.IgnoreDevices = devices
 	}
 
+	if val := os.Getenv("COMIC_SERVER_WATCH_FOLDERS"); val != "" {
+		folders := strings.Split(val, ",")
+		for i := range folders {
+			folders[i] = strings.TrimSpace(folders[i])
+		}
+		c.Server.WatchFolders = folders
+	}
+
 	// Sync settings
 	if val := os.Getenv("COMIC_SERVER_AUTO_SYNC"); val != "" {
 		autoSync, err := strconv.ParseBool(val)

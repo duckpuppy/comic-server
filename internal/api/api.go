@@ -208,6 +208,10 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/library/workflow/organize-preview", s.handleOrganizePreview)
 	s.mux.HandleFunc("/api/library/workflow/organize-apply", s.handleOrganizeApply)
 	s.mux.HandleFunc("/api/library/organize-profiles", s.handleListLOProfiles)
+	// Watch folders (comic-server-chh) - "stage 0", before any book record
+	// exists at all.
+	s.mux.HandleFunc("/api/library/workflow/new-files", s.handleGetWatchFolderNewFiles)
+	s.mux.HandleFunc("/api/library/workflow/new-files/start", s.handleStartProcessingNewFiles)
 	s.mux.HandleFunc("/api/library/workflow/", s.handleWorkflowStageSubRouter)
 
 	// Trash browser endpoints (comic-server-tfs)

@@ -22,6 +22,16 @@ class WorkflowPage {
         this.lastResult = null; // { stage, message }
         this.drillIn = null; // { stage, label, comics: [], total, limit, offset, hasMore } or null
         this.loadingDrillIn = false;
+        // New Files (comic-server-chh) - "stage 0", files sitting in a
+        // configured watch folder that aren't backed by any library book
+        // yet. Loaded alongside the summary so its count shows on the
+        // dashboard without a separate round trip; kept as flat state
+        // (not folded into `summary`) since it comes from a different
+        // endpoint and has its own selection/start-processing flow.
+        this.newFiles = { total: 0, files: [] };
+        this.newFilesDrillIn = false; // true when showing the New Files list instead of a stage drill-in
+        this.selectedNewFiles = new Set();
+        this.startingProcessing = false;
     }
 
     async init(ctx) {
@@ -46,6 +56,17 @@ class WorkflowPage {
             console.error('Failed to load workflow summary:', error);
             this.error = 'Failed to load workflow summary. Please try again.';
         }
+        await this.loadNewFiles();
+    }
+
+    async loadNewFiles() {
+        try {
+            const response = await fetch('/api/library/workflow/new-files');
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            this.newFiles = await response.json();
+        } catch (error) {
+            console.error('Failed to load watch folder new files:', error);
+        }
     }
 
     render() {
@@ -69,6 +90,9 @@ class WorkflowPage {
             return `<div class="panel"><p class="empty-message">Loading…</p></div>`;
         }
 
+        if (this.newFilesDrillIn) {
+            return this.renderNewFilesDrillIn();
+        }
         if (this.drillIn) {
             return this.renderDrillIn();
         }
@@ -87,6 +111,16 @@ class WorkflowPage {
         };
 
         let html = '<div class="workflow-cards">';
+        html += `
+            <div class="panel workflow-card">
+                <h2>New Files</h2>
+                <p class="workflow-card-count">${this.newFiles.total}</p>
+                <p class="empty-message">Comic files sitting in a watch folder that aren't in the library yet.</p>
+                <div class="workflow-card-actions">
+                    <button class="btn btn-secondary" id="workflow-view-new-files-btn" ${this.newFiles.total === 0 ? 'disabled' : ''}>View</button>
+                </div>
+            </div>
+        `;
         for (const s of this.summary.stages) {
             const btnId = actionFor[s.stage];
             const running = this.running === s.stage;
@@ -178,13 +212,101 @@ class WorkflowPage {
         return html;
     }
 
+    renderNewFilesDrillIn() {
+        const files = this.newFiles.files || [];
+        let html = `
+            <div class="panel">
+                <div class="datamanager-page-header">
+                    <button class="btn btn-secondary" id="workflow-back-btn">&larr; Back</button>
+                    <h2>New Files (${files.length})</h2>
+                </div>
+        `;
+        if (files.length === 0) {
+            html += '<p class="empty-message">No new files in a watch folder right now.</p>';
+        } else {
+            const allSelected = files.length > 0 && files.every(f => this.selectedNewFiles.has(f.path));
+            html += `
+                <p class="empty-message">Files found in a watch folder that aren't in the library yet. Select the ones to bring into the pipeline.</p>
+                <table class="datamanager-diff-table">
+                    <thead><tr>
+                        <th><input type="checkbox" id="workflow-new-files-select-all" ${allSelected ? 'checked' : ''}></th>
+                        <th>Path</th><th>Size</th>
+                    </tr></thead>
+                    <tbody>
+            `;
+            for (const f of files) {
+                const checked = this.selectedNewFiles.has(f.path) ? 'checked' : '';
+                html += `<tr>
+                    <td><input type="checkbox" class="workflow-new-file-checkbox" data-path="${this.escapeAttr(f.path)}" ${checked}></td>
+                    <td>${this.escapeHtml(f.path)}</td>
+                    <td>${this.formatSize(f.size)}</td>
+                </tr>`;
+            }
+            html += '</tbody></table>';
+            html += `
+                <div class="workflow-card-actions">
+                    <button class="btn btn-primary" id="workflow-start-processing-btn" ${this.startingProcessing || this.selectedNewFiles.size === 0 ? 'disabled' : ''}>
+                        ${this.startingProcessing ? 'Starting…' : `Start Processing (${this.selectedNewFiles.size})`}
+                    </button>
+                </div>
+            `;
+        }
+        html += '</div>';
+        return html;
+    }
+
+    formatSize(bytes) {
+        if (!bytes) return '';
+        const units = ['B', 'KB', 'MB', 'GB'];
+        let size = bytes, i = 0;
+        while (size >= 1024 && i < units.length - 1) { size /= 1024; i++; }
+        return `${size.toFixed(size >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
+    }
+
     attachListeners() {
+        const viewNewFilesBtn = document.getElementById('workflow-view-new-files-btn');
+        if (viewNewFilesBtn) viewNewFilesBtn.addEventListener('click', () => {
+            this.newFilesDrillIn = true;
+            this.selectedNewFiles = new Set();
+            this.render();
+            this.attachListeners();
+        });
+
+        const selectAll = document.getElementById('workflow-new-files-select-all');
+        if (selectAll) selectAll.addEventListener('change', () => {
+            const files = this.newFiles.files || [];
+            if (selectAll.checked) {
+                files.forEach(f => this.selectedNewFiles.add(f.path));
+            } else {
+                this.selectedNewFiles.clear();
+            }
+            this.render();
+            this.attachListeners();
+        });
+
+        document.querySelectorAll('.workflow-new-file-checkbox').forEach(el => {
+            el.addEventListener('change', () => {
+                if (el.checked) this.selectedNewFiles.add(el.dataset.path);
+                else this.selectedNewFiles.delete(el.dataset.path);
+                this.render();
+                this.attachListeners();
+            });
+        });
+
+        const startBtn = document.getElementById('workflow-start-processing-btn');
+        if (startBtn) startBtn.addEventListener('click', () => this.startProcessing());
+
         document.querySelectorAll('.workflow-view-btn').forEach(el => {
             el.addEventListener('click', () => this.openDrillIn(el.dataset.stage, el.dataset.label));
         });
 
         const backBtn = document.getElementById('workflow-back-btn');
-        if (backBtn) backBtn.addEventListener('click', () => { this.drillIn = null; this.render(); this.attachListeners(); });
+        if (backBtn) backBtn.addEventListener('click', () => {
+            this.drillIn = null;
+            this.newFilesDrillIn = false;
+            this.render();
+            this.attachListeners();
+        });
 
         const loadMoreBtn = document.getElementById('workflow-load-more-btn');
         if (loadMoreBtn) loadMoreBtn.addEventListener('click', () => this.loadDrillInPage(false));
@@ -266,6 +388,41 @@ class WorkflowPage {
             this.lastResult = `Failed: ${error.message}`;
         } finally {
             this.running = null;
+            this.render();
+            this.attachListeners();
+        }
+    }
+
+    async startProcessing() {
+        if (this.selectedNewFiles.size === 0) return;
+        this.startingProcessing = true;
+        this.lastResult = null;
+        this.render();
+        this.attachListeners();
+
+        try {
+            const response = await fetch('/api/library/workflow/new-files/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ paths: Array.from(this.selectedNewFiles) }),
+            });
+            const text = await response.text();
+            if (!response.ok) {
+                throw new Error(friendlyErrorText(response, text, 'Failed to start processing'));
+            }
+            const result = text ? JSON.parse(text) : {};
+            const failed = (result.results || []).filter(r => r.error);
+            this.lastResult = failed.length > 0
+                ? `Started processing ${result.created} file(s); ${failed.length} could not be started: ${failed.map(f => f.error).join('; ')}`
+                : `Started processing ${result.created} file(s).`;
+            this.selectedNewFiles = new Set();
+            this.newFilesDrillIn = false;
+            await this.load();
+        } catch (error) {
+            console.error('Failed to start processing:', error);
+            this.lastResult = `Failed: ${error.message}`;
+        } finally {
+            this.startingProcessing = false;
             this.render();
             this.attachListeners();
         }

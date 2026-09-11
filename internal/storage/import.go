@@ -210,6 +210,32 @@ type existingRow struct {
 	snapshot string
 }
 
+// InsertBook inserts a single brand-new book record outside the normal
+// XML import flow - used by the watch folder "start processing" action
+// (comic-server-chh) to persist a book comic-server itself creates from a
+// file found on disk. Errors if book.ID already exists.
+func (db *DB) InsertBook(book *library.ComicBook) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	var exists int
+	if err := tx.QueryRow("SELECT COUNT(*) FROM books WHERE id = ?", book.ID).Scan(&exists); err != nil {
+		return fmt.Errorf("check existing book: %w", err)
+	}
+	if exists > 0 {
+		return fmt.Errorf("book already exists: %s", book.ID)
+	}
+
+	if err := db.insertBook(tx, book, computeBookHash(book)); err != nil {
+		return fmt.Errorf("insert book %s: %w", book.ID, err)
+	}
+
+	return tx.Commit()
+}
+
 func (db *DB) insertBook(tx *sql.Tx, book *library.ComicBook, hash string) error {
 	// Convert pages to JSON
 	pagesJSON, err := json.Marshal(book.Pages)

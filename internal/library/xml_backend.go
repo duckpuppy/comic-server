@@ -270,6 +270,26 @@ func (b *XMLBackend) UpdateBook(book *ComicBook) error {
 	return fmt.Errorf("book not found: %s", book.ID)
 }
 
+// CreateBook inserts a brand-new book record - see Backend.CreateBook.
+func (b *XMLBackend) CreateBook(book *ComicBook) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	for i := range b.library.Books {
+		if b.library.Books[i].ID == book.ID {
+			return fmt.Errorf("book already exists: %s", book.ID)
+		}
+	}
+
+	b.library.Books = append(b.library.Books, *book)
+	if b.cache != nil {
+		b.cache.MarkDirty(book.ID)
+	} else {
+		b.dirty = true
+	}
+	return nil
+}
+
 // UpdateBooks updates multiple books in the library.
 func (b *XMLBackend) UpdateBooks(books []*ComicBook) error {
 	b.mu.Lock()

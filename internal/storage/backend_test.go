@@ -498,3 +498,36 @@ func TestSQLiteBackend_BaseListIdSurvivesImport(t *testing.T) {
 		t.Fatalf("expected scoping to the base list to exclude book-3 (same series, wrong publisher, NOT in the base list), got %+v", books)
 	}
 }
+
+// TestSQLiteBackend_CreateBookInsertsAndIsRetrievable is the regression
+// test for comic-server-chh (watch folders): a book comic-server creates
+// itself (not imported from XML) must be immediately readable back, and a
+// second CreateBook with the same ID must be rejected rather than
+// silently overwriting it.
+func TestSQLiteBackend_CreateBookInsertsAndIsRetrievable(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+
+	backend, err := NewSQLiteBackend(dbPath, "")
+	if err != nil {
+		t.Fatalf("NewSQLiteBackend: %v", err)
+	}
+	defer backend.Close()
+
+	book := &library.ComicBook{ID: "new-1", FilePath: "/watch/New Comic #1.cbz", Series: "New Comic"}
+	if err := backend.CreateBook(book); err != nil {
+		t.Fatalf("CreateBook: %v", err)
+	}
+
+	got, err := backend.GetBook("new-1")
+	if err != nil || got == nil {
+		t.Fatalf("GetBook: got=%+v err=%v", got, err)
+	}
+	if got.FilePath != book.FilePath || got.Series != book.Series {
+		t.Errorf("GetBook = %+v, want FilePath/Series to match what was created", got)
+	}
+
+	if err := backend.CreateBook(book); err == nil {
+		t.Error("expected CreateBook to reject a duplicate ID, got nil error")
+	}
+}

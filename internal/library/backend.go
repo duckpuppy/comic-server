@@ -30,6 +30,12 @@ type Backend interface {
 	UpdateBook(book *ComicBook) error
 	UpdateBooks(books []*ComicBook) error
 
+	// CreateBook inserts a brand-new book record - used by the watch
+	// folder "start processing" action (comic-server-chh) to promote a
+	// comic archive found on disk but not yet in the library into a real,
+	// trackable book. Errors if book.ID already exists.
+	CreateBook(book *ComicBook) error
+
 	// Lifecycle
 	MarkDirty(bookID string)
 	MarkManyDirty(bookIDs []string)

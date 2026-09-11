@@ -65,6 +65,15 @@ type ServerConfig struct {
 	// path under a mounted volume (e.g. /data/cover-cache).
 	CoverCacheDir string `yaml:"cover_cache_dir,omitempty" toml:"cover_cache_dir,omitempty"`
 
+	// WatchFolders are "dump" directories comic files land in before
+	// they're added to the ComicRack library XML at all - e.g. the paths
+	// ComicRack's own "0 Day Folder" smart list pointed at. Paths are on
+	// comic-server's own filesystem already (no source/mount translation
+	// applied), same as CoverCacheDir/TrashPath. See workflow.Stage's own
+	// doc comment for how a file found here becomes a real library book -
+	// comic-server-chh.
+	WatchFolders []string `yaml:"watch_folders,omitempty" toml:"watch_folders,omitempty"`
+
 	// Network settings
 	ServerPort    int    `yaml:"server_port,omitempty" toml:"server_port,omitempty"`       // TCP control port (default: 7620)
 	DiscoveryPort int    `yaml:"discovery_port,omitempty" toml:"discovery_port,omitempty"` // UDP multicast port (default: 7615)

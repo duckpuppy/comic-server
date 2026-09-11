@@ -422,6 +422,15 @@ func (b *SQLiteBackend) UpdateBook(book *library.ComicBook) error {
 	return b.db.UpdateBookFields(book)
 }
 
+// CreateBook inserts a brand-new book record - see library.Backend.CreateBook.
+func (b *SQLiteBackend) CreateBook(book *library.ComicBook) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.libCache = nil
+
+	return b.db.InsertBook(book)
+}
+
 // UpdateBooks updates multiple books in the database.
 func (b *SQLiteBackend) UpdateBooks(books []*library.ComicBook) error {
 	b.mu.Lock()

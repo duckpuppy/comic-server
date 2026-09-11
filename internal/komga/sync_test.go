@@ -54,6 +54,7 @@ func (f *fakeBackend) GetBooksForList(list *library.ComicListItem) ([]*library.C
 }
 func (f *fakeBackend) UpdateBook(book *library.ComicBook) error     { return nil }
 func (f *fakeBackend) UpdateBooks(books []*library.ComicBook) error { return nil }
+func (f *fakeBackend) CreateBook(book *library.ComicBook) error     { return nil }
 func (f *fakeBackend) MarkDirty(bookID string)                      {}
 func (f *fakeBackend) MarkManyDirty(bookIDs []string)               {}
 func (f *fakeBackend) Flush() error                                 { return nil }

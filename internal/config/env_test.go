@@ -14,6 +14,7 @@ func TestApplyEnvironment(t *testing.T) {
 		"COMIC_SERVER_DISCOVERY_PORT",
 		"COMIC_SERVER_BIND_ADDRESS",
 		"COMIC_SERVER_IGNORE_DEVICES",
+		"COMIC_SERVER_WATCH_FOLDERS",
 		"COMIC_SERVER_AUTO_SYNC",
 		"COMIC_SERVER_MAX_CONCURRENT_SYNC",
 		"COMIC_SERVER_LOG_LEVEL",
@@ -108,6 +109,26 @@ func TestApplyEnvironment(t *testing.T) {
 		for i := range expected {
 			if cfg.Server.IgnoreDevices[i] != expected[i] {
 				t.Errorf("IgnoreDevices[%d] = %v, want %v", i, cfg.Server.IgnoreDevices[i], expected[i])
+			}
+		}
+	})
+
+	t.Run("watch folders override", func(t *testing.T) {
+		cleanup()
+		os.Setenv("COMIC_SERVER_WATCH_FOLDERS", "/data/0day, /data/dump")
+
+		cfg := NewConfig()
+		if err := cfg.ApplyEnvironment(); err != nil {
+			t.Fatalf("ApplyEnvironment() error = %v", err)
+		}
+
+		expected := []string{"/data/0day", "/data/dump"}
+		if len(cfg.Server.WatchFolders) != len(expected) {
+			t.Fatalf("WatchFolders length = %v, want %v", len(cfg.Server.WatchFolders), len(expected))
+		}
+		for i := range expected {
+			if cfg.Server.WatchFolders[i] != expected[i] {
+				t.Errorf("WatchFolders[%d] = %v, want %v", i, cfg.Server.WatchFolders[i], expected[i])
 			}
 		}
 	})
