@@ -191,6 +191,49 @@ func TestAdvanceIfAtOrBefore_TerminalStageStaysPut(t *testing.T) {
 	}
 }
 
+func TestRegressToStageIfPast_OrganizedRegressesToToMove(t *testing.T) {
+	book := &library.ComicBook{}
+	SetStage(book, StageOrganized)
+	if !RegressToStageIfPast(book, StageToMove) {
+		t.Error("expected a change - StageOrganized is past StageToMove")
+	}
+	if got := GetStage(book); got != StageToMove {
+		t.Errorf("GetStage = %v, want StageToMove", got)
+	}
+}
+
+func TestRegressToStageIfPast_AlreadyAtTargetIsNoOp(t *testing.T) {
+	book := &library.ComicBook{}
+	SetStage(book, StageToMove)
+	if RegressToStageIfPast(book, StageToMove) {
+		t.Error("expected no change - already at target, not past it")
+	}
+	if got := GetStage(book); got != StageToMove {
+		t.Errorf("GetStage = %v, want StageToMove unchanged", got)
+	}
+}
+
+func TestRegressToStageIfPast_BeforeTargetIsUntouched(t *testing.T) {
+	book := &library.ComicBook{}
+	SetStage(book, StageScanInfo)
+	if RegressToStageIfPast(book, StageToMove) {
+		t.Error("expected no change - StageScanInfo is before StageToMove, never advanced by this")
+	}
+	if got := GetStage(book); got != StageScanInfo {
+		t.Errorf("GetStage = %v, want StageScanInfo unchanged", got)
+	}
+}
+
+func TestRegressToStageIfPast_NeverStagedBookIsUntouched(t *testing.T) {
+	book := &library.ComicBook{}
+	if RegressToStageIfPast(book, StageToMove) {
+		t.Error("expected no change - a never-staged book must not be pulled into the pipeline by this")
+	}
+	if got := GetStage(book); got != StageUnknown {
+		t.Errorf("GetStage = %v, want StageUnknown unchanged", got)
+	}
+}
+
 func TestIsCVDBSkip(t *testing.T) {
 	tests := []struct {
 		tags string

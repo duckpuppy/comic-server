@@ -430,8 +430,19 @@ func (s *Server) runDataManagerOverBooks(candidates []*library.ComicBook, rulese
 	// rules successfully applied - advance its workflow stage
 	// (comic-server-1iv.2) using the SAME rulesets already loaded for
 	// this run, not a fresh load.
+	//
+	// A book already past StageDataManager (already at StageToMove or
+	// StageOrganized) is untouched by that advance - it needs to
+	// REGRESS instead, since its Library Organizer destination path is
+	// computed from the very metadata that just changed (Series,
+	// Publisher, SeriesGroup, etc.) and may now be stale
+	// (comic-server-1qb). Unconditional on ANY committed change, not
+	// just ones touching a field the active profile's templates actually
+	// reference - correctness over precision, matching InferStage's own
+	// conservative bias elsewhere in this package.
 	for _, book := range toUpdate {
 		workflow.AdvanceIfAtOrBefore(book, workflow.StageDataManager, rulesets)
+		workflow.RegressToStageIfPast(book, workflow.StageToMove)
 	}
 
 	if len(toUpdate) > 0 {

@@ -239,6 +239,31 @@ func AdvanceIfAtOrBefore(book *library.ComicBook, completed Stage, rulesets []da
 	return true
 }
 
+// RegressToStageIfPast moves book's stage BACKWARD to target if its
+// current explicitly-tracked stage is already past target - the opposite
+// guarantee from AdvanceIfAtOrBefore (forward-only). Used when something
+// invalidates work a LATER stage already did: Data Manager committing a
+// field change to a book already at StageToMove or StageOrganized means
+// its Library Organizer destination path (computed from book metadata
+// that just changed - Series, Publisher, SeriesGroup, etc.) may now be
+// wrong, so it needs to go through Library Organizer again - see
+// comic-server-1qb.
+//
+// Never advances a book (only ever moves toward target, never past it),
+// and never touches a book that's never been explicitly staged -
+// StageUnknown is never "past" any real stage, so an untouched book is
+// left alone rather than being pulled into the pipeline by a Data
+// Manager run that happens to also match it. Returns whether the stage
+// actually changed.
+func RegressToStageIfPast(book *library.ComicBook, target Stage) bool {
+	current := GetStage(book)
+	if current <= target {
+		return false
+	}
+	SetStage(book, target)
+	return true
+}
+
 // nextStage returns the stage after s, or s itself if s is already the
 // terminal stage (StageOrganized).
 func nextStage(s Stage) Stage {

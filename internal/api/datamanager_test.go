@@ -202,6 +202,63 @@ func TestHandleDataManagerApply_AdvancesWorkflowStage(t *testing.T) {
 	}
 }
 
+// TestHandleDataManagerApply_RegressesAlreadyOrganizedBookToToMove covers
+// comic-server-1qb: a book already at StageOrganized has its Library
+// Organizer destination path computed from metadata that Data Manager can
+// change (SeriesGroup, Tags, etc.) - once that metadata actually changes,
+// the book needs to go through Library Organizer again, so it must
+// regress back to StageToMove rather than staying marked Organized.
+func TestHandleDataManagerApply_RegressesAlreadyOrganizedBookToToMove(t *testing.T) {
+	book := library.ComicBook{ID: "1", Series: "Batman", Number: "1"}
+	workflow.SetStage(&book, workflow.StageOrganized)
+	s, db := newDataManagerTestServer(t, []library.ComicBook{book})
+	seedBatmanRuleset(t, db)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/library/lists/list-1/datamanager-apply", nil)
+	w := httptest.NewRecorder()
+	s.handleListsRouter(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	book1, err := s.backend.GetBook("1")
+	if err != nil || book1 == nil {
+		t.Fatalf("GetBook(1): %v", err)
+	}
+	if book1.SeriesGroup != "Batman Family" {
+		t.Fatalf("expected the rule to have actually committed a change, got SeriesGroup=%q", book1.SeriesGroup)
+	}
+	if got := workflow.GetStage(book1); got != workflow.StageToMove {
+		t.Errorf("workflow stage = %v, want StageToMove (regressed from StageOrganized)", got)
+	}
+}
+
+// TestHandleDataManagerApply_DoesNotRegressBookNotYetPastDataManager
+// covers the flip side - a book that hasn't reached StageToMove yet must
+// only ever advance (comic-server-1iv.2's existing guarantee), never be
+// affected by the new regression logic.
+func TestHandleDataManagerApply_DoesNotRegressBookNotYetPastDataManager(t *testing.T) {
+	book := library.ComicBook{ID: "1", Series: "Batman", Number: "1"}
+	workflow.SetStage(&book, workflow.StageScanInfo)
+	s, db := newDataManagerTestServer(t, []library.ComicBook{book})
+	seedBatmanRuleset(t, db)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/library/lists/list-1/datamanager-apply", nil)
+	w := httptest.NewRecorder()
+	s.handleListsRouter(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	book1, err := s.backend.GetBook("1")
+	if err != nil || book1 == nil {
+		t.Fatalf("GetBook(1): %v", err)
+	}
+	if got := workflow.GetStage(book1); got != workflow.StageToMove {
+		t.Errorf("workflow stage = %v, want StageToMove (normal forward advance, not a regression)", got)
+	}
+}
+
 func TestHandleDataManagerPreview_DisabledRulesetIgnored(t *testing.T) {
 	books := []library.ComicBook{{ID: "1", Series: "Batman"}}
 	s, db := newDataManagerTestServer(t, books)
