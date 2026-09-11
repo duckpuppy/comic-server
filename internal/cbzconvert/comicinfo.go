@@ -52,16 +52,19 @@ type comicInfoXML struct {
 	BlackAndWhite string `xml:"BlackAndWhite,omitempty"`
 	Manga         string `xml:"Manga,omitempty"`
 
-	Characters string `xml:"Characters,omitempty"`
-	Teams      string `xml:"Teams,omitempty"`
-	Locations  string `xml:"Locations,omitempty"`
+	Characters          string `xml:"Characters,omitempty"`
+	Teams               string `xml:"Teams,omitempty"`
+	Locations           string `xml:"Locations,omitempty"`
+	MainCharacterOrTeam string `xml:"MainCharacterOrTeam,omitempty"`
 
 	ScanInformation string `xml:"ScanInformation,omitempty"`
 	StoryArc        string `xml:"StoryArc,omitempty"`
 	SeriesGroup     string `xml:"SeriesGroup,omitempty"`
 	AgeRating       string `xml:"AgeRating,omitempty"`
 
+	Rating          float64 `xml:"Rating,omitempty"`
 	CommunityRating float64 `xml:"CommunityRating,omitempty"`
+	Review          string  `xml:"Review,omitempty"`
 
 	Pages struct {
 		Page []comicInfoPageXML `xml:"Page"`
@@ -122,16 +125,19 @@ func BuildComicInfoXML(book *library.ComicBook, pageCount int) ([]byte, error) {
 		BlackAndWhite: book.BlackAndWhite,
 		Manga:         book.Manga,
 
-		Characters: book.Characters,
-		Teams:      book.Teams,
-		Locations:  book.Locations,
+		Characters:          book.Characters,
+		Teams:               book.Teams,
+		Locations:           book.Locations,
+		MainCharacterOrTeam: book.MainCharacterOrTeam,
 
 		ScanInformation: book.ScanInformation,
 		StoryArc:        book.StoryArc,
 		SeriesGroup:     book.SeriesGroup,
 		AgeRating:       book.AgeRating,
 
+		Rating:          book.Rating,
 		CommunityRating: book.CommunityRating,
+		Review:          book.Review,
 	}
 
 	if pageCount > 0 {
@@ -194,16 +200,19 @@ func ParseComicInfoXML(data []byte) (*library.ComicBook, bool) {
 		BlackAndWhite: ci.BlackAndWhite,
 		Manga:         ci.Manga,
 
-		Characters: ci.Characters,
-		Teams:      ci.Teams,
-		Locations:  ci.Locations,
+		Characters:          ci.Characters,
+		Teams:               ci.Teams,
+		Locations:           ci.Locations,
+		MainCharacterOrTeam: ci.MainCharacterOrTeam,
 
 		ScanInformation: ci.ScanInformation,
 		StoryArc:        ci.StoryArc,
 		SeriesGroup:     ci.SeriesGroup,
 		AgeRating:       ci.AgeRating,
 
+		Rating:          ci.Rating,
 		CommunityRating: ci.CommunityRating,
+		Review:          ci.Review,
 	}
 	return book, true
 }

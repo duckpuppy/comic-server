@@ -80,15 +80,19 @@ func TestBuildComicInfoXML_ZeroPagesNoPageMarker(t *testing.T) {
 // relative to a book synced through the normal export/import cycle.
 func TestParseComicInfoXML_RoundTripsBuildComicInfoXML(t *testing.T) {
 	original := &library.ComicBook{
-		Title:       "Issue Title",
-		Series:      "Series Name",
-		Number:      "5",
-		Year:        2019,
-		Month:       3,
-		Publisher:   "Test Publisher",
-		Writer:      "Writer Name",
-		Genre:       "Superhero",
-		LanguageISO: "en",
+		Title:               "Issue Title",
+		Series:              "Series Name",
+		Number:              "5",
+		Year:                2019,
+		Month:               3,
+		Publisher:           "Test Publisher",
+		Writer:              "Writer Name",
+		Genre:               "Superhero",
+		LanguageISO:         "en",
+		MainCharacterOrTeam: "Spider-Man",
+		Rating:              4.5,
+		CommunityRating:     3.75,
+		Review:              "A fine issue.",
 	}
 
 	data, err := BuildComicInfoXML(original, 22)
@@ -104,7 +108,11 @@ func TestParseComicInfoXML_RoundTripsBuildComicInfoXML(t *testing.T) {
 		parsed.Number != original.Number || parsed.Year != original.Year ||
 		parsed.Month != original.Month || parsed.Publisher != original.Publisher ||
 		parsed.Writer != original.Writer || parsed.Genre != original.Genre ||
-		parsed.LanguageISO != original.LanguageISO {
+		parsed.LanguageISO != original.LanguageISO ||
+		parsed.MainCharacterOrTeam != original.MainCharacterOrTeam ||
+		parsed.Rating != original.Rating ||
+		parsed.CommunityRating != original.CommunityRating ||
+		parsed.Review != original.Review {
 		t.Errorf("parsed book = %+v, want fields matching original %+v", parsed, original)
 	}
 	if parsed.PageCount != 22 {
