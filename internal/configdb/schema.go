@@ -8,8 +8,9 @@ import "fmt"
 // Version 4 adds sync_history (comic-server-7vu). Version 5 adds scan_info
 // (comic-server-4ms). Version 6 adds dm_groups/dm_rulesets/dm_rules/
 // dm_actions (comic-server-764.4). Version 7 adds lo_profiles/
-// lo_profile_items/lo_exclude_rules (comic-server-3bz.2).
-const schemaVersion = 7
+// lo_profile_items/lo_exclude_rules (comic-server-3bz.2). Version 8 adds
+// ui_settings (comic-server-8qk).
+const schemaVersion = 8
 
 // initSchema brings the database up to schemaVersion. No-ops if already
 // current - safe to call on every Open, every server startup.
@@ -58,6 +59,11 @@ func (db *DB) initSchema() error {
 				return fmt.Errorf("migrate v6→v7: %w", err)
 			}
 		}
+		if version < 8 {
+			if err := db.migrateV7ToV8(); err != nil {
+				return fmt.Errorf("migrate v7→v8: %w", err)
+			}
+		}
 	}
 
 	if _, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
@@ -84,7 +90,10 @@ func (db *DB) createTables() error {
 	if err := db.createDataManagerTables(); err != nil {
 		return err
 	}
-	return db.createLibraryOrganizerTables()
+	if err := db.createLibraryOrganizerTables(); err != nil {
+		return err
+	}
+	return db.createUISettingsTable()
 }
 
 // migrateV1ToV2 adds the devices/device_lists tables for a database that
@@ -154,6 +163,12 @@ func (db *DB) migrateV5ToV6() error {
 // tables for a database created under schemaVersion 6.
 func (db *DB) migrateV6ToV7() error {
 	return db.createLibraryOrganizerTables()
+}
+
+// migrateV7ToV8 adds the ui_settings table for a database created under
+// schemaVersion 7.
+func (db *DB) migrateV7ToV8() error {
+	return db.createUISettingsTable()
 }
 
 // createDataManagerTables creates the tables backing the Data Manager rule
@@ -310,6 +325,24 @@ func (db *DB) createLibraryOrganizerTables() error {
 // than two extra many-row tables, and callers always want the whole
 // struct at once (there's no per-entry lookup use case the way
 // device_lists' per-device queries have).
+// createUISettingsTable creates the ui_settings table - a single-row
+// store for web UI preferences that should persist server-side and apply
+// to every window by default. First (and currently only) field: the
+// default theme (light/dark/system) - see comic-server-8qk. A per-window
+// override lives in that window's own sessionStorage instead (see
+// theme.js), never here, so a brand-new window always starts from this
+// stored default.
+func (db *DB) createUISettingsTable() error {
+	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS ui_settings (
+		id    INTEGER PRIMARY KEY CHECK (id = 1),
+		theme TEXT NOT NULL DEFAULT 'system'
+	)`)
+	if err != nil {
+		return fmt.Errorf("create ui_settings table: %w", err)
+	}
+	return nil
+}
+
 func (db *DB) createScanInfoTable() error {
 	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS scan_info (
 		id        INTEGER PRIMARY KEY CHECK (id = 1),

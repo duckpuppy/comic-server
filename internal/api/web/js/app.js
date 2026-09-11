@@ -116,6 +116,11 @@ document.addEventListener('DOMContentLoaded', () => {
         dashboardHTML = app.innerHTML;
     }
 
+    // Resolve this window's theme (server default, unless a per-window
+    // toggle override already applied synchronously in index.html's
+    // <head>) and wire up the header toggle button.
+    themeManager.init();
+
     // Initialize navigation
     navigation.init();
 

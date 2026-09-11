@@ -10,6 +10,11 @@ class ScanInfoSettings {
         this.error = null;
         this.saving = false;
         this.dirty = false;
+        // Appearance (comic-server-8qk) - loaded/saved independently of
+        // the Scan Info config above (separate endpoint, separate
+        // concern); this is just the only page /settings has today.
+        this.theme = null; // 'light' | 'dark' | 'system'
+        this.themeSaving = false;
     }
 
     async init(ctx) {
@@ -18,7 +23,7 @@ class ScanInfoSettings {
         // leaving the page blank until the fetch resolves
         // (comic-server-4te).
         this.render();
-        await this.load();
+        await Promise.all([this.load(), this.loadTheme()]);
         if (ctx && ctx.aborted) return;
         this.render();
         this.attachListeners();
@@ -44,6 +49,48 @@ class ScanInfoSettings {
         }
     }
 
+    async loadTheme() {
+        try {
+            const response = await fetch('/api/settings/theme');
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const data = await response.json();
+            this.theme = data.theme || 'system';
+        } catch (error) {
+            console.error('Failed to load theme setting:', error);
+            this.theme = 'system';
+        }
+    }
+
+    async saveTheme(theme) {
+        this.themeSaving = true;
+        this.theme = theme;
+        this.render();
+        this.attachListeners();
+        try {
+            const response = await fetch('/api/settings/theme', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ theme }),
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            // The default just changed - apply it to THIS window too,
+            // unless this window already has its own toggle override
+            // (sessionStorage), same rule as any other window.
+            if (typeof themeManager !== 'undefined' && sessionStorage.getItem('comic-server-theme-override') === null) {
+                themeManager.applyOverride(theme);
+                themeManager.updateToggleButton();
+            }
+            dialogs.toast('Default theme saved.', 'success');
+        } catch (error) {
+            console.error('Failed to save theme setting:', error);
+            dialogs.toast('Failed to save theme setting: ' + error.message, 'error');
+        } finally {
+            this.themeSaving = false;
+            this.render();
+            this.attachListeners();
+        }
+    }
+
     render() {
         const app = document.getElementById('app');
         app.innerHTML = `
@@ -51,7 +98,33 @@ class ScanInfoSettings {
                 <div class="scan-info-settings-header">
                     <h1>Settings</h1>
                 </div>
+                ${this.renderAppearance()}
                 ${this.renderBody()}
+            </div>
+        `;
+    }
+
+    renderAppearance() {
+        const theme = this.theme || 'system';
+        const options = [
+            { value: 'light', label: 'Light' },
+            { value: 'dark', label: 'Dark' },
+            { value: 'system', label: 'Match system' },
+        ];
+        return `
+            <div class="panel scan-info-panel">
+                <h2>Appearance</h2>
+                <p class="empty-message" style="text-align:left;padding:0 0 0.75rem 0;">
+                    Default theme for new windows/tabs. Use the 🌙/☀️ button in the header to override just the current window - that never affects this default.
+                </p>
+                <div class="datamanager-actions">
+                    ${options.map(o => `
+                        <label style="display:inline-flex;align-items:center;gap:0.4rem;margin-right:1rem;">
+                            <input type="radio" name="theme-default" value="${o.value}" ${theme === o.value ? 'checked' : ''} ${this.themeSaving ? 'disabled' : ''}>
+                            ${o.label}
+                        </label>
+                    `).join('')}
+                </div>
             </div>
         `;
     }
@@ -132,6 +205,12 @@ class ScanInfoSettings {
     }
 
     attachListeners() {
+        document.querySelectorAll('input[name="theme-default"]').forEach(el => {
+            el.addEventListener('change', () => {
+                if (el.checked) this.saveTheme(el.value);
+            });
+        });
+
         if (!this.config) return;
 
         const enabledInput = document.getElementById('scan-info-enabled');

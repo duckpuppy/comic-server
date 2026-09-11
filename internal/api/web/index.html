@@ -18,6 +18,23 @@
     <link rel="stylesheet" href="/css/dataManagerPage.css">
     <link rel="stylesheet" href="/css/workflowPage.css">
     <link rel="stylesheet" href="/css/dialogs.css">
+    <script>
+        // Applies this window's own dark-mode override (if one was set
+        // via the header toggle earlier in THIS window) before the page
+        // paints, so a same-window reload/navigation doesn't flash the
+        // wrong theme. Deliberately reads sessionStorage directly rather
+        // than waiting for theme.js (loaded later, with the rest of the
+        // app) - see that file's own header comment for the full design
+        // and why a brand-new window intentionally has nothing here yet.
+        (function () {
+            try {
+                var override = sessionStorage.getItem('comic-server-theme-override');
+                if (override === 'light' || override === 'dark') {
+                    document.documentElement.setAttribute('data-theme', override);
+                }
+            } catch (e) {}
+        })();
+    </script>
 </head>
 <body>
     <div class="container">
@@ -25,6 +42,7 @@
         <header class="header">
             <h1>Comic Server <span id="build-version" class="build-version"></span></h1>
             <div class="server-status">
+                <button id="theme-toggle-btn" class="btn-theme-toggle" title="Toggle dark mode (this window only)">🌙</button>
                 <span class="status-indicator" id="ws-status"></span>
                 <span id="ws-status-text">Connecting...</span>
             </div>
@@ -213,6 +231,7 @@
 
     <!-- Scripts -->
     <script src="/js/router.js"></script>
+    <script src="/js/theme.js"></script>
     <script src="/js/navigation.js"></script>
     <script src="/js/websocket.js"></script>
     <script src="/js/apiErrors.js"></script>
