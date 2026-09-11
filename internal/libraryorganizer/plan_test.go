@@ -139,7 +139,7 @@ func TestPlan_ResolvePathAppliedToBothOldAndNew(t *testing.T) {
 
 // TestPlan_PosixBaseFolderProducesForwardSlashPath covers a real user
 // report: `library-organizer import` now translates BaseFolder through
-// server.library_source_root/library_mount_root at import time (a Docker
+// server.library_source_root/library_root at import time (a Docker
 // deployment has no "G:\Comics" to resolve per-request), so BaseFolder
 // can already be a POSIX path by the time Plan runs. Joining it with
 // backslashes (the old unconditional behavior) produced a mixed-separator

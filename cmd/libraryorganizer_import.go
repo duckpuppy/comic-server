@@ -34,7 +34,7 @@ BaseFolder/FailedFolder are stored as recorded in losettingsx.dat - a
 path from the Windows host that originally ran ComicRack (e.g.
 "G:\Comics"), which does not exist as such on the machine comic-server
 actually runs on (a Docker container, most commonly). If
-server.library_source_root/library_mount_root are configured, those
+server.library_source_root/library_root are configured, those
 folders are translated to the real mount path at import time, the same
 translation already used for reading a book's own recorded File path -
 see config.Config.ResolveLibraryFilePath.`,

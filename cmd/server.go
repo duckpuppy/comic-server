@@ -475,7 +475,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 		// to push newly-added targets into via SetTargets/TriggerNow -
 		// otherwise the first target added after startup would need a
 		// restart to take effect.
-		komgaSyncer, err = buildKomgaSyncer(cfg.Server.Komga, configDB, backend)
+		komgaSyncer, err = buildKomgaSyncer(cfg.Server.Komga, cfg.Server.LibraryRoot, configDB, backend)
 		if err != nil {
 			return err
 		}
@@ -1388,7 +1388,7 @@ func startComicVineSync(ctx context.Context, apiKey string, backend library.Back
 // targets, so this doesn't cost any Komga API calls while idle. Split out
 // from startKomgaSync so callers (e.g. the library watcher) can hold a
 // reference to the syncer and call TriggerNow() on it.
-func buildKomgaSyncer(cfg config.KomgaConfig, configDB *configdb.DB, backend library.Backend) (*komga.Syncer, error) {
+func buildKomgaSyncer(cfg config.KomgaConfig, libraryRoot string, configDB *configdb.DB, backend library.Backend) (*komga.Syncer, error) {
 	dbTargets, err := configDB.ListKomgaTargets()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load komga targets from config database: %w", err)
@@ -1401,7 +1401,7 @@ func buildKomgaSyncer(cfg config.KomgaConfig, configDB *configdb.DB, backend lib
 	return komga.NewSyncer(backend, komga.SyncOptions{
 		BaseURL:    cfg.BaseURL,
 		APIKey:     cfg.APIKey,
-		LocalRoot:  cfg.LocalRoot,
+		LocalRoot:  libraryRoot,
 		RemoteRoot: cfg.RemoteRoot,
 		Targets:    targets,
 		Interval:   time.Duration(cfg.SyncIntervalSec) * time.Second,

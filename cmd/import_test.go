@@ -36,7 +36,7 @@ func TestRunImport_TranslatesFilePathThroughConfiguredMount(t *testing.T) {
 	configPath := filepath.Join(dir, "config.yaml")
 	if err := os.WriteFile(configPath, []byte(`server:
   library_source_root: 'G:\Comics'
-  library_mount_root: /mnt/comics
+  library_root: /mnt/comics
 `), 0o644); err != nil {
 		t.Fatalf("write config.yaml: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestRunImport_TranslatesFilePathThroughConfiguredMount(t *testing.T) {
 }
 
 // TestRunImport_NoMountConfiguredLeavesFilePathAsIs covers the common case
-// (no library_source_root/library_mount_root set) - FilePath must pass
+// (no library_source_root/library_root set) - FilePath must pass
 // through unchanged.
 func TestRunImport_NoMountConfiguredLeavesFilePathAsIs(t *testing.T) {
 	dir := t.TempDir()

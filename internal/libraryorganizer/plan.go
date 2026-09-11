@@ -173,7 +173,7 @@ func fileExtension(book *library.ComicBook, profile Profile) string {
 // resolvePath parameter already established.
 //
 // BUT: `library-organizer import` now translates BaseFolder through
-// server.library_source_root/library_mount_root at import time (a real
+// server.library_source_root/library_root at import time (a real
 // user's Docker deployment has no "G:\Comics" to resolve against
 // per-request), so BaseFolder can already be a POSIX-style absolute path
 // by the time Plan runs - joining that with backslashes would produce a

@@ -29,8 +29,8 @@ func (c *Config) ApplyEnvironment() error {
 	if val := os.Getenv("COMIC_SERVER_LIBRARY_SOURCE_ROOT"); val != "" {
 		c.Server.LibrarySourceRoot = val
 	}
-	if val := os.Getenv("COMIC_SERVER_LIBRARY_MOUNT_ROOT"); val != "" {
-		c.Server.LibraryMountRoot = val
+	if val := os.Getenv("COMIC_SERVER_LIBRARY_ROOT"); val != "" {
+		c.Server.LibraryRoot = val
 	}
 
 	// internal/trash quarantine directory (see ServerConfig doc)

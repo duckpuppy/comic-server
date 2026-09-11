@@ -365,10 +365,13 @@ If `ComicDb.xml` records comic file paths from a different machine/OS than
 this container (e.g. a Windows ComicRack host, so paths look like
 `G:\Comics\...`), comic-server needs to know how to translate those into
 the `/comics` mount above. Set `library_source_root` (the path prefix as
-recorded in the XML, e.g. `G:\Comics`) and `library_mount_root` (`/comics`)
+recorded in the XML, e.g. `G:\Comics`) and `library_root` (`/comics`)
 in `config.yaml`, or the equivalent `COMIC_SERVER_LIBRARY_SOURCE_ROOT` /
-`COMIC_SERVER_LIBRARY_MOUNT_ROOT` environment variables. Leave both unset
-if the container can already read the XML's paths directly.
+`COMIC_SERVER_LIBRARY_ROOT` environment variables. Leave both unset
+if the container can already read the XML's paths directly. This same
+`library_root` is also what Komga sync uses as its own local path
+reference (`komga.remote_root` maps it to Komga's view) - there's no
+separate Komga-specific root setting to keep in sync with this one.
 
 ## Networking
 

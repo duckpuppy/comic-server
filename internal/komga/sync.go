@@ -40,13 +40,13 @@ type SyncOptions struct {
 	APIKey  string
 	// LocalRoot/RemoteRoot map comic-server's book.FilePath - the REAL
 	// path comic-server itself reads the file at, i.e. already resolved
-	// through server.library_source_root/library_mount_root if those are
+	// through server.library_source_root/library_root if those are
 	// configured (see config.Config.ResolveLibraryFilePath and
-	// comic-server-q7f) - to Komga's own view of the same file. The
-	// ComicRack-XML-recorded raw path (e.g. "G:\Comics\...") is a
-	// one-time migration artifact that stops mattering the moment import
-	// finishes; LocalRoot must be set to whatever comic-server's real
-	// current root is, not that old raw one (comic-server-ye2e).
+	// comic-server-q7f) - to Komga's own view of the same file. LocalRoot
+	// is always cmd.buildKomgaSyncer's copy of config.Config.Server.
+	// LibraryRoot - there is no separate, independently-configured Komga
+	// local root anymore (removed, comic-server-ye2e: it was a duplicate
+	// of LibraryRoot that could silently drift out of sync).
 	LocalRoot  string
 	RemoteRoot string
 	Targets    []Target

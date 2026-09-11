@@ -75,7 +75,7 @@ func runImport(cmd *cobra.Command, args []string) error {
 	}
 	defer db.Close()
 
-	// server.library_source_root/library_mount_root translation (see
+	// server.library_source_root/library_root translation (see
 	// config.Config.ResolveLibraryFilePath) - applied here so library.db
 	// stores the real, usable path directly instead of the raw
 	// ComicRack-recorded one (e.g. "G:\Comics\...") every reader would

@@ -37,7 +37,7 @@ type KomgaTargetForListResponse struct {
 	// KomgaEnabled reflects whether Komga integration itself is turned on
 	// in config (komga.enabled) - a target can be saved even when this is
 	// false, but it won't sync until Komga is enabled (requires a restart
-	// to pick up base_url/api_key/local_root/remote_root).
+	// to pick up base_url/api_key/remote_root (and server.library_root)).
 	KomgaEnabled bool                 `json:"komga_enabled"`
 	Target       *KomgaTargetResponse `json:"target"`
 }

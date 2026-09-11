@@ -16,21 +16,18 @@ type Config struct {
 
 // ResolveLibraryFilePath translates a book's raw library path (as recorded
 // by whatever OS/host wrote the XML) into a path this comic-server process
-// can actually open. Prefers Server.LibrarySourceRoot/LibraryMountRoot
-// (comic-server's own mapping); falls back to Server.Komga.LocalRoot/
-// RemoteRoot for backward compatibility with deployments where those
-// happened to also be correct for comic-server's own filesystem - true only
-// when comic-server and Komga share the exact same bind mount (see
-// comic-server-64l, the gap the dedicated mapping actually closes). Falls
-// back to the raw path unchanged if neither mapping is configured, or the
-// path isn't rooted at whichever root was tried. Used by both cover
-// extraction (internal/api) and device-sync file transfer
-// (internal/sync, via cmd/server.go) - see comic-server-4n9.
+// can actually open, via Server.LibrarySourceRoot/LibraryRoot. Falls back
+// to the raw path unchanged if that mapping isn't configured, or the path
+// isn't rooted at LibrarySourceRoot. Used by cover extraction
+// (internal/api), device-sync file transfer (internal/sync, via
+// cmd/server.go - comic-server-4n9), and SQLite import (comic-server-q7f).
+// LibraryRoot is also comic-server's ONE canonical "real path" root -
+// Komga sync's own path translation (internal/komga) reuses it directly
+// rather than taking a separate, easily-out-of-sync local_root setting of
+// its own (comic-server-ye2e's actual root cause, see LibraryRoot's own
+// doc comment).
 func (c *Config) ResolveLibraryFilePath(rawPath string) string {
-	if translated, ok := pathmap.Resolve(c.Server.LibrarySourceRoot, c.Server.LibraryMountRoot, rawPath); ok {
-		return translated
-	}
-	if translated, ok := pathmap.Resolve(c.Server.Komga.LocalRoot, c.Server.Komga.RemoteRoot, rawPath); ok {
+	if translated, ok := pathmap.Resolve(c.Server.LibrarySourceRoot, c.Server.LibraryRoot, rawPath); ok {
 		return translated
 	}
 	return rawPath
@@ -42,20 +39,26 @@ type ServerConfig struct {
 	LibraryPath  string `yaml:"library_path,omitempty" toml:"library_path,omitempty"`   // Path to ComicDb.xml
 	DatabasePath string `yaml:"database_path,omitempty" toml:"database_path,omitempty"` // Path to SQLite database (alternative to library_path)
 
-	// LibrarySourceRoot/LibraryMountRoot: comic-server's OWN path mapping
-	// for reading library files directly (cover extraction; other direct
-	// reads later) - independent of Komga's LocalRoot/RemoteRoot below,
-	// which maps to KOMGA's filesystem view and cannot be assumed to match
-	// comic-server's own (they may be entirely different mounts/hosts -
-	// see comic-server-64l). LibrarySourceRoot is the path prefix as
-	// recorded in the library XML (e.g. a Windows path from whatever
-	// ComicRack host wrote it, "G:\Comics"); LibraryMountRoot is where
-	// comic-server can actually read the same files on ITS OWN filesystem
-	// (e.g. "/comics" under Docker). Leave both empty when comic-server
-	// runs on the same OS/filesystem that wrote the library XML, so the
-	// raw path is already directly readable - the common case.
+	// LibrarySourceRoot/LibraryRoot: comic-server's OWN, single path
+	// mapping for reading library files directly. LibrarySourceRoot is
+	// the path prefix as recorded in the library XML (e.g. a Windows path
+	// from whatever ComicRack host wrote it, "G:\Comics") - relevant only
+	// during the one-time ComicRack->comic-server migration, since the
+	// SQLite backend resolves and stores the real path directly at import
+	// time (comic-server-q7f) and never needs it again afterward; the XML
+	// backend still needs it on every read, since it never rewrites the
+	// library file. LibraryRoot is where comic-server can actually read
+	// the same files on ITS OWN filesystem right now (e.g. "/comics"
+	// under Docker) - the one canonical answer to "what is comic-server's
+	// real root for library files," reused as-is by Komga sync's own path
+	// translation (internal/komga) instead of a second, separately
+	// configured local_root that has to be kept in sync by hand
+	// (comic-server-ye2e was exactly that duplication going stale). Leave
+	// both empty when comic-server runs on the same OS/filesystem that
+	// wrote the library XML, so the raw path is already directly readable
+	// - the common case.
 	LibrarySourceRoot string `yaml:"library_source_root,omitempty" toml:"library_source_root,omitempty"`
-	LibraryMountRoot  string `yaml:"library_mount_root,omitempty" toml:"library_mount_root,omitempty"`
+	LibraryRoot       string `yaml:"library_root,omitempty" toml:"library_root,omitempty"`
 
 	// CoverCacheDir overrides where resized cover thumbnails are cached.
 	// Empty means use the XDG cache directory (config.GetCacheDir()) -
@@ -183,7 +186,7 @@ func (cc *CBZConvertConfig) Validate(trashPath string) error {
 // of its own. comic-server and Komga read independent, synced copies of the
 // same library (potentially on different machines/OSes), so books are
 // matched by translating file paths between the two roots rather than by
-// any shared ID - see LocalRoot/RemoteRoot.
+// any shared ID - see RemoteRoot.
 type KomgaConfig struct {
 	Enabled bool   `yaml:"enabled,omitempty" toml:"enabled,omitempty"`
 	BaseURL string `yaml:"base_url,omitempty" toml:"base_url,omitempty"` // e.g. https://comics.example.com
@@ -197,27 +200,23 @@ type KomgaConfig struct {
 	// scheduled push rather than change-triggered. Default: 900 (15 min).
 	SyncIntervalSec int `yaml:"sync_interval_sec,omitempty" toml:"sync_interval_sec,omitempty"`
 
-	// Path mapping: comic-server's library paths are rooted at LocalRoot;
-	// Komga sees the same files rooted at RemoteRoot. Directory structure
-	// below the root is assumed identical, so translation is a simple
-	// prefix swap - the same approach as the *Arr apps' Remote Path
-	// Mapping. Both roots are compared/joined using forward-slash-
-	// normalized paths (matching how comic-server already normalizes
-	// Directory/File/FullPath matchers).
+	// Path mapping: comic-server's library paths are rooted at
+	// Server.LibraryRoot (the SAME setting cover extraction/device sync
+	// use - see its own doc comment); Komga sees the same files rooted at
+	// RemoteRoot below. Directory structure below the root is assumed
+	// identical, so translation is a simple prefix swap - the same
+	// approach as the *Arr apps' Remote Path Mapping. Both roots are
+	// compared/joined using forward-slash-normalized paths (matching how
+	// comic-server already normalizes Directory/File/FullPath matchers).
 	//
-	// LocalRoot must match a book's FilePath as comic-server ACTUALLY has
-	// it right now - i.e. already resolved through
-	// LibrarySourceRoot/LibraryMountRoot above, if those are configured
-	// (see ResolveLibraryFilePath and comic-server-q7f, which made the
-	// SQLite backend store that resolved path directly in library.db
-	// instead of the raw ComicRack-recorded one). The raw path from
-	// ComicDb.xml is a one-time ComicRack->comic-server migration
-	// artifact - it stops mattering the moment that one-time import
-	// finishes, and LocalRoot must NOT be set to it once comic-server has
-	// its own real root (comic-server-ye2e was exactly this mistake:
-	// papering over a stale LocalRoot by resurrecting the retired raw
-	// path in code, instead of just pointing LocalRoot at the real one).
-	LocalRoot  string `yaml:"local_root,omitempty" toml:"local_root,omitempty"`
+	// There used to be a separate komga.local_root setting here, mirroring
+	// Server.LibraryRoot but configured independently - a genuine
+	// duplicate the user has to keep in sync by hand, and exactly what let
+	// comic-server-ye2e go stale unnoticed. Removed in favor of always
+	// reusing Server.LibraryRoot directly. Komga sync requires
+	// Server.LibraryRoot to be set whenever komga.enabled and
+	// komga.remote_root are both set (see Validate) - there is no
+	// meaningful "local" reference to translate from otherwise.
 	RemoteRoot string `yaml:"remote_root,omitempty" toml:"remote_root,omitempty"`
 
 	Targets []KomgaTarget `yaml:"targets,omitempty" toml:"targets,omitempty"`
@@ -233,7 +232,7 @@ const (
 
 // KomgaTarget maps one comic-server smart list to one Komga collection or
 // read list. Books matched by the list but not found in Komga (via the
-// LocalRoot/RemoteRoot path translation) are skipped and logged, not
+// LibraryRoot/RemoteRoot path translation) are skipped and logged, not
 // treated as a sync failure.
 type KomgaTarget struct {
 	ListID    string          `yaml:"list_id" toml:"list_id"`                         // Smart list GUID from the library
@@ -375,7 +374,7 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("log_format must be one of: text, json, got %q", c.Server.LogFormat)
 	}
 
-	if err := c.Server.Komga.Validate(); err != nil {
+	if err := c.Server.Komga.Validate(c.Server.LibraryRoot); err != nil {
 		return err
 	}
 
@@ -407,8 +406,11 @@ func (sc *ScanInfoConfig) Validate() error {
 }
 
 // Validate checks the Komga configuration for errors. A no-op when Komga
-// integration is disabled.
-func (kc *KomgaConfig) Validate() error {
+// integration is disabled. libraryRoot is Server.LibraryRoot - Komga sync
+// has no local_root of its own (removed, comic-server-ye2e) and reuses
+// this directly as its "local" path reference, so it must be set
+// whenever Komga sync is enabled and needs path translation.
+func (kc *KomgaConfig) Validate(libraryRoot string) error {
 	if !kc.Enabled {
 		return nil
 	}
@@ -418,8 +420,8 @@ func (kc *KomgaConfig) Validate() error {
 	if kc.APIKey == "" {
 		return fmt.Errorf("komga.api_key is required when komga.enabled is true (set directly or via COMIC_SERVER_KOMGA_API_KEY)")
 	}
-	if kc.LocalRoot == "" || kc.RemoteRoot == "" {
-		return fmt.Errorf("komga.local_root and komga.remote_root are both required when komga.enabled is true")
+	if libraryRoot == "" || kc.RemoteRoot == "" {
+		return fmt.Errorf("server.library_root and komga.remote_root are both required when komga.enabled is true")
 	}
 	if kc.SyncIntervalSec < 0 {
 		return fmt.Errorf("komga.sync_interval_sec must be >= 0, got %d", kc.SyncIntervalSec)

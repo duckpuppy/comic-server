@@ -35,7 +35,7 @@ type ImportOptions struct {
 	// ResolvePath translates a book's raw recorded FilePath (as ComicRack
 	// wrote it, e.g. "G:\Comics\...") into the path this comic-server
 	// process can actually open (server.library_source_root/
-	// library_mount_root - see config.Config.ResolveLibraryFilePath) -
+	// library_root - see config.Config.ResolveLibraryFilePath) -
 	// applied once here, at import time, so library.db stores the real
 	// usable path directly rather than a raw one every reader has to
 	// translate itself on every use. Pass nil to store FilePath exactly

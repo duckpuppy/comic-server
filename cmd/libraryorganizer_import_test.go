@@ -37,7 +37,7 @@ const sampleLOSettingsForImportTest = `<?xml version="1.0" encoding="utf-8"?>
 // in losettingsx.dat exactly as the Windows host that ran ComicRack saw
 // it ("G:\Comics") - a path that does not exist on the machine
 // comic-server actually runs on (a Docker container, most commonly).
-// When server.library_source_root/library_mount_root are configured,
+// When server.library_source_root/library_root are configured,
 // import must translate BaseFolder (and FailedFolder) to the real mount
 // path, the same translation already applied when reading a book's own
 // recorded File path.
@@ -46,7 +46,7 @@ func TestRunLibraryOrganizerImport_TranslatesBaseFolderThroughConfiguredMount(t 
 	configPath := filepath.Join(dir, "config.yaml")
 	if err := os.WriteFile(configPath, []byte(`server:
   library_source_root: 'G:\Comics'
-  library_mount_root: /mnt/comics
+  library_root: /mnt/comics
 `), 0o644); err != nil {
 		t.Fatalf("write config.yaml: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestRunLibraryOrganizerImport_TranslatesBaseFolderThroughConfiguredMount(t 
 	}
 
 	if profiles[0].BaseFolder != "/mnt/comics" {
-		t.Errorf("BaseFolder = %q, want %q (translated via library_source_root/library_mount_root)", profiles[0].BaseFolder, "/mnt/comics")
+		t.Errorf("BaseFolder = %q, want %q (translated via library_source_root/library_root)", profiles[0].BaseFolder, "/mnt/comics")
 	}
 	if profiles[0].FailedFolder != "/mnt/comics/_Failed" {
 		t.Errorf("FailedFolder = %q, want %q", profiles[0].FailedFolder, "/mnt/comics/_Failed")
@@ -89,7 +89,7 @@ func TestRunLibraryOrganizerImport_TranslatesBaseFolderThroughConfiguredMount(t 
 }
 
 // TestRunLibraryOrganizerImport_NoMountConfiguredLeavesBaseFolderAsIs
-// covers the common case (no library_source_root/library_mount_root set,
+// covers the common case (no library_source_root/library_root set,
 // e.g. comic-server running on the same Windows/host filesystem that
 // wrote the library) - BaseFolder must pass through unchanged, not get
 // mangled by a translation that was never configured.

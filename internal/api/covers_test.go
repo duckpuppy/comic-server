@@ -87,58 +87,24 @@ func TestHandleGetBookCover_ReturnsCoverImage(t *testing.T) {
 	}
 }
 
-// TestHandleGetBookCover_TranslatesPathViaKomgaRootMapping covers the
+// TestHandleGetBookCover_TranslatesPathViaLibraryRootMapping covers the
 // mediaserver scenario found 2026-08-24: a library authored on Windows
 // records paths like "G:\Comics\...", but comic-server runs in a Linux
 // container where the same files are bind-mounted at a different root
-// (e.g. "/data"). Cover extraction must apply the same local_root/
-// remote_root translation Komga sync already uses, or it 404s on every
-// single cover.
-func TestHandleGetBookCover_TranslatesPathViaKomgaRootMapping(t *testing.T) {
+// (e.g. "/data"). Cover extraction must apply
+// LibrarySourceRoot/LibraryRoot translation, or it 404s on every single
+// cover. (Previously this could also fall back to Komga's own
+// local_root/remote_root; that fallback was removed - comic-server-ye2e -
+// once Komga sync started reusing LibraryRoot directly instead of a
+// separate, independently-configured root of its own.)
+func TestHandleGetBookCover_TranslatesPathViaLibraryRootMapping(t *testing.T) {
 	pageData := solidPNG(t)
 	realDir := t.TempDir()
 	cbzPath := writeTestCBZ(t, realDir, "test.cbz", pageData)
 
 	// The book's recorded path is rooted at a Windows-style path that does
-	// not exist on this machine; local_root/remote_root maps it to realDir.
-	rawPath := `G:\Comics\` + filepath.Base(cbzPath)
-
-	server := newCoverTestServer(t, []library.ComicBook{
-		{ID: "book-1", FilePath: rawPath, Series: "Batman"},
-	})
-	server.config = &config.Config{
-		Server: config.ServerConfig{
-			Komga: config.KomgaConfig{
-				LocalRoot:  `G:\Comics`,
-				RemoteRoot: realDir,
-			},
-		},
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/library/books/book-1/cover", nil)
-	w := httptest.NewRecorder()
-	server.handleBooksRouter(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-	if !bytes.Equal(w.Body.Bytes(), pageData) {
-		t.Error("expected response body to be the cover page's exact bytes")
-	}
-}
-
-// TestHandleGetBookCover_PrefersDedicatedLibraryRootMapping covers the
-// mediaserver scenario found 2026-08-24: comic-server and Komga run in
-// separate containers with SEPARATE bind mounts of the comic library (not
-// the same one), so Komga's local_root/remote_root cannot be reused for
-// comic-server's own file access (see comic-server-64l) - a dedicated
-// LibrarySourceRoot/LibraryMountRoot mapping is required and must take
-// priority over the Komga fallback when both happen to be configured.
-func TestHandleGetBookCover_PrefersDedicatedLibraryRootMapping(t *testing.T) {
-	pageData := solidPNG(t)
-	realDir := t.TempDir()
-	cbzPath := writeTestCBZ(t, realDir, "test.cbz", pageData)
-
+	// not exist on this machine; LibrarySourceRoot/LibraryRoot maps it to
+	// realDir.
 	rawPath := `G:\Comics\` + filepath.Base(cbzPath)
 
 	server := newCoverTestServer(t, []library.ComicBook{
@@ -147,14 +113,7 @@ func TestHandleGetBookCover_PrefersDedicatedLibraryRootMapping(t *testing.T) {
 	server.config = &config.Config{
 		Server: config.ServerConfig{
 			LibrarySourceRoot: `G:\Comics`,
-			LibraryMountRoot:  realDir,
-			// Deliberately wrong/unreachable, to prove this is NOT what
-			// resolved the path - if the code fell back to this instead
-			// of the dedicated mapping above, the request would 404.
-			Komga: config.KomgaConfig{
-				LocalRoot:  `G:\Comics`,
-				RemoteRoot: "/nonexistent",
-			},
+			LibraryRoot:       realDir,
 		},
 	}
 
