@@ -425,3 +425,32 @@ func TestExtractCover_UnsupportedExtension(t *testing.T) {
 		t.Errorf("err = %v, want unsupported archive format error", err)
 	}
 }
+
+// TestReadComicInfoXMLBytes_CBZFindsEmbeddedFile is the regression test
+// for comic-server-chh: a watch-folder file that already has a tagger's
+// ComicInfo.xml embedded should have it read back verbatim.
+func TestReadComicInfoXMLBytes_CBZFindsEmbeddedFile(t *testing.T) {
+	want := []byte(`<ComicInfo><Series>Sandman</Series></ComicInfo>`)
+	path := writeCBZ(t, t.TempDir(), "test.cbz", map[string][]byte{
+		"ComicInfo.xml": want,
+		"page001.png":   gradientImage(t, 4, 4),
+	})
+
+	data, ok := ReadComicInfoXMLBytes(path)
+	if !ok {
+		t.Fatal("expected ok=true, got false")
+	}
+	if string(data) != string(want) {
+		t.Errorf("data = %q, want %q", data, want)
+	}
+}
+
+func TestReadComicInfoXMLBytes_NoComicInfoReturnsNotOK(t *testing.T) {
+	path := writeCBZ(t, t.TempDir(), "test.cbz", map[string][]byte{
+		"page001.png": gradientImage(t, 4, 4),
+	})
+
+	if _, ok := ReadComicInfoXMLBytes(path); ok {
+		t.Error("expected ok=false when the archive has no ComicInfo.xml")
+	}
+}

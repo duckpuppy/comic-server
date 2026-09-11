@@ -120,6 +120,70 @@ func ExtractCover(path string) ([]byte, error) {
 	}
 }
 
+// ReadComicInfoXMLBytes returns the raw bytes of a comic archive's embedded
+// ComicInfo.xml, if it has one. Supports CBZ (zip), CBR (RAR), and CB7
+// (7-Zip), the same formats ExtractCover/ReadAllPages dispatch on -
+// comic-server-chh's watch-folder book creation uses this to seed a new
+// book's metadata from an archive's own tags, falling back to a
+// filename-only guess (comicvine.ParseFilename) only for whatever a
+// missing or incomplete ComicInfo.xml doesn't provide.
+func ReadComicInfoXMLBytes(path string) ([]byte, bool) {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".cbz", ".zip":
+		return readComicInfoFromCBZ(path)
+	case ".cbr", ".rar":
+		return readComicInfoFromCBR(path)
+	case ".cb7", ".7z":
+		return readComicInfoFromCB7(path)
+	default:
+		return nil, false
+	}
+}
+
+func readComicInfoFromCBZ(path string) ([]byte, bool) {
+	zr, err := zip.OpenReader(path)
+	if err != nil {
+		return nil, false
+	}
+	defer zr.Close()
+	for _, f := range zr.File {
+		if !strings.EqualFold(filepath.Base(f.Name), "ComicInfo.xml") {
+			continue
+		}
+		if data, err := readZipFile(f); err == nil {
+			return data, true
+		}
+	}
+	return nil, false
+}
+
+func readComicInfoFromCBR(path string) ([]byte, bool) {
+	files, err := rardecode.List(path)
+	if err != nil {
+		return nil, false
+	}
+	if f := findRARFile(files, "ComicInfo.xml"); f != nil {
+		if data, err := readRARFile(f); err == nil {
+			return data, true
+		}
+	}
+	return nil, false
+}
+
+func readComicInfoFromCB7(path string) ([]byte, bool) {
+	rc, err := sevenzip.OpenReader(path)
+	if err != nil {
+		return nil, false
+	}
+	defer rc.Close()
+	if f := findSevenZipFile(rc.File, "ComicInfo.xml"); f != nil {
+		if data, err := readSevenZipFile(f); err == nil {
+			return data, true
+		}
+	}
+	return nil, false
+}
+
 // Page is one image file read from a comic archive, in reading order.
 type Page struct {
 	Name string // original entry name/path inside the archive

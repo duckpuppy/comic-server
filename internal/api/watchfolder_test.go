@@ -1,6 +1,7 @@
 package api
 
 import (
+	"archive/zip"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -190,5 +191,77 @@ func TestHandleStartProcessingNewFiles_RejectsPathNoLongerNew(t *testing.T) {
 	}
 	if result.Results[0].Error == "" {
 		t.Error("expected an error explaining the path is no longer new")
+	}
+}
+
+// TestHandleStartProcessingNewFiles_ComicInfoXMLWinsOverFilenameGuess is
+// the regression test for the ComicInfo.xml-first metadata precedence: a
+// watch-folder archive that already has a tagger's ComicInfo.xml embedded
+// must seed the new book from THAT, not the filename-only guess - the
+// filename guess is only the fallback for whatever ComicInfo.xml doesn't
+// provide.
+func TestHandleStartProcessingNewFiles_ComicInfoXMLWinsOverFilenameGuess(t *testing.T) {
+	dir := t.TempDir()
+	// The filename alone would parse to Series="Guessed From Filename",
+	// Number="1" - deliberately different from the embedded ComicInfo.xml
+	// below, so a pass proves the XML value was actually used.
+	path := filepath.Join(dir, "Guessed From Filename 001.cbz")
+	writeTestCBZWithComicInfo(t, path, `<ComicInfo><Series>Real Series</Series><Number>7</Number><Publisher>Real Publisher</Publisher></ComicInfo>`)
+
+	s := newWatchFolderTestServer(t, nil, []string{dir})
+
+	body := strings.NewReader(`{"paths": ["` + strings.ReplaceAll(path, `\`, `\\`) + `"]}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/library/workflow/new-files/start", body)
+	w := httptest.NewRecorder()
+	s.handleStartProcessingNewFiles(w, req)
+
+	var result struct {
+		Created int `json:"created"`
+		Results []struct {
+			BookID string `json:"book_id"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if result.Created != 1 {
+		t.Fatalf("expected 1 book created, got %d: %s", result.Created, w.Body.String())
+	}
+
+	book, err := s.backend.GetBook(result.Results[0].BookID)
+	if err != nil || book == nil {
+		t.Fatalf("GetBook: %v", err)
+	}
+	if book.Series != "Real Series" {
+		t.Errorf("Series = %q, want %q (from embedded ComicInfo.xml, not filename)", book.Series, "Real Series")
+	}
+	if book.Number != "7" {
+		t.Errorf("Number = %q, want %q (from embedded ComicInfo.xml)", book.Number, "7")
+	}
+	if book.Publisher != "Real Publisher" {
+		t.Errorf("Publisher = %q, want %q (ComicInfo.xml-only field, no filename equivalent)", book.Publisher, "Real Publisher")
+	}
+}
+
+// writeTestCBZWithComicInfo writes a minimal valid CBZ containing only a
+// ComicInfo.xml entry at path.
+func writeTestCBZWithComicInfo(t *testing.T, path, comicInfoXML string) {
+	t.Helper()
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	zw := zip.NewWriter(f)
+	w, err := zw.Create("ComicInfo.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Write([]byte(comicInfoXML)); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
 	}
 }

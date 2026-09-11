@@ -144,3 +144,66 @@ func BuildComicInfoXML(book *library.ComicBook, pageCount int) ([]byte, error) {
 	}
 	return append([]byte(xml.Header), out...), nil
 }
+
+// ParseComicInfoXML is BuildComicInfoXML's inverse: unmarshals an archive's
+// embedded ComicInfo.xml bytes into a partial *library.ComicBook (every
+// field ComicInfo.xml can carry; FilePath, ID, and anything else specific
+// to a library record are left for the caller to fill in). Returns
+// ok=false if data isn't valid ComicInfo.xml - used by the watch-folder
+// "start processing" action (comic-server-chh) to seed a new book from
+// the archive's own tags, which take priority over a filename-only guess.
+func ParseComicInfoXML(data []byte) (*library.ComicBook, bool) {
+	var ci comicInfoXML
+	if err := xml.Unmarshal(data, &ci); err != nil {
+		return nil, false
+	}
+
+	book := &library.ComicBook{
+		Title:           ci.Title,
+		Series:          ci.Series,
+		Number:          ci.Number,
+		Count:           ci.Count,
+		Volume:          ci.Volume,
+		AlternateSeries: ci.AlternateSeries,
+		AlternateNumber: ci.AlternateNumber,
+		AlternateCount:  ci.AlternateCount,
+		Summary:         ci.Summary,
+		Notes:           ci.Notes,
+		Year:            ci.Year,
+		Month:           ci.Month,
+		Day:             ci.Day,
+
+		Writer:      ci.Writer,
+		Penciller:   ci.Penciller,
+		Inker:       ci.Inker,
+		Colorist:    ci.Colorist,
+		Letterer:    ci.Letterer,
+		CoverArtist: ci.CoverArtist,
+		Editor:      ci.Editor,
+		Translator:  ci.Translator,
+
+		Publisher:   ci.Publisher,
+		Imprint:     ci.Imprint,
+		Genre:       ci.Genre,
+		Tags:        ci.Tags,
+		Web:         ci.Web,
+		PageCount:   ci.PageCount,
+		LanguageISO: ci.LanguageISO,
+		Format:      ci.Format,
+
+		BlackAndWhite: ci.BlackAndWhite,
+		Manga:         ci.Manga,
+
+		Characters: ci.Characters,
+		Teams:      ci.Teams,
+		Locations:  ci.Locations,
+
+		ScanInformation: ci.ScanInformation,
+		StoryArc:        ci.StoryArc,
+		SeriesGroup:     ci.SeriesGroup,
+		AgeRating:       ci.AgeRating,
+
+		CommunityRating: ci.CommunityRating,
+	}
+	return book, true
+}

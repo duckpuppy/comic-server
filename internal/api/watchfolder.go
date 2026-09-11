@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"reflect"
 
+	"github.com/duckpuppy/comic-server/internal/cbzconvert"
 	"github.com/duckpuppy/comic-server/internal/comicvine"
 	"github.com/duckpuppy/comic-server/internal/library"
 	"github.com/duckpuppy/comic-server/internal/log"
@@ -150,10 +152,13 @@ func (s *Server) handleStartProcessingNewFiles(w http.ResponseWriter, r *http.Re
 }
 
 // newBookFromWatchFolderFile builds the initial book record for a comic
-// archive found on disk with no library metadata at all yet -
-// comicvine.ParseFilename does the same best-effort Series/Number/Year
-// guess already used to seed a ComicVine scrape search, so a freshly
-// created book starts with something more useful than a blank record.
+// archive found on disk with no library metadata at all yet. Filename
+// parsing (comicvine.ParseFilename - the same best-effort guess already
+// used to seed a ComicVine scrape search) is only the LAST resort: if the
+// archive already carries an embedded ComicInfo.xml (common for files a
+// scanner/tagger already touched before landing in the watch folder),
+// every field it provides wins over the filename guess - see
+// cbzconvert.ParseComicInfoXML.
 func newBookFromWatchFolderFile(path string) library.ComicBook {
 	parsed := comicvine.ParseFilename(path)
 	book := library.ComicBook{
@@ -164,9 +169,32 @@ func newBookFromWatchFolderFile(path string) library.ComicBook {
 		Year:     parsed.Year,
 		Volume:   parsed.Volume,
 	}
+
+	if data, ok := comicvine.ReadComicInfoXMLBytes(path); ok {
+		if fromXML, ok := cbzconvert.ParseComicInfoXML(data); ok {
+			overlayNonZeroFields(&book, fromXML)
+		}
+	}
+
 	if info, err := os.Stat(path); err == nil {
 		book.FileSize = info.Size()
 		book.FileModifiedTime = library.ComicTime{Time: info.ModTime()}
 	}
 	return book
+}
+
+// overlayNonZeroFields copies every non-zero exported field from src onto
+// the same-named field of dst - used to let an archive's embedded
+// ComicInfo.xml (src) override a filename-only guess (dst) field by
+// field, without hand-listing the ~30 fields ComicInfo.xml can carry (and
+// silently going stale if that list ever changes).
+func overlayNonZeroFields(dst, src *library.ComicBook) {
+	dv := reflect.ValueOf(dst).Elem()
+	sv := reflect.ValueOf(src).Elem()
+	for i := 0; i < sv.NumField(); i++ {
+		f := sv.Field(i)
+		if !f.IsZero() {
+			dv.Field(i).Set(f)
+		}
+	}
 }

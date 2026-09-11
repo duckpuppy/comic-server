@@ -72,3 +72,48 @@ func TestBuildComicInfoXML_ZeroPagesNoPageMarker(t *testing.T) {
 		t.Errorf("expected no page markers for pageCount=0, got %+v", ci.Pages.Page)
 	}
 }
+
+// TestParseComicInfoXML_RoundTripsBuildComicInfoXML is the regression test
+// for comic-server-chh's watch-folder metadata seeding: parsing back what
+// BuildComicInfoXML wrote must recover every field it mapped, so a book
+// created from an archive's ComicInfo.xml doesn't silently lose data
+// relative to a book synced through the normal export/import cycle.
+func TestParseComicInfoXML_RoundTripsBuildComicInfoXML(t *testing.T) {
+	original := &library.ComicBook{
+		Title:       "Issue Title",
+		Series:      "Series Name",
+		Number:      "5",
+		Year:        2019,
+		Month:       3,
+		Publisher:   "Test Publisher",
+		Writer:      "Writer Name",
+		Genre:       "Superhero",
+		LanguageISO: "en",
+	}
+
+	data, err := BuildComicInfoXML(original, 22)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	parsed, ok := ParseComicInfoXML(data)
+	if !ok {
+		t.Fatal("ParseComicInfoXML returned ok=false for valid data")
+	}
+	if parsed.Title != original.Title || parsed.Series != original.Series ||
+		parsed.Number != original.Number || parsed.Year != original.Year ||
+		parsed.Month != original.Month || parsed.Publisher != original.Publisher ||
+		parsed.Writer != original.Writer || parsed.Genre != original.Genre ||
+		parsed.LanguageISO != original.LanguageISO {
+		t.Errorf("parsed book = %+v, want fields matching original %+v", parsed, original)
+	}
+	if parsed.PageCount != 22 {
+		t.Errorf("PageCount = %d, want 22", parsed.PageCount)
+	}
+}
+
+func TestParseComicInfoXML_InvalidDataReturnsNotOK(t *testing.T) {
+	if _, ok := ParseComicInfoXML([]byte("not xml")); ok {
+		t.Error("expected ok=false for invalid XML")
+	}
+}
