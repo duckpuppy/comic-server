@@ -7,9 +7,15 @@ class DevicesBrowser {
         this.filterEdition = 'all'; // 'all', 'Android Free', 'Android Full', 'iOS'
         this.filterStatus = 'all'; // 'all', 'online', 'idle', 'offline', 'syncing'
         this.sortBy = 'name'; // 'name', 'name-desc', 'last-seen', 'status'
+        this.loading = true;
     }
 
     async init(ctx) {
+        // Render once BEFORE the fetch so renderDevicesGrid's loading
+        // check (below) shows immediately instead of leaving the page
+        // blank, or worse, briefly claiming "No devices found" before any
+        // real answer has come back (comic-server-4te).
+        this.render();
         await this.loadDevices();
         if (ctx && ctx.aborted) return;
         this.render();
@@ -26,6 +32,8 @@ class DevicesBrowser {
         } catch (error) {
             console.error('Failed to load devices:', error);
             this.devices = [];
+        } finally {
+            this.loading = false;
         }
     }
 
@@ -148,6 +156,9 @@ class DevicesBrowser {
     }
 
     renderDevicesGrid() {
+        if (this.loading) {
+            return `<div class="empty-state"><p class="empty-message">Loading devices…</p></div>`;
+        }
         if (this.filteredDevices.length === 0) {
             return `
                 <div class="empty-state">

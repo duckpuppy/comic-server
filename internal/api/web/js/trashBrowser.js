@@ -5,9 +5,14 @@ class TrashBrowser {
         this.entries = [];
         this.selectedIds = new Set();
         this.notConfigured = false;
+        this.loading = true;
     }
 
     async init(ctx) {
+        // Render once BEFORE the fetch so render() shows a loading state
+        // instead of misleadingly claiming "Trash is empty" before the
+        // real answer has come back (comic-server-4te).
+        this.render();
         await this.loadEntries();
         if (ctx && ctx.aborted) return;
         this.render();
@@ -35,6 +40,8 @@ class TrashBrowser {
         } catch (error) {
             console.error('Failed to load trash entries:', error);
             this.entries = [];
+        } finally {
+            this.loading = false;
         }
     }
 
@@ -89,9 +96,11 @@ class TrashBrowser {
                     </button>
                 </div>
 
-                ${this.entries.length === 0
-                    ? '<p class="empty-message">Trash is empty.</p>'
-                    : this.renderTable()}
+                ${this.loading
+                    ? '<p class="empty-message">Loading…</p>'
+                    : this.entries.length === 0
+                        ? '<p class="empty-message">Trash is empty.</p>'
+                        : this.renderTable()}
             </div>
         `;
     }

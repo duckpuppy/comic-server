@@ -6,9 +6,15 @@ class KomgaStatus {
         this.snapshot = null;
         this.notConfigured = false;
         this.error = null;
+        this.loading = true;
     }
 
     async init(ctx) {
+        // Render once BEFORE the fetch so renderBody's loading check
+        // (below) shows instead of misleadingly claiming "No Komga sync
+        // targets configured" before the real answer has come back
+        // (comic-server-4te).
+        this.render();
         await this.load();
         if (ctx && ctx.aborted) return;
         this.render();
@@ -28,6 +34,8 @@ class KomgaStatus {
         } catch (error) {
             console.error('Failed to load Komga sync status:', error);
             this.error = 'Failed to load Komga sync status. Please try again.';
+        } finally {
+            this.loading = false;
         }
     }
 
@@ -45,6 +53,9 @@ class KomgaStatus {
     }
 
     renderBody() {
+        if (this.loading) {
+            return `<div class="empty-state"><p class="empty-message">Loading…</p></div>`;
+        }
         if (this.notConfigured) {
             return `
                 <div class="empty-state">

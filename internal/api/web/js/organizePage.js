@@ -23,9 +23,15 @@ class OrganizePage {
         this.applying = false;
         this.lastResult = null;
         this.error = null;
+        this.loadingProfiles = true;
     }
 
     async init(ctx) {
+        // Render once BEFORE the fetch so renderControls' loading check
+        // (below) shows instead of misleadingly claiming "No Library
+        // Organizer profiles configured yet" before the real answer has
+        // come back (comic-server-4te).
+        this.render();
         await this.loadProfiles();
         if (ctx && ctx.aborted) return;
         this.render();
@@ -44,6 +50,8 @@ class OrganizePage {
         } catch (error) {
             console.error('Failed to load Library Organizer profiles:', error);
             this.error = 'Failed to load profiles. Please try again.';
+        } finally {
+            this.loadingProfiles = false;
         }
     }
 
@@ -68,6 +76,9 @@ class OrganizePage {
     }
 
     renderControls() {
+        if (this.loadingProfiles) {
+            return `<p class="empty-message">Loading profiles…</p>`;
+        }
         if (this.profiles.length === 0) {
             return `<p class="empty-message">No Library Organizer profiles configured yet. Import one via <code>comic-server library-organizer import --dat &lt;path&gt;</code>.</p>`;
         }

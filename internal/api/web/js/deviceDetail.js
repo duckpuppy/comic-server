@@ -12,6 +12,12 @@ class DeviceDetail {
     }
 
     async init(ctx) {
+        // Render a placeholder BEFORE the fetch instead of leaving #app
+        // showing whatever the previous page left behind while
+        // loadDeviceInfo (and, in the success case, loadSyncHistory)
+        // resolve (comic-server-4te). showError() overwrites this
+        // directly on the error path.
+        document.getElementById('app').innerHTML = '<div class="panel"><p class="empty-message">Loading…</p></div>';
         await this.loadDeviceInfo();
         if (ctx && ctx.aborted) return;
         if (this.device) {

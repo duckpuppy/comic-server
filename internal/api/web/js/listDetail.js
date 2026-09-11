@@ -21,6 +21,7 @@ class ListDetail {
         // "leave the last result on screen" pattern).
         this.dmResult = null;
         this.dmRunning = false;
+        this.loading = true;
     }
 
     async init(ctx) {
@@ -39,6 +40,11 @@ class ListDetail {
             this.ancestors = [];
         }
 
+        // Render once BEFORE these 5 parallel fetches so render()'s
+        // existing !this.list check (below) shows a loading state
+        // instead of leaving the page blank/stale for however long the
+        // slowest of them takes (comic-server-4te).
+        this.render();
         await Promise.all([
             this.loadListDetail(),
             this.loadDevices(),
@@ -46,6 +52,7 @@ class ListDetail {
             this.loadPreview(),
             this.loadSchema()
         ]);
+        this.loading = false;
 
         if (ctx && ctx.aborted) return;
         this.render();
@@ -138,6 +145,21 @@ class ListDetail {
 
     render() {
         const app = document.getElementById('app');
+
+        if (this.loading) {
+            app.innerHTML = `
+                <div class="lists-page-with-tree">
+                    <aside id="lists-tree-sidebar"></aside>
+                    <main class="lists-main-content">
+                        <p class="empty-message">Loading…</p>
+                    </main>
+                </div>
+            `;
+            if (this.tree) {
+                setTimeout(() => this.tree.render(), 0);
+            }
+            return;
+        }
 
         if (!this.list) {
             app.innerHTML = `

@@ -13,6 +13,11 @@ class ScanInfoSettings {
     }
 
     async init(ctx) {
+        // Render once BEFORE the fetch so renderBody()'s existing
+        // !this.config check shows "Loading..." immediately instead of
+        // leaving the page blank until the fetch resolves
+        // (comic-server-4te).
+        this.render();
         await this.load();
         if (ctx && ctx.aborted) return;
         this.render();

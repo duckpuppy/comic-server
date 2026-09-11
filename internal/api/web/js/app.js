@@ -163,6 +163,12 @@ document.addEventListener('DOMContentLoaded', () => {
         navigation.setActive('lists');
         dashboard.hide();
         if (!listsTree) {
+            // The first-ever visit to /lists this session pays for TWO
+            // sequential fetches (the tree, then listsBrowser's own data)
+            // before anything renders - show something immediately rather
+            // than leaving #app showing whatever the previous page left
+            // behind (comic-server-4te).
+            document.getElementById('app').innerHTML = '<div class="panel"><p class="empty-message">Loading…</p></div>';
             listsTree = new ListsTree();
             await listsTree.init();
             if (ctx.aborted) return;
@@ -182,6 +188,7 @@ document.addEventListener('DOMContentLoaded', () => {
         navigation.setActive('lists');
         dashboard.hide();
         if (!listsTree) {
+            document.getElementById('app').innerHTML = '<div class="panel"><p class="empty-message">Loading…</p></div>';
             listsTree = new ListsTree();
             await listsTree.init();
             if (ctx.aborted) return;

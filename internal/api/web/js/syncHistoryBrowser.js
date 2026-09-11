@@ -10,13 +10,19 @@ class SyncHistoryBrowser {
         this.currentPage = 1;
         this.itemsPerPage = 20;
         this.totalItems = 0;
+        this.loading = true;
     }
 
     async init(ctx) {
+        // Render once BEFORE the fetches so render() shows a loading
+        // state instead of misleadingly claiming "No sync history found"
+        // before the real answer has come back (comic-server-4te).
+        this.render();
         await Promise.all([
             this.loadDevices(),
             this.loadHistory()
         ]);
+        this.loading = false;
         if (ctx && ctx.aborted) return;
         this.render();
         this.attachListeners();
@@ -146,6 +152,10 @@ class SyncHistoryBrowser {
     }
 
     renderHistoryList() {
+        if (this.loading) {
+            return `<div class="empty-state"><p class="empty-message">Loading…</p></div>`;
+        }
+
         const paginatedHistory = this.getPaginatedHistory();
 
         if (paginatedHistory.length === 0) {
