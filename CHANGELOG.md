@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.24.0](https://github.com/duckpuppy/comic-server/compare/v1.23.0...v1.24.0) (2026-09-11)
+
+
+### Features
+
+* Data Manager changes regress an already-organized book back to To Move ([d0a8051](https://github.com/duckpuppy/comic-server/commit/d0a80516b9e40e6e5776d3330c38aee792cbae47))
+
+
+### Bug Fixes
+
+* translate Library Organizer BaseFolder on import, explain empty target paths ([f62a25c](https://github.com/duckpuppy/comic-server/commit/f62a25c943f45c98a52496bd3eb70ea31522323d))
+
 ## [1.23.0](https://github.com/duckpuppy/comic-server/compare/v1.22.0...v1.23.0) (2026-09-10)
 
 
