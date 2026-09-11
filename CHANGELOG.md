@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.26.0](https://github.com/duckpuppy/comic-server/compare/v1.25.0...v1.26.0) (2026-09-11)
+
+
+### Features
+
+* Browse - Save as Smart List from an ad-hoc filter ([cfe0a9c](https://github.com/duckpuppy/comic-server/commit/cfe0a9ccca53622402339a4aba43628fe6a8826f))
+* dark mode - settings default + per-window header toggle ([af7b0e9](https://github.com/duckpuppy/comic-server/commit/af7b0e906ded2184631a398c8fa6d52e9813fccf))
+
+
+### Bug Fixes
+
+* show a loading state instead of blank/misleading content while pages fetch ([8ec3abc](https://github.com/duckpuppy/comic-server/commit/8ec3abcb0a3470ca0ffc04e7d0065eb0ffa15d1e))
+
 ## [1.25.0](https://github.com/duckpuppy/comic-server/compare/v1.24.0...v1.25.0) (2026-09-11)
 
 
