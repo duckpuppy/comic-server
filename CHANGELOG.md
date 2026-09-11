@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.26.1](https://github.com/duckpuppy/comic-server/compare/v1.26.0...v1.26.1) (2026-09-11)
+
+
+### Bug Fixes
+
+* Komga LocalRoot must match comic-server's real current path, not raw ComicRack path ([5a05205](https://github.com/duckpuppy/comic-server/commit/5a05205d4cc19294642284a4e971f770ec7ca758))
+* Komga sync broken by SQLite import path translation ([477fcfb](https://github.com/duckpuppy/comic-server/commit/477fcfb92efaadd0f46d269173e63a1a6bc3d0b5))
+
 ## [1.26.0](https://github.com/duckpuppy/comic-server/compare/v1.25.0...v1.26.0) (2026-09-11)
 
 
