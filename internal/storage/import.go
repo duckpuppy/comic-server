@@ -31,6 +31,19 @@ type ImportStats struct {
 type ImportOptions struct {
 	DryRun  bool // If true, don't modify database
 	Verbose bool // If true, log each operation
+
+	// ResolvePath translates a book's raw recorded FilePath (as ComicRack
+	// wrote it, e.g. "G:\Comics\...") into the path this comic-server
+	// process can actually open (server.library_source_root/
+	// library_mount_root - see config.Config.ResolveLibraryFilePath) -
+	// applied once here, at import time, so library.db stores the real
+	// usable path directly rather than a raw one every reader has to
+	// translate itself on every use. Pass nil to store FilePath exactly
+	// as recorded (the previous, and still default, behavior - a no-op
+	// when neither root is configured, which most deployments never
+	// need). Never mutates the *library.ComicLibrary passed to Import -
+	// only the copy that gets hashed and stored.
+	ResolvePath func(string) string
 }
 
 // Import imports a ComicRack library into the database.
@@ -104,7 +117,15 @@ func (db *DB) importBooks(tx *sql.Tx, books []library.ComicBook, stats *ImportSt
 
 	// Process each book
 	for i := range books {
-		book := &books[i]
+		// Work from a copy - books shares its backing array with the
+		// caller's *library.ComicLibrary (lib.Books), so resolving
+		// FilePath in place here would leak the translated path back into
+		// the in-memory XML library every other backend/reader shares.
+		resolved := books[i]
+		if opts.ResolvePath != nil {
+			resolved.FilePath = opts.ResolvePath(resolved.FilePath)
+		}
+		book := &resolved
 		imported[book.ID] = true
 
 		hash := computeBookHash(book)

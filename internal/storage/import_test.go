@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/duckpuppy/comic-server/internal/library"
@@ -734,4 +735,108 @@ func TestImportWithTestLibrary(t *testing.T) {
 	}
 
 	t.Logf("Second import: %d unchanged in %s", stats2.BooksUnchanged, stats2.Duration)
+}
+
+func TestImportResolvePathTranslatesStoredFilePath(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	db, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	defer db.Close()
+
+	lib := &library.ComicLibrary{
+		ID: "test-library-id",
+		Books: []library.ComicBook{
+			{ID: "book-1", FilePath: `G:\Comics\book1.cbz`, Title: "Test Book 1"},
+		},
+	}
+
+	resolve := func(p string) string {
+		return strings.ReplaceAll(strings.Replace(p, `G:\Comics`, "/mnt/comics", 1), `\`, "/")
+	}
+
+	if _, err := db.Import(lib, ImportOptions{ResolvePath: resolve}); err != nil {
+		t.Fatalf("import: %v", err)
+	}
+
+	var storedPath string
+	if err := db.QueryRow("SELECT file_path FROM books WHERE id = 'book-1'").Scan(&storedPath); err != nil {
+		t.Fatalf("query file_path: %v", err)
+	}
+	if storedPath != "/mnt/comics/book1.cbz" {
+		t.Errorf("expected translated path stored, got %q", storedPath)
+	}
+
+	// The caller's in-memory library must never be mutated by the resolver -
+	// it shares its Books backing array with every other reader of *lib.
+	if lib.Books[0].FilePath != `G:\Comics\book1.cbz` {
+		t.Errorf("caller's library was mutated: FilePath = %q", lib.Books[0].FilePath)
+	}
+}
+
+func TestImportNoResolvePathStoresRawFilePath(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	db, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	defer db.Close()
+
+	lib := &library.ComicLibrary{
+		ID: "test-library-id",
+		Books: []library.ComicBook{
+			{ID: "book-1", FilePath: `G:\Comics\book1.cbz`, Title: "Test Book 1"},
+		},
+	}
+
+	if _, err := db.Import(lib, ImportOptions{}); err != nil {
+		t.Fatalf("import: %v", err)
+	}
+
+	var storedPath string
+	if err := db.QueryRow("SELECT file_path FROM books WHERE id = 'book-1'").Scan(&storedPath); err != nil {
+		t.Fatalf("query file_path: %v", err)
+	}
+	if storedPath != `G:\Comics\book1.cbz` {
+		t.Errorf("expected raw path stored when ResolvePath is nil, got %q", storedPath)
+	}
+}
+
+func TestImportResolvePathIsIdempotentAcrossReimports(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	db, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	defer db.Close()
+
+	resolve := func(p string) string {
+		return strings.Replace(p, `G:\Comics`, "/mnt/comics", 1)
+	}
+
+	lib := &library.ComicLibrary{
+		ID: "test-library-id",
+		Books: []library.ComicBook{
+			{ID: "book-1", FilePath: `G:\Comics\book1.cbz`, Title: "Test Book 1"},
+		},
+	}
+
+	if _, err := db.Import(lib, ImportOptions{ResolvePath: resolve}); err != nil {
+		t.Fatalf("first import: %v", err)
+	}
+
+	// Reimporting the same raw XML data through the same resolver a second
+	// time must not thrash - the hash is computed on the resolved copy, so
+	// re-resolving the same raw path each time yields the same hash.
+	stats, err := db.Import(lib, ImportOptions{ResolvePath: resolve})
+	if err != nil {
+		t.Fatalf("second import: %v", err)
+	}
+	if stats.BooksUpdated != 0 || stats.BooksAdded != 0 {
+		t.Errorf("expected no-op reimport, got added=%d updated=%d", stats.BooksAdded, stats.BooksUpdated)
+	}
+	if stats.BooksUnchanged != 1 {
+		t.Errorf("expected 1 unchanged book, got %d", stats.BooksUnchanged)
+	}
 }

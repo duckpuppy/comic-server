@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/duckpuppy/comic-server/internal/config"
 	"github.com/duckpuppy/comic-server/internal/library"
 	"github.com/duckpuppy/comic-server/internal/storage"
 	"github.com/spf13/cobra"
@@ -74,6 +75,20 @@ func runImport(cmd *cobra.Command, args []string) error {
 	}
 	defer db.Close()
 
+	// server.library_source_root/library_mount_root translation (see
+	// config.Config.ResolveLibraryFilePath) - applied here so library.db
+	// stores the real, usable path directly instead of the raw
+	// ComicRack-recorded one (e.g. "G:\Comics\...") every reader would
+	// otherwise have to translate itself.
+	configPath, err := GetConfigPath()
+	if err != nil {
+		return fmt.Errorf("failed to resolve config path: %w", err)
+	}
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
 	// Perform import
 	if importDryRun {
 		fmt.Println("Dry run mode - no changes will be made")
@@ -84,8 +99,9 @@ func runImport(cmd *cobra.Command, args []string) error {
 	}
 
 	stats, err := db.Import(lib, storage.ImportOptions{
-		DryRun:  importDryRun,
-		Verbose: importVerbose,
+		DryRun:      importDryRun,
+		Verbose:     importVerbose,
+		ResolvePath: cfg.ResolveLibraryFilePath,
 	})
 	if err != nil {
 		return fmt.Errorf("import: %w", err)

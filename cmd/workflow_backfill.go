@@ -54,6 +54,7 @@ func runWorkflowBackfill(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("failed to open SQLite database: %w", err)
 		}
+		sqliteBackend.SetPathResolver(cfg.ResolveLibraryFilePath)
 		backend = sqliteBackend
 	} else {
 		xmlBackend, err := library.NewXMLBackend(libPath, 0)

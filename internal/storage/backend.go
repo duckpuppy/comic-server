@@ -17,8 +17,14 @@ type SQLiteBackend struct {
 	// known. Empty if the database was opened standalone (e.g. via the
 	// db-info CLI command) with no known source to reimport from - Reload
 	// returns an error in that case rather than silently no-op'ing.
-	xmlPath  string
-	metadata struct {
+	xmlPath string
+	// resolvePath translates a book's raw recorded FilePath the same way
+	// ImportOptions.ResolvePath does (see import.go) - applied on every
+	// Reload so re-imports keep storing the real, translated path rather
+	// than reverting to the raw one. nil (the default) means store paths
+	// as recorded, unchanged - set via SetPathResolver.
+	resolvePath func(string) string
+	metadata    struct {
 		id   string
 		name string
 	}
@@ -71,6 +77,17 @@ func NewSQLiteBackend(dbPath string, xmlPath string) (*SQLiteBackend, error) {
 	return backend, nil
 }
 
+// SetPathResolver configures the translation Reload applies to every book's
+// FilePath on (re)import - see config.Config.ResolveLibraryFilePath and
+// ImportOptions.ResolvePath. Call once, before the first Reload; nil (never
+// calling this) preserves the previous behavior of storing paths exactly as
+// recorded.
+func (b *SQLiteBackend) SetPathResolver(resolve func(string) string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.resolvePath = resolve
+}
+
 // Reload re-imports xmlPath (see NewSQLiteBackend) into the database in
 // place, picking up any external changes (books/lists added, edited, or
 // removed in ComicRack) without a process restart. The import is
@@ -92,7 +109,7 @@ func (b *SQLiteBackend) Reload() error {
 		return fmt.Errorf("reload: %w", err)
 	}
 
-	if _, err := b.db.Import(lib, ImportOptions{}); err != nil {
+	if _, err := b.db.Import(lib, ImportOptions{ResolvePath: b.resolvePath}); err != nil {
 		return fmt.Errorf("reload: import: %w", err)
 	}
 
