@@ -1,23 +1,36 @@
 /* Navigation Tabs */
 .nav-tabs {
     display: flex;
+    flex-wrap: nowrap;
     gap: 0.5rem;
     padding: 0 1rem;
     background: var(--bg-secondary);
     border-bottom: 1px solid var(--border-color);
+    /* More tabs than fit at any given width scroll horizontally instead
+       of wrapping or overflowing the viewport - the tab bar has grown
+       past a single row's worth of space (Workflow, Komga, Data Manager,
+       etc. added over time) and will likely keep growing. */
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
 }
 
 .nav-tab {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 1rem 1.5rem;
+    padding: 1rem 1.25rem;
     text-decoration: none;
     color: var(--text-secondary);
     font-weight: 500;
     border-bottom: 2px solid transparent;
     transition: all 0.2s;
     position: relative;
+    /* Never shrink or wrap text - a squeezed tab wrapping its label onto
+       two lines (e.g. "Sync History") looks broken; scrolling the whole
+       bar is the intended overflow behavior instead. */
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
 .nav-tab:hover {
