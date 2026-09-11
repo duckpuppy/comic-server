@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.27.0](https://github.com/duckpuppy/comic-server/compare/v1.26.1...v1.27.0) (2026-09-11)
+
+
+### Features
+
+* standardize on single library_root config, remove duplicate komga.local_root ([507f0ac](https://github.com/duckpuppy/comic-server/commit/507f0ac56f3d3c105e8dcf0f2b4c54ff51e2ed30))
+
 ## [1.26.1](https://github.com/duckpuppy/comic-server/compare/v1.26.0...v1.26.1) (2026-09-11)
 
 
