@@ -181,7 +181,7 @@ func TestHandleDataManagerApply_PersistsChanges(t *testing.T) {
 // comic-server-1iv.2: a book explicitly tracked at StageDataManager
 // advances to StageToMove once its changes are actually committed.
 func TestHandleDataManagerApply_AdvancesWorkflowStage(t *testing.T) {
-	book := library.ComicBook{ID: "1", Series: "Batman", Number: "1"}
+	book := library.ComicBook{ID: "1", Series: "Batman", Number: "1", FilePath: "/comics/batman1.cbz"}
 	workflow.SetStage(&book, workflow.StageDataManager)
 	s, db := newDataManagerTestServer(t, []library.ComicBook{book})
 	seedBatmanRuleset(t, db)
@@ -209,7 +209,7 @@ func TestHandleDataManagerApply_AdvancesWorkflowStage(t *testing.T) {
 // the book needs to go through Library Organizer again, so it must
 // regress back to StageToMove rather than staying marked Organized.
 func TestHandleDataManagerApply_RegressesAlreadyOrganizedBookToToMove(t *testing.T) {
-	book := library.ComicBook{ID: "1", Series: "Batman", Number: "1"}
+	book := library.ComicBook{ID: "1", Series: "Batman", Number: "1", FilePath: "/comics/batman1.cbz"}
 	workflow.SetStage(&book, workflow.StageOrganized)
 	s, db := newDataManagerTestServer(t, []library.ComicBook{book})
 	seedBatmanRuleset(t, db)
@@ -238,7 +238,7 @@ func TestHandleDataManagerApply_RegressesAlreadyOrganizedBookToToMove(t *testing
 // only ever advance (comic-server-1iv.2's existing guarantee), never be
 // affected by the new regression logic.
 func TestHandleDataManagerApply_DoesNotRegressBookNotYetPastDataManager(t *testing.T) {
-	book := library.ComicBook{ID: "1", Series: "Batman", Number: "1"}
+	book := library.ComicBook{ID: "1", Series: "Batman", Number: "1", FilePath: "/comics/batman1.cbz"}
 	workflow.SetStage(&book, workflow.StageScanInfo)
 	s, db := newDataManagerTestServer(t, []library.ComicBook{book})
 	seedBatmanRuleset(t, db)

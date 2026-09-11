@@ -120,12 +120,26 @@ const customValueKey = "comic_server_workflow_stage"
 // GetStage reads book's explicitly stored stage, or StageUnknown if it
 // has never been set (including for a book that predates this feature and
 // hasn't been through the one-time backfill yet - see InferStage).
+//
+// A fileless book (FilePath == "" - e.g. a ComicRack "wanted" placeholder
+// for an issue not yet owned) is never reported as StageToMove, even if
+// that value is what's actually stored: there is no file to move, so
+// showing it in the To Move list (and letting Library Organizer's real
+// apply pick it up) would be acting on a book with nothing to act on. This
+// is enforced here, at read time, rather than only where the stage gets
+// set, so it also self-heals any book that was mis-staged before this
+// invariant existed - no separate backfill/migration needed (a real user
+// report, comic-server-1v0).
 func GetStage(book *library.ComicBook) Stage {
 	v, ok := library.GetCustomValue(book.CustomValuesStore, customValueKey)
 	if !ok {
 		return StageUnknown
 	}
-	return parseStage(v)
+	stage := parseStage(v)
+	if stage == StageToMove && book.FilePath == "" {
+		return StageDataManager
+	}
+	return stage
 }
 
 // SetStage writes stage onto book explicitly.
@@ -161,6 +175,13 @@ func InferStage(book *library.ComicBook, rulesets []datamanager.Ruleset) Stage {
 		return StageScanInfo
 	}
 	if dataManagerWouldChange(book, rulesets) {
+		return StageDataManager
+	}
+	if book.FilePath == "" {
+		// A fileless book (e.g. a ComicRack "wanted" placeholder for an
+		// issue not yet owned) has no file to move - cap it here rather
+		// than inferring StageToMove for a book with nothing to move. See
+		// GetStage's own doc comment for the matching read-time guard.
 		return StageDataManager
 	}
 	return StageToMove

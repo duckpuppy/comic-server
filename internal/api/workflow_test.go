@@ -22,7 +22,7 @@ func TestHandleGetWorkflowSummary_CountsPerStageAndCVDBSkip(t *testing.T) {
 	workflow.SetStage(&book1, workflow.StageConvertToCBZ)
 	book2 := library.ComicBook{ID: "2"}
 	workflow.SetStage(&book2, workflow.StageConvertToCBZ)
-	book3 := library.ComicBook{ID: "3"}
+	book3 := library.ComicBook{ID: "3", FilePath: "/comics/book3.cbz"}
 	workflow.SetStage(&book3, workflow.StageToMove)
 	book4 := library.ComicBook{ID: "4", Tags: "CVDBSKIP"}
 	// book4 has no explicit stage - StageUnknown, must still be counted.

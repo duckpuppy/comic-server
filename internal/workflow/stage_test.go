@@ -25,6 +25,30 @@ func TestGetSetStage_RoundTrip(t *testing.T) {
 	}
 }
 
+// TestGetStage_FilelessBookNeverReportsToMove is the regression test for a
+// real user report (comic-server-of7, screenshot): a book with no
+// FilePath (e.g. a ComicRack "wanted" placeholder for an issue not yet
+// owned) showed up in the To Move drill-in with a blank Current Path -
+// there's nothing to move. GetStage must down-report StageToMove to
+// StageDataManager for such a book even if that's what's literally stored,
+// so a book mis-staged before this invariant existed self-heals without a
+// separate backfill.
+func TestGetStage_FilelessBookNeverReportsToMove(t *testing.T) {
+	book := &library.ComicBook{FilePath: ""}
+	SetStage(book, StageToMove)
+	if got := GetStage(book); got != StageDataManager {
+		t.Errorf("GetStage on a fileless book explicitly staged ToMove = %v, want StageDataManager", got)
+	}
+
+	// A book WITH a file must still report StageToMove normally - this
+	// invariant is scoped to fileless books only.
+	withFile := &library.ComicBook{FilePath: "/comics/book.cbz"}
+	SetStage(withFile, StageToMove)
+	if got := GetStage(withFile); got != StageToMove {
+		t.Errorf("GetStage on a book with a file = %v, want StageToMove", got)
+	}
+}
+
 // aceRuleset mirrors a real dataman.dat shape: a rule matching on
 // Publisher, an action setting SeriesGroup - used to exercise
 // InferStage's idempotent Data Manager check with something concrete.
@@ -98,6 +122,16 @@ func TestInferStage_RealWorldConditions(t *testing.T) {
 			},
 			rulesets: nil,
 			want:     StageToMove,
+		},
+		{
+			name: "fileless placeholder book - nothing to move, caps at data manager",
+			book: &library.ComicBook{
+				FilePath:          "",
+				CustomValuesStore: ",comicvine_volume=1234",
+				ScanInformation:   "Scanner:Zeta-Fictscans",
+			},
+			rulesets: nil,
+			want:     StageDataManager,
 		},
 		{
 			name: ".zip counts as already-converted, same as .cbz",
@@ -192,7 +226,7 @@ func TestAdvanceIfAtOrBefore_TerminalStageStaysPut(t *testing.T) {
 }
 
 func TestRegressToStageIfPast_OrganizedRegressesToToMove(t *testing.T) {
-	book := &library.ComicBook{}
+	book := &library.ComicBook{FilePath: "/comics/book.cbz"}
 	SetStage(book, StageOrganized)
 	if !RegressToStageIfPast(book, StageToMove) {
 		t.Error("expected a change - StageOrganized is past StageToMove")
@@ -203,7 +237,7 @@ func TestRegressToStageIfPast_OrganizedRegressesToToMove(t *testing.T) {
 }
 
 func TestRegressToStageIfPast_AlreadyAtTargetIsNoOp(t *testing.T) {
-	book := &library.ComicBook{}
+	book := &library.ComicBook{FilePath: "/comics/book.cbz"}
 	SetStage(book, StageToMove)
 	if RegressToStageIfPast(book, StageToMove) {
 		t.Error("expected no change - already at target, not past it")
