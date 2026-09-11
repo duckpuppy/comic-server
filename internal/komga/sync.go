@@ -42,6 +42,24 @@ type SyncOptions struct {
 	RemoteRoot string
 	Targets    []Target
 
+	// LibrarySourceRoot/LibraryMountRoot mirror
+	// config.Config.ResolveLibraryFilePath's own two roots (comic-server's
+	// OWN translation of a book's raw recorded path, independent of
+	// LocalRoot/RemoteRoot above, which is Komga's own separate view -
+	// see config.KomgaConfig's doc comment). LocalRoot has always been
+	// defined in terms of a book's RAW recorded path (e.g. "G:\Comics"),
+	// but comic-server-q7f made the SQLite backend store the ALREADY-
+	// resolved path in library.db instead of the raw one - so match.go
+	// now has to reverse that resolution back to the raw form before
+	// applying LocalRoot/RemoteRoot, or every book fails to match
+	// whenever both mappings are configured together (comic-server-ye2e,
+	// a real regression reported the same day comic-server-q7f shipped).
+	// Left empty (the common case - most deployments don't
+	// configure library_source_root/library_mount_root at all) this is a
+	// complete no-op, identical to before.
+	LibrarySourceRoot string
+	LibraryMountRoot  string
+
 	// Interval is how often to rebuild the Komga path index and re-push
 	// every target. comic-server has no way to detect library changes
 	// while running (see comic-server-bwz), so this is a scheduled push
@@ -215,10 +233,10 @@ func (s *Syncer) syncTarget(ctx context.Context, idx *Index, target Target) Targ
 
 	switch target.Type {
 	case TargetCollection:
-		matched, unmatched = idx.ResolveCollectionSeries(books, s.opts.LocalRoot, s.opts.RemoteRoot)
+		matched, unmatched = idx.ResolveCollectionSeries(books, s.opts.LocalRoot, s.opts.RemoteRoot, s.opts.LibrarySourceRoot, s.opts.LibraryMountRoot)
 		err = s.client.UpsertCollection(ctx, target.KomgaName, matched)
 	case TargetReadList:
-		matched, unmatched = idx.ResolveReadListBooks(books, s.opts.LocalRoot, s.opts.RemoteRoot)
+		matched, unmatched = idx.ResolveReadListBooks(books, s.opts.LocalRoot, s.opts.RemoteRoot, s.opts.LibrarySourceRoot, s.opts.LibraryMountRoot)
 		err = s.client.UpsertReadList(ctx, target.KomgaName, matched)
 	default:
 		err = fmt.Errorf("unknown target type %q", target.Type)
@@ -244,7 +262,7 @@ func (s *Syncer) syncTarget(ctx context.Context, idx *Index, target Target) Targ
 // Collection target (series-level grouping) needs the underlying per-BOOK
 // Komga ID here, since read status is inherently per-issue.
 func (s *Syncer) pushReadStatus(ctx context.Context, idx *Index, books []*library.ComicBook) (pushed int, failed []UnmatchedBook) {
-	matched, unmatched := idx.ResolveBookReadStatus(books, s.opts.LocalRoot, s.opts.RemoteRoot)
+	matched, unmatched := idx.ResolveBookReadStatus(books, s.opts.LocalRoot, s.opts.RemoteRoot, s.opts.LibrarySourceRoot, s.opts.LibraryMountRoot)
 	failed = append(failed, unmatched...)
 
 	for _, rs := range matched {

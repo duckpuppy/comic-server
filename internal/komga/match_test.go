@@ -37,7 +37,7 @@ func TestResolveReadListBooks(t *testing.T) {
 		{ID: "4", FilePath: `D:\Elsewhere\Batman #4.cbz`},     // not rooted at local_root
 	}
 
-	matched, unmatched := idx.ResolveReadListBooks(books, `G:\Comics\`, "/data")
+	matched, unmatched := idx.ResolveReadListBooks(books, `G:\Comics\`, "/data", "", "")
 
 	if len(matched) != 2 {
 		t.Fatalf("expected 2 matched books, got %d: %v", len(matched), matched)
@@ -70,7 +70,7 @@ func TestResolveReadListBooks_DeduplicatesSameKomgaID(t *testing.T) {
 		{ID: "1-dup", FilePath: `G:\Comics\Batman\Batman #1.cbz`},
 	}
 
-	matched, unmatched := idx.ResolveReadListBooks(books, `G:\Comics\`, "/data")
+	matched, unmatched := idx.ResolveReadListBooks(books, `G:\Comics\`, "/data", "", "")
 	if len(matched) != 1 {
 		t.Errorf("expected deduplication to 1 matched ID, got %d: %v", len(matched), matched)
 	}
@@ -96,7 +96,7 @@ func TestResolveBookReadStatus(t *testing.T) {
 		{ID: "3", FilePath: `G:\Comics\Batman\Batman #3.cbz`},
 	}
 
-	matched, unmatched := idx.ResolveBookReadStatus(books, `G:\Comics\`, "/data")
+	matched, unmatched := idx.ResolveBookReadStatus(books, `G:\Comics\`, "/data", "", "")
 
 	if len(matched) != 2 {
 		t.Fatalf("expected 2 matched books, got %d: %+v", len(matched), matched)
@@ -131,7 +131,7 @@ func TestResolveCollectionSeries(t *testing.T) {
 		{ID: "4", Series: "Unknown", FilePath: `G:\Comics\Unknown\Unknown #1.cbz`}, // not in Komga index
 	}
 
-	matched, unmatched := idx.ResolveCollectionSeries(books, `G:\Comics\`, "/data")
+	matched, unmatched := idx.ResolveCollectionSeries(books, `G:\Comics\`, "/data", "", "")
 
 	if len(matched) != 2 {
 		t.Fatalf("expected 2 distinct matched series, got %d: %v", len(matched), matched)
@@ -171,5 +171,63 @@ func TestBuildIndex(t *testing.T) {
 	}
 	if idx.booksByPath["/data/Batman/Batman #1.cbz"] != "b1" {
 		t.Errorf("book index missing expected entry: %+v", idx.booksByPath)
+	}
+}
+
+// TestResolveReadListBooks_ReversesLibraryMountRootBeforeKomgaTranslation
+// is the regression test for comic-server-ye2e: the SQLite backend
+// stores book.FilePath already translated through
+// server.library_source_root/library_mount_root (comic-server-q7f), not
+// the raw path Komga's own LocalRoot/RemoteRoot mapping has always
+// assumed. Without reversing that translation first, every book fails
+// to match whenever both mappings are configured together.
+func TestResolveReadListBooks_ReversesLibraryMountRootBeforeKomgaTranslation(t *testing.T) {
+	idx := &Index{
+		booksByPath: map[string]string{
+			"/data/Batman/Batman #1.cbz": "book-1",
+		},
+	}
+
+	// FilePath as the SQLite backend actually stores it post-comic-server-q7f:
+	// already resolved from "G:\Comics\..." to "/mnt/comics/..." via
+	// library_source_root=G:\Comics, library_mount_root=/mnt/comics.
+	books := []*library.ComicBook{
+		{ID: "1", FilePath: `/mnt/comics/Batman/Batman #1.cbz`},
+	}
+
+	// Komga's own mapping is still defined in terms of the RAW path, as
+	// it always has been.
+	matched, unmatched := idx.ResolveReadListBooks(books, `G:\Comics\`, "/data", `G:\Comics`, "/mnt/comics")
+
+	if len(unmatched) != 0 {
+		t.Fatalf("expected 0 unmatched, got %d: %+v", len(unmatched), unmatched)
+	}
+	if len(matched) != 1 || matched[0] != "book-1" {
+		t.Fatalf("expected book-1 to match, got %v", matched)
+	}
+}
+
+// TestResolveReadListBooks_NoLibraryMountRootConfiguredIsUnaffected covers
+// the common case (library_source_root/library_mount_root not
+// configured, or the XML backend, which was never affected by
+// comic-server-q7f) - passing empty strings must behave identically to
+// before this fix.
+func TestResolveReadListBooks_NoLibraryMountRootConfiguredIsUnaffected(t *testing.T) {
+	idx := &Index{
+		booksByPath: map[string]string{
+			"/data/Batman/Batman #1.cbz": "book-1",
+		},
+	}
+	books := []*library.ComicBook{
+		{ID: "1", FilePath: `G:\Comics\Batman\Batman #1.cbz`},
+	}
+
+	matched, unmatched := idx.ResolveReadListBooks(books, `G:\Comics\`, "/data", "", "")
+
+	if len(unmatched) != 0 {
+		t.Fatalf("expected 0 unmatched, got %d: %+v", len(unmatched), unmatched)
+	}
+	if len(matched) != 1 || matched[0] != "book-1" {
+		t.Fatalf("expected book-1 to match, got %v", matched)
 	}
 }
