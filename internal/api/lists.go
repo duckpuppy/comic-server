@@ -447,6 +447,12 @@ type ComicPreview struct {
 	// ad-hoc browse).
 	CurrentPath string `json:"current_path,omitempty"`
 	TargetPath  string `json:"target_path,omitempty"`
+
+	// TargetPathNote explains why TargetPath is empty (excluded by
+	// profile rules, a template failure, a collision, no profile
+	// configured, etc.) - populated whenever TargetPath isn't, so an
+	// empty target is never just a silent, unexplained gap.
+	TargetPathNote string `json:"target_path_note,omitempty"`
 }
 
 // handleGetListPreview returns a preview of comics matching the list

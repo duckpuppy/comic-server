@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/duckpuppy/comic-server/internal/config"
 	"github.com/duckpuppy/comic-server/internal/configdb"
 	"github.com/duckpuppy/comic-server/internal/libraryorganizer"
 	"github.com/google/uuid"
@@ -27,7 +28,16 @@ again on a config.db that already has Library Organizer profiles is
 refused unless --force is passed - matching comic-server datamanager
 import's own re-import semantics: --force WIPES every existing profile
 and replaces them with the freshly parsed file, atomically, rather than
-merging.`,
+merging.
+
+BaseFolder/FailedFolder are stored as recorded in losettingsx.dat - a
+path from the Windows host that originally ran ComicRack (e.g.
+"G:\Comics"), which does not exist as such on the machine comic-server
+actually runs on (a Docker container, most commonly). If
+server.library_source_root/library_mount_root are configured, those
+folders are translated to the real mount path at import time, the same
+translation already used for reading a book's own recorded File path -
+see config.Config.ResolveLibraryFilePath.`,
 	RunE: runLibraryOrganizerImport,
 }
 
@@ -48,6 +58,15 @@ func runLibraryOrganizerImport(cmd *cobra.Command, args []string) error {
 	result, err := libraryorganizer.ParseLOSettings(f, func() string { return uuid.New().String() })
 	if err != nil {
 		return fmt.Errorf("failed to parse %s: %w", loImportPath, err)
+	}
+
+	configPath, err := GetConfigPath()
+	if err != nil {
+		return fmt.Errorf("failed to resolve config path: %w", err)
+	}
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
 	}
 
 	db, err := openConfigDB()
@@ -79,7 +98,7 @@ func runLibraryOrganizerImport(cmd *cobra.Command, args []string) error {
 		profiles[i] = configdb.LOImportProfile{
 			ID:                    p.ID,
 			Name:                  p.Name,
-			BaseFolder:            p.BaseFolder,
+			BaseFolder:            cfg.ResolveLibraryFilePath(p.BaseFolder),
 			FolderTemplate:        p.FolderTemplate,
 			FileTemplate:          p.FileTemplate,
 			EmptyFolder:           p.EmptyFolder,
@@ -94,7 +113,7 @@ func runLibraryOrganizerImport(cmd *cobra.Command, args []string) error {
 			FilelessFormat:        p.FilelessFormat,
 			FailEmptyValues:       p.FailEmptyValues,
 			MoveFailed:            p.MoveFailed,
-			FailedFolder:          p.FailedFolder,
+			FailedFolder:          cfg.ResolveLibraryFilePath(p.FailedFolder),
 			ExcludeMode:           p.ExcludeMode,
 			ExcludeOperator:       p.ExcludeOperator,
 			SortOrder:             p.SortOrder,

@@ -156,7 +156,11 @@ class WorkflowPage {
                 html += '<table class="datamanager-diff-table"><thead><tr><th>Series</th><th>Current Path</th><th>Target Path</th></tr></thead><tbody>';
                 for (const c of d.comics) {
                     const label = `${c.series}${c.number ? ' #' + c.number : ''}`;
-                    html += `<tr><td>${this.escapeHtml(label)}</td><td>${this.escapeHtml(c.current_path)}</td><td>${this.escapeHtml(c.target_path || '—')}</td></tr>`;
+                    // An empty target path always comes with a reason
+                    // (comic-server-1qb's follow-up) - never a silent
+                    // dash that looks indistinguishable from a bug.
+                    const target = c.target_path || (c.target_path_note ? `— (${c.target_path_note})` : '—');
+                    html += `<tr><td>${this.escapeHtml(label)}</td><td>${this.escapeHtml(c.current_path)}</td><td>${this.escapeHtml(target)}</td></tr>`;
                 }
                 html += '</tbody></table>';
             } else {

@@ -130,7 +130,7 @@ func Plan(books []*library.ComicBook, opts PlanOptions) []PlannedMove {
 		fullFileName := fileName + fileExtension(book, opts.Profile)
 		move.NewFolder = folder
 		move.NewFile = fullFileName
-		move.NewRawPath = joinWindowsPath(append(append([]string{opts.BaseFolder}, folder...), fullFileName))
+		move.NewRawPath = joinRawPath(append(append([]string{opts.BaseFolder}, folder...), fullFileName))
 		move.NewResolvedPath = resolvePath(move.NewRawPath)
 
 		// A book already at its own planned destination is a no-op, not
@@ -164,20 +164,38 @@ func fileExtension(book *library.ComicBook, profile Profile) string {
 	return profile.FilelessFormat
 }
 
-// joinWindowsPath joins segments with backslashes, matching the Windows-
-// style path both BaseFolder and book.FilePath are recorded in - NOT
-// filepath.Join, which would use the HOST's separator (comic-server
-// itself typically runs on Linux, but these are library-recorded paths
-// in the ORIGINAL Windows style, resolved to a local path only via
-// ResolvePath afterward, same separation cbzconvert.Convert's own
-// resolvePath parameter already established).
-func joinWindowsPath(segments []string) string {
+// joinRawPath joins segments (BaseFolder + computed folder segments +
+// filename) into one raw path - NOT filepath.Join, which would use the
+// HOST's separator regardless of what style these segments actually are.
+// BaseFolder is normally still Windows-style, exactly as recorded in
+// losettingsx.dat (e.g. "G:\Comics") - unresolved until ResolvePath
+// translates it later, same separation cbzconvert.Convert's own
+// resolvePath parameter already established.
+//
+// BUT: `library-organizer import` now translates BaseFolder through
+// server.library_source_root/library_mount_root at import time (a real
+// user's Docker deployment has no "G:\Comics" to resolve against
+// per-request), so BaseFolder can already be a POSIX-style absolute path
+// by the time Plan runs - joining that with backslashes would produce a
+// mixed-separator path nothing can open. Detect which style BaseFolder
+// itself uses and join with that separator throughout, rather than
+// assuming Windows unconditionally.
+func joinRawPath(segments []string) string {
+	sep := `\`
+	if len(segments) > 0 && strings.HasPrefix(segments[0], "/") {
+		sep = "/"
+	}
+
 	cleaned := make([]string, 0, len(segments))
 	for _, s := range segments {
-		s = strings.Trim(s, `\`)
+		s = strings.Trim(s, sep)
 		if s != "" {
 			cleaned = append(cleaned, s)
 		}
 	}
-	return strings.Join(cleaned, `\`)
+	joined := strings.Join(cleaned, sep)
+	if sep == "/" {
+		joined = "/" + joined
+	}
+	return joined
 }

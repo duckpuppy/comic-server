@@ -207,6 +207,54 @@ func TestHandleGetWorkflowStageBooks_ToMoveNoProfileLeavesTargetPathEmpty(t *tes
 	if result.Comics[0].TargetPath != "" {
 		t.Errorf("expected empty TargetPath with no profile configured, got %q", result.Comics[0].TargetPath)
 	}
+	if result.Comics[0].TargetPathNote != "no Library Organizer profile configured" {
+		t.Errorf("TargetPathNote = %q, want an explanation, not a silent gap", result.Comics[0].TargetPathNote)
+	}
+}
+
+// TestHandleGetWorkflowStageBooks_ToMoveExcludedBookExplainsWhy covers a
+// real user report: a "To Move" entry showed an empty target path with no
+// explanation, indistinguishable from a bug. A book the active profile's
+// own exclude rules reject must say so, not just leave the cell blank.
+func TestHandleGetWorkflowStageBooks_ToMoveExcludedBookExplainsWhy(t *testing.T) {
+	book := library.ComicBook{ID: "1", Series: "Sandman", Publisher: "DC Comics", FilePath: `G:\Comics\Sandman 01.cbz`}
+	workflow.SetStage(&book, workflow.StageToMove)
+	s := newWorkflowTestServer(t, []library.ComicBook{book})
+
+	db := newTestConfigDB(t)
+	s.configDB = db
+	if err := db.CreateLOProfile(configdb.LOProfile{
+		ID: "p1", Name: "Default", BaseFolder: `G:\Comics`,
+		FolderTemplate: `{<publisher>}`, FileTemplate: `{<series>}`,
+		ExcludeMode: "Do not", ExcludeOperator: "Any",
+	}); err != nil {
+		t.Fatalf("CreateLOProfile: %v", err)
+	}
+	if _, err := db.CreateLOExcludeRule(configdb.LOExcludeRule{
+		ProfileID: "p1", Field: "Publisher", Operator: "is", Value: "DC Comics",
+	}); err != nil {
+		t.Fatalf("CreateLOExcludeRule: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/library/workflow/to_move/books", nil)
+	w := httptest.NewRecorder()
+	s.handleWorkflowStageSubRouter(w, req)
+
+	var result struct {
+		Comics []ComicPreview `json:"comics"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(result.Comics) != 1 {
+		t.Fatalf("expected 1 comic, got %d", len(result.Comics))
+	}
+	if result.Comics[0].TargetPath != "" {
+		t.Errorf("expected an excluded book to have no TargetPath, got %q", result.Comics[0].TargetPath)
+	}
+	if result.Comics[0].TargetPathNote == "" {
+		t.Error("expected TargetPathNote to explain the exclusion, got empty string")
+	}
 }
 
 func TestHandleGetWorkflowStageBooks_UnknownStageReturns404(t *testing.T) {

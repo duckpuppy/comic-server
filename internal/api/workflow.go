@@ -92,8 +92,9 @@ func (s *Server) handleGetWorkflowStageBooks(w http.ResponseWriter, r *http.Requ
 	// (possibly much larger) matched set, same "scope the work to what's
 	// actually being shown" lesson as comic-server-n5d.
 	var planByID map[string]libraryorganizer.PlannedMove
+	var planUnavailableReason string
 	if stage == workflow.StageToMove {
-		planByID = s.planToMoveBooks(page)
+		planByID, planUnavailableReason = s.planToMoveBooks(page)
 	}
 
 	previews := make([]ComicPreview, 0, len(page))
@@ -109,8 +110,23 @@ func (s *Server) handleGetWorkflowStageBooks(w http.ResponseWriter, r *http.Requ
 			Unread:      book.IsUnread(),
 			CurrentPath: book.FilePath,
 		}
-		if plan, ok := planByID[book.ID]; ok && !plan.Skipped && !plan.Failed {
-			preview.TargetPath = plan.NewRawPath
+		switch {
+		case planByID != nil:
+			// A profile was found and Plan ran - every input book gets
+			// exactly one PlannedMove back, so this lookup always hits.
+			plan := planByID[book.ID]
+			switch {
+			case plan.Skipped:
+				preview.TargetPathNote = "excluded by profile rules"
+			case plan.Failed:
+				preview.TargetPathNote = plan.FailReason
+			case plan.Collision:
+				preview.TargetPathNote = plan.CollisionReason
+			default:
+				preview.TargetPath = plan.NewRawPath
+			}
+		case planUnavailableReason != "":
+			preview.TargetPathNote = planUnavailableReason
 		}
 		previews = append(previews, preview)
 	}
@@ -128,32 +144,38 @@ func (s *Server) handleGetWorkflowStageBooks(w http.ResponseWriter, r *http.Requ
 // first configured profile (by sort_order, same default selection
 // organizePage.js's own picker starts with) - this is a read-only
 // informational preview embedded in the workflow drill-in, not the real
-// apply flow, so there's no profile picker here; it silently returns nil
-// (current path still shows, target path just doesn't) if configDB isn't
-// available, no profile is configured yet, or the profile fails to load -
-// none of those are worth failing the whole book list over.
-func (s *Server) planToMoveBooks(books []*library.ComicBook) map[string]libraryorganizer.PlannedMove {
+// apply flow, so there's no profile picker here. Never fails the whole
+// book list over configDB being unavailable, no profile being configured
+// yet, or the profile failing to load - but always returns a reason
+// string explaining which of those happened, so a caller never has to
+// guess why byID came back nil (comic-server-1qb's follow-up: a blank
+// target path with no explanation looked like a silent bug even when it
+// was a legitimate "nothing to plan against yet" state).
+func (s *Server) planToMoveBooks(books []*library.ComicBook) (byID map[string]libraryorganizer.PlannedMove, unavailableReason string) {
 	if s.configDB == nil {
-		return nil
+		return nil, "config database not available"
 	}
 	profiles, err := s.configDB.ListLOProfiles()
-	if err != nil || len(profiles) == 0 {
-		return nil
+	if err != nil {
+		return nil, "failed to load Library Organizer profiles"
+	}
+	if len(profiles) == 0 {
+		return nil, "no Library Organizer profile configured"
 	}
 
 	opts, _, errMsg, _ := s.loadLOPlanOptions(profiles[0].ID)
 	if errMsg != "" {
 		log.Warn().Str("reason", errMsg).Msg("Skipping target-path preview for workflow drill-in")
-		return nil
+		return nil, "failed to load the active Library Organizer profile"
 	}
 	opts.FileExists = s.libraryOrganizerFileExists
 
 	moves := libraryorganizer.Plan(books, opts)
-	byID := make(map[string]libraryorganizer.PlannedMove, len(moves))
+	byID = make(map[string]libraryorganizer.PlannedMove, len(moves))
 	for _, m := range moves {
 		byID[m.BookID] = m
 	}
-	return byID
+	return byID, ""
 }
 
 // handleWorkflowStageSubRouter dispatches /api/library/workflow/:stage/...

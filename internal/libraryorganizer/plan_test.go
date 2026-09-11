@@ -1,6 +1,7 @@
 package libraryorganizer
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/duckpuppy/comic-server/internal/library"
@@ -133,6 +134,35 @@ func TestPlan_ResolvePathAppliedToBothOldAndNew(t *testing.T) {
 	}
 	if moves[0].NewResolvedPath == moves[0].NewRawPath {
 		t.Error("expected NewResolvedPath to differ from the raw path once ResolvePath is applied")
+	}
+}
+
+// TestPlan_PosixBaseFolderProducesForwardSlashPath covers a real user
+// report: `library-organizer import` now translates BaseFolder through
+// server.library_source_root/library_mount_root at import time (a Docker
+// deployment has no "G:\Comics" to resolve per-request), so BaseFolder
+// can already be a POSIX path by the time Plan runs. Joining it with
+// backslashes (the old unconditional behavior) produced a mixed-separator
+// path nothing could open, which surfaced as an empty target path in the
+// Workflow drill-in for a book that genuinely has a real file.
+func TestPlan_PosixBaseFolderProducesForwardSlashPath(t *testing.T) {
+	opts := realPlanOptions()
+	opts.BaseFolder = "/mnt/comics"
+	book := &library.ComicBook{
+		ID: "b1", Series: "Sandman", Publisher: "DC Comics",
+		Volume: 1989, Number: "1", Year: 1989, Month: 1,
+		FilePath: `G:\Comics\Sandman\Sandman 01.cbz`,
+	}
+	moves := Plan([]*library.ComicBook{book}, opts)
+	if moves[0].Failed || moves[0].Skipped {
+		t.Fatalf("unexpected flags: %+v", moves[0])
+	}
+	want := "/mnt/comics/DC Comics/Sandman (1989)/Sandman Vol.1989 #01 (January, 1989).cbz"
+	if moves[0].NewRawPath != want {
+		t.Errorf("NewRawPath = %q, want %q", moves[0].NewRawPath, want)
+	}
+	if strings.Contains(moves[0].NewRawPath, `\`) {
+		t.Errorf("NewRawPath = %q, must not mix separators with a POSIX BaseFolder", moves[0].NewRawPath)
 	}
 }
 
