@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.27.1](https://github.com/duckpuppy/comic-server/compare/v1.27.0...v1.27.1) (2026-09-12)
+
+
+### Bug Fixes
+
+* fileless books excluded from the entire workflow pipeline, not just To Move ([8eb7e27](https://github.com/duckpuppy/comic-server/commit/8eb7e27912645a9d34d48773dbd4ffed30649370))
+
 ## [1.27.0](https://github.com/duckpuppy/comic-server/compare/v1.26.1...v1.27.0) (2026-09-11)
 
 
