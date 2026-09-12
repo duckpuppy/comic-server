@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.28.0](https://github.com/duckpuppy/comic-server/compare/v1.27.1...v1.28.0) (2026-09-12)
+
+
+### Features
+
+* add native Data Manager rule editor (comic-server-tj6o) ([c436efb](https://github.com/duckpuppy/comic-server/commit/c436efb17165cf3c6ea30053fc6184282ca70825))
+* add nested group folders to Data Manager rule editor (comic-server-vkpq) ([43a436b](https://github.com/duckpuppy/comic-server/commit/43a436bd58c20fb1677b3a55c064bbc1c55b806b))
+* re-importing dataman.dat no longer clobbers hand-authored rules (comic-server-vkpq) ([e991af4](https://github.com/duckpuppy/comic-server/commit/e991af4c4e29d8d531e3a52af1e0be74dc762692))
+
 ## [1.27.1](https://github.com/duckpuppy/comic-server/compare/v1.27.0...v1.27.1) (2026-09-12)
 
 
