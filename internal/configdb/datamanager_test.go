@@ -178,6 +178,81 @@ func TestDMGroup_DeleteCascades(t *testing.T) {
 	}
 }
 
+// TestDMRuleset_UpdateAndRuleActionCRUD exercises the CRUD surface added
+// for comic-server-tj6o's native rule editor: UpdateDMRuleset,
+// GetDMRule/UpdateDMRule/DeleteDMRule, GetDMAction/UpdateDMAction/
+// DeleteDMAction.
+func TestDMRuleset_UpdateAndRuleActionCRUD(t *testing.T) {
+	db := newTestDMDB(t)
+
+	rs := DMRuleset{ID: "rs-1", Name: "Original Name", Mode: "And"}
+	if err := db.CreateDMRuleset(rs); err != nil {
+		t.Fatalf("CreateDMRuleset: %v", err)
+	}
+	rs.Name = "Renamed"
+	rs.Mode = "Or"
+	rs.Disabled = true
+	if err := db.UpdateDMRuleset(rs); err != nil {
+		t.Fatalf("UpdateDMRuleset: %v", err)
+	}
+	got, err := db.GetDMRuleset("rs-1")
+	if err != nil {
+		t.Fatalf("GetDMRuleset: %v", err)
+	}
+	if got == nil || got.Name != "Renamed" || got.Mode != "Or" || !got.Disabled {
+		t.Fatalf("GetDMRuleset after update = %+v, want Name=Renamed Mode=Or Disabled=true", got)
+	}
+
+	ruleID, err := db.CreateDMRule(DMRule{RulesetID: "rs-1", Field: "Series", Modifier: "Is", Value: "X"})
+	if err != nil {
+		t.Fatalf("CreateDMRule: %v", err)
+	}
+	rule, err := db.GetDMRule(ruleID)
+	if err != nil {
+		t.Fatalf("GetDMRule: %v", err)
+	}
+	if rule == nil || rule.Field != "Series" || rule.Value != "X" {
+		t.Fatalf("GetDMRule = %+v, want Field=Series Value=X", rule)
+	}
+	rule.Value = "Y"
+	if err := db.UpdateDMRule(*rule); err != nil {
+		t.Fatalf("UpdateDMRule: %v", err)
+	}
+	updated, err := db.GetDMRule(ruleID)
+	if err != nil || updated == nil || updated.Value != "Y" {
+		t.Fatalf("GetDMRule after update = %+v err=%v, want Value=Y", updated, err)
+	}
+	if err := db.DeleteDMRule(ruleID); err != nil {
+		t.Fatalf("DeleteDMRule: %v", err)
+	}
+	if gone, err := db.GetDMRule(ruleID); err != nil || gone != nil {
+		t.Errorf("expected rule gone after delete, got %+v err=%v", gone, err)
+	}
+
+	actionID, err := db.CreateDMAction(DMAction{RulesetID: "rs-1", Field: "SeriesGroup", Modifier: "SetValue", Value: "X"})
+	if err != nil {
+		t.Fatalf("CreateDMAction: %v", err)
+	}
+	action, err := db.GetDMAction(actionID)
+	if err != nil || action == nil || action.Value != "X" {
+		t.Fatalf("GetDMAction = %+v err=%v, want Value=X", action, err)
+	}
+	action.Value = "Z"
+	if err := db.UpdateDMAction(*action); err != nil {
+		t.Fatalf("UpdateDMAction: %v", err)
+	}
+	updatedAction, err := db.GetDMAction(actionID)
+	if err != nil || updatedAction == nil || updatedAction.Value != "Z" {
+		t.Fatalf("GetDMAction after update = %+v err=%v, want Value=Z", updatedAction, err)
+	}
+	if err := db.DeleteDMAction(actionID); err != nil {
+		t.Fatalf("DeleteDMAction: %v", err)
+	}
+	if gone, err := db.GetDMAction(actionID); err != nil || gone != nil {
+		t.Errorf("expected action gone after delete, got %+v err=%v", gone, err)
+	}
+}
+
 // TestDMRuleset_TopLevel confirms a ruleset with no group (GroupID="")
 // round-trips correctly - dataman.dat allows a <ruleset> directly under
 // <collection>, not just nested inside a <group>.

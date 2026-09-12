@@ -1,0 +1,88 @@
+/* Data Manager Rule Editor (comic-server-tj6o) - reuses .datamanager-page/
+   .panel/.datamanager-actions/.datamanager-errors/.empty-message from
+   dataManagerPage.css for the page shell; these classes are just the
+   ruleset list and its per-row condition/action editors. */
+
+.dmr-ruleset-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.dmr-ruleset-row {
+    border: 1px solid var(--border-color, #ddd);
+    border-radius: 6px;
+    margin-bottom: 0.75rem;
+    padding: 0.75rem 1rem;
+}
+
+.dmr-ruleset-row.dmr-disabled {
+    opacity: 0.55;
+}
+
+.dmr-ruleset-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.dmr-ruleset-name {
+    font-weight: 600;
+}
+
+.dmr-ruleset-summary {
+    color: var(--text-secondary, #666);
+    font-size: 0.9em;
+}
+
+.dmr-disabled-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.9em;
+    margin-left: auto;
+}
+
+.dmr-ruleset-detail {
+    display: flex;
+    gap: 2rem;
+    margin-top: 1rem;
+    flex-wrap: wrap;
+}
+
+.dmr-column {
+    flex: 1 1 320px;
+    min-width: 280px;
+}
+
+.dmr-column h3 {
+    font-size: 1rem;
+    margin: 0 0 0.5rem 0;
+}
+
+.dmr-row-list {
+    list-style: none;
+    margin: 0 0 0.5rem 0;
+    padding: 0;
+}
+
+.dmr-editor-row,
+.dmr-new-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.4rem;
+    flex-wrap: wrap;
+}
+
+.dmr-and {
+    font-size: 0.85em;
+    color: var(--text-secondary, #666);
+}
+
+.dmr-value-input,
+.dmr-new-value-input {
+    min-width: 8rem;
+    flex: 1 1 8rem;
+}

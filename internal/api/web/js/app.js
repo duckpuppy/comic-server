@@ -96,6 +96,7 @@ let komgaStatus = null;
 let trashBrowser = null;
 let scanInfoSettings = null;
 let dataManagerPage = null;
+let dataManagerRulesPage = null;
 let workflowPage = null;
 let organizePage = null;
 let browsePage = null;
@@ -238,6 +239,15 @@ document.addEventListener('DOMContentLoaded', () => {
             dataManagerPage = new DataManagerPage();
         }
         await dataManagerPage.init(ctx);
+    });
+
+    router.register('/datamanager/rules', async (params, ctx) => {
+        navigation.setActive('datamanager');
+        dashboard.hide();
+        if (!dataManagerRulesPage) {
+            dataManagerRulesPage = new DataManagerRulesPage();
+        }
+        await dataManagerRulesPage.init(ctx);
     });
 
     router.register('/workflow', async (params, ctx) => {

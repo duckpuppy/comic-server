@@ -200,6 +200,12 @@ func (s *Server) registerRoutes() {
 	})
 	s.mux.HandleFunc("/api/library/datamanager-job", s.handleDataManagerJobStatus)
 
+	// Data Manager rule editor (comic-server-tj6o) - native authoring for
+	// rulesets/rules/actions, first slice (flat rulesets, no nested
+	// group folders yet - see comic-server-vkpq for that follow-up).
+	s.mux.HandleFunc("/api/datamanager/schema", s.handleDataManagerSchema)
+	s.mux.HandleFunc("/api/datamanager/", s.handleDataManagerRulesRouter)
+
 	// Workflow dashboard (comic-server-1iv.3) - the native replacement
 	// for the manual ingest-pipeline smart lists.
 	s.mux.HandleFunc("/api/library/workflow", s.handleGetWorkflowSummary)

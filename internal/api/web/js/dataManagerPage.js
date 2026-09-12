@@ -93,7 +93,8 @@ class DataManagerPage {
             <div class="datamanager-page">
                 <div class="datamanager-page-header">
                     <h1>Data Manager</h1>
-                    <p class="empty-message">Runs every enabled Data Manager rule against the WHOLE library, not just one smart list. Import rules first via <code>comic-server datamanager import</code> if none are configured yet.</p>
+                    <p class="empty-message">Runs every enabled Data Manager rule against the WHOLE library, not just one smart list. Manage rules directly with the button below, or import from a ComicRack <code>dataman.dat</code> file via <code>comic-server datamanager import</code>.</p>
+                    <button class="btn btn-secondary" id="dm-manage-rules-btn">Manage Rules</button>
                 </div>
                 <div class="panel">
                     <div class="datamanager-actions">
@@ -183,6 +184,9 @@ class DataManagerPage {
     }
 
     attachListeners() {
+        const manageRulesBtn = document.getElementById('dm-manage-rules-btn');
+        if (manageRulesBtn) manageRulesBtn.addEventListener('click', () => router.navigate('/datamanager/rules'));
+
         const previewBtn = document.getElementById('dm-preview-btn');
         if (previewBtn) previewBtn.addEventListener('click', () => this.preview(true));
 

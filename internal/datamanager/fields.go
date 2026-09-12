@@ -5,7 +5,11 @@
 // user's confirmed scope decisions.
 package datamanager
 
-import "github.com/duckpuppy/comic-server/internal/library"
+import (
+	"sort"
+
+	"github.com/duckpuppy/comic-server/internal/library"
+)
 
 // FieldKind mirrors dataman.ini's field-type groupings (stringKeys,
 // numericalKeys, pseudoNumericalKeys, dateTimeKeys, boolKeys, yesNoKeys,
@@ -145,4 +149,25 @@ var builtinFields = map[string]FieldDef{
 func IsCustomField(name string) bool {
 	_, ok := builtinFields[name]
 	return !ok
+}
+
+// BuiltinFieldNames returns every built-in field name, sorted, for the
+// rule editor's field picker (comic-server-tj6o) - builtinFields itself
+// stays unexported since its FieldDef.BoolGetter closures are an
+// implementation detail the API layer has no business touching directly.
+func BuiltinFieldNames() []string {
+	names := make([]string, 0, len(builtinFields))
+	for name := range builtinFields {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// LookupField returns name's FieldDef and whether it's a built-in field -
+// the exported read-only counterpart to BuiltinFieldNames, for the same
+// rule-editor use.
+func LookupField(name string) (FieldDef, bool) {
+	def, ok := builtinFields[name]
+	return def, ok
 }

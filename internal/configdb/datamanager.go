@@ -126,6 +126,19 @@ func (db *DB) DeleteDMGroup(id string) error {
 	return nil
 }
 
+// UpdateDMGroup overwrites an existing group's editable fields in place -
+// ID is immutable, ParentID moves the group if changed.
+func (db *DB) UpdateDMGroup(g DMGroup) error {
+	_, err := db.Exec(`
+		UPDATE dm_groups SET parent_id = NULLIF(?, ''), name = ?, comment = ?, disabled = ?, sort_order = ?
+		WHERE id = ?
+	`, g.ParentID, g.Name, g.Comment, g.Disabled, g.SortOrder, g.ID)
+	if err != nil {
+		return fmt.Errorf("update dm_group %s: %w", g.ID, err)
+	}
+	return nil
+}
+
 // CreateDMRuleset creates a new ruleset (caller-supplied ID, same
 // reasoning as CreateDMGroup).
 func (db *DB) CreateDMRuleset(rs DMRuleset) error {
@@ -198,6 +211,23 @@ func (db *DB) DeleteDMRuleset(id string) error {
 	return nil
 }
 
+// UpdateDMRuleset overwrites an existing ruleset's editable fields in
+// place - ID is immutable, GroupID moves the ruleset if changed.
+func (db *DB) UpdateDMRuleset(rs DMRuleset) error {
+	mode := rs.Mode
+	if mode == "" {
+		mode = "And"
+	}
+	_, err := db.Exec(`
+		UPDATE dm_rulesets SET group_id = NULLIF(?, ''), name = ?, comment = ?, mode = ?, disabled = ?, sort_order = ?
+		WHERE id = ?
+	`, rs.GroupID, rs.Name, rs.Comment, mode, rs.Disabled, rs.SortOrder, rs.ID)
+	if err != nil {
+		return fmt.Errorf("update dm_ruleset %s: %w", rs.ID, err)
+	}
+	return nil
+}
+
 // CreateDMRule adds one condition to a ruleset, returning its new
 // autoincrement ID.
 func (db *DB) CreateDMRule(r DMRule) (int64, error) {
@@ -213,6 +243,40 @@ func (db *DB) CreateDMRule(r DMRule) (int64, error) {
 		return 0, fmt.Errorf("create dm_rule for ruleset %s: %w", r.RulesetID, err)
 	}
 	return id, nil
+}
+
+// GetDMRule returns one rule by ID, or nil if it doesn't exist.
+func (db *DB) GetDMRule(id int64) (*DMRule, error) {
+	r := DMRule{ID: id}
+	err := db.QueryRow(`SELECT ruleset_id, field, modifier, value, sort_order FROM dm_rules WHERE id = ?`, id).
+		Scan(&r.RulesetID, &r.Field, &r.Modifier, &r.Value, &r.SortOrder)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get dm_rule %d: %w", id, err)
+	}
+	return &r, nil
+}
+
+// UpdateDMRule overwrites an existing rule's editable fields in place.
+func (db *DB) UpdateDMRule(r DMRule) error {
+	_, err := db.Exec(`
+		UPDATE dm_rules SET field = ?, modifier = ?, value = ?, sort_order = ?
+		WHERE id = ?
+	`, r.Field, r.Modifier, r.Value, r.SortOrder, r.ID)
+	if err != nil {
+		return fmt.Errorf("update dm_rule %d: %w", r.ID, err)
+	}
+	return nil
+}
+
+// DeleteDMRule removes one rule by ID.
+func (db *DB) DeleteDMRule(id int64) error {
+	if _, err := db.Exec(`DELETE FROM dm_rules WHERE id = ?`, id); err != nil {
+		return fmt.Errorf("delete dm_rule %d: %w", id, err)
+	}
+	return nil
 }
 
 // ListDMRules returns every rule belonging to rulesetID, in sort_order.
@@ -249,6 +313,40 @@ func (db *DB) CreateDMAction(a DMAction) (int64, error) {
 		return 0, fmt.Errorf("create dm_action for ruleset %s: %w", a.RulesetID, err)
 	}
 	return id, nil
+}
+
+// GetDMAction returns one action by ID, or nil if it doesn't exist.
+func (db *DB) GetDMAction(id int64) (*DMAction, error) {
+	a := DMAction{ID: id}
+	err := db.QueryRow(`SELECT ruleset_id, field, modifier, value, sort_order FROM dm_actions WHERE id = ?`, id).
+		Scan(&a.RulesetID, &a.Field, &a.Modifier, &a.Value, &a.SortOrder)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get dm_action %d: %w", id, err)
+	}
+	return &a, nil
+}
+
+// UpdateDMAction overwrites an existing action's editable fields in place.
+func (db *DB) UpdateDMAction(a DMAction) error {
+	_, err := db.Exec(`
+		UPDATE dm_actions SET field = ?, modifier = ?, value = ?, sort_order = ?
+		WHERE id = ?
+	`, a.Field, a.Modifier, a.Value, a.SortOrder, a.ID)
+	if err != nil {
+		return fmt.Errorf("update dm_action %d: %w", a.ID, err)
+	}
+	return nil
+}
+
+// DeleteDMAction removes one action by ID.
+func (db *DB) DeleteDMAction(id int64) error {
+	if _, err := db.Exec(`DELETE FROM dm_actions WHERE id = ?`, id); err != nil {
+		return fmt.Errorf("delete dm_action %d: %w", id, err)
+	}
+	return nil
 }
 
 // ListDMActions returns every action belonging to rulesetID, in
