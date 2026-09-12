@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.31.0](https://github.com/duckpuppy/comic-server/compare/v1.30.0...v1.31.0) (2026-09-12)
+
+
+### Features
+
+* add on-demand library import, retire the file-watcher (comic-server-szvk) ([4387c33](https://github.com/duckpuppy/comic-server/commit/4387c333c42d076b52670d727801214603a7e9a9))
+
 ## [1.30.0](https://github.com/duckpuppy/comic-server/compare/v1.29.0...v1.30.0) (2026-09-12)
 
 
