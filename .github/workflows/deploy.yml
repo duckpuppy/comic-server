@@ -19,12 +19,24 @@ jobs:
     name: Deploy to mediaserver (live testing)
     runs-on: [self-hosted, comic-server]
     # head_branch is "main" for a plain branch push, but is the tag name
-    # itself (e.g. "v1.9.0") for a tag push - a tagged release build's
-    # workflow_run was silently skipped here before this fix, even though
-    # tagging is the actual trigger for a real release deploy (mediaserver
-    # only pulls the "latest" image tag, which docker-publish.yml only
-    # republishes on a vX.Y.Z tag push, not on a plain main push).
-    if: ${{ github.event.workflow_run.conclusion == 'success' && (github.event.workflow_run.head_branch == 'main' || startsWith(github.event.workflow_run.head_branch, 'v')) }}
+    # itself (e.g. "v1.9.0") for a tag push. Only the tag push actually
+    # updates the "latest" image mediaserver pulls (docker-publish.yml
+    # only republishes "latest" on a vX.Y.Z tag push, never on a plain
+    # main push) - so a Deploy triggered by the plain-main build is pure
+    # dead weight, and worse, a race: that build reliably finishes before
+    # the tag build (which does a slower full multi-platform push), so
+    # its Deploy fires first and pulls the still-stale "latest", silently
+    # deploying nothing new even though everything reports "success"
+    # (comic-server-w9l1, confirmed live during the v1.28.0 release -
+    # mediaserver briefly stayed on the previous version and only picked
+    # up the real one when the second, tag-triggered Deploy ran ~90s
+    # later). Restricting to only the tag-triggered build removes the
+    # race entirely, at the cost of the 'main'-triggered path this
+    # started with (comic-server-e35c8c1) - confirmed with the user
+    # (2026-09-12) that a plain main push was never meant to deploy on
+    # its own once tagged releases existed; it was just the original,
+    # pre-tag-release trigger left in place after tags took over.
+    if: ${{ github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v') }}
     steps:
       - name: Deploy latest image
         working-directory: /home/duckpuppy/src/services
