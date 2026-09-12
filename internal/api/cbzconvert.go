@@ -43,7 +43,7 @@ func (s *Server) handleRunCBZConvert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tr, err := trash.New(cfg.Server.TrashPath, cfg.Server.TrashRetentionDays)
+	tr, err := s.newTrashFromConfig()
 	if err != nil {
 		log.Error().Err(err).Msg("Invalid trash configuration for cbz-convert")
 		http.Error(w, "Invalid trash configuration", http.StatusInternalServerError)
@@ -106,7 +106,7 @@ func (s *Server) handleRunCBZConvertWorkflow(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "cbz_convert is not enabled in config", http.StatusServiceUnavailable)
 		return
 	}
-	tr, err := trash.New(cfg.Server.TrashPath, cfg.Server.TrashRetentionDays)
+	tr, err := s.newTrashFromConfig()
 	if err != nil {
 		log.Error().Err(err).Msg("Invalid trash configuration for cbz-convert")
 		http.Error(w, "Invalid trash configuration", http.StatusInternalServerError)

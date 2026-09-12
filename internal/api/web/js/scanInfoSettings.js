@@ -15,6 +15,14 @@ class ScanInfoSettings {
         // concern); this is just the only page /settings has today.
         this.theme = null; // 'light' | 'dark' | 'system'
         this.themeSaving = false;
+        // Trash settings (comic-server-4hsz) - loaded/saved independently
+        // of the Scan Info config above (separate endpoint, separate
+        // concern), same pattern Appearance already established. First
+        // section of the broader "give Settings a real config UI" push -
+        // network/library path, ComicVine key, CBZ Convert, ignore-devices,
+        // log level, and Komga still remain config.yaml-only.
+        this.trash = null; // { path, retention_days }
+        this.trashSaving = false;
     }
 
     async init(ctx) {
@@ -23,7 +31,7 @@ class ScanInfoSettings {
         // leaving the page blank until the fetch resolves
         // (comic-server-4te).
         this.render();
-        await Promise.all([this.load(), this.loadTheme()]);
+        await Promise.all([this.load(), this.loadTheme(), this.loadTrash()]);
         if (ctx && ctx.aborted) return;
         this.render();
         this.attachListeners();
@@ -91,6 +99,43 @@ class ScanInfoSettings {
         }
     }
 
+    async loadTrash() {
+        try {
+            const response = await fetch('/api/settings/trash');
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const data = await response.json();
+            this.trash = { path: data.path || '', retention_days: data.retention_days ?? 30 };
+        } catch (error) {
+            console.error('Failed to load trash settings:', error);
+            this.trash = { path: '', retention_days: 30 };
+        }
+    }
+
+    async saveTrash() {
+        this.trashSaving = true;
+        this.render();
+        this.attachListeners();
+        try {
+            const response = await fetch('/api/settings/trash', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(this.trash),
+            });
+            if (!response.ok) {
+                const text = await response.text();
+                throw new Error(friendlyErrorText(response, text));
+            }
+            dialogs.toast('Trash settings saved.', 'success');
+        } catch (error) {
+            console.error('Failed to save trash settings:', error);
+            dialogs.toast('Failed to save trash settings: ' + error.message, 'error');
+        } finally {
+            this.trashSaving = false;
+            this.render();
+            this.attachListeners();
+        }
+    }
+
     render() {
         const app = document.getElementById('app');
         app.innerHTML = `
@@ -99,7 +144,38 @@ class ScanInfoSettings {
                     <h1>Settings</h1>
                 </div>
                 ${this.renderAppearance()}
+                ${this.renderTrash()}
                 ${this.renderBody()}
+            </div>
+        `;
+    }
+
+    renderTrash() {
+        const t = this.trash || { path: '', retention_days: 30 };
+        return `
+            <div class="panel scan-info-panel">
+                <div class="settings-section-header">
+                    <h2>Trash</h2>
+                    <p class="settings-section-description">Quarantine directory for features that replace or delete a comic file (Convert to CBZ, Library Organizer).</p>
+                </div>
+
+                <div class="form-group">
+                    <label for="trash-path">Quarantine directory</label>
+                    <input type="text" id="trash-path" class="form-control" value="${this.escapeAttr(t.path)}" placeholder="/data/trash (leave blank to disable)">
+                    <div class="form-help">Empty disables Convert to CBZ and Library Organizer's apply step - neither can run without somewhere to quarantine the files they replace.</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="trash-retention">Retention (days)</label>
+                    <input type="number" id="trash-retention" class="form-control" min="0" value="${t.retention_days}" style="max-width:8rem;">
+                    <div class="form-help">A quarantined file is permanently deleted this many days after being replaced.</div>
+                </div>
+
+                <div class="scan-info-actions">
+                    <button class="btn btn-primary" id="trash-save" ${this.trashSaving ? 'disabled' : ''}>
+                        ${this.trashSaving ? 'Saving...' : 'Save'}
+                    </button>
+                </div>
             </div>
         `;
     }
@@ -210,6 +286,23 @@ class ScanInfoSettings {
                 if (el.checked) this.saveTheme(el.value);
             });
         });
+
+        const trashPathInput = document.getElementById('trash-path');
+        if (trashPathInput) {
+            trashPathInput.addEventListener('input', (e) => {
+                this.trash.path = e.target.value;
+            });
+        }
+        const trashRetentionInput = document.getElementById('trash-retention');
+        if (trashRetentionInput) {
+            trashRetentionInput.addEventListener('input', (e) => {
+                this.trash.retention_days = parseInt(e.target.value, 10) || 0;
+            });
+        }
+        const trashSaveBtn = document.getElementById('trash-save');
+        if (trashSaveBtn) {
+            trashSaveBtn.addEventListener('click', () => this.saveTrash());
+        }
 
         if (!this.config) return;
 

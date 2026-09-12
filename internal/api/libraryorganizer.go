@@ -9,7 +9,6 @@ import (
 	"github.com/duckpuppy/comic-server/internal/library"
 	"github.com/duckpuppy/comic-server/internal/libraryorganizer"
 	"github.com/duckpuppy/comic-server/internal/log"
-	"github.com/duckpuppy/comic-server/internal/trash"
 	"github.com/duckpuppy/comic-server/internal/workflow"
 )
 
@@ -113,17 +112,9 @@ func (s *Server) handleOrganizeApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.configMu.RLock()
-	cfg := s.config
-	s.configMu.RUnlock()
-	if cfg == nil || cfg.Server.TrashPath == "" {
-		http.Error(w, "server.trash_path is not configured", http.StatusServiceUnavailable)
-		return
-	}
-	tr, err := trash.New(cfg.Server.TrashPath, cfg.Server.TrashRetentionDays)
+	tr, err := s.newTrashFromConfig()
 	if err != nil {
-		log.Error().Err(err).Msg("Invalid trash configuration for library-organizer apply")
-		http.Error(w, "Invalid trash configuration", http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
 

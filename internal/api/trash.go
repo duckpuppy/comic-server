@@ -28,21 +28,6 @@ func toTrashEntryResponse(e trash.Entry) TrashEntryResponse {
 	}
 }
 
-// newTrashFromConfig builds a *trash.Trash from the server's current
-// config, same construction handleRunCBZConvert already uses - trash
-// config is kept live-reloadable via SIGHUP like the rest of the app, so
-// this is built fresh per request rather than cached on Server.
-func (s *Server) newTrashFromConfig() (*trash.Trash, error) {
-	s.configMu.RLock()
-	cfg := s.config
-	s.configMu.RUnlock()
-
-	if cfg == nil || cfg.Server.TrashPath == "" {
-		return nil, fmt.Errorf("trash is not configured (server.trash_path)")
-	}
-	return trash.New(cfg.Server.TrashPath, cfg.Server.TrashRetentionDays)
-}
-
 // handleListTrash returns every quarantined file, newest first.
 // GET /api/trash
 func (s *Server) handleListTrash(w http.ResponseWriter, r *http.Request) {

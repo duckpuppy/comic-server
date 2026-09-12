@@ -268,6 +268,48 @@ func runServer(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// One-time migration: copy Server.TrashPath/TrashRetentionDays still
+	// sitting in config.yaml into config.db (comic-server-4hsz - the first
+	// UI/API surface for this section). Keyed on TrashPath alone, not
+	// TrashRetentionDays too: Validate() already defaults TrashRetentionDays
+	// to 30 whenever it's 0 (long before this point), so it's never a
+	// reliable "was this actually configured" signal on its own the way
+	// scan_info's fields are.
+	//
+	// Unlike scan_info, this does NOT clear config.yaml's copy when CBZ
+	// Convert is enabled: Config.Validate's CBZConvert.Validate check reads
+	// server.trash_path from config.yaml directly (not config.db), so
+	// clearing it here would make the server refuse to start on the very
+	// next restart. Once CBZ Convert's own enabled flag gets a config.db
+	// home too, this can become a clean break like scan_info's; until then
+	// config.db is authoritative for anything reading through
+	// effectiveTrashConfig (the web UI, CBZ Convert's actual apply,
+	// Library Organizer, the background sweep below), while config.yaml's
+	// copy sticks around solely so Validate keeps working.
+	if cfg.Server.TrashPath != "" {
+		existing, err := configDB.GetTrashSettings()
+		if err != nil {
+			return fmt.Errorf("failed to check config database for existing trash settings: %w", err)
+		}
+		if existing == nil {
+			if err := configDB.UpsertTrashSettings(configdb.TrashSettings{
+				Path:          cfg.Server.TrashPath,
+				RetentionDays: cfg.Server.TrashRetentionDays,
+			}); err != nil {
+				return fmt.Errorf("failed to migrate trash settings to config database: %w", err)
+			}
+			log.Info().Msg("Migrated trash settings from config.yaml to config.db")
+
+			if !cfg.Server.CBZConvert.Enabled {
+				cfg.Server.TrashPath = ""
+				cfg.Server.TrashRetentionDays = 0
+				if err := config.Save(cfg, configPath); err != nil {
+					log.Error().Err(err).Msg("Failed to save config.yaml after migrating trash settings to config.db")
+				}
+			}
+		}
+	}
+
 	// Load library using appropriate backend
 	var backend library.Backend
 	if cfg.Server.DatabasePath != "" {
@@ -488,10 +530,20 @@ func runServer(cmd *cobra.Command, args []string) error {
 	// since internal/trash is generic infra (currently used by
 	// comic-server-43b's CBZ conversion, potentially others later). Purges
 	// quarantined files older than TrashRetentionDays; see comic-server-1up.
+	// Reads config.db first (comic-server-4hsz - a value saved through the
+	// Settings UI takes effect on next restart without needing config.yaml
+	// touched too), falling back to config.yaml for a database that's
+	// never had trash settings saved into it.
+	trashPath, trashRetentionDays := cfg.Server.TrashPath, cfg.Server.TrashRetentionDays
+	if stored, err := configDB.GetTrashSettings(); err != nil {
+		log.Error().Err(err).Msg("Failed to load trash settings from config database, falling back to config.yaml")
+	} else if stored != nil {
+		trashPath, trashRetentionDays = stored.Path, stored.RetentionDays
+	}
 	trashCtx, trashCancel := context.WithCancel(context.Background())
 	defer trashCancel()
-	if cfg.Server.TrashPath != "" {
-		tr, err := trash.New(cfg.Server.TrashPath, cfg.Server.TrashRetentionDays)
+	if trashPath != "" {
+		tr, err := trash.New(trashPath, trashRetentionDays)
 		if err != nil {
 			log.Error().Err(err).Msg("Invalid trash configuration, background sweep not started")
 		} else {

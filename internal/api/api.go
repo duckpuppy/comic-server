@@ -242,6 +242,7 @@ func (s *Server) registerRoutes() {
 	// Settings endpoints
 	s.mux.HandleFunc("/api/settings/scan-info", s.handleScanInfoConfig)
 	s.mux.HandleFunc("/api/settings/theme", s.handleThemeConfig)
+	s.mux.HandleFunc("/api/settings/trash", s.handleTrashSettings)
 
 	// WebSocket endpoint
 	s.mux.HandleFunc("/ws", s.handleWebSocket)
