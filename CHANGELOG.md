@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.30.0](https://github.com/duckpuppy/comic-server/compare/v1.29.0...v1.30.0) (2026-09-12)
+
+
+### Features
+
+* add native Library Organizer profile editor (comic-server-7ecr) ([486be79](https://github.com/duckpuppy/comic-server/commit/486be7906975990e25546d0d4091886c7066d95d))
+
 ## [1.29.0](https://github.com/duckpuppy/comic-server/compare/v1.28.0...v1.29.0) (2026-09-12)
 
 
