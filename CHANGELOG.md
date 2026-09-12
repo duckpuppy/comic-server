@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.29.0](https://github.com/duckpuppy/comic-server/compare/v1.28.0...v1.29.0) (2026-09-12)
+
+
+### Features
+
+* add Trash settings to the web UI (comic-server-4hsz) ([33f814a](https://github.com/duckpuppy/comic-server/commit/33f814a665c7ed09898a039dd698b23bde52b093))
+
+
+### Bug Fixes
+
+* deploy workflow only fires on the tag-triggered Docker build (comic-server-w9l1) ([7ca753e](https://github.com/duckpuppy/comic-server/commit/7ca753ead2aacafa1931f6231923eb039a1975d5))
+
 ## [1.28.0](https://github.com/duckpuppy/comic-server/compare/v1.27.1...v1.28.0) (2026-09-12)
 
 
