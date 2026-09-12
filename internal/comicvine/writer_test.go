@@ -378,7 +378,7 @@ func TestApplyMetadata_NoteScrapeDate(t *testing.T) {
 
 func TestWriteMetadata_PersistsOnChange(t *testing.T) {
 	backend := &fakeBackend{}
-	book := &library.ComicBook{ID: "book-1"}
+	book := &library.ComicBook{ID: "book-1", FilePath: "/comics/book-1.cbz"}
 	// Explicit stage matching the real production scenario: a backfilled
 	// book sitting at StageScrape, about to actually get scraped -
 	// comic-server-1iv.2.

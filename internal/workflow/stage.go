@@ -122,24 +122,27 @@ const customValueKey = "comic_server_workflow_stage"
 // hasn't been through the one-time backfill yet - see InferStage).
 //
 // A fileless book (FilePath == "" - e.g. a ComicRack "wanted" placeholder
-// for an issue not yet owned) is never reported as StageToMove, even if
-// that value is what's actually stored: there is no file to move, so
-// showing it in the To Move list (and letting Library Organizer's real
-// apply pick it up) would be acting on a book with nothing to act on. This
-// is enforced here, at read time, rather than only where the stage gets
-// set, so it also self-heals any book that was mis-staged before this
-// invariant existed - no separate backfill/migration needed (a real user
-// report, comic-server-1v0).
+// for an issue not yet owned) never reports a real stage, no matter what's
+// actually stored: comic-server's workflow pipeline exists to process
+// actual comic files (convert, scrape, scan, move) - a book with nothing
+// attached has nothing for any of those stages to do, so it's excluded
+// from the pipeline entirely rather than parked at whichever stage it
+// happens to land on (StageUnknown is never counted/shown anywhere,
+// exactly like a book that's never been staged at all). This is enforced
+// here, at read time, so it also self-heals any book that was mis-staged
+// before this invariant existed - no separate backfill/migration needed.
+// An earlier version of this fix only special-cased StageToMove
+// (comic-server-of7), which just meant a fileless book surfaced in Data
+// Manager instead - a real follow-up user report, comic-server-24kr.
 func GetStage(book *library.ComicBook) Stage {
+	if book.FilePath == "" {
+		return StageUnknown
+	}
 	v, ok := library.GetCustomValue(book.CustomValuesStore, customValueKey)
 	if !ok {
 		return StageUnknown
 	}
-	stage := parseStage(v)
-	if stage == StageToMove && book.FilePath == "" {
-		return StageDataManager
-	}
-	return stage
+	return parseStage(v)
 }
 
 // SetStage writes stage onto book explicitly.
@@ -165,6 +168,16 @@ func SetStage(book *library.ComicBook, stage Stage) {
 // when they're re-run - so "would anything change" is the accurate signal
 // the marker approach was trying (and failing) to approximate.
 func InferStage(book *library.ComicBook, rulesets []datamanager.Ruleset) Stage {
+	if book.FilePath == "" {
+		// A fileless book (e.g. a ComicRack "wanted" placeholder for an
+		// issue not yet owned) has nothing for any stage of this pipeline
+		// to act on - excluded outright, matching GetStage's own
+		// unconditional read-time guard (see its doc comment,
+		// comic-server-24kr). Checked first so it also short-circuits
+		// AdvanceIfAtOrBefore's just-in-time fallback consistently, not
+		// just the one-time backfill.
+		return StageUnknown
+	}
 	if needsConvertToCBZ(book.FilePath) {
 		return StageConvertToCBZ
 	}
@@ -175,13 +188,6 @@ func InferStage(book *library.ComicBook, rulesets []datamanager.Ruleset) Stage {
 		return StageScanInfo
 	}
 	if dataManagerWouldChange(book, rulesets) {
-		return StageDataManager
-	}
-	if book.FilePath == "" {
-		// A fileless book (e.g. a ComicRack "wanted" placeholder for an
-		// issue not yet owned) has no file to move - cap it here rather
-		// than inferring StageToMove for a book with nothing to move. See
-		// GetStage's own doc comment for the matching read-time guard.
 		return StageDataManager
 	}
 	return StageToMove
@@ -243,7 +249,19 @@ func extOf(path string) string {
 // StageDataManager running through the Scrape action again does not
 // regress it to StageScrape. Returns whether the stage actually changed,
 // so a caller can decide whether the book needs to be persisted.
+//
+// A fileless book (FilePath == "") is never advanced, full stop - a
+// whole-library action like Data Manager's apply can touch one directly
+// (it matches on metadata, not on having a file) without it ever having
+// been selected via booksAtStage for a specific pipeline stage. Guarded
+// here too, not just in GetStage/InferStage, so such a book never has a
+// real stage value written into storage even though it would never be
+// displayed anyway (comic-server-24kr) - belt and suspenders, since this
+// exact class of bug has already resurfaced once (comic-server-of7).
 func AdvanceIfAtOrBefore(book *library.ComicBook, completed Stage, rulesets []datamanager.Ruleset) bool {
+	if book.FilePath == "" {
+		return false
+	}
 	current := GetStage(book)
 	if current == StageUnknown {
 		current = InferStage(book, rulesets)

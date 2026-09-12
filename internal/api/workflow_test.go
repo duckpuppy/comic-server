@@ -18,9 +18,9 @@ func newWorkflowTestServer(t *testing.T, books []library.ComicBook) *Server {
 }
 
 func TestHandleGetWorkflowSummary_CountsPerStageAndCVDBSkip(t *testing.T) {
-	book1 := library.ComicBook{ID: "1"}
+	book1 := library.ComicBook{ID: "1", FilePath: "/comics/book1.cbr"}
 	workflow.SetStage(&book1, workflow.StageConvertToCBZ)
-	book2 := library.ComicBook{ID: "2"}
+	book2 := library.ComicBook{ID: "2", FilePath: "/comics/book2.cbr"}
 	workflow.SetStage(&book2, workflow.StageConvertToCBZ)
 	book3 := library.ComicBook{ID: "3", FilePath: "/comics/book3.cbz"}
 	workflow.SetStage(&book3, workflow.StageToMove)
@@ -68,10 +68,10 @@ func TestHandleGetWorkflowSummary_CountsPerStageAndCVDBSkip(t *testing.T) {
 func TestHandleGetWorkflowStageBooks_ReturnsOnlyThatStagePaginated(t *testing.T) {
 	books := make([]library.ComicBook, 5)
 	for i := range books {
-		books[i] = library.ComicBook{ID: string(rune('1' + i)), Series: "Batman"}
+		books[i] = library.ComicBook{ID: string(rune('1' + i)), Series: "Batman", FilePath: "/comics/batman.cbz"}
 		workflow.SetStage(&books[i], workflow.StageScrape)
 	}
-	other := library.ComicBook{ID: "other"}
+	other := library.ComicBook{ID: "other", FilePath: "/comics/other.cbz"}
 	workflow.SetStage(&other, workflow.StageToMove)
 	books = append(books, other)
 

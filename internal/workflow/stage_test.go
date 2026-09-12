@@ -8,7 +8,7 @@ import (
 )
 
 func TestGetSetStage_RoundTrip(t *testing.T) {
-	book := &library.ComicBook{}
+	book := &library.ComicBook{FilePath: "/comics/book.cbz"}
 	if got := GetStage(book); got != StageUnknown {
 		t.Fatalf("GetStage on a fresh book = %v, want StageUnknown", got)
 	}
@@ -25,22 +25,23 @@ func TestGetSetStage_RoundTrip(t *testing.T) {
 	}
 }
 
-// TestGetStage_FilelessBookNeverReportsToMove is the regression test for a
-// real user report (comic-server-of7, screenshot): a book with no
-// FilePath (e.g. a ComicRack "wanted" placeholder for an issue not yet
-// owned) showed up in the To Move drill-in with a blank Current Path -
-// there's nothing to move. GetStage must down-report StageToMove to
-// StageDataManager for such a book even if that's what's literally stored,
-// so a book mis-staged before this invariant existed self-heals without a
-// separate backfill.
-func TestGetStage_FilelessBookNeverReportsToMove(t *testing.T) {
-	book := &library.ComicBook{FilePath: ""}
-	SetStage(book, StageToMove)
-	if got := GetStage(book); got != StageDataManager {
-		t.Errorf("GetStage on a fileless book explicitly staged ToMove = %v, want StageDataManager", got)
+// TestGetStage_FilelessBookNeverReportsAnyStage is the regression test
+// for comic-server-24kr: a book with no FilePath (e.g. a ComicRack
+// "wanted" placeholder for an issue not yet owned) must never report a
+// real stage, no matter what's stored - an earlier fix (comic-server-of7)
+// only special-cased StageToMove, which just meant such a book surfaced
+// in Data Manager instead of disappearing from the pipeline entirely, per
+// a real user report.
+func TestGetStage_FilelessBookNeverReportsAnyStage(t *testing.T) {
+	for _, stage := range []Stage{StageConvertToCBZ, StageScrape, StageScanInfo, StageDataManager, StageToMove, StageOrganized} {
+		book := &library.ComicBook{FilePath: ""}
+		SetStage(book, stage)
+		if got := GetStage(book); got != StageUnknown {
+			t.Errorf("GetStage on a fileless book explicitly staged %v = %v, want StageUnknown", stage, got)
+		}
 	}
 
-	// A book WITH a file must still report StageToMove normally - this
+	// A book WITH a file must still report its real stage normally - this
 	// invariant is scoped to fileless books only.
 	withFile := &library.ComicBook{FilePath: "/comics/book.cbz"}
 	SetStage(withFile, StageToMove)
@@ -124,14 +125,14 @@ func TestInferStage_RealWorldConditions(t *testing.T) {
 			want:     StageToMove,
 		},
 		{
-			name: "fileless placeholder book - nothing to move, caps at data manager",
+			name: "fileless placeholder book - excluded from the pipeline entirely",
 			book: &library.ComicBook{
 				FilePath:          "",
 				CustomValuesStore: ",comicvine_volume=1234",
 				ScanInformation:   "Scanner:Zeta-Fictscans",
 			},
 			rulesets: nil,
-			want:     StageDataManager,
+			want:     StageUnknown,
 		},
 		{
 			name: ".zip counts as already-converted, same as .cbz",
@@ -203,8 +204,24 @@ func TestAdvanceIfAtOrBefore_MovesForwardOnly(t *testing.T) {
 	}
 }
 
+// TestAdvanceIfAtOrBefore_FilelessBookNeverAdvances covers the scenario
+// that made comic-server-24kr worth a belt-and-suspenders fix beyond just
+// GetStage: a whole-library action like Data Manager's apply can touch a
+// fileless book directly (it matches by metadata, not by having a file),
+// calling AdvanceIfAtOrBefore on it without that book ever having gone
+// through booksAtStage for a specific pipeline stage.
+func TestAdvanceIfAtOrBefore_FilelessBookNeverAdvances(t *testing.T) {
+	book := &library.ComicBook{FilePath: "", CustomValuesStore: ",comicvine_volume=1234"}
+	if AdvanceIfAtOrBefore(book, StageDataManager, nil) {
+		t.Error("expected no change - a fileless book must never advance")
+	}
+	if got := GetStage(book); got != StageUnknown {
+		t.Errorf("GetStage after AdvanceIfAtOrBefore on a fileless book = %v, want StageUnknown", got)
+	}
+}
+
 func TestAdvanceIfAtOrBefore_ToMoveAdvancesToOrganized(t *testing.T) {
-	book := &library.ComicBook{}
+	book := &library.ComicBook{FilePath: "/comics/book.cbz"}
 	SetStage(book, StageToMove)
 	if !AdvanceIfAtOrBefore(book, StageToMove, nil) {
 		t.Error("expected ToMove to advance now that comic-server-3bz.5 exists to complete it")
@@ -215,7 +232,7 @@ func TestAdvanceIfAtOrBefore_ToMoveAdvancesToOrganized(t *testing.T) {
 }
 
 func TestAdvanceIfAtOrBefore_TerminalStageStaysPut(t *testing.T) {
-	book := &library.ComicBook{}
+	book := &library.ComicBook{FilePath: "/comics/book.cbz"}
 	SetStage(book, StageOrganized)
 	if AdvanceIfAtOrBefore(book, StageOrganized, nil) {
 		t.Error("expected no change - StageOrganized is the true terminal stage")
@@ -248,7 +265,7 @@ func TestRegressToStageIfPast_AlreadyAtTargetIsNoOp(t *testing.T) {
 }
 
 func TestRegressToStageIfPast_BeforeTargetIsUntouched(t *testing.T) {
-	book := &library.ComicBook{}
+	book := &library.ComicBook{FilePath: "/comics/book.cbz"}
 	SetStage(book, StageScanInfo)
 	if RegressToStageIfPast(book, StageToMove) {
 		t.Error("expected no change - StageScanInfo is before StageToMove, never advanced by this")

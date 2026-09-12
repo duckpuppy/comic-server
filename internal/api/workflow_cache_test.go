@@ -17,7 +17,7 @@ import (
 // handler, the same way an external process or a future code path might)
 // is invisible to a second read until InvalidateWorkflowCache is called.
 func TestGetOrBuildWorkflowCache_ReusesSnapshotUntilInvalidated(t *testing.T) {
-	book := library.ComicBook{ID: "1"}
+	book := library.ComicBook{ID: "1", FilePath: "/comics/book1.cbz"}
 	workflow.SetStage(&book, workflow.StageScrape)
 	s := newWorkflowTestServer(t, []library.ComicBook{book})
 
