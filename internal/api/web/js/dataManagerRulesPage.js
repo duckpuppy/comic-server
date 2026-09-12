@@ -1,26 +1,34 @@
-// Data Manager Rule Editor (comic-server-tj6o) - first slice: create,
-// edit, and delete rulesets (each a Field/Modifier/Value condition list
-// plus a Field/Modifier/Value action list) entirely through the web UI,
-// with no dataman.dat import required. Nested group folders and drag
-// reordering are deliberately NOT part of this slice - every ruleset
-// created here is top-level (see comic-server-vkpq for that follow-up).
+// Data Manager Rule Editor (comic-server-tj6o, folders comic-server-vkpq) -
+// create, edit, and delete rulesets (each a Field/Modifier/Value condition
+// list plus a Field/Modifier/Value action list) and organize them into
+// nested group folders, entirely through the web UI, with no dataman.dat
+// import required. Drag reordering and import-merge semantics are
+// deliberately NOT part of this slice - see comic-server-vkpq for those.
 //
-// Rulesets created/edited here are read by the exact same
+// Rulesets/groups created or moved here are read by the exact same
 // datamanager.LoadRulesets path the whole-library Data Manager page's
 // Preview/Apply already use, so a rule added here takes effect on the
 // very next preview/apply with no separate "publish" step.
+//
+// Structural changes (create/delete/move/rename a folder or ruleset)
+// reload the whole tree from the server rather than mutating it locally -
+// a Data Manager rule set is small (nothing like a 66K-book library), so
+// the simplicity is worth the extra round trip. Only in-place row edits
+// (condition/action field/modifier/value) mutate local state directly, to
+// keep keystroke-level editing snappy.
 class DataManagerRulesPage {
     constructor() {
         this.schema = null;
-        this.rulesets = [];
-        this.expandedId = null; // which ruleset's rule/action lists are shown
+        this.tree = [];
+        this.expandedFolders = new Set();
+        this.expandedRulesetId = null;
         this.loading = true;
         this.error = null;
     }
 
     async init(ctx) {
         this.render();
-        await Promise.all([this.loadSchema(), this.loadRulesets()]);
+        await Promise.all([this.loadSchema(), this.loadTree()]);
         if (ctx && ctx.aborted) return;
         this.loading = false;
         this.render();
@@ -37,17 +45,22 @@ class DataManagerRulesPage {
         }
     }
 
-    async loadRulesets() {
+    async loadTree() {
         try {
-            const response = await fetch('/api/datamanager/rulesets');
+            const response = await fetch('/api/datamanager/tree');
             const text = await response.text();
-            if (!response.ok) throw new Error(friendlyErrorText(response, text, 'Failed to load rulesets'));
+            if (!response.ok) throw new Error(friendlyErrorText(response, text, 'Failed to load rules'));
             const data = JSON.parse(text);
-            this.rulesets = data.rulesets || [];
+            this.tree = data.tree || [];
         } catch (error) {
-            console.error('Failed to load rulesets:', error);
+            console.error('Failed to load Data Manager tree:', error);
             this.error = `Failed: ${error.message}`;
         }
+    }
+
+    async refreshTree() {
+        await this.loadTree();
+        this.renderAndReattach();
     }
 
     fieldInfo(name) {
@@ -71,11 +84,12 @@ class DataManagerRulesPage {
             <div class="datamanager-page">
                 <div class="datamanager-page-header">
                     <h1>Data Manager Rules</h1>
-                    <p class="empty-message">Create and edit the rulesets Data Manager's Preview/Apply run against the whole library. Each ruleset is a list of conditions (AND/OR) plus a list of actions applied when they match.</p>
+                    <p class="empty-message">Create and organize the rulesets Data Manager's Preview/Apply run against the whole library. Each ruleset is a list of conditions (AND/OR) plus a list of actions applied when they match.</p>
                 </div>
                 <div class="panel">
                     <div class="datamanager-actions">
-                        <button class="btn btn-primary" id="dmr-new-ruleset-btn">+ New Ruleset</button>
+                        <button class="btn btn-primary" id="dmr-new-ruleset-btn" data-parent="">+ New Ruleset</button>
+                        <button class="btn btn-secondary" id="dmr-new-folder-btn" data-parent="">+ New Folder</button>
                     </div>
                     ${this.loading ? '<p class="empty-message">Loading…</p>' : this.renderBody()}
                 </div>
@@ -87,19 +101,45 @@ class DataManagerRulesPage {
         if (this.error) {
             return `<p class="datamanager-errors">${this.escapeHtml(this.error)}</p>`;
         }
-        if (this.rulesets.length === 0) {
+        if (this.tree.length === 0) {
             return '<p class="empty-message">No rulesets yet. Click "New Ruleset" to create one, or import from a ComicRack dataman.dat file via the CLI.</p>';
         }
-        return `<ul class="dmr-ruleset-list">${this.rulesets.map(rs => this.renderRuleset(rs)).join('')}</ul>`;
+        return `<ul class="dmr-tree">${this.tree.map(n => this.renderNode(n, 0)).join('')}</ul>`;
     }
 
-    renderRuleset(rs) {
-        const expanded = this.expandedId === rs.id;
+    renderNode(node, level) {
+        return node.is_folder ? this.renderFolderNode(node, level) : this.renderRulesetNode(node, level);
+    }
+
+    renderFolderNode(node, level) {
+        const expanded = this.expandedFolders.has(node.id);
+        const style = `style="margin-left: ${level * 24}px"`;
         return `
-            <li class="dmr-ruleset-row${rs.disabled ? ' dmr-disabled' : ''}" data-id="${this.escapeAttr(rs.id)}">
-                <div class="dmr-ruleset-header">
-                    <button class="btn btn-small dmr-toggle-btn" data-id="${this.escapeAttr(rs.id)}">${expanded ? '▾' : '▸'}</button>
-                    <span class="dmr-ruleset-name">${this.escapeHtml(rs.name)}</span>
+            <li class="dmr-tree-node dmr-folder-node${node.disabled ? ' dmr-disabled' : ''}" ${style} data-id="${this.escapeAttr(node.id)}">
+                <div class="dmr-node-row">
+                    <button class="btn btn-small dmr-toggle-folder-btn" data-id="${this.escapeAttr(node.id)}">${expanded ? '▾' : '▸'}</button>
+                    <span class="dmr-folder-icon">${expanded ? '📂' : '📁'}</span>
+                    <span class="dmr-node-name">${this.escapeHtml(node.name)}</span>
+                    <button class="btn btn-small dmr-new-ruleset-here-btn" data-parent="${this.escapeAttr(node.id)}" title="New ruleset in this folder">+ Ruleset</button>
+                    <button class="btn btn-small dmr-new-folder-here-btn" data-parent="${this.escapeAttr(node.id)}" title="New subfolder">+ Folder</button>
+                    <button class="btn btn-small dmr-rename-folder-btn" data-id="${this.escapeAttr(node.id)}">Rename</button>
+                    <button class="btn btn-small dmr-move-folder-btn" data-id="${this.escapeAttr(node.id)}" data-name="${this.escapeAttr(node.name)}">Move</button>
+                    <button class="btn btn-small btn-danger dmr-delete-folder-btn" data-id="${this.escapeAttr(node.id)}" data-name="${this.escapeAttr(node.name)}">Delete</button>
+                </div>
+                ${expanded && node.children && node.children.length ? `<ul class="dmr-tree">${node.children.map(c => this.renderNode(c, level + 1)).join('')}</ul>` : ''}
+            </li>
+        `;
+    }
+
+    renderRulesetNode(node, level) {
+        const rs = node.ruleset;
+        const expanded = this.expandedRulesetId === rs.id;
+        const style = `style="margin-left: ${level * 24}px"`;
+        return `
+            <li class="dmr-tree-node dmr-ruleset-node${rs.disabled ? ' dmr-disabled' : ''}" ${style} data-id="${this.escapeAttr(rs.id)}">
+                <div class="dmr-node-row">
+                    <button class="btn btn-small dmr-toggle-ruleset-btn" data-id="${this.escapeAttr(rs.id)}">${expanded ? '▾' : '▸'}</button>
+                    <span class="dmr-node-name">${this.escapeHtml(rs.name)}</span>
                     <span class="dmr-ruleset-summary">${rs.rules.length} condition${rs.rules.length === 1 ? '' : 's'} (${rs.mode}), ${rs.actions.length} action${rs.actions.length === 1 ? '' : 's'}</span>
                     <label class="dmr-disabled-toggle">
                         <input type="checkbox" class="dmr-ruleset-disabled-check" data-id="${this.escapeAttr(rs.id)}" ${rs.disabled ? 'checked' : ''}> Disabled
@@ -109,6 +149,7 @@ class DataManagerRulesPage {
                         <option value="And" ${rs.mode === 'And' ? 'selected' : ''}>Match ALL (AND)</option>
                         <option value="Or" ${rs.mode === 'Or' ? 'selected' : ''}>Match ANY (OR)</option>
                     </select>
+                    <button class="btn btn-small dmr-move-ruleset-btn" data-id="${this.escapeAttr(rs.id)}" data-name="${this.escapeAttr(rs.name)}">Move</button>
                     <button class="btn btn-small btn-danger dmr-delete-ruleset-btn" data-id="${this.escapeAttr(rs.id)}">Delete</button>
                 </div>
                 ${expanded ? this.renderRulesetDetail(rs) : ''}
@@ -229,29 +270,50 @@ class DataManagerRulesPage {
     }
 
     attachListeners() {
-        const newBtn = document.getElementById('dmr-new-ruleset-btn');
-        if (newBtn) newBtn.addEventListener('click', () => this.createRuleset());
+        document.querySelectorAll('#dmr-new-ruleset-btn, .dmr-new-ruleset-here-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.createRuleset(btn.dataset.parent));
+        });
+        document.querySelectorAll('#dmr-new-folder-btn, .dmr-new-folder-here-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.createFolder(btn.dataset.parent));
+        });
 
-        document.querySelectorAll('.dmr-toggle-btn').forEach(btn => {
+        document.querySelectorAll('.dmr-toggle-folder-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 const id = btn.dataset.id;
-                this.expandedId = this.expandedId === id ? null : id;
+                if (this.expandedFolders.has(id)) this.expandedFolders.delete(id);
+                else this.expandedFolders.add(id);
                 this.renderAndReattach();
             });
         });
+        document.querySelectorAll('.dmr-rename-folder-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.renameFolder(btn.dataset.id));
+        });
+        document.querySelectorAll('.dmr-move-folder-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.moveNode('groups', btn.dataset.id, btn.dataset.name));
+        });
+        document.querySelectorAll('.dmr-delete-folder-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.deleteFolder(btn.dataset.id, btn.dataset.name));
+        });
 
+        document.querySelectorAll('.dmr-toggle-ruleset-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const id = btn.dataset.id;
+                this.expandedRulesetId = this.expandedRulesetId === id ? null : id;
+                this.renderAndReattach();
+            });
+        });
         document.querySelectorAll('.dmr-rename-btn').forEach(btn => {
             btn.addEventListener('click', () => this.renameRuleset(btn.dataset.id));
         });
-
         document.querySelectorAll('.dmr-mode-select').forEach(el => {
             el.addEventListener('change', () => this.updateRulesetMeta(el.dataset.id, { mode: el.value }));
         });
-
         document.querySelectorAll('.dmr-ruleset-disabled-check').forEach(el => {
             el.addEventListener('change', () => this.updateRulesetMeta(el.dataset.id, { disabled: el.checked }));
         });
-
+        document.querySelectorAll('.dmr-move-ruleset-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.moveNode('rulesets', btn.dataset.id, btn.dataset.name));
+        });
         document.querySelectorAll('.dmr-delete-ruleset-btn').forEach(btn => {
             btn.addEventListener('click', () => this.deleteRuleset(btn.dataset.id));
         });
@@ -290,33 +352,134 @@ class DataManagerRulesPage {
         modSelect.innerHTML = this.modifierOptions(modifiers, modifiers[0] && modifiers[0].value);
     }
 
-    findRuleset(id) {
-        return this.rulesets.find(rs => rs.id === id);
+    // findRulesetNode searches the whole tree (any depth) for the ruleset
+    // node with this id - row-level edits mutate the returned object's
+    // .ruleset in place rather than re-fetching the whole tree.
+    findRulesetNode(id, nodes) {
+        for (const node of (nodes || this.tree)) {
+            if (!node.is_folder && node.id === id) return node.ruleset;
+            if (node.is_folder) {
+                const found = this.findRulesetNode(id, node.children || []);
+                if (found) return found;
+            }
+        }
+        return null;
     }
 
-    async createRuleset() {
+    // flattenFolders returns every folder node in the tree as the flat
+    // {id, name, is_folder, children} shape dialogs.pickFolder expects -
+    // the tree already IS that shape, so this is just a type filter, kept
+    // for readability at call sites.
+    async createRuleset(parentId) {
         const name = await dialogs.prompt({ title: 'New Ruleset', placeholder: 'e.g. Batman Family' });
         if (!name) return;
         try {
             const response = await fetch('/api/datamanager/rulesets', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, mode: 'And' }),
+                body: JSON.stringify({ name, mode: 'And', group_id: parentId || '' }),
             });
             const text = await response.text();
             if (!response.ok) throw new Error(friendlyErrorText(response, text, 'Failed to create ruleset'));
             const created = JSON.parse(text);
-            this.rulesets.push(created);
-            this.expandedId = created.id;
-            this.renderAndReattach();
+            if (parentId) this.expandedFolders.add(parentId);
+            this.expandedRulesetId = created.id;
+            await this.refreshTree();
         } catch (error) {
             console.error('Failed to create ruleset:', error);
             dialogs.toast('Failed to create ruleset: ' + error.message, 'error');
         }
     }
 
+    async createFolder(parentId) {
+        const name = await dialogs.prompt({ title: 'New Folder', placeholder: 'e.g. Quality' });
+        if (!name) return;
+        try {
+            const response = await fetch('/api/datamanager/groups', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, parent_id: parentId || '' }),
+            });
+            const text = await response.text();
+            if (!response.ok) throw new Error(friendlyErrorText(response, text, 'Failed to create folder'));
+            const created = JSON.parse(text);
+            if (parentId) this.expandedFolders.add(parentId);
+            this.expandedFolders.add(created.id);
+            await this.refreshTree();
+        } catch (error) {
+            console.error('Failed to create folder:', error);
+            dialogs.toast('Failed to create folder: ' + error.message, 'error');
+        }
+    }
+
+    async renameFolder(id) {
+        const name = await dialogs.prompt({ title: 'Rename Folder' });
+        if (!name) return;
+        try {
+            const response = await fetch(`/api/datamanager/groups/${encodeURIComponent(id)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, disabled: false }),
+            });
+            const text = await response.text();
+            if (!response.ok) throw new Error(friendlyErrorText(response, text, 'Failed to rename folder'));
+            await this.refreshTree();
+        } catch (error) {
+            console.error('Failed to rename folder:', error);
+            dialogs.toast('Failed to rename folder: ' + error.message, 'error');
+        }
+    }
+
+    async deleteFolder(id, name) {
+        const ok = await dialogs.confirm({
+            title: 'Delete Folder',
+            message: `Delete "${name}" and everything inside it (subfolders and rulesets)? This cannot be undone.`,
+            confirmLabel: 'Delete',
+            danger: true,
+        });
+        if (!ok) return;
+        try {
+            const response = await fetch(`/api/datamanager/groups/${encodeURIComponent(id)}`, { method: 'DELETE' });
+            if (!response.ok && response.status !== 204) {
+                const text = await response.text();
+                throw new Error(friendlyErrorText(response, text, 'Failed to delete folder'));
+            }
+            await this.refreshTree();
+        } catch (error) {
+            console.error('Failed to delete folder:', error);
+            dialogs.toast('Failed to delete folder: ' + error.message, 'error');
+        }
+    }
+
+    // moveNode drives dialogs.pickFolder for both a group and a ruleset -
+    // kind is 'groups' or 'rulesets', both of which the API exposes an
+    // identical PUT .../:id/parent {parent_id} endpoint for.
+    async moveNode(kind, id, name) {
+        const picked = await dialogs.pickFolder({
+            title: `Move "${name}" to...`,
+            tree: this.tree,
+            excludeId: kind === 'groups' ? id : null,
+        });
+        if (!picked) return;
+        try {
+            const response = await fetch(`/api/datamanager/${kind}/${encodeURIComponent(id)}/parent`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ parent_id: picked.id }),
+            });
+            if (!response.ok && response.status !== 204) {
+                const text = await response.text();
+                throw new Error(friendlyErrorText(response, text, 'Failed to move'));
+            }
+            await this.refreshTree();
+        } catch (error) {
+            console.error('Failed to move:', error);
+            dialogs.toast('Failed to move: ' + error.message, 'error');
+        }
+    }
+
     async renameRuleset(id) {
-        const rs = this.findRuleset(id);
+        const rs = this.findRulesetNode(id);
         if (!rs) return;
         const name = await dialogs.prompt({ title: 'Rename Ruleset', defaultValue: rs.name });
         if (!name) return;
@@ -324,7 +487,7 @@ class DataManagerRulesPage {
     }
 
     async updateRulesetMeta(id, patch) {
-        const rs = this.findRuleset(id);
+        const rs = this.findRulesetNode(id);
         if (!rs) return;
         const body = { name: rs.name, mode: rs.mode, disabled: rs.disabled, ...patch };
         try {
@@ -340,13 +503,12 @@ class DataManagerRulesPage {
         } catch (error) {
             console.error('Failed to update ruleset:', error);
             dialogs.toast('Failed to update ruleset: ' + error.message, 'error');
-            await this.loadRulesets();
-            this.renderAndReattach();
+            await this.refreshTree();
         }
     }
 
     async deleteRuleset(id) {
-        const rs = this.findRuleset(id);
+        const rs = this.findRulesetNode(id);
         const ok = await dialogs.confirm({
             title: 'Delete Ruleset',
             message: `Delete "${rs ? rs.name : id}" and all its conditions/actions? This cannot be undone.`,
@@ -360,9 +522,8 @@ class DataManagerRulesPage {
                 const text = await response.text();
                 throw new Error(friendlyErrorText(response, text, 'Failed to delete ruleset'));
             }
-            this.rulesets = this.rulesets.filter(r => r.id !== id);
-            if (this.expandedId === id) this.expandedId = null;
-            this.renderAndReattach();
+            if (this.expandedRulesetId === id) this.expandedRulesetId = null;
+            await this.refreshTree();
         } catch (error) {
             console.error('Failed to delete ruleset:', error);
             dialogs.toast('Failed to delete ruleset: ' + error.message, 'error');
@@ -374,7 +535,7 @@ class DataManagerRulesPage {
     // action rows identically (field/modifier/value/sort_order), so one
     // method serves both kinds.
     async updateRow(kind, rulesetId, idStr, patch) {
-        const rs = this.findRuleset(rulesetId);
+        const rs = this.findRulesetNode(rulesetId);
         if (!rs) return;
         const list = kind === 'action' ? rs.actions : rs.rules;
         const row = list.find(r => String(r.id) === String(idStr));
@@ -422,15 +583,7 @@ class DataManagerRulesPage {
                 const text = await response.text();
                 throw new Error(friendlyErrorText(response, text, 'Failed to delete'));
             }
-            for (const rs of this.rulesets) {
-                const list = kind === 'action' ? rs.actions : rs.rules;
-                const idx = list.findIndex(r => String(r.id) === String(idStr));
-                if (idx !== -1) {
-                    list.splice(idx, 1);
-                    break;
-                }
-            }
-            this.renderAndReattach();
+            await this.refreshTree();
         } catch (error) {
             console.error('Failed to delete row:', error);
             dialogs.toast('Failed to delete: ' + error.message, 'error');
@@ -453,7 +606,7 @@ class DataManagerRulesPage {
             const text = await response.text();
             if (!response.ok) throw new Error(friendlyErrorText(response, text, 'Failed to add'));
             const created = JSON.parse(text);
-            const rs = this.findRuleset(rulesetId);
+            const rs = this.findRulesetNode(rulesetId);
             if (rs) {
                 if (kind === 'action') rs.actions.push(created);
                 else rs.rules.push(created);

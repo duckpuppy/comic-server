@@ -207,6 +207,125 @@ func TestHandleDMRulesetsCollection_CreateRejectsEmptyName(t *testing.T) {
 	}
 }
 
+// TestDataManagerGroups_TreeLifecycle exercises the nested-group-folders
+// piece of comic-server-vkpq: create a folder, create a subfolder and a
+// ruleset inside it, fetch the tree and confirm the shape, move the
+// ruleset back to root, rename and delete the folder.
+func TestDataManagerGroups_TreeLifecycle(t *testing.T) {
+	s := newDMRulesTestServer(t)
+
+	// Create a top-level folder.
+	createBody, _ := json.Marshal(map[string]string{"name": "Quality"})
+	req := httptest.NewRequest(http.MethodPost, "/api/datamanager/groups", bytes.NewReader(createBody))
+	w := httptest.NewRecorder()
+	s.handleDataManagerRulesRouter(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create group: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var group DMTreeNode
+	if err := json.NewDecoder(w.Body).Decode(&group); err != nil {
+		t.Fatalf("decode group: %v", err)
+	}
+	if group.ID == "" || !group.IsFolder {
+		t.Fatalf("created group = %+v, want ID set and IsFolder=true", group)
+	}
+
+	// Create a ruleset inside that folder.
+	rsBody, _ := json.Marshal(DMRulesetWire{Name: "In Folder", Mode: "And", GroupID: group.ID})
+	req = httptest.NewRequest(http.MethodPost, "/api/datamanager/rulesets", bytes.NewReader(rsBody))
+	w = httptest.NewRecorder()
+	s.handleDataManagerRulesRouter(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create ruleset in folder: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var rs DMRulesetWire
+	if err := json.NewDecoder(w.Body).Decode(&rs); err != nil {
+		t.Fatalf("decode ruleset: %v", err)
+	}
+	if rs.GroupID != group.ID {
+		t.Fatalf("created ruleset GroupID = %q, want %q", rs.GroupID, group.ID)
+	}
+
+	// Fetch the tree - should have one top-level folder containing one ruleset.
+	req = httptest.NewRequest(http.MethodGet, "/api/datamanager/tree", nil)
+	w = httptest.NewRecorder()
+	s.handleDataManagerRulesRouter(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("get tree: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var treeResp struct {
+		Tree []DMTreeNode `json:"tree"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&treeResp); err != nil {
+		t.Fatalf("decode tree: %v", err)
+	}
+	if len(treeResp.Tree) != 1 || !treeResp.Tree[0].IsFolder || treeResp.Tree[0].ID != group.ID {
+		t.Fatalf("tree = %+v, want one folder node %q", treeResp.Tree, group.ID)
+	}
+	if len(treeResp.Tree[0].Children) != 1 || treeResp.Tree[0].Children[0].IsFolder || treeResp.Tree[0].Children[0].ID != rs.ID {
+		t.Fatalf("folder children = %+v, want one ruleset node %q", treeResp.Tree[0].Children, rs.ID)
+	}
+	if treeResp.Tree[0].Children[0].Ruleset == nil || treeResp.Tree[0].Children[0].Ruleset.Name != "In Folder" {
+		t.Fatalf("ruleset node's inlined Ruleset = %+v, want Name=In Folder", treeResp.Tree[0].Children[0].Ruleset)
+	}
+
+	// Move the ruleset back to root.
+	moveBody, _ := json.Marshal(map[string]string{"parent_id": ""})
+	req = httptest.NewRequest(http.MethodPut, "/api/datamanager/rulesets/"+rs.ID+"/parent", bytes.NewReader(moveBody))
+	w = httptest.NewRecorder()
+	s.handleDataManagerRulesRouter(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("move ruleset to root: expected 204, got %d: %s", w.Code, w.Body.String())
+	}
+	moved, err := s.configDB.GetDMRuleset(rs.ID)
+	if err != nil || moved == nil || moved.GroupID != "" {
+		t.Fatalf("GetDMRuleset after move = %+v err=%v, want GroupID=\"\"", moved, err)
+	}
+
+	// Rename the folder.
+	renameBody, _ := json.Marshal(map[string]any{"name": "Renamed Folder", "disabled": true})
+	req = httptest.NewRequest(http.MethodPut, "/api/datamanager/groups/"+group.ID, bytes.NewReader(renameBody))
+	w = httptest.NewRecorder()
+	s.handleDataManagerRulesRouter(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("rename group: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	renamedGroup, err := s.configDB.GetDMGroup(group.ID)
+	if err != nil || renamedGroup == nil || renamedGroup.Name != "Renamed Folder" || !renamedGroup.Disabled {
+		t.Fatalf("GetDMGroup after rename = %+v err=%v, want Name=Renamed Folder Disabled=true", renamedGroup, err)
+	}
+
+	// Delete the folder.
+	req = httptest.NewRequest(http.MethodDelete, "/api/datamanager/groups/"+group.ID, nil)
+	w = httptest.NewRecorder()
+	s.handleDataManagerRulesRouter(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("delete group: expected 204, got %d: %s", w.Code, w.Body.String())
+	}
+	if gone, err := s.configDB.GetDMGroup(group.ID); err != nil || gone != nil {
+		t.Errorf("expected group gone after delete, got %+v err=%v", gone, err)
+	}
+}
+
+func TestHandleDMGroupParent_RejectsSelfMove(t *testing.T) {
+	s := newDMRulesTestServer(t)
+
+	createBody, _ := json.Marshal(map[string]string{"name": "A"})
+	req := httptest.NewRequest(http.MethodPost, "/api/datamanager/groups", bytes.NewReader(createBody))
+	w := httptest.NewRecorder()
+	s.handleDataManagerRulesRouter(w, req)
+	var group DMTreeNode
+	json.NewDecoder(w.Body).Decode(&group)
+
+	moveBody, _ := json.Marshal(map[string]string{"parent_id": group.ID})
+	req = httptest.NewRequest(http.MethodPut, "/api/datamanager/groups/"+group.ID+"/parent", bytes.NewReader(moveBody))
+	w = httptest.NewRecorder()
+	s.handleDataManagerRulesRouter(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 moving group into itself, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestHandleDataManagerRulesRouter_ConfigDBUnavailable(t *testing.T) {
 	s := &Server{}
 
