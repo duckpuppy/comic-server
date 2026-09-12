@@ -9,8 +9,9 @@ import "fmt"
 // (comic-server-4ms). Version 6 adds dm_groups/dm_rulesets/dm_rules/
 // dm_actions (comic-server-764.4). Version 7 adds lo_profiles/
 // lo_profile_items/lo_exclude_rules (comic-server-3bz.2). Version 8 adds
-// ui_settings (comic-server-8qk).
-const schemaVersion = 8
+// ui_settings (comic-server-8qk). Version 9 adds a source column to
+// dm_groups/dm_rulesets (comic-server-vkpq).
+const schemaVersion = 9
 
 // initSchema brings the database up to schemaVersion. No-ops if already
 // current - safe to call on every Open, every server startup.
@@ -62,6 +63,11 @@ func (db *DB) initSchema() error {
 		if version < 8 {
 			if err := db.migrateV7ToV8(); err != nil {
 				return fmt.Errorf("migrate v7→v8: %w", err)
+			}
+		}
+		if version < 9 {
+			if err := db.migrateV8ToV9(); err != nil {
+				return fmt.Errorf("migrate v8→v9: %w", err)
 			}
 		}
 	}
@@ -171,6 +177,88 @@ func (db *DB) migrateV7ToV8() error {
 	return db.createUISettingsTable()
 }
 
+// migrateV8ToV9 adds a source column to dm_groups/dm_rulesets, so a
+// re-import (comic-server-vkpq's import-merge semantics) can tell which
+// rows it's safe to wipe (source='import') apart from rows a user created
+// by hand in the native rule editor (source='manual'), which must survive
+// a re-import untouched. New rows default to 'manual' (matches
+// createDataManagerTables' own column default, for anything created going
+// forward through the editor's CRUD API); every row that already existed
+// before this migration ran is explicitly set to 'import' instead, since
+// nothing could create a dm_groups/dm_rulesets row before comic-server-tj6o
+// shipped the editor except the CLI import - preserving pre-upgrade
+// wipe-replaces-everything behavior for anyone's existing imported data.
+//
+// hasColumn-guarded: a database migrating from a version at or below 5
+// runs migrateV5ToV6 first in the SAME Open call, which calls
+// createDataManagerTables - and that function already defines the source
+// column directly (it's shared with the fresh-install path), so
+// dm_groups/dm_rulesets already have it by the time this function runs.
+// Skipping the ALTER in that case avoids a "duplicate column" error; the
+// UPDATE below is a safe no-op either way since a table just created by
+// createDataManagerTables in this same run is still empty. The leading
+// createDataManagerTables() call is itself CREATE TABLE IF NOT EXISTS, so
+// it's a no-op against a real database that already has these tables -
+// it only matters for a synthetic test fixture that pins user_version
+// without ever having actually run migrateV5ToV6 to create them.
+func (db *DB) migrateV8ToV9() error {
+	if err := db.createDataManagerTables(); err != nil {
+		return fmt.Errorf("migrate v8→v9: %w", err)
+	}
+	groupsHasSource, err := db.hasColumn("dm_groups", "source")
+	if err != nil {
+		return fmt.Errorf("migrate v8→v9: %w", err)
+	}
+	if !groupsHasSource {
+		if _, err := db.Exec(`ALTER TABLE dm_groups ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'`); err != nil {
+			return fmt.Errorf("migrate v8→v9: %w", err)
+		}
+	}
+	rulesetsHasSource, err := db.hasColumn("dm_rulesets", "source")
+	if err != nil {
+		return fmt.Errorf("migrate v8→v9: %w", err)
+	}
+	if !rulesetsHasSource {
+		if _, err := db.Exec(`ALTER TABLE dm_rulesets ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'`); err != nil {
+			return fmt.Errorf("migrate v8→v9: %w", err)
+		}
+	}
+	if _, err := db.Exec(`UPDATE dm_groups SET source = 'import'`); err != nil {
+		return fmt.Errorf("migrate v8→v9: %w", err)
+	}
+	if _, err := db.Exec(`UPDATE dm_rulesets SET source = 'import'`); err != nil {
+		return fmt.Errorf("migrate v8→v9: %w", err)
+	}
+	return nil
+}
+
+// hasColumn reports whether table has a column named name, via
+// PRAGMA table_info - used by migrations that ALTER TABLE ADD COLUMN to
+// stay idempotent when a table might already have been created with that
+// column by a shared create-table helper earlier in the same migration
+// chain (see migrateV8ToV9).
+func (db *DB) hasColumn(table, name string) (bool, error) {
+	rows, err := db.Query(fmt.Sprintf(`PRAGMA table_info(%s)`, table))
+	if err != nil {
+		return false, fmt.Errorf("table_info(%s): %w", table, err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var colName, colType string
+		var notNull, pk int
+		var dflt any
+		if err := rows.Scan(&cid, &colName, &colType, &notNull, &dflt, &pk); err != nil {
+			return false, fmt.Errorf("scan table_info(%s): %w", table, err)
+		}
+		if colName == name {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
+}
+
 // createDataManagerTables creates the tables backing the Data Manager rule
 // engine (comic-server-764): dm_groups mirrors dataman.dat's nested
 // <group>/<disabled> folder hierarchy (self-referencing parent_id, same
@@ -203,7 +291,8 @@ func (db *DB) createDataManagerTables() error {
 			name       TEXT NOT NULL,
 			comment    TEXT NOT NULL DEFAULT '',
 			disabled   INTEGER NOT NULL DEFAULT 0,
-			sort_order INTEGER NOT NULL DEFAULT 0
+			sort_order INTEGER NOT NULL DEFAULT 0,
+			source     TEXT NOT NULL DEFAULT 'manual'
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_dm_groups_parent ON dm_groups(parent_id)`,
 		`CREATE TABLE IF NOT EXISTS dm_rulesets (
@@ -213,7 +302,8 @@ func (db *DB) createDataManagerTables() error {
 			comment    TEXT NOT NULL DEFAULT '',
 			mode       TEXT NOT NULL DEFAULT 'And',
 			disabled   INTEGER NOT NULL DEFAULT 0,
-			sort_order INTEGER NOT NULL DEFAULT 0
+			sort_order INTEGER NOT NULL DEFAULT 0,
+			source     TEXT NOT NULL DEFAULT 'manual'
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_dm_rulesets_group ON dm_rulesets(group_id)`,
 		`CREATE TABLE IF NOT EXISTS dm_rules (

@@ -84,6 +84,81 @@ func TestImportDataManagerRules_WipeExistingClearsTopLevelRulesets(t *testing.T)
 	}
 }
 
+// TestImportDataManagerRules_WipeExistingPreservesManualTopLevelRuleset
+// covers the simplest case of comic-server-vkpq's import-merge semantics:
+// a ruleset created by hand (source="manual", the CreateDMRuleset
+// default) at the top level must survive a wipe re-import untouched,
+// while a top-level ruleset that came from the ORIGINAL import is wiped.
+func TestImportDataManagerRules_WipeExistingPreservesManualTopLevelRuleset(t *testing.T) {
+	db := newTestDMDB(t)
+
+	if err := db.ImportDataManagerRules(nil, []DMImportRuleset{{ID: "rs-imported", Name: "From dataman.dat"}}, false); err != nil {
+		t.Fatalf("first import: %v", err)
+	}
+	if err := db.CreateDMRuleset(DMRuleset{ID: "rs-manual", Name: "Hand-authored"}); err != nil {
+		t.Fatalf("CreateDMRuleset(manual): %v", err)
+	}
+
+	if err := db.ImportDataManagerRules(nil, []DMImportRuleset{{ID: "rs-reimported", Name: "Re-imported"}}, true); err != nil {
+		t.Fatalf("wipe re-import: %v", err)
+	}
+
+	if rs, err := db.GetDMRuleset("rs-imported"); err != nil || rs != nil {
+		t.Errorf("expected original imported ruleset gone after wipe, got %+v err=%v", rs, err)
+	}
+	if rs, err := db.GetDMRuleset("rs-manual"); err != nil || rs == nil {
+		t.Errorf("expected manual ruleset to SURVIVE the wipe, got %+v err=%v", rs, err)
+	}
+	if rs, err := db.GetDMRuleset("rs-reimported"); err != nil || rs == nil || rs.Source != "import" {
+		t.Errorf("expected freshly re-imported ruleset present with Source=import, got %+v err=%v", rs, err)
+	}
+}
+
+// TestImportDataManagerRules_WipeExistingReparentsManualContentOutOfDeletedGroup
+// is the case that makes this feature non-trivial: a manual ruleset (and a
+// manual subgroup) nested INSIDE a group that came from the original
+// import must not be destroyed as collateral damage when that import-
+// sourced parent group is wiped and cascades - both should survive,
+// re-parented to the nearest surviving (non-import) ancestor, which here
+// is the root since the entire original group tree is import-sourced.
+func TestImportDataManagerRules_WipeExistingReparentsManualContentOutOfDeletedGroup(t *testing.T) {
+	db := newTestDMDB(t)
+
+	if err := db.ImportDataManagerRules([]DMImportGroup{{ID: "g-imported", Name: "Imported Folder"}}, nil, false); err != nil {
+		t.Fatalf("first import: %v", err)
+	}
+	if err := db.CreateDMRuleset(DMRuleset{ID: "rs-manual-nested", GroupID: "g-imported", Name: "Hand-authored, nested"}); err != nil {
+		t.Fatalf("CreateDMRuleset(nested manual): %v", err)
+	}
+	if err := db.CreateDMGroup(DMGroup{ID: "g-manual-nested", ParentID: "g-imported", Name: "Hand-authored subfolder"}); err != nil {
+		t.Fatalf("CreateDMGroup(nested manual): %v", err)
+	}
+
+	if err := db.ImportDataManagerRules(nil, nil, true); err != nil {
+		t.Fatalf("wipe re-import (no new content): %v", err)
+	}
+
+	if g, err := db.GetDMGroup("g-imported"); err != nil || g != nil {
+		t.Errorf("expected the imported parent group gone after wipe, got %+v err=%v", g, err)
+	}
+
+	rs, err := db.GetDMRuleset("rs-manual-nested")
+	if err != nil || rs == nil {
+		t.Fatalf("expected manual nested ruleset to SURVIVE, got %+v err=%v", rs, err)
+	}
+	if rs.GroupID != "" {
+		t.Errorf("rs-manual-nested.GroupID = %q, want \"\" (reparented to root, its deleted parent's own parent)", rs.GroupID)
+	}
+
+	g, err := db.GetDMGroup("g-manual-nested")
+	if err != nil || g == nil {
+		t.Fatalf("expected manual nested subfolder to SURVIVE, got %+v err=%v", g, err)
+	}
+	if g.ParentID != "" {
+		t.Errorf("g-manual-nested.ParentID = %q, want \"\" (reparented to root)", g.ParentID)
+	}
+}
+
 func TestImportDataManagerRules_WithoutWipeStillAppends(t *testing.T) {
 	// wipeExisting defaults to false in normal (non-force) use - the
 	// CLI's own "already has rules" guard is what actually prevents

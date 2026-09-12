@@ -17,6 +17,13 @@ type DMGroup struct {
 	Comment   string
 	Disabled  bool
 	SortOrder int
+	// Source is "manual" (created through the native rule editor,
+	// comic-server-tj6o) or "import" (came from a CLI dataman.dat
+	// import). A re-import with wipeExisting only ever deletes
+	// source="import" rows - see ImportDataManagerRules in
+	// datamanager_import.go (comic-server-vkpq). Defaults to "manual"
+	// when left empty on Create, matching the column's own DB default.
+	Source string
 }
 
 // DMRuleset is one named rule container - mirrors dataman.dat's
@@ -30,6 +37,8 @@ type DMRuleset struct {
 	Mode      string // "And" or "Or"
 	Disabled  bool
 	SortOrder int
+	// Source is "manual" or "import" - see DMGroup.Source's doc comment.
+	Source string
 }
 
 // DMRule is one condition of a ruleset - field/modifier/value, matching
@@ -62,10 +71,14 @@ type DMAction struct {
 // (comic-server-764.5) needs to know child groups'/rulesets' parent IDs
 // up front while building a tree, not after an autoincrement round-trip.
 func (db *DB) CreateDMGroup(g DMGroup) error {
+	source := g.Source
+	if source == "" {
+		source = "manual"
+	}
 	_, err := db.Exec(`
-		INSERT INTO dm_groups (id, parent_id, name, comment, disabled, sort_order)
-		VALUES (?, NULLIF(?, ''), ?, ?, ?, ?)
-	`, g.ID, g.ParentID, g.Name, g.Comment, g.Disabled, g.SortOrder)
+		INSERT INTO dm_groups (id, parent_id, name, comment, disabled, sort_order, source)
+		VALUES (?, NULLIF(?, ''), ?, ?, ?, ?, ?)
+	`, g.ID, g.ParentID, g.Name, g.Comment, g.Disabled, g.SortOrder, source)
 	if err != nil {
 		return fmt.Errorf("create dm_group %s: %w", g.ID, err)
 	}
@@ -76,8 +89,8 @@ func (db *DB) CreateDMGroup(g DMGroup) error {
 func (db *DB) GetDMGroup(id string) (*DMGroup, error) {
 	g := DMGroup{ID: id}
 	var parentID sql.NullString
-	err := db.QueryRow(`SELECT parent_id, name, comment, disabled, sort_order FROM dm_groups WHERE id = ?`, id).
-		Scan(&parentID, &g.Name, &g.Comment, &g.Disabled, &g.SortOrder)
+	err := db.QueryRow(`SELECT parent_id, name, comment, disabled, sort_order, source FROM dm_groups WHERE id = ?`, id).
+		Scan(&parentID, &g.Name, &g.Comment, &g.Disabled, &g.SortOrder, &g.Source)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -91,7 +104,7 @@ func (db *DB) GetDMGroup(id string) (*DMGroup, error) {
 // ListDMGroups returns every group whose parent is parentID (pass "" for
 // top-level groups), ordered by sort_order.
 func (db *DB) ListDMGroups(parentID string) ([]DMGroup, error) {
-	const cols = `id, parent_id, name, comment, disabled, sort_order`
+	const cols = `id, parent_id, name, comment, disabled, sort_order, source`
 	var rows *sql.Rows
 	var err error
 	if parentID == "" {
@@ -108,7 +121,7 @@ func (db *DB) ListDMGroups(parentID string) ([]DMGroup, error) {
 	for rows.Next() {
 		var g DMGroup
 		var pid sql.NullString
-		if err := rows.Scan(&g.ID, &pid, &g.Name, &g.Comment, &g.Disabled, &g.SortOrder); err != nil {
+		if err := rows.Scan(&g.ID, &pid, &g.Name, &g.Comment, &g.Disabled, &g.SortOrder, &g.Source); err != nil {
 			return nil, fmt.Errorf("scan dm_group: %w", err)
 		}
 		g.ParentID = pid.String
@@ -127,12 +140,15 @@ func (db *DB) DeleteDMGroup(id string) error {
 }
 
 // UpdateDMGroup overwrites an existing group's editable fields in place -
-// ID is immutable, ParentID moves the group if changed.
+// ID is immutable, ParentID moves the group if changed. Source is
+// intentionally included so it round-trips whatever the caller fetched it
+// as (fetch-mutate-update call sites never change it); it is not meant to
+// be flipped between "manual"/"import" via this method.
 func (db *DB) UpdateDMGroup(g DMGroup) error {
 	_, err := db.Exec(`
-		UPDATE dm_groups SET parent_id = NULLIF(?, ''), name = ?, comment = ?, disabled = ?, sort_order = ?
+		UPDATE dm_groups SET parent_id = NULLIF(?, ''), name = ?, comment = ?, disabled = ?, sort_order = ?, source = ?
 		WHERE id = ?
-	`, g.ParentID, g.Name, g.Comment, g.Disabled, g.SortOrder, g.ID)
+	`, g.ParentID, g.Name, g.Comment, g.Disabled, g.SortOrder, g.Source, g.ID)
 	if err != nil {
 		return fmt.Errorf("update dm_group %s: %w", g.ID, err)
 	}
@@ -146,10 +162,14 @@ func (db *DB) CreateDMRuleset(rs DMRuleset) error {
 	if mode == "" {
 		mode = "And"
 	}
+	source := rs.Source
+	if source == "" {
+		source = "manual"
+	}
 	_, err := db.Exec(`
-		INSERT INTO dm_rulesets (id, group_id, name, comment, mode, disabled, sort_order)
-		VALUES (?, NULLIF(?, ''), ?, ?, ?, ?, ?)
-	`, rs.ID, rs.GroupID, rs.Name, rs.Comment, mode, rs.Disabled, rs.SortOrder)
+		INSERT INTO dm_rulesets (id, group_id, name, comment, mode, disabled, sort_order, source)
+		VALUES (?, NULLIF(?, ''), ?, ?, ?, ?, ?, ?)
+	`, rs.ID, rs.GroupID, rs.Name, rs.Comment, mode, rs.Disabled, rs.SortOrder, source)
 	if err != nil {
 		return fmt.Errorf("create dm_ruleset %s: %w", rs.ID, err)
 	}
@@ -161,8 +181,8 @@ func (db *DB) CreateDMRuleset(rs DMRuleset) error {
 func (db *DB) GetDMRuleset(id string) (*DMRuleset, error) {
 	rs := DMRuleset{ID: id}
 	var groupID sql.NullString
-	err := db.QueryRow(`SELECT group_id, name, comment, mode, disabled, sort_order FROM dm_rulesets WHERE id = ?`, id).
-		Scan(&groupID, &rs.Name, &rs.Comment, &rs.Mode, &rs.Disabled, &rs.SortOrder)
+	err := db.QueryRow(`SELECT group_id, name, comment, mode, disabled, sort_order, source FROM dm_rulesets WHERE id = ?`, id).
+		Scan(&groupID, &rs.Name, &rs.Comment, &rs.Mode, &rs.Disabled, &rs.SortOrder, &rs.Source)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -176,7 +196,7 @@ func (db *DB) GetDMRuleset(id string) (*DMRuleset, error) {
 // ListDMRulesets returns every ruleset whose group is groupID (pass "" for
 // top-level rulesets), ordered by sort_order.
 func (db *DB) ListDMRulesets(groupID string) ([]DMRuleset, error) {
-	const cols = `id, group_id, name, comment, mode, disabled, sort_order`
+	const cols = `id, group_id, name, comment, mode, disabled, sort_order, source`
 	var rows *sql.Rows
 	var err error
 	if groupID == "" {
@@ -193,7 +213,7 @@ func (db *DB) ListDMRulesets(groupID string) ([]DMRuleset, error) {
 	for rows.Next() {
 		var rs DMRuleset
 		var gid sql.NullString
-		if err := rows.Scan(&rs.ID, &gid, &rs.Name, &rs.Comment, &rs.Mode, &rs.Disabled, &rs.SortOrder); err != nil {
+		if err := rows.Scan(&rs.ID, &gid, &rs.Name, &rs.Comment, &rs.Mode, &rs.Disabled, &rs.SortOrder, &rs.Source); err != nil {
 			return nil, fmt.Errorf("scan dm_ruleset: %w", err)
 		}
 		rs.GroupID = gid.String
@@ -219,9 +239,9 @@ func (db *DB) UpdateDMRuleset(rs DMRuleset) error {
 		mode = "And"
 	}
 	_, err := db.Exec(`
-		UPDATE dm_rulesets SET group_id = NULLIF(?, ''), name = ?, comment = ?, mode = ?, disabled = ?, sort_order = ?
+		UPDATE dm_rulesets SET group_id = NULLIF(?, ''), name = ?, comment = ?, mode = ?, disabled = ?, sort_order = ?, source = ?
 		WHERE id = ?
-	`, rs.GroupID, rs.Name, rs.Comment, mode, rs.Disabled, rs.SortOrder, rs.ID)
+	`, rs.GroupID, rs.Name, rs.Comment, mode, rs.Disabled, rs.SortOrder, rs.Source, rs.ID)
 	if err != nil {
 		return fmt.Errorf("update dm_ruleset %s: %w", rs.ID, err)
 	}

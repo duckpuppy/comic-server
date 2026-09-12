@@ -226,3 +226,77 @@ func TestMigrateV6ToV7_AddsLibraryOrganizerTables(t *testing.T) {
 		}
 	}
 }
+
+// TestMigrateV8ToV9_AddsSourceColumnAndBackfillsImport simulates a real
+// pre-comic-server-vkpq database: dm_groups/dm_rulesets tables that
+// already exist and hold real data, but with no source column at all
+// (the pre-v9 shape) - unlike the other migration tests here, this one
+// hand-creates the OLD table shape with a real row rather than just
+// pinning user_version on an empty database, since the whole point of
+// this migration is what happens to EXISTING rows, not just that a new
+// column appears.
+func TestMigrateV8ToV9_AddsSourceColumnAndBackfillsImport(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+
+	raw, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open raw db: %v", err)
+	}
+	if _, err := raw.Exec(`CREATE TABLE dm_groups (
+		id TEXT PRIMARY KEY, parent_id TEXT, name TEXT NOT NULL,
+		comment TEXT NOT NULL DEFAULT '', disabled INTEGER NOT NULL DEFAULT 0,
+		sort_order INTEGER NOT NULL DEFAULT 0
+	)`); err != nil {
+		t.Fatalf("create old-shape dm_groups: %v", err)
+	}
+	if _, err := raw.Exec(`CREATE TABLE dm_rulesets (
+		id TEXT PRIMARY KEY, group_id TEXT, name TEXT NOT NULL,
+		comment TEXT NOT NULL DEFAULT '', mode TEXT NOT NULL DEFAULT 'And',
+		disabled INTEGER NOT NULL DEFAULT 0, sort_order INTEGER NOT NULL DEFAULT 0
+	)`); err != nil {
+		t.Fatalf("create old-shape dm_rulesets: %v", err)
+	}
+	if _, err := raw.Exec(`INSERT INTO dm_groups (id, name) VALUES ('g1', 'Pre-existing Group')`); err != nil {
+		t.Fatalf("seed dm_groups: %v", err)
+	}
+	if _, err := raw.Exec(`INSERT INTO dm_rulesets (id, group_id, name) VALUES ('rs1', 'g1', 'Pre-existing Ruleset')`); err != nil {
+		t.Fatalf("seed dm_rulesets: %v", err)
+	}
+	if _, err := raw.Exec("PRAGMA user_version = 8"); err != nil {
+		t.Fatalf("set v8: %v", err)
+	}
+	raw.Close()
+
+	db, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer db.Close()
+
+	var version int
+	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
+		t.Fatalf("query user_version: %v", err)
+	}
+	if version != schemaVersion {
+		t.Errorf("expected schema version %d after migration, got %d", schemaVersion, version)
+	}
+
+	g, err := db.GetDMGroup("g1")
+	if err != nil || g == nil || g.Source != "import" {
+		t.Fatalf("GetDMGroup(g1) = %+v err=%v, want a pre-existing row backfilled to Source=import", g, err)
+	}
+	rs, err := db.GetDMRuleset("rs1")
+	if err != nil || rs == nil || rs.Source != "import" {
+		t.Fatalf("GetDMRuleset(rs1) = %+v err=%v, want a pre-existing row backfilled to Source=import", rs, err)
+	}
+
+	// A row created after the migration (via the normal Create path, no
+	// Source set) should default to "manual", not inherit "import".
+	if err := db.CreateDMGroup(DMGroup{ID: "g2", Name: "New Group"}); err != nil {
+		t.Fatalf("CreateDMGroup(g2): %v", err)
+	}
+	g2, err := db.GetDMGroup("g2")
+	if err != nil || g2 == nil || g2.Source != "manual" {
+		t.Fatalf("GetDMGroup(g2) = %+v err=%v, want Source=manual", g2, err)
+	}
+}
