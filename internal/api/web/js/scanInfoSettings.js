@@ -23,6 +23,15 @@ class ScanInfoSettings {
         // log level, and Komga still remain config.yaml-only.
         this.trash = null; // { path, retention_days }
         this.trashSaving = false;
+        // Library import (comic-server-szvk) - one-time/occasional
+        // ComicRack -> comic-server migration, replacing the old always-on
+        // file-watcher. selectedFile is the browser File object chosen but
+        // not yet uploaded; importJob is the last completed/failed job
+        // returned by the server, shown until the next attempt.
+        this.selectedFile = null;
+        this.importing = false;
+        this.importJob = null;
+        this.importError = null;
     }
 
     async init(ctx) {
@@ -31,10 +40,21 @@ class ScanInfoSettings {
         // leaving the page blank until the fetch resolves
         // (comic-server-4te).
         this.render();
-        await Promise.all([this.load(), this.loadTheme(), this.loadTrash()]);
+        await Promise.all([this.load(), this.loadTheme(), this.loadTrash(), this.loadImportStatus()]);
         if (ctx && ctx.aborted) return;
         this.render();
         this.attachListeners();
+    }
+
+    async loadImportStatus() {
+        try {
+            const response = await fetch('/api/settings/library-import');
+            if (response.status === 404) return; // no import has ever run
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            this.importJob = await response.json();
+        } catch (error) {
+            console.error('Failed to load library import status:', error);
+        }
     }
 
     async load() {
@@ -136,6 +156,36 @@ class ScanInfoSettings {
         }
     }
 
+    async runLibraryImport() {
+        if (!this.selectedFile) return;
+        this.importing = true;
+        this.importError = null;
+        this.render();
+        this.attachListeners();
+
+        try {
+            const formData = new FormData();
+            formData.append('file', this.selectedFile);
+            const response = await fetch('/api/settings/library-import', { method: 'POST', body: formData });
+            const text = await response.text();
+            if (!response.ok) throw new Error(friendlyErrorText(response, text));
+            this.importJob = JSON.parse(text);
+            if (this.importJob.status === 'failed') {
+                dialogs.toast('Import failed: ' + (this.importJob.error || 'unknown error'), 'error');
+            } else {
+                dialogs.toast('Library import complete.', 'success');
+            }
+        } catch (error) {
+            console.error('Failed to import library:', error);
+            this.importError = `Failed: ${error.message}`;
+        } finally {
+            this.importing = false;
+            this.selectedFile = null;
+            this.render();
+            this.attachListeners();
+        }
+    }
+
     render() {
         const app = document.getElementById('app');
         app.innerHTML = `
@@ -144,10 +194,55 @@ class ScanInfoSettings {
                     <h1>Settings</h1>
                 </div>
                 ${this.renderAppearance()}
+                ${this.renderLibraryImport()}
                 ${this.renderTrash()}
                 ${this.renderBody()}
             </div>
         `;
+    }
+
+    renderLibraryImport() {
+        return `
+            <div class="panel scan-info-panel">
+                <div class="settings-section-header">
+                    <h2>Library Import</h2>
+                    <p class="settings-section-description">Import a ComicDb.xml exported from ComicRack. A one-time migration, or an occasional refresh - not an ongoing sync.</p>
+                </div>
+
+                <div class="form-group">
+                    <input type="file" id="library-import-file" accept=".xml">
+                </div>
+
+                <div class="scan-info-actions">
+                    <button class="btn btn-primary" id="library-import-btn" ${this.importing || !this.selectedFile ? 'disabled' : ''}>
+                        ${this.importing ? 'Uploading and importing…' : 'Import'}
+                    </button>
+                </div>
+
+                ${this.renderImportResult()}
+            </div>
+        `;
+    }
+
+    renderImportResult() {
+        if (this.importError) {
+            return `<p class="datamanager-errors">${this.escapeHtml(this.importError)}</p>`;
+        }
+        const job = this.importJob;
+        if (!job) return '';
+
+        if (job.status === 'failed') {
+            return `<p class="datamanager-errors">Import failed: ${this.escapeHtml(job.error || 'unknown error')}</p>`;
+        }
+        if (job.status !== 'completed' || !job.stats) return '';
+
+        const s = job.stats;
+        let html = `<p class="datamanager-summary">Imported "${this.escapeHtml(job.filename)}" in ${s.duration_sec.toFixed(1)}s: ` +
+            `${s.books_added} added, ${s.books_updated} updated, ${s.books_deleted} deleted, ${s.books_unchanged} unchanged.</p>`;
+        if (job.restart_required) {
+            html += `<p class="datamanager-errors">This provisioned a new database - restart comic-server to start serving from it.</p>`;
+        }
+        return html;
     }
 
     renderTrash() {
@@ -281,6 +376,19 @@ class ScanInfoSettings {
     }
 
     attachListeners() {
+        const importFileInput = document.getElementById('library-import-file');
+        if (importFileInput) {
+            importFileInput.addEventListener('change', (e) => {
+                this.selectedFile = e.target.files[0] || null;
+                const btn = document.getElementById('library-import-btn');
+                if (btn) btn.disabled = this.importing || !this.selectedFile;
+            });
+        }
+        const importBtn = document.getElementById('library-import-btn');
+        if (importBtn) {
+            importBtn.addEventListener('click', () => this.runLibraryImport());
+        }
+
         document.querySelectorAll('input[name="theme-default"]').forEach(el => {
             el.addEventListener('change', () => {
                 if (el.checked) this.saveTheme(el.value);

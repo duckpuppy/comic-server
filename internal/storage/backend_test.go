@@ -232,6 +232,49 @@ func TestSQLiteBackend_FallbackEvaluationReusesCachedLibrary(t *testing.T) {
 	}
 }
 
+// TestSQLiteBackend_ImportFromArbitraryPath covers comic-server-szvk's
+// on-demand Settings-screen upload: importing from a path that is NOT the
+// backend's own constructed xmlPath (e.g. a scratch/cache staging file the
+// upload handler wrote the browser-provided file to), unlike Reload which
+// is always pinned to the one fixed source path.
+func TestSQLiteBackend_ImportFromArbitraryPath(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+	stagingPath := filepath.Join(dir, "uploaded.xml")
+
+	// Constructed with NO xmlPath at all - Reload() would error on this
+	// backend, but ImportFrom doesn't care since it never reads b.xmlPath.
+	backend, err := NewSQLiteBackend(dbPath, "")
+	if err != nil {
+		t.Fatalf("NewSQLiteBackend: %v", err)
+	}
+	defer backend.Close()
+
+	if err := library.SaveLibrary(stagingPath, &library.ComicLibrary{
+		ID: "uploaded-library",
+		Books: []library.ComicBook{
+			{ID: "book-1", FilePath: "/comics/book1.cbz", Title: "Uploaded Book"},
+		},
+	}); err != nil {
+		t.Fatalf("SaveLibrary: %v", err)
+	}
+
+	stats, err := backend.ImportFrom(stagingPath)
+	if err != nil {
+		t.Fatalf("ImportFrom: %v", err)
+	}
+	if stats.BooksAdded != 1 {
+		t.Errorf("stats.BooksAdded = %d, want 1", stats.BooksAdded)
+	}
+	if got := backend.BookCount(); got != 1 {
+		t.Fatalf("expected 1 book after ImportFrom, got %d", got)
+	}
+	book, err := backend.GetBook("book-1")
+	if err != nil || book == nil || book.Title != "Uploaded Book" {
+		t.Errorf("expected imported book-1, got %+v (err=%v)", book, err)
+	}
+}
+
 func TestSQLiteBackend_ReloadErrorsWithoutXMLPath(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 

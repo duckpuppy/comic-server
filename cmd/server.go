@@ -558,44 +558,15 @@ func runServer(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Watch the library source file for external changes (e.g. ComicRack
-	// saving ComicDb.xml) and reload automatically - for the XML backend
-	// that means re-reading the file in place; for the SQLite backend it
-	// means re-importing it into the database (see SQLiteBackend.Reload).
-	// Requires both a real file path and a backend that supports reload -
-	// an XMLBackend built without a path, or a SQLiteBackend opened
-	// without a known XML source, can't reload either way.
-	if reloadable, ok := backend.(library.ReloadableBackend); ok && cfg.Server.LibraryPath != "" {
-		watcher, err := library.NewWatcher(reloadable, cfg.Server.LibraryPath)
-		if err != nil {
-			log.Warn().Err(err).Msg("Failed to start library file watcher; library changes will require a restart to pick up")
-		} else {
-			watcher.OnReload(func() {
-				apiServer.InvalidateListCache()
-				apiServer.InvalidateWorkflowCache()
-				wsHub.Broadcast(websocket.EventLibraryReloaded, map[string]any{
-					"book_count": reloadable.BookCount(),
-				})
-				if komgaSyncer != nil {
-					komgaSyncer.TriggerNow()
-				}
-				// Reload() already marked the SQLite backend's shared
-				// snapshot stale (SQLiteBackend.bumpGeneration); rebuild it
-				// now in the background rather than waiting for the next
-				// sync attempt to trigger it inline - see comic-server-jrn.
-				if sb, ok := reloadable.(*storage.SQLiteBackend); ok {
-					go func() {
-						if err := sb.WarmUp(); err != nil {
-							log.Warn().Err(err).Msg("Background library warm-up failed after reload")
-						}
-					}()
-				}
-			})
-			watcherCtx, watcherCancel := context.WithCancel(context.Background())
-			defer watcherCancel()
-			go watcher.Run(watcherCtx)
-		}
-	}
+	// The file-watcher/continuous-reimport model (library.Watcher, external
+	// ComicDb.xml changes picked up automatically) is retired as of
+	// comic-server-szvk: the mental model is now an explicit, user-
+	// triggered import from the Settings screen ("one-time ComicRack ->
+	// comic-server migration"), not an ongoing sync. See
+	// internal/api/library_import.go for the new upload-driven import,
+	// which reuses this same cache-invalidation/broadcast/Komga-trigger/
+	// WarmUp sequence after a successful re-import into an
+	// already-configured SQLite backend.
 
 	// Handle signals gracefully
 	sigChan := make(chan os.Signal, 1)

@@ -382,43 +382,6 @@ func (b *XMLBackend) LastWriteTime() time.Time {
 	return b.lastWriteTime
 }
 
-// Reload re-reads the library file from disk, replacing the in-memory
-// library. Any pending dirty changes are flushed to disk first, so a
-// reload never silently discards comic-server's own unsaved writes -
-// though note this means comic-server's own pending edits always win over
-// a concurrent external edit to the same book, since they're written
-// before the reload reads the file back.
-//
-// Safe to call while the server is running: GetBook/MatchBooks/etc. only
-// block for the brief moment the library pointer is swapped.
-func (b *XMLBackend) Reload() error {
-	if err := b.Flush(); err != nil {
-		return fmt.Errorf("reload: flush pending changes: %w", err)
-	}
-
-	b.mu.RLock()
-	path := b.libraryPath
-	b.mu.RUnlock()
-	if path == "" {
-		return fmt.Errorf("reload: no library path configured")
-	}
-
-	lib, err := LoadLibrary(path)
-	if err != nil {
-		return fmt.Errorf("reload: %w", err)
-	}
-
-	b.mu.Lock()
-	b.library = lib
-	b.dirty = false
-	if b.cache != nil {
-		b.cache.SetLibrary(lib)
-	}
-	b.mu.Unlock()
-
-	return nil
-}
-
 // Close stops the backend and flushes any pending changes.
 func (b *XMLBackend) Close() error {
 	if b.cache != nil {

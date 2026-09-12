@@ -65,6 +65,13 @@ type Server struct {
 	dmJob   *DMJobStatus
 	dmJobMu sync.RWMutex
 
+	// libImportJob/libImportJobMu track the current (or most recently
+	// completed) on-demand library import background job - see
+	// LibraryImportJobStatus's doc comment in library_import.go
+	// (comic-server-szvk).
+	libImportJob   *LibraryImportJobStatus
+	libImportJobMu sync.RWMutex
+
 	// workflowCache/workflowCacheMu cache "which book is at which
 	// workflow stage" so the dashboard summary and stage drill-in don't
 	// each independently scan the whole library - see workflow_cache.go.
@@ -245,6 +252,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/settings/scan-info", s.handleScanInfoConfig)
 	s.mux.HandleFunc("/api/settings/theme", s.handleThemeConfig)
 	s.mux.HandleFunc("/api/settings/trash", s.handleTrashSettings)
+	s.mux.HandleFunc("/api/settings/library-import", s.handleLibraryImport)
 
 	// WebSocket endpoint
 	s.mux.HandleFunc("/ws", s.handleWebSocket)

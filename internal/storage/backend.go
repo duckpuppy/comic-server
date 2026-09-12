@@ -88,34 +88,52 @@ func (b *SQLiteBackend) SetPathResolver(resolve func(string) string) {
 	b.resolvePath = resolve
 }
 
-// Reload re-imports xmlPath (see NewSQLiteBackend) into the database in
-// place, picking up any external changes (books/lists added, edited, or
-// removed in ComicRack) without a process restart. The import is
-// idempotent, so this is safe to call repeatedly - only rows that actually
-// changed since the last import are touched.
+// Reload re-imports the XML source this backend was constructed with (see
+// NewSQLiteBackend) - a thin convenience wrapper around ImportFrom for
+// callers that always reimport the same fixed path. Returns an error if
+// no XML source was configured.
+func (b *SQLiteBackend) Reload() error {
+	b.mu.RLock()
+	path := b.xmlPath
+	b.mu.RUnlock()
+	if path == "" {
+		return fmt.Errorf("reload: no XML source path configured for this database")
+	}
+	_, err := b.ImportFrom(path)
+	return err
+}
+
+// ImportFrom re-imports xmlPath into the database in place, picking up
+// any changes (books/lists added, edited, or removed in ComicRack)
+// without a process restart - the on-demand Settings-screen upload
+// (comic-server-szvk) parses the uploaded file at an arbitrary staging
+// path and calls this directly, replacing the old always-on file-watcher
+// (library.Watcher) that reimported a single fixed path automatically.
+// The import is idempotent, so this is safe to call repeatedly - only
+// rows that actually changed since the last import are touched.
 //
 // Safe to call while the server is running: reads only block for the
-// duration of the import transaction, not the whole reload.
-func (b *SQLiteBackend) Reload() error {
+// duration of the import transaction, not the whole call.
+func (b *SQLiteBackend) ImportFrom(xmlPath string) (*ImportStats, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if b.xmlPath == "" {
-		return fmt.Errorf("reload: no XML source path configured for this database")
-	}
-
-	lib, err := library.LoadLibrary(b.xmlPath)
+	lib, err := library.LoadLibrary(xmlPath)
 	if err != nil {
-		return fmt.Errorf("reload: %w", err)
+		return nil, fmt.Errorf("import: %w", err)
 	}
 
-	if _, err := b.db.Import(lib, ImportOptions{ResolvePath: b.resolvePath}); err != nil {
-		return fmt.Errorf("reload: import: %w", err)
+	stats, err := b.db.Import(lib, ImportOptions{ResolvePath: b.resolvePath})
+	if err != nil {
+		return nil, fmt.Errorf("import: %w", err)
 	}
 
 	b.libCache = nil
 	b.bumpGeneration()
-	return b.loadMetadata()
+	if err := b.loadMetadata(); err != nil {
+		return nil, err
+	}
+	return stats, nil
 }
 
 // bumpGeneration marks the shared library snapshot (libCache) as stale
