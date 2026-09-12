@@ -66,6 +66,7 @@ class OrganizePage {
                 <div class="datamanager-page-header">
                     <h1>Library Organizer</h1>
                     <p class="empty-message">Moves or copies every book currently in the "To Move" workflow stage to its planned location under the chosen profile. Preview first - nothing is written until you apply.</p>
+                    <button class="btn btn-secondary" id="organize-manage-profiles-btn">Manage Profiles</button>
                 </div>
                 <div class="panel">
                     ${this.renderControls()}
@@ -80,7 +81,7 @@ class OrganizePage {
             return `<p class="empty-message">Loading profiles…</p>`;
         }
         if (this.profiles.length === 0) {
-            return `<p class="empty-message">No Library Organizer profiles configured yet. Import one via <code>comic-server library-organizer import --dat &lt;path&gt;</code>.</p>`;
+            return `<p class="empty-message">No Library Organizer profiles configured yet. Create one with the "Manage Profiles" button above, or import from ComicRack via <code>comic-server library-organizer import --dat &lt;path&gt;</code>.</p>`;
         }
         const options = this.profiles.map(p =>
             `<option value="${this.escapeAttr(p.id)}" ${p.id === this.profileId ? 'selected' : ''}>${this.escapeHtml(p.name)}${p.copy_mode ? ' (Copy)' : ' (Move)'}</option>`
@@ -144,6 +145,9 @@ class OrganizePage {
     }
 
     attachListeners() {
+        const manageBtn = document.getElementById('organize-manage-profiles-btn');
+        if (manageBtn) manageBtn.addEventListener('click', () => router.navigate('/organize/profiles'));
+
         const select = document.getElementById('organize-profile-select');
         if (select) select.addEventListener('change', () => { this.profileId = select.value; });
 

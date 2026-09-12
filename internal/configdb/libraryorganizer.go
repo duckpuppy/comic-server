@@ -136,6 +136,28 @@ func (db *DB) DeleteLOProfile(id string) error {
 	return nil
 }
 
+// UpdateLOProfile overwrites an existing profile's fields in place - ID is
+// immutable.
+func (db *DB) UpdateLOProfile(p LOProfile) error {
+	_, err := db.Exec(`
+		UPDATE lo_profiles SET
+			name = ?, base_folder = ?, folder_template = ?, file_template = ?, empty_folder = ?,
+			mode = ?, copy_mode = ?, use_folder = ?, use_filename = ?, replace_multiple_spaces = ?,
+			auto_space_fields = ?, remove_empty_folder = ?, move_fileless = ?, fileless_format = ?,
+			fail_empty_values = ?, move_failed = ?, failed_folder = ?, exclude_mode = ?, exclude_operator = ?,
+			sort_order = ?
+		WHERE id = ?
+	`, p.Name, p.BaseFolder, p.FolderTemplate, p.FileTemplate, p.EmptyFolder,
+		p.Mode, p.CopyMode, p.UseFolder, p.UseFileName, p.ReplaceMultipleSpaces,
+		p.AutoSpaceFields, p.RemoveEmptyFolder, p.MoveFileless, p.FilelessFormat,
+		p.FailEmptyValues, p.MoveFailed, p.FailedFolder, p.ExcludeMode, p.ExcludeOperator,
+		p.SortOrder, p.ID)
+	if err != nil {
+		return fmt.Errorf("update lo_profile %s: %w", p.ID, err)
+	}
+	return nil
+}
+
 // CreateLOProfileItem adds one Name/Value entry to a profile's category
 // collection, returning its new autoincrement ID.
 func (db *DB) CreateLOProfileItem(item LOProfileItem) (int64, error) {
@@ -191,6 +213,42 @@ func (db *DB) CreateLOExcludeRule(rule LOExcludeRule) (int64, error) {
 		return 0, fmt.Errorf("create lo_exclude_rule for profile %s: %w", rule.ProfileID, err)
 	}
 	return id, nil
+}
+
+// GetLOExcludeRule returns one exclude rule by ID, or nil if it doesn't
+// exist.
+func (db *DB) GetLOExcludeRule(id int64) (*LOExcludeRule, error) {
+	r := LOExcludeRule{ID: id}
+	err := db.QueryRow(`SELECT profile_id, field, operator, value, sort_order FROM lo_exclude_rules WHERE id = ?`, id).
+		Scan(&r.ProfileID, &r.Field, &r.Operator, &r.Value, &r.SortOrder)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get lo_exclude_rule %d: %w", id, err)
+	}
+	return &r, nil
+}
+
+// UpdateLOExcludeRule overwrites an existing exclude rule's fields in
+// place.
+func (db *DB) UpdateLOExcludeRule(r LOExcludeRule) error {
+	_, err := db.Exec(`
+		UPDATE lo_exclude_rules SET field = ?, operator = ?, value = ?, sort_order = ?
+		WHERE id = ?
+	`, r.Field, r.Operator, r.Value, r.SortOrder, r.ID)
+	if err != nil {
+		return fmt.Errorf("update lo_exclude_rule %d: %w", r.ID, err)
+	}
+	return nil
+}
+
+// DeleteLOExcludeRule removes one exclude rule by ID.
+func (db *DB) DeleteLOExcludeRule(id int64) error {
+	if _, err := db.Exec(`DELETE FROM lo_exclude_rules WHERE id = ?`, id); err != nil {
+		return fmt.Errorf("delete lo_exclude_rule %d: %w", id, err)
+	}
+	return nil
 }
 
 // ListLOExcludeRules returns every exclude rule for a profile, in

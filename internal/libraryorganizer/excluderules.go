@@ -117,6 +117,24 @@ func compareExcludeRule(fieldValue, operator, value string) bool {
 	}
 }
 
+// ExcludeRuleFields lists every field name excludeRuleFieldValue actually
+// supports, in the same order as its switch statement - exported for the
+// rule editor UI's field picker (comic-server-7ecr), so that list has one
+// source of truth instead of being hand-copied into the API layer and
+// risking drift from what evaluateExcludeRule actually accepts.
+var ExcludeRuleFields = []string{
+	"Tags", "File Path", "File Name", "File Format", "Series", "Title", "Format",
+	"Volume", "Year", "Number", "Count", "Month", "Day", "Publisher", "Imprint",
+	"Genre", "Web", "Age Rating", "Language", "Writer", "Penciller", "Inker",
+	"Colorist", "Letterer", "Cover Artist", "Editor", "Characters", "Teams",
+	"Locations", "Main Character Or Team", "Story Arc", "Series Group", "Notes",
+	"Review", "Scan Information", "Alternate Series", "Alternate Number",
+	"Alternate Count", "Black And White", "Manga", "Series Complete", "Rating",
+}
+
+// ExcludeRuleOperators lists every operator compareExcludeRule accepts.
+var ExcludeRuleOperators = []string{"is", "is not", "contains", "does not contain", "greater than", "less than"}
+
 // excludeRuleFieldValue looks up rule.Field (a losettingsx.dat human
 // field name, e.g. "File Path") against book, returning its text value.
 // Scoped to fields with a direct ComicBook property - StartYear/

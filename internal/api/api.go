@@ -213,7 +213,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/library/workflow/convert-cbz", s.handleRunCBZConvertWorkflow)
 	s.mux.HandleFunc("/api/library/workflow/organize-preview", s.handleOrganizePreview)
 	s.mux.HandleFunc("/api/library/workflow/organize-apply", s.handleOrganizeApply)
-	s.mux.HandleFunc("/api/library/organize-profiles", s.handleListLOProfiles)
+	s.mux.HandleFunc("/api/library/organize-profiles", s.handleLOProfilesCollection)
+	s.mux.HandleFunc("/api/library/organize-profiles/", s.handleLOProfilesRouter)
+	s.mux.HandleFunc("/api/library/organize-rules/", s.handleLORuleItem)
 	// Watch folders (comic-server-chh) - "stage 0", before any book record
 	// exists at all.
 	s.mux.HandleFunc("/api/library/workflow/new-files", s.handleGetWatchFolderNewFiles)

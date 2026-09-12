@@ -99,6 +99,7 @@ let dataManagerPage = null;
 let dataManagerRulesPage = null;
 let workflowPage = null;
 let organizePage = null;
+let libraryOrganizerProfilesPage = null;
 let browsePage = null;
 let deviceDetail = null; // Current device detail view
 let deviceSettings = null; // Current device settings view
@@ -275,6 +276,15 @@ document.addEventListener('DOMContentLoaded', () => {
             organizePage = new OrganizePage();
         }
         await organizePage.init(ctx);
+    });
+
+    router.register('/organize/profiles', async (params, ctx) => {
+        navigation.setActive('workflow');
+        dashboard.hide();
+        if (!libraryOrganizerProfilesPage) {
+            libraryOrganizerProfilesPage = new LibraryOrganizerProfilesPage();
+        }
+        await libraryOrganizerProfilesPage.init(ctx);
     });
 
     router.register('/settings', async (params, ctx) => {

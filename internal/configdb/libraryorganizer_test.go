@@ -150,3 +150,51 @@ func TestDeleteLOProfile_CascadesToItemsAndRules(t *testing.T) {
 		t.Errorf("expected 0 exclude rules after cascade delete, got %d", len(rules))
 	}
 }
+
+// TestLOProfile_UpdateAndExcludeRuleCRUD exercises the CRUD surface added
+// for comic-server-7ecr's native profile editor: UpdateLOProfile,
+// GetLOExcludeRule/UpdateLOExcludeRule/DeleteLOExcludeRule.
+func TestLOProfile_UpdateAndExcludeRuleCRUD(t *testing.T) {
+	db := newTestDMDB(t)
+
+	p := LOProfile{ID: "p1", Name: "Original", BaseFolder: "/old", Mode: "Move"}
+	if err := db.CreateLOProfile(p); err != nil {
+		t.Fatalf("CreateLOProfile: %v", err)
+	}
+	p.Name = "Renamed"
+	p.BaseFolder = "/new"
+	p.CopyMode = true
+	if err := db.UpdateLOProfile(p); err != nil {
+		t.Fatalf("UpdateLOProfile: %v", err)
+	}
+	got, err := db.GetLOProfile("p1")
+	if err != nil {
+		t.Fatalf("GetLOProfile: %v", err)
+	}
+	if got == nil || got.Name != "Renamed" || got.BaseFolder != "/new" || !got.CopyMode {
+		t.Fatalf("GetLOProfile after update = %+v, want Name=Renamed BaseFolder=/new CopyMode=true", got)
+	}
+
+	ruleID, err := db.CreateLOExcludeRule(LOExcludeRule{ProfileID: "p1", Field: "Tags", Operator: "contains", Value: "Archive"})
+	if err != nil {
+		t.Fatalf("CreateLOExcludeRule: %v", err)
+	}
+	rule, err := db.GetLOExcludeRule(ruleID)
+	if err != nil || rule == nil || rule.Field != "Tags" {
+		t.Fatalf("GetLOExcludeRule = %+v err=%v, want Field=Tags", rule, err)
+	}
+	rule.Value = "Vault"
+	if err := db.UpdateLOExcludeRule(*rule); err != nil {
+		t.Fatalf("UpdateLOExcludeRule: %v", err)
+	}
+	updated, err := db.GetLOExcludeRule(ruleID)
+	if err != nil || updated == nil || updated.Value != "Vault" {
+		t.Fatalf("GetLOExcludeRule after update = %+v err=%v, want Value=Vault", updated, err)
+	}
+	if err := db.DeleteLOExcludeRule(ruleID); err != nil {
+		t.Fatalf("DeleteLOExcludeRule: %v", err)
+	}
+	if gone, err := db.GetLOExcludeRule(ruleID); err != nil || gone != nil {
+		t.Errorf("expected exclude rule gone after delete, got %+v err=%v", gone, err)
+	}
+}
