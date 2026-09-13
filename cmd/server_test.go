@@ -132,6 +132,41 @@ func TestNotReadyDeviceLists_BlocksOnColdIdListButNotWarmSmartList(t *testing.T)
 	}
 }
 
+// TestValidateCBZConvertAgainstEffectiveTrash_ChecksConfigDBFirst covers
+// comic-server-dtu5: the check must consider config.db's trash_settings
+// (if the user has ever saved one through the Settings UI) rather than
+// only config.yaml's TrashPath - the whole point of moving this check out
+// of Config.Validate() in the first place.
+func TestValidateCBZConvertAgainstEffectiveTrash_ChecksConfigDBFirst(t *testing.T) {
+	db := newTestConfigDB(t)
+	cfg := &config.Config{}
+	cfg.Server.CBZConvert.Enabled = true
+	cfg.Server.TrashPath = "" // nothing in config.yaml
+
+	if err := validateCBZConvertAgainstEffectiveTrash(cfg, db); err == nil {
+		t.Error("expected an error with cbz_convert enabled and no trash path anywhere")
+	}
+
+	if err := db.UpsertTrashSettings(configdb.TrashSettings{Path: "/data/trash", RetentionDays: 30}); err != nil {
+		t.Fatalf("UpsertTrashSettings: %v", err)
+	}
+
+	if err := validateCBZConvertAgainstEffectiveTrash(cfg, db); err != nil {
+		t.Errorf("expected no error once config.db has a trash path, got: %v", err)
+	}
+}
+
+func TestValidateCBZConvertAgainstEffectiveTrash_FallsBackToConfigYAML(t *testing.T) {
+	db := newTestConfigDB(t)
+	cfg := &config.Config{}
+	cfg.Server.CBZConvert.Enabled = true
+	cfg.Server.TrashPath = "/legacy/trash" // no config.db row yet
+
+	if err := validateCBZConvertAgainstEffectiveTrash(cfg, db); err != nil {
+		t.Errorf("expected the config.yaml fallback to satisfy the check, got: %v", err)
+	}
+}
+
 func newTestConfigDB(t *testing.T) *configdb.DB {
 	t.Helper()
 	db, err := configdb.Open(filepath.Join(t.TempDir(), "config.db"))

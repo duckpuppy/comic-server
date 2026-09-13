@@ -143,30 +143,44 @@ func TestKomgaConfigValidate(t *testing.T) {
 	}
 }
 
-func TestConfigValidate_CBZConvertRequiresTrashPath(t *testing.T) {
+// TestCBZConvertConfig_ValidateRequiresTrashPath is a direct unit test on
+// CBZConvertConfig.Validate itself, not through Config.Validate() -
+// comic-server-dtu5 moved the actual call site to cmd/server.go's
+// validateCBZConvertAgainstEffectiveTrash, which runs after config.db
+// opens (checking config.db's trash_settings first, config.yaml's
+// TrashPath as fallback) rather than as part of Config.Validate(), since
+// config.db isn't open yet at that point in startup.
+func TestCBZConvertConfig_ValidateRequiresTrashPath(t *testing.T) {
+	cc := CBZConvertConfig{Enabled: true}
+
+	if err := cc.Validate(""); err == nil {
+		t.Error("Validate() should reject cbz_convert.enabled without a trash path")
+	}
+	if err := cc.Validate("/data/trash"); err != nil {
+		t.Errorf("Validate() should accept cbz_convert.enabled with a trash path set, got: %v", err)
+	}
+}
+
+func TestCBZConvertConfig_ValidateDisabledDoesNotRequireTrashPath(t *testing.T) {
+	cc := CBZConvertConfig{Enabled: false}
+
+	if err := cc.Validate(""); err != nil {
+		t.Errorf("Validate() should not require a trash path when disabled, got: %v", err)
+	}
+}
+
+// TestConfigValidate_DoesNotCheckCBZConvert confirms Config.Validate()
+// itself no longer touches CBZConvert at all (comic-server-dtu5) - it
+// can't, since config.db (where the effective trash path might actually
+// live) isn't open yet when Validate() runs.
+func TestConfigValidate_DoesNotCheckCBZConvert(t *testing.T) {
 	cfg := NewConfig()
 	cfg.ApplyDefaults()
 	cfg.Server.CBZConvert.Enabled = true
 	cfg.Server.TrashPath = ""
 
-	if err := cfg.Validate(); err == nil {
-		t.Error("Config.Validate() should reject cbz_convert.enabled without trash_path set")
-	}
-
-	cfg.Server.TrashPath = "/data/trash"
 	if err := cfg.Validate(); err != nil {
-		t.Errorf("Config.Validate() should accept cbz_convert.enabled with trash_path set, got: %v", err)
-	}
-}
-
-func TestConfigValidate_CBZConvertDisabledDoesNotRequireTrashPath(t *testing.T) {
-	cfg := NewConfig()
-	cfg.ApplyDefaults()
-	cfg.Server.CBZConvert.Enabled = false
-	cfg.Server.TrashPath = ""
-
-	if err := cfg.Validate(); err != nil {
-		t.Errorf("Config.Validate() should not require trash_path when cbz_convert is disabled, got: %v", err)
+		t.Errorf("Config.Validate() should not itself validate CBZConvert (moved to cmd/server.go), got: %v", err)
 	}
 }
 

@@ -270,22 +270,21 @@ func runServer(cmd *cobra.Command, args []string) error {
 
 	// One-time migration: copy Server.TrashPath/TrashRetentionDays still
 	// sitting in config.yaml into config.db (comic-server-4hsz - the first
-	// UI/API surface for this section). Keyed on TrashPath alone, not
-	// TrashRetentionDays too: Validate() already defaults TrashRetentionDays
-	// to 30 whenever it's 0 (long before this point), so it's never a
-	// reliable "was this actually configured" signal on its own the way
-	// scan_info's fields are.
+	// UI/API surface for this section), then clear them from config.yaml -
+	// a clean break, same as scan_info's own migration. Keyed on TrashPath
+	// alone, not TrashRetentionDays too: Validate() already defaults
+	// TrashRetentionDays to 30 whenever it's 0 (long before this point), so
+	// it's never a reliable "was this actually configured" signal on its
+	// own the way scan_info's fields are.
 	//
-	// Unlike scan_info, this does NOT clear config.yaml's copy when CBZ
-	// Convert is enabled: Config.Validate's CBZConvert.Validate check reads
-	// server.trash_path from config.yaml directly (not config.db), so
-	// clearing it here would make the server refuse to start on the very
-	// next restart. Once CBZ Convert's own enabled flag gets a config.db
-	// home too, this can become a clean break like scan_info's; until then
-	// config.db is authoritative for anything reading through
-	// effectiveTrashConfig (the web UI, CBZ Convert's actual apply,
-	// Library Organizer, the background sweep below), while config.yaml's
-	// copy sticks around solely so Validate keeps working.
+	// This USED to skip clearing config.yaml's copy whenever CBZ Convert
+	// was enabled, since cfg.Validate() (which runs before config.db even
+	// opens) checked CBZConvert against config.yaml's TrashPath directly -
+	// clearing it would have made the server refuse to start on the next
+	// restart. Fixed in comic-server-dtu5 by moving that specific check to
+	// validateCBZConvertAgainstEffectiveTrash below, which runs AFTER this
+	// migration and checks config.db first - so config.yaml no longer
+	// needs to keep a copy around just to satisfy it.
 	if cfg.Server.TrashPath != "" {
 		existing, err := configDB.GetTrashSettings()
 		if err != nil {
@@ -300,14 +299,22 @@ func runServer(cmd *cobra.Command, args []string) error {
 			}
 			log.Info().Msg("Migrated trash settings from config.yaml to config.db")
 
-			if !cfg.Server.CBZConvert.Enabled {
-				cfg.Server.TrashPath = ""
-				cfg.Server.TrashRetentionDays = 0
-				if err := config.Save(cfg, configPath); err != nil {
-					log.Error().Err(err).Msg("Failed to save config.yaml after migrating trash settings to config.db")
-				}
+			cfg.Server.TrashPath = ""
+			cfg.Server.TrashRetentionDays = 0
+			if err := config.Save(cfg, configPath); err != nil {
+				log.Error().Err(err).Msg("Failed to save config.yaml after migrating trash settings to config.db")
 			}
 		}
+	}
+
+	// CBZConvert.Enabled requires SOME trash path to be configured
+	// (internal/trash's quarantine mechanism is not optional for a feature
+	// that retires comic archive files - comic-server-1up). This can only
+	// be checked here, after config.db is open and the migration above has
+	// run, since the effective trash path may now live in config.db rather
+	// than config.yaml (comic-server-dtu5).
+	if err := validateCBZConvertAgainstEffectiveTrash(cfg, configDB); err != nil {
+		return fmt.Errorf("configuration validation failed: %w", err)
 	}
 
 	// Load library using appropriate backend
@@ -850,6 +857,26 @@ func migrateKomgaTargetsToConfigDB(cfg *config.Config, configDB *configdb.DB) (i
 
 // applyDeviceConfig applies a device's sync configuration to a syncer
 // This configures which lists to sync and their settings
+// validateCBZConvertAgainstEffectiveTrash checks CBZConvertConfig.Validate
+// against the trash path actually in effect (config.db's trash_settings if
+// the user has ever saved one through the Settings UI, else config.yaml's
+// TrashPath) - a small local duplicate of api.Server.effectiveTrashConfig's
+// same fallback logic, since cmd deliberately doesn't import the api
+// package here just to reuse one lookup. See comic-server-dtu5 for why
+// this can't just be part of Config.Validate() (config.db isn't open yet
+// at that point in startup).
+func validateCBZConvertAgainstEffectiveTrash(cfg *config.Config, configDB *configdb.DB) error {
+	path := cfg.Server.TrashPath
+	stored, err := configDB.GetTrashSettings()
+	if err != nil {
+		return fmt.Errorf("check effective trash config: %w", err)
+	}
+	if stored != nil {
+		path = stored.Path
+	}
+	return cfg.Server.CBZConvert.Validate(path)
+}
+
 // notReadyDeviceLists resolves deviceConfig's enabled lists and checks them
 // against sb's warm-up state, returning the IDs of any that aren't ready to
 // evaluate yet (comic-server-jrn). Only the lists actually assigned to this

@@ -386,9 +386,12 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("trash_retention_days must be >= 0, got %d", c.Server.TrashRetentionDays)
 	}
 
-	if err := c.Server.CBZConvert.Validate(c.Server.TrashPath); err != nil {
-		return err
-	}
+	// CBZConvert.Validate is deliberately NOT called here - it needs the
+	// EFFECTIVE trash path (config.db's trash_settings if the user has
+	// ever saved one through the Settings UI, comic-server-4hsz, else this
+	// struct's own TrashPath), and config.db isn't open yet at the point
+	// this method runs (see cmd/server.go's startup sequence). Called
+	// separately, after config.db opens - see comic-server-dtu5.
 
 	return nil
 }
