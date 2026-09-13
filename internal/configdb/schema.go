@@ -11,8 +11,9 @@ import "fmt"
 // lo_profile_items/lo_exclude_rules (comic-server-3bz.2). Version 8 adds
 // ui_settings (comic-server-8qk). Version 9 adds a source column to
 // dm_groups/dm_rulesets (comic-server-vkpq). Version 10 adds
-// trash_settings (comic-server-4hsz).
-const schemaVersion = 10
+// trash_settings (comic-server-4hsz). Version 11 adds
+// server_misc_settings (comic-server-wp8k).
+const schemaVersion = 11
 
 // initSchema brings the database up to schemaVersion. No-ops if already
 // current - safe to call on every Open, every server startup.
@@ -76,6 +77,11 @@ func (db *DB) initSchema() error {
 				return fmt.Errorf("migrate v9→v10: %w", err)
 			}
 		}
+		if version < 11 {
+			if err := db.migrateV10ToV11(); err != nil {
+				return fmt.Errorf("migrate v10→v11: %w", err)
+			}
+		}
 	}
 
 	if _, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
@@ -108,7 +114,10 @@ func (db *DB) createTables() error {
 	if err := db.createUISettingsTable(); err != nil {
 		return err
 	}
-	return db.createTrashSettingsTable()
+	if err := db.createTrashSettingsTable(); err != nil {
+		return err
+	}
+	return db.createServerMiscSettingsTable()
 }
 
 // migrateV1ToV2 adds the devices/device_lists tables for a database that
@@ -275,6 +284,12 @@ func (db *DB) hasColumn(table, name string) (bool, error) {
 // TrashRetentionDays (comic-server-4hsz).
 func (db *DB) migrateV9ToV10() error {
 	return db.createTrashSettingsTable()
+}
+
+// migrateV10ToV11 adds the server_misc_settings table for a database
+// created under schemaVersion 10 (comic-server-wp8k).
+func (db *DB) migrateV10ToV11() error {
+	return db.createServerMiscSettingsTable()
 }
 
 // createDataManagerTables creates the tables backing the Data Manager rule

@@ -167,6 +167,102 @@ func TestValidateCBZConvertAgainstEffectiveTrash_FallsBackToConfigYAML(t *testin
 	}
 }
 
+// TestApplyServerMiscSettings_FirstRunMigratesAndClears covers
+// comic-server-wp8k: on a database with no server_misc_settings row yet,
+// the current in-memory config.yaml values are copied into config.db and
+// then cleared from config.yaml (a clean break, matching trash_settings').
+func TestApplyServerMiscSettings_FirstRunMigratesAndClears(t *testing.T) {
+	db := newTestConfigDB(t)
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	cfg := &config.Config{}
+	cfg.Server.CBZConvert.Enabled = true
+	cfg.Server.IgnoreDevices = []string{"192.168.0.24"}
+	if err := config.Save(cfg, configPath); err != nil {
+		t.Fatalf("seed config.Save: %v", err)
+	}
+
+	if err := applyServerMiscSettings(cfg, db, configPath, false, nil); err != nil {
+		t.Fatalf("applyServerMiscSettings: %v", err)
+	}
+
+	stored, err := db.GetServerMiscSettings()
+	if err != nil {
+		t.Fatalf("GetServerMiscSettings: %v", err)
+	}
+	if stored == nil || !stored.CBZConvertEnabled || len(stored.IgnoreDevices) != 1 || stored.IgnoreDevices[0] != "192.168.0.24" {
+		t.Fatalf("stored settings = %+v, want migrated values", stored)
+	}
+
+	// The in-memory cfg still reflects the effective (now config.db-backed)
+	// values, so existing call sites reading cfg.Server.* directly keep working.
+	if !cfg.Server.CBZConvert.Enabled || len(cfg.Server.IgnoreDevices) != 1 {
+		t.Errorf("in-memory cfg after migration = %+v, want unchanged effective values", cfg.Server)
+	}
+
+	reloaded, err := config.Load(configPath)
+	if err != nil {
+		t.Fatalf("config.Load: %v", err)
+	}
+	if reloaded.Server.CBZConvert.Enabled || len(reloaded.Server.IgnoreDevices) != 0 {
+		t.Errorf("config.yaml after migration = %+v, want cleared", reloaded.Server)
+	}
+}
+
+// TestApplyServerMiscSettings_SteadyStateUsesConfigDB covers a later run:
+// config.db already has a row, cfg (freshly loaded from a config.yaml
+// that no longer carries these fields) gets the config.db values applied.
+func TestApplyServerMiscSettings_SteadyStateUsesConfigDB(t *testing.T) {
+	db := newTestConfigDB(t)
+	if err := db.UpsertServerMiscSettings(configdb.ServerMiscSettings{
+		CBZConvertEnabled: true,
+		IgnoreDevices:     []string{"SM-T970"},
+	}); err != nil {
+		t.Fatalf("UpsertServerMiscSettings: %v", err)
+	}
+
+	cfg := &config.Config{} // simulates a fresh load from the now-cleared config.yaml
+	if err := applyServerMiscSettings(cfg, db, filepath.Join(t.TempDir(), "config.yaml"), false, nil); err != nil {
+		t.Fatalf("applyServerMiscSettings: %v", err)
+	}
+
+	if !cfg.Server.CBZConvert.Enabled {
+		t.Error("expected CBZConvert.Enabled to be applied from config.db")
+	}
+	if len(cfg.Server.IgnoreDevices) != 1 || cfg.Server.IgnoreDevices[0] != "SM-T970" {
+		t.Errorf("cfg.Server.IgnoreDevices = %v, want [SM-T970] from config.db", cfg.Server.IgnoreDevices)
+	}
+}
+
+// TestApplyServerMiscSettings_CLIFlagOverridesAndPersists covers the
+// --ignore-device flag: when explicitly passed, it wins over whatever's
+// already in config.db AND is written back so it persists forward too.
+func TestApplyServerMiscSettings_CLIFlagOverridesAndPersists(t *testing.T) {
+	db := newTestConfigDB(t)
+	if err := db.UpsertServerMiscSettings(configdb.ServerMiscSettings{
+		IgnoreDevices: []string{"old-device"},
+	}); err != nil {
+		t.Fatalf("UpsertServerMiscSettings: %v", err)
+	}
+
+	cfg := &config.Config{}
+	if err := applyServerMiscSettings(cfg, db, filepath.Join(t.TempDir(), "config.yaml"), true, []string{"new-device"}); err != nil {
+		t.Fatalf("applyServerMiscSettings: %v", err)
+	}
+
+	if len(cfg.Server.IgnoreDevices) != 1 || cfg.Server.IgnoreDevices[0] != "new-device" {
+		t.Errorf("cfg.Server.IgnoreDevices = %v, want [new-device] (CLI override)", cfg.Server.IgnoreDevices)
+	}
+
+	// The override must persist forward into config.db too.
+	stored, err := db.GetServerMiscSettings()
+	if err != nil {
+		t.Fatalf("GetServerMiscSettings: %v", err)
+	}
+	if len(stored.IgnoreDevices) != 1 || stored.IgnoreDevices[0] != "new-device" {
+		t.Errorf("stored.IgnoreDevices = %v, want [new-device] persisted", stored.IgnoreDevices)
+	}
+}
+
 func newTestConfigDB(t *testing.T) *configdb.DB {
 	t.Helper()
 	db, err := configdb.Open(filepath.Join(t.TempDir(), "config.db"))

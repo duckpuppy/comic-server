@@ -307,6 +307,14 @@ func runServer(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// One-time migration (+ ongoing CLI-flag-forwarding) for
+	// CBZConvert.Enabled and IgnoreDevices (comic-server-wp8k, second
+	// slice of comic-server-4hsz's Settings UI push) - see
+	// applyServerMiscSettings's own doc comment for the full story.
+	if err := applyServerMiscSettings(cfg, configDB, configPath, ignoreDevicesSet, ignoreDevices); err != nil {
+		return fmt.Errorf("failed to apply server misc settings: %w", err)
+	}
+
 	// CBZConvert.Enabled requires SOME trash path to be configured
 	// (internal/trash's quarantine mechanism is not optional for a feature
 	// that retires comic archive files - comic-server-1up). This can only
@@ -627,6 +635,19 @@ func runServer(cmd *cobra.Command, args []string) error {
 					continue
 				}
 
+				// Re-apply the config.db-backed misc settings (comic-server-wp8k) -
+				// newCfg was just loaded fresh from config.yaml, which no longer
+				// carries CBZConvert.Enabled/IgnoreDevices at all once migrated, so
+				// without this they'd revert to their zero value on every SIGHUP.
+				if err := applyServerMiscSettings(newCfg, configDB, configPath, ignoreDevicesSet, ignoreDevices); err != nil {
+					log.Error().Err(err).Msg("Failed to apply server misc settings on reload, keeping current config")
+					continue
+				}
+				if err := validateCBZConvertAgainstEffectiveTrash(newCfg, configDB); err != nil {
+					log.Error().Err(err).Msg("Invalid configuration after reload, keeping current config")
+					continue
+				}
+
 				// Reinitialize logging with new config
 				if err := log.Init(log.Config{
 					Level:  newCfg.Server.LogLevel,
@@ -857,6 +878,75 @@ func migrateKomgaTargetsToConfigDB(cfg *config.Config, configDB *configdb.DB) (i
 
 // applyDeviceConfig applies a device's sync configuration to a syncer
 // This configures which lists to sync and their settings
+// applyServerMiscSettings resolves the effective CBZConvert.Enabled/
+// IgnoreDevices values (comic-server-wp8k) and writes them back onto cfg
+// in place, so every existing call site that already reads
+// cfg.Server.CBZConvert.Enabled / cfg.Server.IgnoreDevices directly
+// (unlike trash_settings' effectiveTrashConfig, these are read from
+// several scattered cmd-package call sites, not funneled through one API
+// helper) keeps working unchanged, now reflecting config.db instead of
+// config.yaml.
+//
+// First run (config.db has no row yet): seed config.db from whatever's
+// currently in cfg (config.yaml's values, with any CLI override already
+// applied), then clear config.yaml's copies - a clean break, same as
+// scan_info/trash_settings.
+//
+// Every later run: config.db's stored value is authoritative UNLESS the
+// --ignore-device CLI flag was explicitly passed THIS run, in which case
+// it wins and is written back into config.db too - so an explicit flag
+// both takes effect immediately and becomes the new persisted default,
+// rather than only overriding this one run. CBZConvert.Enabled has no CLI
+// flag of its own, so no such override path is needed for it.
+//
+// Called identically at startup and from the SIGHUP handler (passing
+// newCfg) - a SIGHUP reload loads a fresh cfg from the now-cleared
+// config.yaml, so without reapplying this, the in-memory effective values
+// would revert to their zero value on every reload.
+func applyServerMiscSettings(cfg *config.Config, configDB *configdb.DB, configPath string, ignoreDevicesSet bool, ignoreDevicesFlag []string) error {
+	existing, err := configDB.GetServerMiscSettings()
+	if err != nil {
+		return fmt.Errorf("check config database for existing server misc settings: %w", err)
+	}
+
+	if existing == nil {
+		seed := configdb.ServerMiscSettings{
+			CBZConvertEnabled: cfg.Server.CBZConvert.Enabled,
+			IgnoreDevices:     cfg.Server.IgnoreDevices,
+		}
+		if err := configDB.UpsertServerMiscSettings(seed); err != nil {
+			return fmt.Errorf("migrate server misc settings to config database: %w", err)
+		}
+		log.Info().Msg("Migrated CBZ Convert enabled flag and ignore-devices list from config.yaml to config.db")
+
+		// Clear config.yaml's on-disk copy only - cfg's in-memory fields
+		// are restored right after Save so the rest of this process still
+		// sees the correct effective values (a bug caught by this
+		// function's own tests: clearing cfg in place and never restoring
+		// it made a fresh migration silently disable a just-enabled
+		// CBZConvert for the remainder of that run).
+		cfg.Server.CBZConvert.Enabled = false
+		cfg.Server.IgnoreDevices = nil
+		if err := config.Save(cfg, configPath); err != nil {
+			log.Error().Err(err).Msg("Failed to save config.yaml after migrating server misc settings to config.db")
+		}
+		cfg.Server.CBZConvert.Enabled = seed.CBZConvertEnabled
+		cfg.Server.IgnoreDevices = seed.IgnoreDevices
+		return nil
+	}
+
+	if ignoreDevicesSet {
+		existing.IgnoreDevices = ignoreDevicesFlag
+		if err := configDB.UpsertServerMiscSettings(*existing); err != nil {
+			return fmt.Errorf("persist --ignore-device override to config database: %w", err)
+		}
+	}
+
+	cfg.Server.CBZConvert.Enabled = existing.CBZConvertEnabled
+	cfg.Server.IgnoreDevices = existing.IgnoreDevices
+	return nil
+}
+
 // validateCBZConvertAgainstEffectiveTrash checks CBZConvertConfig.Validate
 // against the trash path actually in effect (config.db's trash_settings if
 // the user has ever saved one through the Settings UI, else config.yaml's

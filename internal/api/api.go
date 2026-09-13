@@ -253,6 +253,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/settings/theme", s.handleThemeConfig)
 	s.mux.HandleFunc("/api/settings/trash", s.handleTrashSettings)
 	s.mux.HandleFunc("/api/settings/library-import", s.handleLibraryImport)
+	s.mux.HandleFunc("/api/settings/server-misc", s.handleServerMiscSettings)
 
 	// WebSocket endpoint
 	s.mux.HandleFunc("/ws", s.handleWebSocket)

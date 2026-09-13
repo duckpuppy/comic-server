@@ -32,6 +32,26 @@ class ScanInfoSettings {
         this.importing = false;
         this.importJob = null;
         this.importError = null;
+
+        // Server misc settings (comic-server-wp8k, second slice of the
+        // Settings UI push): CBZ Convert enabled + ignore-devices, both
+        // live-effect (no restart needed) unlike the still-config.yaml-only
+        // library path/ports/ComicVine key/Komga connection settings
+        // (comic-server-yvbh).
+        this.serverMisc = null; // { cbz_convert_enabled, ignore_devices }
+        this.serverMiscSaving = false;
+    }
+
+    async loadServerMisc() {
+        try {
+            const response = await fetch('/api/settings/server-misc');
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const data = await response.json();
+            this.serverMisc = { cbz_convert_enabled: !!data.cbz_convert_enabled, ignore_devices: data.ignore_devices || [] };
+        } catch (error) {
+            console.error('Failed to load server settings:', error);
+            this.serverMisc = { cbz_convert_enabled: false, ignore_devices: [] };
+        }
     }
 
     async init(ctx) {
@@ -40,7 +60,7 @@ class ScanInfoSettings {
         // leaving the page blank until the fetch resolves
         // (comic-server-4te).
         this.render();
-        await Promise.all([this.load(), this.loadTheme(), this.loadTrash(), this.loadImportStatus()]);
+        await Promise.all([this.load(), this.loadTheme(), this.loadTrash(), this.loadImportStatus(), this.loadServerMisc()]);
         if (ctx && ctx.aborted) return;
         this.render();
         this.attachListeners();
@@ -156,6 +176,39 @@ class ScanInfoSettings {
         }
     }
 
+    addIgnoreDevice() {
+        const input = document.getElementById('server-misc-ignore-input');
+        if (!input) return;
+        const value = input.value.trim();
+        if (!value) return;
+        this.serverMisc.ignore_devices.push(value);
+        this.saveServerMisc();
+    }
+
+    async saveServerMisc() {
+        this.serverMiscSaving = true;
+        this.render();
+        this.attachListeners();
+        try {
+            const response = await fetch('/api/settings/server-misc', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(this.serverMisc),
+            });
+            const text = await response.text();
+            if (!response.ok) throw new Error(friendlyErrorText(response, text));
+            this.serverMisc = JSON.parse(text);
+            dialogs.toast('Server settings saved.', 'success');
+        } catch (error) {
+            console.error('Failed to save server settings:', error);
+            dialogs.toast('Failed to save server settings: ' + error.message, 'error');
+        } finally {
+            this.serverMiscSaving = false;
+            this.render();
+            this.attachListeners();
+        }
+    }
+
     async runLibraryImport() {
         if (!this.selectedFile) return;
         this.importing = true;
@@ -195,6 +248,7 @@ class ScanInfoSettings {
                 </div>
                 ${this.renderAppearance()}
                 ${this.renderLibraryImport()}
+                ${this.renderServerMisc()}
                 ${this.renderTrash()}
                 ${this.renderBody()}
             </div>
@@ -243,6 +297,48 @@ class ScanInfoSettings {
             html += `<p class="datamanager-errors">This provisioned a new database - restart comic-server to start serving from it.</p>`;
         }
         return html;
+    }
+
+    renderServerMisc() {
+        const m = this.serverMisc || { cbz_convert_enabled: false, ignore_devices: [] };
+        return `
+            <div class="panel scan-info-panel">
+                <div class="settings-section-header">
+                    <h2>Server</h2>
+                    <p class="settings-section-description">Both take effect immediately - no restart needed.</p>
+                </div>
+
+                <div class="form-group">
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="server-misc-cbz-convert" ${m.cbz_convert_enabled ? 'checked' : ''}>
+                        <span class="toggle-slider"></span>
+                    </label>
+                    <span class="form-label-inline">Convert to CBZ enabled</span>
+                    <div class="form-help">Requires Trash to be configured above - repacks a comic archive as CBZ and embeds ComicInfo.xml, retiring the original into quarantine.</div>
+                </div>
+
+                <div class="form-group scan-info-list-group">
+                    <label>Ignore Devices</label>
+                    <div class="form-help">Devices to never discover or sync with - by IP address, device ID, or device name.</div>
+                    ${m.ignore_devices.length === 0 ? `
+                        <p class="empty-hint">No entries yet.</p>
+                    ` : `
+                        <ul class="scan-info-list" data-field="ignore_devices">
+                            ${m.ignore_devices.map((value, i) => `
+                                <li class="scan-info-list-item">
+                                    <span class="scan-info-list-value">${this.escapeHtml(value)}</span>
+                                    <button type="button" class="btn btn-small btn-danger server-misc-ignore-remove" data-index="${i}">✕</button>
+                                </li>
+                            `).join('')}
+                        </ul>
+                    `}
+                    <div class="scan-info-list-add form-row">
+                        <input type="text" class="form-control" id="server-misc-ignore-input" placeholder="e.g. 192.168.0.24">
+                        <button type="button" class="btn btn-secondary" id="server-misc-ignore-add-btn">+ Add</button>
+                    </div>
+                </div>
+            </div>
+        `;
     }
 
     renderTrash() {
@@ -376,6 +472,31 @@ class ScanInfoSettings {
     }
 
     attachListeners() {
+        const cbzConvertToggle = document.getElementById('server-misc-cbz-convert');
+        if (cbzConvertToggle) {
+            cbzConvertToggle.addEventListener('change', (e) => {
+                this.serverMisc.cbz_convert_enabled = e.target.checked;
+                this.saveServerMisc();
+            });
+        }
+        const ignoreAddBtn = document.getElementById('server-misc-ignore-add-btn');
+        if (ignoreAddBtn) ignoreAddBtn.addEventListener('click', () => this.addIgnoreDevice());
+        const ignoreInput = document.getElementById('server-misc-ignore-input');
+        if (ignoreInput) {
+            ignoreInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    this.addIgnoreDevice();
+                }
+            });
+        }
+        document.querySelectorAll('.server-misc-ignore-remove').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.serverMisc.ignore_devices.splice(parseInt(btn.dataset.index, 10), 1);
+                this.saveServerMisc();
+            });
+        });
+
         const importFileInput = document.getElementById('library-import-file');
         if (importFileInput) {
             importFileInput.addEventListener('change', (e) => {
