@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.33.0](https://github.com/duckpuppy/comic-server/compare/v1.32.0...v1.33.0) (2026-09-13)
+
+
+### Features
+
+* Browse page gets Data Manager and Show All (comic-server-w7ig) ([9699976](https://github.com/duckpuppy/comic-server/commit/9699976817d4b2eaf9f7b9534599fd4971594021))
+* remove per-list Convert/Scan Info/Data Manager tabs (comic-server-3hu8) ([deeb48d](https://github.com/duckpuppy/comic-server/commit/deeb48d1f90ae4e5d55ad5f7723afcb94b80bed8))
+
 ## [1.32.0](https://github.com/duckpuppy/comic-server/compare/v1.31.0...v1.32.0) (2026-09-13)
 
 
