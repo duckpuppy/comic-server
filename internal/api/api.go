@@ -194,6 +194,8 @@ func (s *Server) registerRoutes() {
 	// engine every saved smart list uses, evaluated on the fly with
 	// nothing created or saved.
 	s.mux.HandleFunc("/api/library/browse", s.handleBrowse)
+	s.mux.HandleFunc("/api/library/browse/datamanager-preview", s.handleBrowseDataManagerPreview)
+	s.mux.HandleFunc("/api/library/browse/datamanager-apply", s.handleBrowseDataManagerApply)
 
 	// Data Manager whole-library endpoints (comic-server-dpq's "Apply
 	// All" - the list-scoped equivalents are under /api/library/lists/).

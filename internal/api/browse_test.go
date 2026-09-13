@@ -88,6 +88,32 @@ func TestHandleBrowse_ZeroMatchersReturnsZeroNotEverything(t *testing.T) {
 	}
 }
 
+// TestHandleBrowse_ShowAllBypassesMatchers covers comic-server-w7ig's
+// "Show all books" opt-in: an explicit, separate way to see (and, via the
+// sibling Data Manager endpoints, act on) the whole library, distinct
+// from the zero-matchers-means-zero-results safety rule above.
+func TestHandleBrowse_ShowAllBypassesMatchers(t *testing.T) {
+	s := newBrowseTestServer(t, []library.ComicBook{
+		{ID: "1", Series: "Batman"},
+		{ID: "2", Series: "Superman"},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/library/browse", bytes.NewReader([]byte(`{"show_all":true}`)))
+	w := httptest.NewRecorder()
+	s.handleBrowse(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var result browseResponse
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if result.Total != 2 {
+		t.Errorf("Total = %d, want 2 (Show All must return the whole library)", result.Total)
+	}
+}
+
 func TestHandleBrowse_Paginates(t *testing.T) {
 	books := make([]library.ComicBook, 5)
 	for i := range books {

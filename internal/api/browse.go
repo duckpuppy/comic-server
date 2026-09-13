@@ -20,6 +20,14 @@ import (
 type BrowseRequest struct {
 	MatcherMode string                     `json:"matcher_mode"`
 	Matchers    []library.ComicBookMatcher `json:"matchers"`
+	// ShowAll explicitly requests every book in the library, bypassing
+	// the matcher list entirely - comic-server-w7ig's "Show all books"
+	// toggle. Deliberately a separate field from "zero matchers", not an
+	// alternate meaning for it: zero matchers still means zero results
+	// (comic-server-haz's safety rule, unchanged), so running a bulk
+	// action over the whole library is always this one explicit,
+	// visible opt-in rather than an accidental default.
+	ShowAll bool `json:"show_all,omitempty"`
 }
 
 // handleBrowse evaluates an ad-hoc matcher set against the WHOLE library
@@ -51,20 +59,11 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 
 	limit, offset := parseLimitOffset(r, 20, 100)
 
-	var matches []*library.ComicBook
-	if len(req.Matchers) > 0 {
-		list := &library.ComicListItem{
-			Type:        "ComicSmartListItem",
-			MatcherMode: req.MatcherMode,
-			Matchers:    req.Matchers,
-		}
-		var err error
-		matches, err = s.backend.GetBooksForList(list)
-		if err != nil {
-			log.Error().Err(err).Msg("Failed to evaluate ad-hoc browse filter")
-			http.Error(w, "Failed to evaluate filter", http.StatusInternalServerError)
-			return
-		}
+	matches, err := s.resolveBrowseCandidates(req)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to evaluate ad-hoc browse filter")
+		http.Error(w, "Failed to evaluate filter", http.StatusInternalServerError)
+		return
 	}
 
 	total := len(matches)
@@ -93,4 +92,34 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 		"offset":   offset,
 		"has_more": end < total,
 	})
+}
+
+// resolveBrowseCandidates resolves a BrowseRequest into the actual books
+// in scope - shared by the preview table (handleBrowse) and the Browse-
+// scoped Data Manager actions (comic-server-w7ig), since both need
+// exactly the same "what does this ad-hoc filter currently mean" answer.
+// ShowAll takes priority over the matcher list entirely (an explicit,
+// separate opt-in - see BrowseRequest.ShowAll's doc comment); otherwise
+// zero matchers still means zero results (comic-server-haz).
+func (s *Server) resolveBrowseCandidates(req BrowseRequest) ([]*library.ComicBook, error) {
+	if req.ShowAll {
+		allBooks, err := s.backend.GetAllBooks()
+		if err != nil {
+			return nil, err
+		}
+		books := make([]*library.ComicBook, len(allBooks))
+		for i := range allBooks {
+			books[i] = &allBooks[i]
+		}
+		return books, nil
+	}
+	if len(req.Matchers) == 0 {
+		return nil, nil
+	}
+	list := &library.ComicListItem{
+		Type:        "ComicSmartListItem",
+		MatcherMode: req.MatcherMode,
+		Matchers:    req.Matchers,
+	}
+	return s.backend.GetBooksForList(list)
 }
