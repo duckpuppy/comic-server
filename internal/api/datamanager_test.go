@@ -13,27 +13,6 @@ import (
 	"github.com/duckpuppy/comic-server/internal/workflow"
 )
 
-func newDataManagerTestServer(t *testing.T, books []library.ComicBook) (*Server, *configdb.DB) {
-	t.Helper()
-	lib := &library.ComicLibrary{
-		Books: books,
-		ComicLists: []library.ComicListItem{
-			{
-				ID:          "list-1",
-				Name:        "All Batman",
-				Type:        "ComicSmartListItem",
-				MatcherMode: "And",
-				Matchers: []library.ComicBookMatcher{
-					{Type: "Series", MatchOperator: "0", MatchValue: "Batman"},
-				},
-			},
-		},
-	}
-	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
-	db := newTestConfigDB(t)
-	return &Server{backend: backend, configDB: db}, db
-}
-
 // seedBatmanRuleset creates a group("Quality")>ruleset("Batman Family")
 // hierarchy in db matching the shape real dataman.dat groups take, so the
 // walkDMGroup/loadEnabledDMRulesets path (not just ApplyAll in isolation)
@@ -75,295 +54,6 @@ func seedBatmanRulesetTwoActions(t *testing.T, db *configdb.DB) {
 	}
 	if _, err := db.CreateDMAction(configdb.DMAction{RulesetID: "rs-batman", Field: "Concept", Modifier: "SetValue", Value: "Dark Knight", SortOrder: 1}); err != nil {
 		t.Fatalf("CreateDMAction(Concept): %v", err)
-	}
-}
-
-func TestHandleDataManagerPreview_NoRulesReturns422(t *testing.T) {
-	s, _ := newDataManagerTestServer(t, []library.ComicBook{{ID: "1", Series: "Batman"}})
-
-	req := httptest.NewRequest(http.MethodPost, "/api/library/lists/list-1/datamanager-preview", nil)
-	w := httptest.NewRecorder()
-	s.handleListsRouter(w, req)
-
-	if w.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("expected 422, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
-func TestHandleDataManagerPreview_ShowsChangesWithoutWriting(t *testing.T) {
-	books := []library.ComicBook{
-		{ID: "1", Series: "Batman", Number: "1"},
-		{ID: "2", Series: "Batman Beyond", Number: "1"}, // does not match "Series Is Batman"
-	}
-	s, db := newDataManagerTestServer(t, books)
-	seedBatmanRuleset(t, db)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/library/lists/list-1/datamanager-preview", nil)
-	w := httptest.NewRecorder()
-	s.handleListsRouter(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-
-	var result DMRunResult
-	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if result.Applied {
-		t.Error("preview must report Applied=false")
-	}
-	if result.Processed != 1 {
-		// list-1 itself only matches "Series Contains Batman" -> book 1
-		// only ("Batman Beyond" contains "Batman" too via the list's own
-		// matcher... check via MatchBooks below instead of assuming).
-		t.Logf("Processed = %d (list matcher may include both books; that's fine, the DM rule itself only matches book 1)", result.Processed)
-	}
-	if result.Changed != 1 {
-		t.Fatalf("expected exactly 1 book changed (only Series==\"Batman\" matches the DM rule), got %d: %+v", result.Changed, result.Books)
-	}
-	if len(result.Books) != 1 || result.Books[0].BookID != "1" {
-		t.Fatalf("expected book 1 in the diff, got %+v", result.Books)
-	}
-	found := false
-	for _, c := range result.Books[0].Changes {
-		if c.Field == "SeriesGroup" && c.New == "Batman Family" {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("expected a SeriesGroup->Batman Family change, got %+v", result.Books[0].Changes)
-	}
-
-	// Preview must not have written anything back.
-	book1, err := s.backend.GetBook("1")
-	if err != nil || book1 == nil {
-		t.Fatalf("GetBook(1): %v", err)
-	}
-	if book1.SeriesGroup != "" {
-		t.Errorf("preview must not persist changes, but SeriesGroup = %q", book1.SeriesGroup)
-	}
-}
-
-func TestHandleDataManagerApply_PersistsChanges(t *testing.T) {
-	books := []library.ComicBook{
-		{ID: "1", Series: "Batman", Number: "1"},
-	}
-	s, db := newDataManagerTestServer(t, books)
-	seedBatmanRuleset(t, db)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/library/lists/list-1/datamanager-apply", nil)
-	w := httptest.NewRecorder()
-	s.handleListsRouter(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-
-	var result DMRunResult
-	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if !result.Applied {
-		t.Error("apply must report Applied=true")
-	}
-
-	book1, err := s.backend.GetBook("1")
-	if err != nil || book1 == nil {
-		t.Fatalf("GetBook(1): %v", err)
-	}
-	if book1.SeriesGroup != "Batman Family" {
-		t.Errorf("SeriesGroup = %q, want %q to be persisted", book1.SeriesGroup, "Batman Family")
-	}
-}
-
-// TestHandleDataManagerApply_AdvancesWorkflowStage covers
-// comic-server-1iv.2: a book explicitly tracked at StageDataManager
-// advances to StageToMove once its changes are actually committed.
-func TestHandleDataManagerApply_AdvancesWorkflowStage(t *testing.T) {
-	book := library.ComicBook{ID: "1", Series: "Batman", Number: "1", FilePath: "/comics/batman1.cbz"}
-	workflow.SetStage(&book, workflow.StageDataManager)
-	s, db := newDataManagerTestServer(t, []library.ComicBook{book})
-	seedBatmanRuleset(t, db)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/library/lists/list-1/datamanager-apply", nil)
-	w := httptest.NewRecorder()
-	s.handleListsRouter(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-
-	book1, err := s.backend.GetBook("1")
-	if err != nil || book1 == nil {
-		t.Fatalf("GetBook(1): %v", err)
-	}
-	if got := workflow.GetStage(book1); got != workflow.StageToMove {
-		t.Errorf("workflow stage = %v, want StageToMove", got)
-	}
-}
-
-// TestHandleDataManagerApply_RegressesAlreadyOrganizedBookToToMove covers
-// comic-server-1qb: a book already at StageOrganized has its Library
-// Organizer destination path computed from metadata that Data Manager can
-// change (SeriesGroup, Tags, etc.) - once that metadata actually changes,
-// the book needs to go through Library Organizer again, so it must
-// regress back to StageToMove rather than staying marked Organized.
-func TestHandleDataManagerApply_RegressesAlreadyOrganizedBookToToMove(t *testing.T) {
-	book := library.ComicBook{ID: "1", Series: "Batman", Number: "1", FilePath: "/comics/batman1.cbz"}
-	workflow.SetStage(&book, workflow.StageOrganized)
-	s, db := newDataManagerTestServer(t, []library.ComicBook{book})
-	seedBatmanRuleset(t, db)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/library/lists/list-1/datamanager-apply", nil)
-	w := httptest.NewRecorder()
-	s.handleListsRouter(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-
-	book1, err := s.backend.GetBook("1")
-	if err != nil || book1 == nil {
-		t.Fatalf("GetBook(1): %v", err)
-	}
-	if book1.SeriesGroup != "Batman Family" {
-		t.Fatalf("expected the rule to have actually committed a change, got SeriesGroup=%q", book1.SeriesGroup)
-	}
-	if got := workflow.GetStage(book1); got != workflow.StageToMove {
-		t.Errorf("workflow stage = %v, want StageToMove (regressed from StageOrganized)", got)
-	}
-}
-
-// TestHandleDataManagerApply_DoesNotRegressBookNotYetPastDataManager
-// covers the flip side - a book that hasn't reached StageToMove yet must
-// only ever advance (comic-server-1iv.2's existing guarantee), never be
-// affected by the new regression logic.
-func TestHandleDataManagerApply_DoesNotRegressBookNotYetPastDataManager(t *testing.T) {
-	book := library.ComicBook{ID: "1", Series: "Batman", Number: "1", FilePath: "/comics/batman1.cbz"}
-	workflow.SetStage(&book, workflow.StageScanInfo)
-	s, db := newDataManagerTestServer(t, []library.ComicBook{book})
-	seedBatmanRuleset(t, db)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/library/lists/list-1/datamanager-apply", nil)
-	w := httptest.NewRecorder()
-	s.handleListsRouter(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-
-	book1, err := s.backend.GetBook("1")
-	if err != nil || book1 == nil {
-		t.Fatalf("GetBook(1): %v", err)
-	}
-	if got := workflow.GetStage(book1); got != workflow.StageToMove {
-		t.Errorf("workflow stage = %v, want StageToMove (normal forward advance, not a regression)", got)
-	}
-}
-
-func TestHandleDataManagerPreview_DisabledRulesetIgnored(t *testing.T) {
-	books := []library.ComicBook{{ID: "1", Series: "Batman"}}
-	s, db := newDataManagerTestServer(t, books)
-	seedBatmanRuleset(t, db)
-	if err := db.CreateDMGroup(configdb.DMGroup{ID: "g-disabled", Name: "Old", Disabled: true, SortOrder: 2}); err != nil {
-		t.Fatalf("CreateDMGroup: %v", err)
-	}
-	if err := db.CreateDMRuleset(configdb.DMRuleset{ID: "rs-disabled", GroupID: "g-disabled", Name: "Retired", Mode: "AND", Disabled: true, SortOrder: 0}); err != nil {
-		t.Fatalf("CreateDMRuleset: %v", err)
-	}
-	if _, err := db.CreateDMRule(configdb.DMRule{RulesetID: "rs-disabled", Field: "Series", Modifier: "Is", Value: "Batman", SortOrder: 0}); err != nil {
-		t.Fatalf("CreateDMRule: %v", err)
-	}
-	if _, err := db.CreateDMAction(configdb.DMAction{RulesetID: "rs-disabled", Field: "Notes", Modifier: "SetValue", Value: "should not appear", SortOrder: 0}); err != nil {
-		t.Fatalf("CreateDMAction: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodPost, "/api/library/lists/list-1/datamanager-preview", nil)
-	w := httptest.NewRecorder()
-	s.handleListsRouter(w, req)
-
-	var result DMRunResult
-	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	for _, c := range result.Books[0].Changes {
-		if c.Field == "Notes" {
-			t.Errorf("disabled ruleset's action must not run, but Notes changed: %+v", c)
-		}
-	}
-}
-
-func TestHandleDataManagerPreview_MethodNotAllowed(t *testing.T) {
-	s, _ := newDataManagerTestServer(t, nil)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/library/lists/list-1/datamanager-preview", nil)
-	w := httptest.NewRecorder()
-	s.handleListsRouter(w, req)
-
-	if w.Code != http.StatusMethodNotAllowed {
-		t.Errorf("expected 405, got %d", w.Code)
-	}
-}
-
-// TestHandleDataManagerApply_SelectiveBookIDsOnlyCommitsThose covers
-// comic-server-dpq's per-book selective apply: a book_ids body should
-// commit only the requested books, leaving other matched-and-changed
-// books untouched.
-func TestHandleDataManagerApply_SelectiveBookIDsOnlyCommitsThose(t *testing.T) {
-	books := []library.ComicBook{
-		{ID: "1", Series: "Batman", Number: "1"},
-		{ID: "2", Series: "Batman", Number: "2"},
-	}
-	s, db := newDataManagerTestServer(t, books)
-	seedBatmanRuleset(t, db)
-
-	body := strings.NewReader(`{"book_ids":["1"]}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/library/lists/list-1/datamanager-apply", body)
-	w := httptest.NewRecorder()
-	s.handleListsRouter(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-	var result DMRunResult
-	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if result.Changed != 1 || len(result.Books) != 1 || result.Books[0].BookID != "1" {
-		t.Fatalf("expected exactly book 1 committed, got %+v", result)
-	}
-
-	book1, _ := s.backend.GetBook("1")
-	book2, _ := s.backend.GetBook("2")
-	if book1.SeriesGroup != "Batman Family" {
-		t.Errorf("book 1 SeriesGroup = %q, want %q (selected)", book1.SeriesGroup, "Batman Family")
-	}
-	if book2.SeriesGroup != "" {
-		t.Errorf("book 2 SeriesGroup = %q, want empty (not selected, must be untouched)", book2.SeriesGroup)
-	}
-}
-
-// TestHandleDataManagerApply_UnknownBookIDIsSilentlySkipped covers the
-// re-verification design note from comic-server-dpq: a requested book_id
-// that no longer needs a change (or never existed) between preview and
-// apply must be skipped, not error the whole request.
-func TestHandleDataManagerApply_UnknownBookIDIsSilentlySkipped(t *testing.T) {
-	books := []library.ComicBook{{ID: "1", Series: "Batman"}}
-	s, db := newDataManagerTestServer(t, books)
-	seedBatmanRuleset(t, db)
-
-	body := strings.NewReader(`{"book_ids":["1","does-not-exist"]}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/library/lists/list-1/datamanager-apply", body)
-	w := httptest.NewRecorder()
-	s.handleListsRouter(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-	var result DMRunResult
-	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if result.Changed != 1 {
-		t.Errorf("expected 1 committed (unknown id silently skipped), got %d: %+v", result.Changed, result)
 	}
 }
 
@@ -592,21 +282,12 @@ func TestHandleDataManagerJobStatus_NoneWhenNeverRun(t *testing.T) {
 // value, even though both matched the same ruleset run.
 func TestHandleDataManagerApply_FieldLevelSelectiveApply(t *testing.T) {
 	books := []library.ComicBook{{ID: "1", Series: "Batman"}}
-	s, db := newDataManagerTestServer(t, books)
+	s, db := newDataManagerLibraryTestServer(t, books)
 	seedBatmanRulesetTwoActions(t, db)
 
-	body := strings.NewReader(`{"fields":[{"book_id":"1","field":"SeriesGroup","custom":false}]}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/library/lists/list-1/datamanager-apply", body)
-	w := httptest.NewRecorder()
-	s.handleListsRouter(w, req)
+	startDMJob(t, s, true, `{"fields":[{"book_id":"1","field":"SeriesGroup","custom":false}]}`)
+	result := waitForDMJob(t, s, "")
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-	var result DMRunResult
-	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
 	if result.Changed != 1 || len(result.Books) != 1 || len(result.Books[0].Changes) != 1 {
 		t.Fatalf("expected exactly 1 book with 1 committed field, got %+v", result)
 	}
@@ -631,20 +312,14 @@ func TestHandleDataManagerApply_FieldLevelSelectiveApply(t *testing.T) {
 // non-empty, BookIDs is ignored entirely, even if it also names the book.
 func TestHandleDataManagerApply_FieldSelectorsTakePrecedenceOverBookIDs(t *testing.T) {
 	books := []library.ComicBook{{ID: "1", Series: "Batman"}}
-	s, db := newDataManagerTestServer(t, books)
+	s, db := newDataManagerLibraryTestServer(t, books)
 	seedBatmanRulesetTwoActions(t, db)
 
 	// BookIDs also present, but Fields must win - only SeriesGroup should
 	// land, not the whole book (which would also set Concept).
-	body := strings.NewReader(`{"book_ids":["1"],"fields":[{"book_id":"1","field":"SeriesGroup","custom":false}]}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/library/lists/list-1/datamanager-apply", body)
-	w := httptest.NewRecorder()
-	s.handleListsRouter(w, req)
+	startDMJob(t, s, true, `{"book_ids":["1"],"fields":[{"book_id":"1","field":"SeriesGroup","custom":false}]}`)
+	result := waitForDMJob(t, s, "")
 
-	var result DMRunResult
-	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
 	if len(result.Books) != 1 || len(result.Books[0].Changes) != 1 {
 		t.Fatalf("expected Fields selection (1 field) to win over BookIDs (whole book), got %+v", result)
 	}
@@ -656,20 +331,200 @@ func TestHandleDataManagerApply_FieldSelectorsTakePrecedenceOverBookIDs(t *testi
 // error the whole request.
 func TestHandleDataManagerApply_StaleFieldSelectorIsSilentlySkipped(t *testing.T) {
 	books := []library.ComicBook{{ID: "1", Series: "Batman"}}
-	s, db := newDataManagerTestServer(t, books)
+	s, db := newDataManagerLibraryTestServer(t, books)
 	seedBatmanRuleset(t, db) // single-action ruleset - only SeriesGroup changes
 
-	body := strings.NewReader(`{"fields":[{"book_id":"1","field":"SeriesGroup","custom":false},{"book_id":"1","field":"Notes","custom":false}]}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/library/lists/list-1/datamanager-apply", body)
-	w := httptest.NewRecorder()
-	s.handleListsRouter(w, req)
+	startDMJob(t, s, true, `{"fields":[{"book_id":"1","field":"SeriesGroup","custom":false},{"book_id":"1","field":"Notes","custom":false}]}`)
+	result := waitForDMJob(t, s, "")
 
-	var result DMRunResult
-	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
 	if result.Changed != 1 || len(result.Books[0].Changes) != 1 {
 		t.Fatalf("expected only the real SeriesGroup change committed, stale Notes selector skipped, got %+v", result)
+	}
+}
+
+// TestHandleDataManagerPreview_ShowsChangesWithoutWriting covers
+// comic-server-764's preview contract: a book matching a rule shows up in
+// the diff, but nothing is actually written until apply.
+func TestHandleDataManagerPreview_ShowsChangesWithoutWriting(t *testing.T) {
+	books := []library.ComicBook{
+		{ID: "1", Series: "Batman", Number: "1"},
+		{ID: "2", Series: "Batman Beyond", Number: "1"}, // does not match "Series Is Batman"
+	}
+	s, db := newDataManagerLibraryTestServer(t, books)
+	seedBatmanRuleset(t, db)
+
+	startDMJob(t, s, false, "")
+	result := waitForDMJob(t, s, "")
+
+	if result.Apply {
+		t.Error("preview must report Apply=false")
+	}
+	if result.Changed != 1 {
+		t.Fatalf("expected exactly 1 book changed (only Series==\"Batman\" matches the DM rule), got %d: %+v", result.Changed, result.Books)
+	}
+	if len(result.Books) != 1 || result.Books[0].BookID != "1" {
+		t.Fatalf("expected book 1 in the diff, got %+v", result.Books)
+	}
+	found := false
+	for _, c := range result.Books[0].Changes {
+		if c.Field == "SeriesGroup" && c.New == "Batman Family" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected a SeriesGroup->Batman Family change, got %+v", result.Books[0].Changes)
+	}
+
+	// Preview must not have written anything back.
+	book1, err := s.backend.GetBook("1")
+	if err != nil || book1 == nil {
+		t.Fatalf("GetBook(1): %v", err)
+	}
+	if book1.SeriesGroup != "" {
+		t.Errorf("preview must not persist changes, but SeriesGroup = %q", book1.SeriesGroup)
+	}
+}
+
+// TestHandleDataManagerApply_AdvancesWorkflowStage covers
+// comic-server-1iv.2: a book explicitly tracked at StageDataManager
+// advances to StageToMove once its changes are actually committed.
+func TestHandleDataManagerApply_AdvancesWorkflowStage(t *testing.T) {
+	book := library.ComicBook{ID: "1", Series: "Batman", Number: "1", FilePath: "/comics/batman1.cbz"}
+	workflow.SetStage(&book, workflow.StageDataManager)
+	s, db := newDataManagerLibraryTestServer(t, []library.ComicBook{book})
+	seedBatmanRuleset(t, db)
+
+	startDMJob(t, s, true, "")
+	waitForDMJob(t, s, "")
+
+	book1, err := s.backend.GetBook("1")
+	if err != nil || book1 == nil {
+		t.Fatalf("GetBook(1): %v", err)
+	}
+	if got := workflow.GetStage(book1); got != workflow.StageToMove {
+		t.Errorf("workflow stage = %v, want StageToMove", got)
+	}
+}
+
+// TestHandleDataManagerApply_RegressesAlreadyOrganizedBookToToMove covers
+// comic-server-1qb: a book already at StageOrganized has its Library
+// Organizer destination path computed from metadata that Data Manager can
+// change (SeriesGroup, Tags, etc.) - once that metadata actually changes,
+// the book needs to go through Library Organizer again, so it must
+// regress back to StageToMove rather than staying marked Organized.
+func TestHandleDataManagerApply_RegressesAlreadyOrganizedBookToToMove(t *testing.T) {
+	book := library.ComicBook{ID: "1", Series: "Batman", Number: "1", FilePath: "/comics/batman1.cbz"}
+	workflow.SetStage(&book, workflow.StageOrganized)
+	s, db := newDataManagerLibraryTestServer(t, []library.ComicBook{book})
+	seedBatmanRuleset(t, db)
+
+	startDMJob(t, s, true, "")
+	waitForDMJob(t, s, "")
+
+	book1, err := s.backend.GetBook("1")
+	if err != nil || book1 == nil {
+		t.Fatalf("GetBook(1): %v", err)
+	}
+	if book1.SeriesGroup != "Batman Family" {
+		t.Fatalf("expected the rule to have actually committed a change, got SeriesGroup=%q", book1.SeriesGroup)
+	}
+	if got := workflow.GetStage(book1); got != workflow.StageToMove {
+		t.Errorf("workflow stage = %v, want StageToMove (regressed from StageOrganized)", got)
+	}
+}
+
+// TestHandleDataManagerApply_DoesNotRegressBookNotYetPastDataManager
+// covers the flip side - a book that hasn't reached StageToMove yet must
+// only ever advance (comic-server-1iv.2's existing guarantee), never be
+// affected by the new regression logic.
+func TestHandleDataManagerApply_DoesNotRegressBookNotYetPastDataManager(t *testing.T) {
+	book := library.ComicBook{ID: "1", Series: "Batman", Number: "1", FilePath: "/comics/batman1.cbz"}
+	workflow.SetStage(&book, workflow.StageScanInfo)
+	s, db := newDataManagerLibraryTestServer(t, []library.ComicBook{book})
+	seedBatmanRuleset(t, db)
+
+	startDMJob(t, s, true, "")
+	waitForDMJob(t, s, "")
+
+	book1, err := s.backend.GetBook("1")
+	if err != nil || book1 == nil {
+		t.Fatalf("GetBook(1): %v", err)
+	}
+	if got := workflow.GetStage(book1); got != workflow.StageToMove {
+		t.Errorf("workflow stage = %v, want StageToMove (normal forward advance, not a regression)", got)
+	}
+}
+
+func TestHandleDataManagerPreview_DisabledRulesetIgnored(t *testing.T) {
+	books := []library.ComicBook{{ID: "1", Series: "Batman"}}
+	s, db := newDataManagerLibraryTestServer(t, books)
+	seedBatmanRuleset(t, db)
+	if err := db.CreateDMGroup(configdb.DMGroup{ID: "g-disabled", Name: "Old", Disabled: true, SortOrder: 2}); err != nil {
+		t.Fatalf("CreateDMGroup: %v", err)
+	}
+	if err := db.CreateDMRuleset(configdb.DMRuleset{ID: "rs-disabled", GroupID: "g-disabled", Name: "Retired", Mode: "AND", Disabled: true, SortOrder: 0}); err != nil {
+		t.Fatalf("CreateDMRuleset: %v", err)
+	}
+	if _, err := db.CreateDMRule(configdb.DMRule{RulesetID: "rs-disabled", Field: "Series", Modifier: "Is", Value: "Batman", SortOrder: 0}); err != nil {
+		t.Fatalf("CreateDMRule: %v", err)
+	}
+	if _, err := db.CreateDMAction(configdb.DMAction{RulesetID: "rs-disabled", Field: "Notes", Modifier: "SetValue", Value: "should not appear", SortOrder: 0}); err != nil {
+		t.Fatalf("CreateDMAction: %v", err)
+	}
+
+	startDMJob(t, s, false, "")
+	result := waitForDMJob(t, s, "")
+
+	for _, c := range result.Books[0].Changes {
+		if c.Field == "Notes" {
+			t.Errorf("disabled ruleset's action must not run, but Notes changed: %+v", c)
+		}
+	}
+}
+
+// TestHandleDataManagerApply_SelectiveBookIDsOnlyCommitsThose covers
+// comic-server-dpq's per-book selective apply: a book_ids body should
+// commit only the requested books, leaving other matched-and-changed
+// books untouched.
+func TestHandleDataManagerApply_SelectiveBookIDsOnlyCommitsThose(t *testing.T) {
+	books := []library.ComicBook{
+		{ID: "1", Series: "Batman", Number: "1"},
+		{ID: "2", Series: "Batman", Number: "2"},
+	}
+	s, db := newDataManagerLibraryTestServer(t, books)
+	seedBatmanRuleset(t, db)
+
+	startDMJob(t, s, true, `{"book_ids":["1"]}`)
+	result := waitForDMJob(t, s, "")
+
+	if result.Changed != 1 || len(result.Books) != 1 || result.Books[0].BookID != "1" {
+		t.Fatalf("expected exactly book 1 committed, got %+v", result)
+	}
+
+	book1, _ := s.backend.GetBook("1")
+	book2, _ := s.backend.GetBook("2")
+	if book1.SeriesGroup != "Batman Family" {
+		t.Errorf("book 1 SeriesGroup = %q, want %q (selected)", book1.SeriesGroup, "Batman Family")
+	}
+	if book2.SeriesGroup != "" {
+		t.Errorf("book 2 SeriesGroup = %q, want empty (not selected, must be untouched)", book2.SeriesGroup)
+	}
+}
+
+// TestHandleDataManagerApply_UnknownBookIDIsSilentlySkipped covers the
+// re-verification design note from comic-server-dpq: a requested book_id
+// that no longer needs a change (or never existed) between preview and
+// apply must be skipped, not error the whole request.
+func TestHandleDataManagerApply_UnknownBookIDIsSilentlySkipped(t *testing.T) {
+	books := []library.ComicBook{{ID: "1", Series: "Batman"}}
+	s, db := newDataManagerLibraryTestServer(t, books)
+	seedBatmanRuleset(t, db)
+
+	startDMJob(t, s, true, `{"book_ids":["1","does-not-exist"]}`)
+	result := waitForDMJob(t, s, "")
+
+	if result.Changed != 1 {
+		t.Errorf("expected 1 committed (unknown id silently skipped), got %d: %+v", result.Changed, result)
 	}
 }
 

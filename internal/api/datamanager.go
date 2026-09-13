@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/duckpuppy/comic-server/internal/datamanager"
@@ -34,12 +33,14 @@ type DMBookChange struct {
 	Changes []DMFieldChange `json:"changes"`
 }
 
-// DMRunResult is the response for both preview and apply. Applied is false
-// for a preview (nothing was written) and true once a run has actually
-// been committed via the backend. For apply, Changed/Books describe what
-// was ACTUALLY COMMITTED (the selected subset, or everything if no
-// selection was given), not the full set of books that matched - see
-// selectForApply.
+// DMRunResult is runDataManagerOverBooks' internal result shape, wrapped
+// into DMJobStatus for every caller (whole-library workflow, Browse) since
+// comic-server-3hu8 removed the old synchronous per-list endpoints that
+// used to return this directly. Applied is false for a preview (nothing
+// was written) and true once a run has actually been committed via the
+// backend. For apply, Changed/Books describe what was ACTUALLY COMMITTED
+// (the selected subset, or everything if no selection was given), not the
+// full set of books that matched - see selectForApply.
 type DMRunResult struct {
 	Processed int            `json:"processed"`
 	Changed   int            `json:"changed"`
@@ -47,13 +48,8 @@ type DMRunResult struct {
 	Books     []DMBookChange `json:"books"`
 	Errors    []string       `json:"errors,omitempty"`
 
-	// Limit/Offset/HasMore are set only by the whole-library preview
-	// (comic-server-dpq), which pages through Books to keep the response
-	// bounded for a ~66K-book library - Changed always reports the TOTAL
-	// count of books that would change, even when Books is just one page
-	// of that total. Zero-valued for the list-scoped endpoints, which
-	// don't paginate (a single smart list's match set is already bounded
-	// by the list itself).
+	// Limit/Offset/HasMore are unused here - DMJobStatus sets its own copies
+	// once a job completes (see handleDataManagerJobStatus's pagination).
 	Limit   int  `json:"limit,omitempty"`
 	Offset  int  `json:"offset,omitempty"`
 	HasMore bool `json:"has_more,omitempty"`
@@ -79,87 +75,6 @@ type DMFieldSelector struct {
 type DMApplyRequest struct {
 	BookIDs []string          `json:"book_ids,omitempty"`
 	Fields  []DMFieldSelector `json:"fields,omitempty"`
-}
-
-// handleDataManagerPreview runs every enabled Data Manager ruleset against
-// every book currently matched by one smart list (comic-server-764's
-// design decision - not whole-library, not ad-hoc filters, see
-// comic-server-joj for that) WITHOUT writing anything, so the UI can show
-// an accurate before/after diff before the user commits. Never mutates a
-// book pointer shared with the backend's cached library snapshot - every
-// run works on its own copy.
-// POST /api/library/lists/:listId/datamanager-preview
-func (s *Server) handleDataManagerPreview(w http.ResponseWriter, r *http.Request) {
-	s.runDataManagerList(w, r, "/datamanager-preview", false)
-}
-
-// handleDataManagerApply does the same full rule run as
-// handleDataManagerPreview, then commits the resulting changes via
-// Backend.UpdateBooks - every changed book by default, or only the
-// caller's selected book_ids (comic-server-dpq's selective apply).
-// POST /api/library/lists/:listId/datamanager-apply
-func (s *Server) handleDataManagerApply(w http.ResponseWriter, r *http.Request) {
-	s.runDataManagerList(w, r, "/datamanager-apply", true)
-}
-
-func (s *Server) runDataManagerList(w http.ResponseWriter, r *http.Request, suffix string, apply bool) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	if s.backend == nil {
-		http.Error(w, "Library not available", http.StatusServiceUnavailable)
-		return
-	}
-	if s.configDB == nil {
-		http.Error(w, "Configuration database not available", http.StatusServiceUnavailable)
-		return
-	}
-
-	listID := listIDFromSubPath(r.URL.Path, suffix)
-	list, err := s.backend.FindListByID(listID)
-	if err != nil {
-		log.Error().Err(err).Str("list_id", listID).Msg("Error looking up smart list for Data Manager run")
-		http.Error(w, "Error looking up smart list", http.StatusInternalServerError)
-		return
-	}
-	if list == nil {
-		http.Error(w, "List not found", http.StatusNotFound)
-		return
-	}
-
-	rulesets, err := datamanager.LoadRulesets(s.configDB)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to load Data Manager rules")
-		http.Error(w, "Failed to load Data Manager rules", http.StatusInternalServerError)
-		return
-	}
-	if len(rulesets) == 0 {
-		http.Error(w, "No Data Manager rules configured - import a dataman.dat file first", http.StatusUnprocessableEntity)
-		return
-	}
-
-	books, err := s.backend.MatchBooks(list)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to match books: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	var bookIDs []string
-	var fields []DMFieldSelector
-	if apply {
-		req, err := parseDMApplyRequest(r)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		bookIDs = req.BookIDs
-		fields = req.Fields
-	}
-
-	result := s.runDataManagerOverBooks(books, rulesets, apply, bookIDs, fields, nil)
-	s.writeJSON(w, http.StatusOK, result)
 }
 
 // DMJobStatus is the async job state for the whole-library preview/apply
@@ -649,9 +564,4 @@ func parseLimitOffset(r *http.Request, defaultLimit, maxLimit int) (limit, offse
 		}
 	}
 	return limit, offset
-}
-
-func listIDFromSubPath(path, suffix string) string {
-	s := strings.TrimPrefix(path, "/api/library/lists/")
-	return strings.TrimSuffix(s, suffix)
 }

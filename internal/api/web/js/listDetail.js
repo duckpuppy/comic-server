@@ -14,13 +14,6 @@ class ListDetail {
         this.editState = null;
         this.schema = null;
         this.activeTab = 'matchers';
-        // dmResult holds the last preview/apply response so the panel can
-        // render its diff table across re-renders without re-fetching -
-        // cleared when the user navigates away or applies (apply's result
-        // stays visible until the next preview, matching cbz-convert's own
-        // "leave the last result on screen" pattern).
-        this.dmResult = null;
-        this.dmRunning = false;
         this.loading = true;
     }
 
@@ -241,9 +234,6 @@ class ListDetail {
                 ${this.renderTabButton('matchers', 'Details')}
                 ${this.renderTabButton('devices', 'Devices')}
                 ${this.renderTabButton('komga', 'Komga')}
-                ${this.renderTabButton('scaninfo', 'Scan Info')}
-                ${this.renderTabButton('convert', 'Convert')}
-                ${this.renderTabButton('datamanager', 'Data Manager')}
             </div>
 
             <div class="list-detail-tab-panels">
@@ -273,67 +263,8 @@ class ListDetail {
                         ${this.renderKomgaTarget()}
                     </div>
                 </div>
-
-                <!-- Scan Info Panel -->
-                <div class="panel scaninfo-panel${this.tabPanelActiveClass('scaninfo')}" data-tab-panel="scaninfo">
-                    <h2>Scan Info Detection</h2>
-                    <p class="empty-message">Detects a scan-group tag from each book's filename and writes it to ScanInformation.</p>
-                    <button class="btn btn-primary" id="run-scan-info-btn">Run on this list</button>
-                    <div id="scan-info-result"></div>
-                </div>
-
-                <!-- Convert to CBZ Panel -->
-                <div class="panel cbzconvert-panel${this.tabPanelActiveClass('convert')}" data-tab-panel="convert">
-                    <h2>Convert to CBZ</h2>
-                    <p class="empty-message">Repacks each book's archive as CBZ and embeds ComicInfo.xml. Replaces the original file - the original is moved to the server's trash folder, not deleted.</p>
-                    ${this.renderCBZConvertButton()}
-                    <div id="cbz-convert-result"></div>
-                </div>
-
-                <!-- Data Manager Panel -->
-                <div class="panel datamanager-panel${this.tabPanelActiveClass('datamanager')}" data-tab-panel="datamanager">
-                    <h2>Data Manager Rules</h2>
-                    <p class="empty-message">Runs every enabled Data Manager rule against this list's books and previews every field it would change before anything is written.</p>
-                    <div class="datamanager-actions">
-                        <button class="btn btn-primary" id="run-dm-preview-btn">Preview Changes</button>
-                        <button class="btn btn-primary" id="run-dm-apply-btn" ${this.dmResult && this.dmResult.changed > 0 && !this.dmResult.applied ? '' : 'disabled'}>Apply Changes</button>
-                    </div>
-                    <div id="datamanager-result">${this.renderDataManagerResult()}</div>
-                </div>
             </div>
         `;
-    }
-
-    renderDataManagerResult() {
-        if (this.dmRunning) {
-            return '<p class="empty-message">Running…</p>';
-        }
-        const r = this.dmResult;
-        if (!r) {
-            return '';
-        }
-
-        let html = `<p>${r.applied ? 'Applied' : 'Previewed'}: processed ${r.processed}, ${r.changed} book${r.changed === 1 ? '' : 's'} changed.</p>`;
-        if (r.errors && r.errors.length > 0) {
-            html += `<p class="datamanager-errors">Errors: ${this.escapeHtml(r.errors.join('; '))}</p>`;
-        }
-        if (r.books && r.books.length > 0) {
-            html += '<table class="datamanager-diff-table"><thead><tr><th>Book</th><th>Field</th><th>Old</th><th>New</th></tr></thead><tbody>';
-            for (const book of r.books) {
-                const label = `${book.series}${book.number ? ' #' + book.number : ''}${book.title ? ' - ' + book.title : ''}`;
-                book.changes.forEach((c, i) => {
-                    const fieldLabel = c.custom ? `${c.field} (custom)` : c.field;
-                    html += '<tr>';
-                    if (i === 0) {
-                        html += `<td rowspan="${book.changes.length}">${this.escapeHtml(label)}</td>`;
-                    }
-                    html += `<td>${this.escapeHtml(fieldLabel)}</td><td>${this.escapeHtml(c.old)}</td><td>${this.escapeHtml(c.new)}</td>`;
-                    html += '</tr>';
-                });
-            }
-            html += '</tbody></table>';
-        }
-        return html;
     }
 
     renderTabButton(tabId, label) {
@@ -587,24 +518,6 @@ class ListDetail {
                 </div>
             </div>
         `;
-    }
-
-    // renderCBZConvertButton reflects this.list.needs_convert_count (set by
-    // the server only when server.cbz_convert is enabled - see
-    // ListDetail.NeedsConvertCount in internal/api/lists.go): disabled with
-    // an explanatory label when there's nothing to convert (count is 0, or
-    // the field is entirely absent because the feature is off), otherwise
-    // enabled and labeled with how many books would actually change.
-    renderCBZConvertButton() {
-        const count = this.list.needs_convert_count;
-        if (count === undefined || count === null) {
-            return '<button class="btn btn-primary" id="run-cbz-convert-btn">Convert this list</button>';
-        }
-        if (count === 0) {
-            return '<button class="btn btn-primary" id="run-cbz-convert-btn" disabled>Already all CBZ</button>';
-        }
-        const label = count === 1 ? '1 comic' : `${count.toLocaleString()} comics`;
-        return `<button class="btn btn-primary" id="run-cbz-convert-btn">Convert ${label} to CBZ</button>`;
     }
 
     renderComicsPreview() {
@@ -887,135 +800,6 @@ class ListDetail {
         const removeKomgaBtn = document.getElementById('remove-komga-target-btn');
         if (removeKomgaBtn) {
             removeKomgaBtn.addEventListener('click', () => this.removeKomgaTarget());
-        }
-
-        const runScanInfoBtn = document.getElementById('run-scan-info-btn');
-        if (runScanInfoBtn) {
-            runScanInfoBtn.addEventListener('click', () => this.runScanInfo());
-        }
-
-        const runCBZConvertBtn = document.getElementById('run-cbz-convert-btn');
-        if (runCBZConvertBtn) {
-            runCBZConvertBtn.addEventListener('click', () => this.runCBZConvert());
-        }
-
-        const runDMPreviewBtn = document.getElementById('run-dm-preview-btn');
-        if (runDMPreviewBtn) {
-            runDMPreviewBtn.addEventListener('click', () => this.runDataManager(false));
-        }
-
-        const runDMApplyBtn = document.getElementById('run-dm-apply-btn');
-        if (runDMApplyBtn) {
-            runDMApplyBtn.addEventListener('click', () => this.runDataManager(true));
-        }
-    }
-
-    // runDataManager drives both the preview and apply calls - apply
-    // re-runs the full rule set rather than replaying the previewed diff,
-    // so it always reflects the library's current state (matches
-    // cbz-convert's own re-match-then-act pattern, not a stale preview
-    // getting blindly committed).
-    async runDataManager(apply) {
-        if (apply) {
-            const ok = await dialogs.confirm({
-                title: 'Apply Data Manager Rules',
-                message: `Apply every enabled Data Manager rule to this list's books now? This commits all ${this.dmResult ? this.dmResult.changed : ''} changed book(s) in one action and cannot be undone from this page.`,
-                confirmLabel: 'Apply',
-                danger: true,
-            });
-            if (!ok) return;
-        }
-
-        const previewBtn = document.getElementById('run-dm-preview-btn');
-        const applyBtn = document.getElementById('run-dm-apply-btn');
-        const resultEl = document.getElementById('datamanager-result');
-        this.dmRunning = true;
-        if (previewBtn) previewBtn.disabled = true;
-        if (applyBtn) applyBtn.disabled = true;
-        resultEl.innerHTML = this.renderDataManagerResult();
-
-        try {
-            const suffix = apply ? 'datamanager-apply' : 'datamanager-preview';
-            const response = await fetch(`/api/library/lists/${this.listId}/${suffix}`, { method: 'POST' });
-            const text = await response.text();
-            if (!response.ok) {
-                throw new Error(friendlyErrorText(response, text, `Failed to run Data Manager ${apply ? 'apply' : 'preview'}`));
-            }
-            this.dmResult = JSON.parse(text);
-        } catch (error) {
-            console.error('Failed to run Data Manager rules:', error);
-            this.dmResult = null;
-            resultEl.innerHTML = `<p class="datamanager-errors">Failed: ${this.escapeHtml(error.message)}</p>`;
-            return;
-        } finally {
-            this.dmRunning = false;
-            if (previewBtn) previewBtn.disabled = false;
-        }
-
-        resultEl.innerHTML = this.renderDataManagerResult();
-        if (applyBtn) {
-            applyBtn.disabled = !(this.dmResult.changed > 0 && !this.dmResult.applied);
-        }
-    }
-
-    async runScanInfo() {
-        const btn = document.getElementById('run-scan-info-btn');
-        const resultEl = document.getElementById('scan-info-result');
-        btn.disabled = true;
-        resultEl.textContent = 'Running…';
-        try {
-            const response = await fetch(`/api/library/lists/${this.listId}/scan-info`, { method: 'POST' });
-            const text = await response.text();
-            if (!response.ok) {
-                throw new Error(friendlyErrorText(response, text, 'Failed to run scan info detection'));
-            }
-            const result = JSON.parse(text);
-            resultEl.textContent = `Processed ${result.processed}, updated ${result.updated}, skipped ${result.skipped}.`;
-            if (result.errors && result.errors.length > 0) {
-                resultEl.textContent += ` Errors: ${result.errors.join('; ')}`;
-            }
-        } catch (error) {
-            console.error('Failed to run scan info detection:', error);
-            resultEl.textContent = `Failed: ${error.message}`;
-        } finally {
-            btn.disabled = false;
-        }
-    }
-
-    async runCBZConvert() {
-        const ok = await dialogs.confirm({
-            title: 'Convert to CBZ',
-            message: "Convert every book in this list to CBZ? Original files are replaced (moved to the server's trash folder, not deleted). This cannot be undone from this page.",
-            confirmLabel: 'Convert',
-            danger: true,
-        });
-        if (!ok) return;
-        const btn = document.getElementById('run-cbz-convert-btn');
-        const resultEl = document.getElementById('cbz-convert-result');
-        btn.disabled = true;
-        resultEl.textContent = 'Converting…';
-        try {
-            const response = await fetch(`/api/library/lists/${this.listId}/convert-cbz`, { method: 'POST' });
-            const text = await response.text();
-            if (!response.ok) {
-                throw new Error(friendlyErrorText(response, text, 'Failed to run CBZ conversion'));
-            }
-            const result = JSON.parse(text);
-            resultEl.textContent = `Processed ${result.processed}, converted ${result.converted}.`;
-            if (result.errors && result.errors.length > 0) {
-                resultEl.textContent += ` Errors: ${result.errors.join('; ')}`;
-            }
-            // Refresh needs_convert_count and swap in a fresh button (e.g.
-            // disabling it once nothing's left to convert) without a full
-            // page re-render, which would wipe the result message above.
-            await this.loadListDetail();
-            btn.outerHTML = this.renderCBZConvertButton();
-            const newBtn = document.getElementById('run-cbz-convert-btn');
-            if (newBtn) newBtn.addEventListener('click', () => this.runCBZConvert());
-        } catch (error) {
-            console.error('Failed to run CBZ conversion:', error);
-            resultEl.textContent = `Failed: ${error.message}`;
-            btn.disabled = false;
         }
     }
 
