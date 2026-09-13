@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.32.0](https://github.com/duckpuppy/comic-server/compare/v1.31.0...v1.32.0) (2026-09-13)
+
+
+### Features
+
+* fold Komga status into Dashboard, drop standalone tab (comic-server-em05) ([8a373f6](https://github.com/duckpuppy/comic-server/commit/8a373f64888d5b8d6d0381a9d11d1ec753c182b6))
+* move CBZ Convert enabled + ignore-devices into config.db, live-editable (comic-server-wp8k) ([e59f492](https://github.com/duckpuppy/comic-server/commit/e59f4920fe55369bf6d58ac0ba5b2f701e94f919))
+
+
+### Bug Fixes
+
+* CBZ Convert validation now sees config.db's trash path, not just config.yaml (comic-server-dtu5) ([da00462](https://github.com/duckpuppy/comic-server/commit/da00462e836e7489892b1ec3334d5a4661cc5153))
+
 ## [1.31.0](https://github.com/duckpuppy/comic-server/compare/v1.30.0...v1.31.0) (2026-09-12)
 
 
