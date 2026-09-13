@@ -1,6 +1,9 @@
 // Komga Sync Status - shows each configured target's most recent push
 // result, including books skipped because they couldn't be matched in
-// Komga (see comic-server-1c0).
+// Komga (see comic-server-1c0). Folded into a Dashboard panel rather than
+// its own page/nav tab (comic-server-em05) - it was always purely
+// informational (no buttons/actions), so there was no interactive
+// functionality that justified a page of its own.
 class KomgaStatus {
     constructor() {
         this.snapshot = null;
@@ -9,15 +12,19 @@ class KomgaStatus {
         this.loading = true;
     }
 
-    async init(ctx) {
-        // Render once BEFORE the fetch so renderBody's loading check
-        // (below) shows instead of misleadingly claiming "No Komga sync
-        // targets configured" before the real answer has come back
-        // (comic-server-4te).
-        this.render();
+    // initDashboardPanel loads and renders into the Dashboard's
+    // #dashboard-komga-status container - the only mount point this class
+    // targets now that it no longer has its own route.
+    async initDashboardPanel() {
+        this.renderInto('dashboard-komga-status');
         await this.load();
-        if (ctx && ctx.aborted) return;
-        this.render();
+        this.renderInto('dashboard-komga-status');
+    }
+
+    renderInto(containerId) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        container.innerHTML = this.renderBody();
     }
 
     async load() {
@@ -37,19 +44,6 @@ class KomgaStatus {
         } finally {
             this.loading = false;
         }
-    }
-
-    render() {
-        const app = document.getElementById('app');
-        app.innerHTML = `
-            <div class="komga-status-page">
-                <div class="komga-status-header">
-                    <h1>Komga Sync</h1>
-                    <p class="komga-status-subtitle">Smart lists pushed to Komga collections and read lists</p>
-                </div>
-                ${this.renderBody()}
-            </div>
-        `;
     }
 
     renderBody() {

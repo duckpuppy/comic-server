@@ -37,10 +37,6 @@ class Navigation {
                     <span class="nav-icon">🔄</span>
                     <span class="nav-label">Sync History</span>
                 </a>
-                <a href="/komga" class="nav-tab" data-tab="komga">
-                    <span class="nav-icon">📖</span>
-                    <span class="nav-label">Komga</span>
-                </a>
                 <a href="/datamanager" class="nav-tab" data-tab="datamanager">
                     <span class="nav-icon">🛠️</span>
                     <span class="nav-label">Data Manager</span>

@@ -1,25 +1,7 @@
-/* Komga Sync Status Page */
-.komga-status-page {
-    padding: 2rem;
-    max-width: 1200px;
-    margin: 0 auto;
-}
-
-.komga-status-header {
-    margin-bottom: 2rem;
-}
-
-.komga-status-header h1 {
-    font-size: 2rem;
-    font-weight: 700;
-    margin: 0;
-}
-
-.komga-status-subtitle {
-    color: var(--text-secondary);
-    margin: 0.5rem 0 0;
-}
-
+/* Komga Sync Status - folded into a Dashboard panel (comic-server-em05),
+   no longer a standalone page - the page-level header/wrapper classes
+   this file used to carry are gone, .dashboard-panel's own styling
+   covers that now. */
 .komga-index-error {
     background: #fee2e2;
     color: #991b1b;

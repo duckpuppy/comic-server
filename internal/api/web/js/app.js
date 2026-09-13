@@ -13,6 +13,14 @@ class Dashboard {
         deviceManager.init();
         syncManager.init();
 
+        // Komga sync status is purely informational (comic-server-em05) -
+        // folded into a Dashboard panel instead of its own route/tab, so
+        // it's loaded once here rather than via the router.
+        if (!komgaStatus) {
+            komgaStatus = new KomgaStatus();
+        }
+        komgaStatus.initDashboardPanel();
+
         // Set up stats updates
         this.updateStats();
         setInterval(() => this.updateStats(), this.statsUpdateInterval);
@@ -222,15 +230,6 @@ document.addEventListener('DOMContentLoaded', () => {
             syncHistoryBrowser = new SyncHistoryBrowser();
         }
         await syncHistoryBrowser.init(ctx);
-    });
-
-    router.register('/komga', async (params, ctx) => {
-        navigation.setActive('komga');
-        dashboard.hide();
-        if (!komgaStatus) {
-            komgaStatus = new KomgaStatus();
-        }
-        await komgaStatus.init(ctx);
     });
 
     router.register('/datamanager', async (params, ctx) => {
