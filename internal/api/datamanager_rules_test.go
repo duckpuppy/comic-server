@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -304,6 +305,132 @@ func TestDataManagerGroups_TreeLifecycle(t *testing.T) {
 	}
 	if gone, err := s.configDB.GetDMGroup(group.ID); err != nil || gone != nil {
 		t.Errorf("expected group gone after delete, got %+v err=%v", gone, err)
+	}
+}
+
+// TestDataManagerGroups_SortOrderRoundTrips covers comic-server-vkpq's
+// drag-reorder piece: PUT on a group or ruleset must carry sort_order
+// through (both to persist a drag-reorder, and to NOT silently reset it
+// on an unrelated edit like a rename), and GET .../tree must reflect it.
+func TestDataManagerGroups_SortOrderRoundTrips(t *testing.T) {
+	s := newDMRulesTestServer(t)
+
+	createBody, _ := json.Marshal(map[string]string{"name": "Quality"})
+	req := httptest.NewRequest(http.MethodPost, "/api/datamanager/groups", bytes.NewReader(createBody))
+	w := httptest.NewRecorder()
+	s.handleDataManagerRulesRouter(w, req)
+	var group DMTreeNode
+	json.NewDecoder(w.Body).Decode(&group)
+
+	rsBody, _ := json.Marshal(DMRulesetWire{Name: "Batman", Mode: "And"})
+	req = httptest.NewRequest(http.MethodPost, "/api/datamanager/rulesets", bytes.NewReader(rsBody))
+	w = httptest.NewRecorder()
+	s.handleDataManagerRulesRouter(w, req)
+	var rs DMRulesetWire
+	json.NewDecoder(w.Body).Decode(&rs)
+
+	// Reorder the group to sort_order=5 via PUT (the drag-reorder path).
+	reorderBody, _ := json.Marshal(map[string]any{"name": group.Name, "disabled": false, "sort_order": 5})
+	req = httptest.NewRequest(http.MethodPut, "/api/datamanager/groups/"+group.ID, bytes.NewReader(reorderBody))
+	w = httptest.NewRecorder()
+	s.handleDataManagerRulesRouter(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("reorder group: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	reordered, err := s.configDB.GetDMGroup(group.ID)
+	if err != nil || reordered == nil || reordered.SortOrder != 5 {
+		t.Fatalf("GetDMGroup after reorder = %+v err=%v, want SortOrder=5", reordered, err)
+	}
+
+	// Reorder the ruleset to sort_order=3.
+	rsReorderBody, _ := json.Marshal(DMRulesetWire{Name: rs.Name, Mode: rs.Mode, Disabled: rs.Disabled, SortOrder: 3})
+	req = httptest.NewRequest(http.MethodPut, "/api/datamanager/rulesets/"+rs.ID, bytes.NewReader(rsReorderBody))
+	w = httptest.NewRecorder()
+	s.handleDataManagerRulesRouter(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("reorder ruleset: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	reorderedRS, err := s.configDB.GetDMRuleset(rs.ID)
+	if err != nil || reorderedRS == nil || reorderedRS.SortOrder != 3 {
+		t.Fatalf("GetDMRuleset after reorder = %+v err=%v, want SortOrder=3", reorderedRS, err)
+	}
+
+	// GET .../tree must expose the new sort_order on both node types.
+	req = httptest.NewRequest(http.MethodGet, "/api/datamanager/tree", nil)
+	w = httptest.NewRecorder()
+	s.handleDataManagerRulesRouter(w, req)
+	var treeResp struct {
+		Tree []DMTreeNode `json:"tree"`
+	}
+	json.NewDecoder(w.Body).Decode(&treeResp)
+	var gotGroup, gotRuleset *DMTreeNode
+	for i := range treeResp.Tree {
+		if treeResp.Tree[i].ID == group.ID {
+			gotGroup = &treeResp.Tree[i]
+		}
+		if treeResp.Tree[i].ID == rs.ID {
+			gotRuleset = &treeResp.Tree[i]
+		}
+	}
+	if gotGroup == nil || gotGroup.SortOrder != 5 {
+		t.Errorf("tree group node = %+v, want SortOrder=5", gotGroup)
+	}
+	if gotRuleset == nil || gotRuleset.SortOrder != 3 {
+		t.Errorf("tree ruleset node = %+v, want SortOrder=3", gotRuleset)
+	}
+
+	// A rename that DOES carry sort_order forward must not reset it back to 0.
+	renameBody, _ := json.Marshal(map[string]any{"name": "Renamed", "disabled": false, "sort_order": gotGroup.SortOrder})
+	req = httptest.NewRequest(http.MethodPut, "/api/datamanager/groups/"+group.ID, bytes.NewReader(renameBody))
+	w = httptest.NewRecorder()
+	s.handleDataManagerRulesRouter(w, req)
+	afterRename, err := s.configDB.GetDMGroup(group.ID)
+	if err != nil || afterRename == nil || afterRename.SortOrder != 5 {
+		t.Fatalf("GetDMGroup after rename = %+v err=%v, want SortOrder still 5", afterRename, err)
+	}
+}
+
+// TestDataManagerRules_SortOrderRoundTrips covers the rule/action half of
+// drag-reorder - PUT already applied SortOrder before this change, this
+// just confirms it still does and that GET .../tree reflects it via the
+// inlined ruleset wire.
+func TestDataManagerRules_SortOrderRoundTrips(t *testing.T) {
+	s := newDMRulesTestServer(t)
+
+	rsBody, _ := json.Marshal(DMRulesetWire{Name: "Batman", Mode: "And"})
+	req := httptest.NewRequest(http.MethodPost, "/api/datamanager/rulesets", bytes.NewReader(rsBody))
+	w := httptest.NewRecorder()
+	s.handleDataManagerRulesRouter(w, req)
+	var rs DMRulesetWire
+	json.NewDecoder(w.Body).Decode(&rs)
+
+	ruleBody, _ := json.Marshal(DMRuleWire{Field: "Series", Modifier: "Is", Value: "Batman"})
+	req = httptest.NewRequest(http.MethodPost, "/api/datamanager/rulesets/"+rs.ID+"/rules", bytes.NewReader(ruleBody))
+	w = httptest.NewRecorder()
+	s.handleDataManagerRulesRouter(w, req)
+	var rule DMRuleWire
+	json.NewDecoder(w.Body).Decode(&rule)
+
+	reorderBody, _ := json.Marshal(DMRuleWire{Field: rule.Field, Modifier: rule.Modifier, Value: rule.Value, SortOrder: 7})
+	req = httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/datamanager/rules/%d", rule.ID), bytes.NewReader(reorderBody))
+	w = httptest.NewRecorder()
+	s.handleDataManagerRulesRouter(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("reorder rule: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/datamanager/tree", nil)
+	w = httptest.NewRecorder()
+	s.handleDataManagerRulesRouter(w, req)
+	var treeResp struct {
+		Tree []DMTreeNode `json:"tree"`
+	}
+	json.NewDecoder(w.Body).Decode(&treeResp)
+	if len(treeResp.Tree) != 1 || treeResp.Tree[0].Ruleset == nil || len(treeResp.Tree[0].Ruleset.Rules) != 1 {
+		t.Fatalf("tree = %+v, want one ruleset with one rule", treeResp.Tree)
+	}
+	if got := treeResp.Tree[0].Ruleset.Rules[0].SortOrder; got != 7 {
+		t.Errorf("rule sort_order in tree = %d, want 7", got)
 	}
 }
 

@@ -194,9 +194,11 @@ type DMRulesetWire struct {
 
 // handleDataManagerRulesRouter dispatches every /api/datamanager/ path this
 // editor needs. First slice (comic-server-tj6o) covered flat rulesets;
-// nested group folders (comic-server-vkpq's first piece) add the
-// /tree, /groups, and /parent routes below. Drag reordering and
-// import-merge semantics remain deferred (comic-server-vkpq).
+// nested group folders, drag reordering, and import-merge semantics
+// (comic-server-vkpq) add the rest: the /tree, /groups, and /parent
+// routes below, sort_order handling in the group/ruleset/rule/action PUT
+// handlers, and (in internal/configdb/datamanager_import.go) the
+// source="manual" vs "import" reconciliation the CLI import command uses.
 func (s *Server) handleDataManagerRulesRouter(w http.ResponseWriter, r *http.Request) {
 	if s.configDB == nil {
 		http.Error(w, "Config database not available", http.StatusServiceUnavailable)
@@ -252,12 +254,13 @@ func (s *Server) handleDataManagerRulesRouter(w http.ResponseWriter, r *http.Req
 // shape dialogs.pickFolder/listsTree.js already consume for smart lists,
 // so the same folder-picker dialog works here unmodified.
 type DMTreeNode struct {
-	ID       string         `json:"id"`
-	Name     string         `json:"name"`
-	IsFolder bool           `json:"is_folder"`
-	Disabled bool           `json:"disabled,omitempty"`
-	Ruleset  *DMRulesetWire `json:"ruleset,omitempty"`
-	Children []DMTreeNode   `json:"children,omitempty"`
+	ID        string         `json:"id"`
+	Name      string         `json:"name"`
+	IsFolder  bool           `json:"is_folder"`
+	Disabled  bool           `json:"disabled,omitempty"`
+	SortOrder int            `json:"sort_order"`
+	Ruleset   *DMRulesetWire `json:"ruleset,omitempty"`
+	Children  []DMTreeNode   `json:"children,omitempty"`
 }
 
 // handleDMTree serves GET /api/datamanager/tree - the whole group/ruleset
@@ -304,7 +307,7 @@ func (s *Server) buildDMTree(parentID string) ([]DMTreeNode, error) {
 			return nil, err
 		}
 		items = append(items, sortable{order: g.SortOrder, node: DMTreeNode{
-			ID: g.ID, Name: g.Name, IsFolder: true, Disabled: g.Disabled, Children: children,
+			ID: g.ID, Name: g.Name, IsFolder: true, Disabled: g.Disabled, SortOrder: g.SortOrder, Children: children,
 		}})
 	}
 	for _, rs := range rulesets {
@@ -313,7 +316,7 @@ func (s *Server) buildDMTree(parentID string) ([]DMTreeNode, error) {
 			return nil, err
 		}
 		items = append(items, sortable{order: rs.SortOrder, node: DMTreeNode{
-			ID: rs.ID, Name: rs.Name, IsFolder: false, Disabled: rs.Disabled, Ruleset: &wire,
+			ID: rs.ID, Name: rs.Name, IsFolder: false, Disabled: rs.Disabled, SortOrder: rs.SortOrder, Ruleset: &wire,
 		}})
 	}
 	sort.SliceStable(items, func(i, j int) bool { return items[i].order < items[j].order })
@@ -351,8 +354,12 @@ func (s *Server) handleDMGroupsCollection(w http.ResponseWriter, r *http.Request
 	s.writeJSON(w, http.StatusCreated, DMTreeNode{ID: rec.ID, Name: rec.Name, IsFolder: true})
 }
 
-// handleDMGroupItem serves PUT (rename/disable) and DELETE on
-// /api/datamanager/groups/:id.
+// handleDMGroupItem serves PUT (rename/disable/reorder) and DELETE on
+// /api/datamanager/groups/:id. Like the ruleset/rule/action PUT handlers,
+// this is a full-replace, not a partial patch - a caller that doesn't
+// carry sort_order forward from the current value (see DMTreeNode.
+// SortOrder) will silently reset it to 0, so every JS call site always
+// round-trips it.
 func (s *Server) handleDMGroupItem(w http.ResponseWriter, r *http.Request, id string) {
 	existing, err := s.configDB.GetDMGroup(id)
 	if err != nil {
@@ -367,8 +374,9 @@ func (s *Server) handleDMGroupItem(w http.ResponseWriter, r *http.Request, id st
 	switch r.Method {
 	case http.MethodPut:
 		var req struct {
-			Name     string `json:"name"`
-			Disabled bool   `json:"disabled"`
+			Name      string `json:"name"`
+			Disabled  bool   `json:"disabled"`
+			SortOrder int    `json:"sort_order"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
@@ -380,11 +388,12 @@ func (s *Server) handleDMGroupItem(w http.ResponseWriter, r *http.Request, id st
 		}
 		existing.Name = req.Name
 		existing.Disabled = req.Disabled
+		existing.SortOrder = req.SortOrder
 		if err := s.configDB.UpdateDMGroup(*existing); err != nil {
 			http.Error(w, "Failed to update group: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		s.writeJSON(w, http.StatusOK, DMTreeNode{ID: existing.ID, Name: existing.Name, IsFolder: true, Disabled: existing.Disabled})
+		s.writeJSON(w, http.StatusOK, DMTreeNode{ID: existing.ID, Name: existing.Name, IsFolder: true, Disabled: existing.Disabled, SortOrder: existing.SortOrder})
 
 	case http.MethodDelete:
 		if err := s.configDB.DeleteDMGroup(id); err != nil {
@@ -549,6 +558,7 @@ func (s *Server) handleDMRulesetItem(w http.ResponseWriter, r *http.Request, id 
 		existing.Name = req.Name
 		existing.Mode = normalizeDMMode(req.Mode)
 		existing.Disabled = req.Disabled
+		existing.SortOrder = req.SortOrder
 		if err := s.configDB.UpdateDMRuleset(*existing); err != nil {
 			http.Error(w, "Failed to update ruleset: "+err.Error(), http.StatusInternalServerError)
 			return

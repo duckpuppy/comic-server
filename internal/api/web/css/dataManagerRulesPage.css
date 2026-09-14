@@ -26,6 +26,21 @@
     opacity: 0.55;
 }
 
+/* Drag-to-reorder (comic-server-vkpq): .dmr-dragging is toggled on the
+   node being dragged (tree nodes and .dmr-editor-row alike) for visual
+   feedback while attachTreeDragReorder/attachRowDragReorder in
+   dataManagerRulesPage.js reposition it live via dragover. */
+.dmr-drag-handle {
+    cursor: grab;
+    color: var(--text-secondary, #999);
+    user-select: none;
+}
+
+.dmr-tree-node.dmr-dragging,
+.dmr-editor-row.dmr-dragging {
+    opacity: 0.4;
+}
+
 .dmr-folder-node {
     background: var(--bg-secondary, #f7f7f8);
 }

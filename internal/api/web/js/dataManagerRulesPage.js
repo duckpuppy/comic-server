@@ -1,9 +1,17 @@
-// Data Manager Rule Editor (comic-server-tj6o, folders comic-server-vkpq) -
-// create, edit, and delete rulesets (each a Field/Modifier/Value condition
-// list plus a Field/Modifier/Value action list) and organize them into
-// nested group folders, entirely through the web UI, with no dataman.dat
-// import required. Drag reordering and import-merge semantics are
-// deliberately NOT part of this slice - see comic-server-vkpq for those.
+// Data Manager Rule Editor (comic-server-tj6o, folders/drag-reorder
+// comic-server-vkpq) - create, edit, and delete rulesets (each a
+// Field/Modifier/Value condition list plus a Field/Modifier/Value action
+// list) and organize them into nested group folders, entirely through the
+// web UI, with no dataman.dat import required. Import-merge semantics
+// (reconciling this UI's hand-authored rules with a CLI dataman.dat
+// import) live server-side in internal/configdb/datamanager_import.go,
+// not here.
+//
+// Drag-to-reorder (attachTreeDragReorder/attachRowDragReorder below) only
+// reorders SIBLINGS already in the same list - a folder's contents, or one
+// ruleset's condition/action list. Moving a node to a DIFFERENT folder
+// still goes through the existing Move button/dialogs.pickFolder flow,
+// same as before this feature existed.
 //
 // Rulesets/groups created or moved here are read by the exact same
 // datamanager.LoadRulesets path the whole-library Data Manager page's
@@ -115,7 +123,7 @@ class DataManagerRulesPage {
         const expanded = this.expandedFolders.has(node.id);
         const style = `style="margin-left: ${level * 24}px"`;
         return `
-            <li class="dmr-tree-node dmr-folder-node${node.disabled ? ' dmr-disabled' : ''}" ${style} data-id="${this.escapeAttr(node.id)}">
+            <li class="dmr-tree-node dmr-folder-node${node.disabled ? ' dmr-disabled' : ''}" ${style} data-id="${this.escapeAttr(node.id)}" data-type="folder">
                 <div class="dmr-node-row">
                     <button class="btn btn-small dmr-toggle-folder-btn" data-id="${this.escapeAttr(node.id)}">${expanded ? '▾' : '▸'}</button>
                     <span class="dmr-folder-icon">${expanded ? '📂' : '📁'}</span>
@@ -136,8 +144,9 @@ class DataManagerRulesPage {
         const expanded = this.expandedRulesetId === rs.id;
         const style = `style="margin-left: ${level * 24}px"`;
         return `
-            <li class="dmr-tree-node dmr-ruleset-node${rs.disabled ? ' dmr-disabled' : ''}" ${style} data-id="${this.escapeAttr(rs.id)}">
+            <li class="dmr-tree-node dmr-ruleset-node${rs.disabled ? ' dmr-disabled' : ''}" ${style} data-id="${this.escapeAttr(rs.id)}" data-type="ruleset" draggable="true">
                 <div class="dmr-node-row">
+                    <span class="dmr-drag-handle" title="Drag to reorder">⠿</span>
                     <button class="btn btn-small dmr-toggle-ruleset-btn" data-id="${this.escapeAttr(rs.id)}">${expanded ? '▾' : '▸'}</button>
                     <span class="dmr-node-name">${this.escapeHtml(rs.name)}</span>
                     <span class="dmr-ruleset-summary">${rs.rules.length} condition${rs.rules.length === 1 ? '' : 's'} (${rs.mode}), ${rs.actions.length} action${rs.actions.length === 1 ? '' : 's'}</span>
@@ -197,7 +206,8 @@ class DataManagerRulesPage {
         const params = modInfo ? modInfo.params : 1;
         const parts = params === 2 ? rule.value.split('||') : [rule.value];
         return `
-            <li class="dmr-editor-row" data-ruleset="${this.escapeAttr(rulesetId)}" data-rule-id="${rule.id}">
+            <li class="dmr-editor-row" data-ruleset="${this.escapeAttr(rulesetId)}" data-rule-id="${rule.id}" data-kind="rule" draggable="true">
+                <span class="dmr-drag-handle" title="Drag to reorder">⠿</span>
                 <select class="dmr-field-select" data-kind="rule" data-id="${rule.id}" data-ruleset="${this.escapeAttr(rulesetId)}">
                     <optgroup label="Fields">${this.fieldOptions(rule.field)}</optgroup>
                 </select>
@@ -218,7 +228,8 @@ class DataManagerRulesPage {
         const params = modInfo ? modInfo.params : 1;
         const parts = params === 2 ? action.value.split('||') : [action.value];
         return `
-            <li class="dmr-editor-row" data-ruleset="${this.escapeAttr(rulesetId)}" data-action-id="${action.id}">
+            <li class="dmr-editor-row" data-ruleset="${this.escapeAttr(rulesetId)}" data-action-id="${action.id}" data-kind="action" draggable="true">
+                <span class="dmr-drag-handle" title="Drag to reorder">⠿</span>
                 <select class="dmr-field-select" data-kind="action" data-id="${action.id}" data-ruleset="${this.escapeAttr(rulesetId)}">
                     <optgroup label="Fields">${this.fieldOptions(action.field)}</optgroup>
                 </select>
@@ -337,6 +348,165 @@ class DataManagerRulesPage {
         document.querySelectorAll('.dmr-add-row-btn').forEach(btn => {
             btn.addEventListener('click', () => this.addRow(btn.dataset.kind, btn.dataset.ruleset));
         });
+
+        this.attachTreeDragReorder();
+        this.attachRowDragReorder();
+    }
+
+    // attachTreeDragReorder lets a ruleset node be dragged to a new
+    // position among its CURRENT siblings (folders included, since both
+    // share one sort_order sequence per parent - see buildDMTree). Folder
+    // nodes are not draggable themselves (out of scope, see this file's
+    // header comment) but still participate as fixed drop targets and can
+    // have their own sort_order shift as a side effect of a ruleset
+    // dropping before/after them.
+    attachTreeDragReorder() {
+        document.querySelectorAll('.dmr-tree-node').forEach(li => {
+            li.addEventListener('dragover', (e) => {
+                const dragging = document.querySelector('.dmr-tree-node.dmr-dragging');
+                if (!dragging || dragging === li || li.parentElement !== dragging.parentElement) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                const rect = li.getBoundingClientRect();
+                const before = (e.clientY - rect.top) < rect.height / 2;
+                li.parentElement.insertBefore(dragging, before ? li : li.nextSibling);
+            });
+        });
+        document.querySelectorAll('.dmr-ruleset-node[draggable="true"]').forEach(li => {
+            li.addEventListener('dragstart', (e) => {
+                e.stopPropagation();
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', '');
+                li.classList.add('dmr-dragging');
+                this.dragReorderParentUl = li.parentElement;
+            });
+            li.addEventListener('dragend', (e) => {
+                e.stopPropagation();
+                li.classList.remove('dmr-dragging');
+                const parentUl = this.dragReorderParentUl;
+                this.dragReorderParentUl = null;
+                if (parentUl) this.persistTreeReorder(parentUl);
+            });
+        });
+    }
+
+    // persistTreeReorder reads the (already drag-repositioned) DOM order
+    // of parentUl's direct <li> children and PUTs a new sort_order to
+    // every sibling whose position actually changed - skips anything that
+    // landed back where it started. Ends with a full tree reload, the
+    // same "structural change -> reload from server" convention every
+    // other tree mutation in this file already uses.
+    async persistTreeReorder(parentUl) {
+        const lis = Array.from(parentUl.children).filter(li => li.classList.contains('dmr-tree-node'));
+        const puts = [];
+        lis.forEach((li, i) => {
+            const id = li.dataset.id;
+            if (li.dataset.type === 'folder') {
+                const node = this.findGroupNode(id);
+                if (node && node.sort_order !== i) {
+                    puts.push(fetch(`/api/datamanager/groups/${encodeURIComponent(id)}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name: node.name, disabled: node.disabled, sort_order: i }),
+                    }));
+                }
+            } else {
+                const rs = this.findRulesetNode(id);
+                if (rs && rs.sort_order !== i) {
+                    puts.push(fetch(`/api/datamanager/rulesets/${encodeURIComponent(id)}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name: rs.name, mode: rs.mode, disabled: rs.disabled, sort_order: i }),
+                    }));
+                }
+            }
+        });
+        if (puts.length === 0) return; // dropped back in the same position
+        try {
+            await Promise.all(puts);
+        } catch (error) {
+            console.error('Failed to persist reorder:', error);
+            dialogs.toast('Failed to save new order: ' + error.message, 'error');
+        }
+        await this.refreshTree();
+    }
+
+    // attachRowDragReorder is the condition/action-row sibling of
+    // attachTreeDragReorder - each ruleset's Conditions and Actions lists
+    // reorder independently (a .dmr-row-list per column, scoped by the
+    // dragged row's own parentElement check).
+    attachRowDragReorder() {
+        document.querySelectorAll('.dmr-editor-row').forEach(li => {
+            li.addEventListener('dragover', (e) => {
+                const dragging = document.querySelector('.dmr-editor-row.dmr-dragging');
+                if (!dragging || dragging === li || li.parentElement !== dragging.parentElement) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                const rect = li.getBoundingClientRect();
+                const before = (e.clientY - rect.top) < rect.height / 2;
+                li.parentElement.insertBefore(dragging, before ? li : li.nextSibling);
+            });
+            li.addEventListener('dragstart', (e) => {
+                e.stopPropagation();
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', '');
+                li.classList.add('dmr-dragging');
+                this.dragReorderRowParentUl = li.parentElement;
+            });
+            li.addEventListener('dragend', (e) => {
+                e.stopPropagation();
+                li.classList.remove('dmr-dragging');
+                const parentUl = this.dragReorderRowParentUl;
+                this.dragReorderRowParentUl = null;
+                if (parentUl) this.persistRowReorder(parentUl);
+            });
+        });
+    }
+
+    // persistRowReorder re-sorts the in-memory rules/actions array to
+    // match the drag-repositioned DOM order (so the very next render
+    // shows the new order without waiting on a round trip - row edits
+    // mutate local state directly, matching this file's existing
+    // convention), then PUTs a new sort_order to every row whose position
+    // actually changed.
+    async persistRowReorder(parentUl) {
+        const lis = Array.from(parentUl.children).filter(li => li.classList.contains('dmr-editor-row'));
+        if (lis.length === 0) return;
+        const kind = lis[0].dataset.kind;
+        const rulesetId = lis[0].dataset.ruleset;
+        const rs = this.findRulesetNode(rulesetId);
+        if (!rs) return;
+        const oldList = kind === 'action' ? rs.actions : rs.rules;
+
+        const reordered = lis
+            .map(li => oldList.find(r => String(r.id) === String(kind === 'action' ? li.dataset.actionId : li.dataset.ruleId)))
+            .filter(Boolean);
+
+        const puts = [];
+        reordered.forEach((row, i) => {
+            if (row.sort_order !== i) {
+                row.sort_order = i;
+                const url = kind === 'action' ? `/api/datamanager/actions/${row.id}` : `/api/datamanager/rules/${row.id}`;
+                puts.push(fetch(url, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ field: row.field, modifier: row.modifier, value: row.value, sort_order: i }),
+                }));
+            }
+        });
+
+        if (kind === 'action') rs.actions = reordered;
+        else rs.rules = reordered;
+
+        if (puts.length > 0) {
+            try {
+                await Promise.all(puts);
+            } catch (error) {
+                console.error('Failed to persist row reorder:', error);
+                dialogs.toast('Failed to save new order: ' + error.message, 'error');
+            }
+        }
+        this.renderAndReattach();
     }
 
     renderAndReattach() {
@@ -360,6 +530,20 @@ class DataManagerRulesPage {
             if (!node.is_folder && node.id === id) return node.ruleset;
             if (node.is_folder) {
                 const found = this.findRulesetNode(id, node.children || []);
+                if (found) return found;
+            }
+        }
+        return null;
+    }
+
+    // findGroupNode mirrors findRulesetNode but for folder nodes - used by
+    // renameFolder/updateGroupMeta and by persistTreeReorder to read a
+    // folder's current sort_order before deciding whether it changed.
+    findGroupNode(id, nodes) {
+        for (const node of (nodes || this.tree)) {
+            if (node.is_folder && node.id === id) return node;
+            if (node.is_folder) {
+                const found = this.findGroupNode(id, node.children || []);
                 if (found) return found;
             }
         }
@@ -413,21 +597,36 @@ class DataManagerRulesPage {
     }
 
     async renameFolder(id) {
-        const name = await dialogs.prompt({ title: 'Rename Folder' });
+        const group = this.findGroupNode(id);
+        const name = await dialogs.prompt({ title: 'Rename Folder', defaultValue: group ? group.name : '' });
         if (!name) return;
+        await this.updateGroupMeta(id, { name });
+    }
+
+    // updateGroupMeta PUTs a folder's full name/disabled/sort_order every
+    // time (the handler is a full replace, same reasoning as
+    // updateRulesetMeta) - used by both renameFolder and
+    // persistTreeReorder.
+    async updateGroupMeta(id, patch) {
+        const group = this.findGroupNode(id);
+        if (!group) return;
+        const body = { name: group.name, disabled: group.disabled, sort_order: group.sort_order, ...patch };
         try {
             const response = await fetch(`/api/datamanager/groups/${encodeURIComponent(id)}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, disabled: false }),
+                body: JSON.stringify(body),
             });
             const text = await response.text();
-            if (!response.ok) throw new Error(friendlyErrorText(response, text, 'Failed to rename folder'));
-            await this.refreshTree();
+            if (!response.ok) throw new Error(friendlyErrorText(response, text, 'Failed to update folder'));
+            Object.assign(group, JSON.parse(text));
         } catch (error) {
-            console.error('Failed to rename folder:', error);
-            dialogs.toast('Failed to rename folder: ' + error.message, 'error');
+            console.error('Failed to update folder:', error);
+            dialogs.toast('Failed to update folder: ' + error.message, 'error');
+            await this.refreshTree();
+            return;
         }
+        this.renderAndReattach();
     }
 
     async deleteFolder(id, name) {
@@ -489,7 +688,11 @@ class DataManagerRulesPage {
     async updateRulesetMeta(id, patch) {
         const rs = this.findRulesetNode(id);
         if (!rs) return;
-        const body = { name: rs.name, mode: rs.mode, disabled: rs.disabled, ...patch };
+        // sort_order is always carried forward from the current value -
+        // the PUT handler is a full replace, so omitting it here would
+        // silently reset the ruleset's position on every rename/mode/
+        // disabled-toggle edit, not just an actual drag-reorder.
+        const body = { name: rs.name, mode: rs.mode, disabled: rs.disabled, sort_order: rs.sort_order, ...patch };
         try {
             const response = await fetch(`/api/datamanager/rulesets/${encodeURIComponent(id)}`, {
                 method: 'PUT',
@@ -558,12 +761,16 @@ class DataManagerRulesPage {
             row.value = parts.join('||');
         }
 
+        // sort_order is always carried forward from the current value -
+        // the PUT handler is a full replace, so omitting it here would
+        // silently reset the row's position on every field/modifier/value
+        // edit, not just an actual drag-reorder.
         const url = kind === 'action' ? `/api/datamanager/actions/${row.id}` : `/api/datamanager/rules/${row.id}`;
         try {
             const response = await fetch(url, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ field: row.field, modifier: row.modifier, value: row.value }),
+                body: JSON.stringify({ field: row.field, modifier: row.modifier, value: row.value, sort_order: row.sort_order }),
             });
             const text = await response.text();
             if (!response.ok) throw new Error(friendlyErrorText(response, text, 'Failed to save'));
