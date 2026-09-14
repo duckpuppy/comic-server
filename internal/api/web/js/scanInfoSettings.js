@@ -40,6 +40,73 @@ class ScanInfoSettings {
         // (comic-server-yvbh).
         this.serverMisc = null; // { cbz_convert_enabled, ignore_devices }
         this.serverMiscSaving = false;
+
+        // Restart-required settings (comic-server-yvbh): library path,
+        // network ports, bind address, ComicVine key, Komga connection -
+        // every one baked into an object or listener socket once at
+        // startup, so unlike Server above these can never take effect
+        // until the process restarts. restartRequired holds the raw
+        // {saved, active, restart_required} response; restartRequiredForm
+        // is the editable copy the inputs are bound to - its two API key
+        // fields always start blank (GET never returns the actual key,
+        // only whether one is set) and PUT treats "left blank" as "leave
+        // the existing key untouched", not "clear it".
+        this.restartRequired = null;
+        this.restartRequiredForm = null;
+        this.restartRequiredSaving = false;
+    }
+
+    async loadRestartRequired() {
+        try {
+            const response = await fetch('/api/settings/restart-required');
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const data = await response.json();
+            this.restartRequired = data;
+            this.restartRequiredForm = {
+                library_path: data.saved.library_path || '',
+                server_port: data.saved.server_port || 0,
+                discovery_port: data.saved.discovery_port || 0,
+                bind_address: data.saved.bind_address || '',
+                comicvine_api_key: '',
+                komga_enabled: !!data.saved.komga_enabled,
+                komga_base_url: data.saved.komga_base_url || '',
+                komga_api_key: '',
+                komga_sync_interval_sec: data.saved.komga_sync_interval_sec || 0,
+            };
+        } catch (error) {
+            console.error('Failed to load restart-required settings:', error);
+        }
+    }
+
+    async saveRestartRequired() {
+        this.restartRequiredSaving = true;
+        this.render();
+        this.attachListeners();
+        try {
+            const response = await fetch('/api/settings/restart-required', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(this.restartRequiredForm),
+            });
+            const text = await response.text();
+            if (!response.ok) throw new Error(friendlyErrorText(response, text));
+            this.restartRequired = JSON.parse(text);
+            this.restartRequiredForm.comicvine_api_key = '';
+            this.restartRequiredForm.komga_api_key = '';
+            dialogs.toast(
+                this.restartRequired.restart_required
+                    ? 'Saved. Restart comic-server to apply these changes.'
+                    : 'Saved.',
+                'success'
+            );
+        } catch (error) {
+            console.error('Failed to save restart-required settings:', error);
+            dialogs.toast('Failed to save: ' + error.message, 'error');
+        } finally {
+            this.restartRequiredSaving = false;
+            this.render();
+            this.attachListeners();
+        }
     }
 
     async loadServerMisc() {
@@ -60,7 +127,7 @@ class ScanInfoSettings {
         // leaving the page blank until the fetch resolves
         // (comic-server-4te).
         this.render();
-        await Promise.all([this.load(), this.loadTheme(), this.loadTrash(), this.loadImportStatus(), this.loadServerMisc()]);
+        await Promise.all([this.load(), this.loadTheme(), this.loadTrash(), this.loadImportStatus(), this.loadServerMisc(), this.loadRestartRequired()]);
         if (ctx && ctx.aborted) return;
         this.render();
         this.attachListeners();
@@ -249,6 +316,7 @@ class ScanInfoSettings {
                 ${this.renderAppearance()}
                 ${this.renderLibraryImport()}
                 ${this.renderServerMisc()}
+                ${this.renderRestartRequired()}
                 ${this.renderTrash()}
                 ${this.renderBody()}
             </div>
@@ -336,6 +404,87 @@ class ScanInfoSettings {
                         <input type="text" class="form-control" id="server-misc-ignore-input" placeholder="e.g. 192.168.0.24">
                         <button type="button" class="btn btn-secondary" id="server-misc-ignore-add-btn">+ Add</button>
                     </div>
+                </div>
+            </div>
+        `;
+    }
+
+    // renderRestartRequired shows library path/network/ComicVine/Komga
+    // connection settings - every one baked into an object or listener
+    // socket once at startup (comic-server-yvbh), unlike Server above.
+    // The two API key inputs are password fields that start blank; a
+    // "configured" hint next to each shows whether a key is already
+    // saved without ever sending it back to the browser.
+    renderRestartRequired() {
+        const f = this.restartRequiredForm;
+        if (!f) {
+            return `<div class="panel scan-info-panel"><h2>Server (requires restart)</h2><p class="empty-hint">Loading...</p></div>`;
+        }
+        const saved = this.restartRequired.saved;
+        const banner = this.restartRequired.restart_required
+            ? `<p class="datamanager-errors">⚠ Saved changes below differ from what's currently running - restart comic-server to apply them.</p>`
+            : '';
+
+        return `
+            <div class="panel scan-info-panel">
+                <div class="settings-section-header">
+                    <h2>Server (requires restart)</h2>
+                    <p class="settings-section-description">Library path, network ports, bind address, ComicVine key, and Komga connection - none of these take effect until comic-server restarts.</p>
+                </div>
+                ${banner}
+
+                <div class="form-group">
+                    <label for="rr-library-path">Library path</label>
+                    <input type="text" id="rr-library-path" class="form-control" value="${this.escapeAttr(f.library_path)}" placeholder="/data/ComicDb.xml">
+                </div>
+
+                <div class="form-group">
+                    <label for="rr-server-port">Server port</label>
+                    <input type="number" id="rr-server-port" class="form-control" min="1" max="65535" value="${f.server_port}" style="max-width:8rem;">
+                </div>
+
+                <div class="form-group">
+                    <label for="rr-discovery-port">Discovery port</label>
+                    <input type="number" id="rr-discovery-port" class="form-control" min="1" max="65535" value="${f.discovery_port}" style="max-width:8rem;">
+                </div>
+
+                <div class="form-group">
+                    <label for="rr-bind-address">Bind address</label>
+                    <input type="text" id="rr-bind-address" class="form-control" value="${this.escapeAttr(f.bind_address)}" placeholder="(blank = all interfaces)">
+                </div>
+
+                <div class="form-group">
+                    <label for="rr-comicvine-key">ComicVine API key</label>
+                    <input type="password" id="rr-comicvine-key" class="form-control" value="${this.escapeAttr(f.comicvine_api_key)}" placeholder="${saved.comicvine_api_key_set ? 'Configured - leave blank to keep' : 'Not set'}" autocomplete="off">
+                </div>
+
+                <div class="form-group">
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="rr-komga-enabled" ${f.komga_enabled ? 'checked' : ''}>
+                        <span class="toggle-slider"></span>
+                    </label>
+                    <span class="form-label-inline">Komga sync enabled</span>
+                </div>
+
+                <div class="form-group">
+                    <label for="rr-komga-base-url">Komga URL</label>
+                    <input type="text" id="rr-komga-base-url" class="form-control" value="${this.escapeAttr(f.komga_base_url)}" placeholder="https://komga.example.com">
+                </div>
+
+                <div class="form-group">
+                    <label for="rr-komga-key">Komga API key</label>
+                    <input type="password" id="rr-komga-key" class="form-control" value="${this.escapeAttr(f.komga_api_key)}" placeholder="${saved.komga_api_key_set ? 'Configured - leave blank to keep' : 'Not set'}" autocomplete="off">
+                </div>
+
+                <div class="form-group">
+                    <label for="rr-komga-interval">Komga sync interval (seconds)</label>
+                    <input type="number" id="rr-komga-interval" class="form-control" min="1" value="${f.komga_sync_interval_sec}" style="max-width:8rem;">
+                </div>
+
+                <div class="scan-info-actions">
+                    <button class="btn btn-primary" id="rr-save" ${this.restartRequiredSaving ? 'disabled' : ''}>
+                        ${this.restartRequiredSaving ? 'Saving...' : 'Save'}
+                    </button>
                 </div>
             </div>
         `;
@@ -531,6 +680,33 @@ class ScanInfoSettings {
         const trashSaveBtn = document.getElementById('trash-save');
         if (trashSaveBtn) {
             trashSaveBtn.addEventListener('click', () => this.saveTrash());
+        }
+
+        if (this.restartRequiredForm) {
+            const bindField = (id, key, transform) => {
+                const el = document.getElementById(id);
+                if (el) el.addEventListener('input', (e) => {
+                    this.restartRequiredForm[key] = transform ? transform(e.target.value) : e.target.value;
+                });
+            };
+            bindField('rr-library-path', 'library_path');
+            bindField('rr-server-port', 'server_port', v => parseInt(v, 10) || 0);
+            bindField('rr-discovery-port', 'discovery_port', v => parseInt(v, 10) || 0);
+            bindField('rr-bind-address', 'bind_address');
+            bindField('rr-comicvine-key', 'comicvine_api_key');
+            bindField('rr-komga-base-url', 'komga_base_url');
+            bindField('rr-komga-key', 'komga_api_key');
+            bindField('rr-komga-interval', 'komga_sync_interval_sec', v => parseInt(v, 10) || 0);
+
+            const komgaEnabledToggle = document.getElementById('rr-komga-enabled');
+            if (komgaEnabledToggle) {
+                komgaEnabledToggle.addEventListener('change', (e) => {
+                    this.restartRequiredForm.komga_enabled = e.target.checked;
+                });
+            }
+
+            const rrSaveBtn = document.getElementById('rr-save');
+            if (rrSaveBtn) rrSaveBtn.addEventListener('click', () => this.saveRestartRequired());
         }
 
         if (!this.config) return;

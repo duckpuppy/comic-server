@@ -81,6 +81,13 @@ type Server struct {
 	komgaStatus *komga.StatusStore
 	komgaSyncer *komga.Syncer
 
+	// activeRestartRequiredSettings is a startup-time snapshot of the
+	// config fields that can't take effect without a process restart -
+	// see restart_required_settings.go's doc comment. Set once via
+	// SetActiveRestartRequiredSettings before any PUT can mutate
+	// s.config; read-only after that, so no lock is needed.
+	activeRestartRequiredSettings RestartRequiredSettings
+
 	coverCache *covers.Cache
 
 	// triggerSync kicks off a sync for a currently-connected device,
@@ -256,6 +263,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/settings/trash", s.handleTrashSettings)
 	s.mux.HandleFunc("/api/settings/library-import", s.handleLibraryImport)
 	s.mux.HandleFunc("/api/settings/server-misc", s.handleServerMiscSettings)
+	s.mux.HandleFunc("/api/settings/restart-required", s.handleRestartRequiredSettings)
 
 	// WebSocket endpoint
 	s.mux.HandleFunc("/ws", s.handleWebSocket)

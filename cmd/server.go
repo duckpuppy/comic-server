@@ -463,6 +463,12 @@ func runServer(cmd *cobra.Command, args []string) error {
 		BuildDate: BuildDate,
 	}
 	apiServer := api.NewServer(syncManager, registry, backend, cfg, configPath, apiVersion, wsHub, configDB)
+	// Snapshot the restart-required settings (comic-server-yvbh) before
+	// anything below can mutate cfg - this is what actually built the
+	// backend/listeners/ComicVine client/Komga syncer, so it's the
+	// correct "what's really running" baseline to compare future saves
+	// against.
+	apiServer.SetActiveRestartRequiredSettings(cfg)
 	apiServer.SetSyncTrigger(func(deviceID string) error {
 		return triggerManualSync(deviceID, registry, syncManager, cfg, backend, configDB, deviceLimiter, syncSemaphore)
 	})
