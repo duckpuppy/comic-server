@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.34.0](https://github.com/duckpuppy/comic-server/compare/v1.33.0...v1.34.0) (2026-09-14)
+
+
+### Features
+
+* add restart-required settings to Settings page (comic-server-yvbh) ([4fcdb1b](https://github.com/duckpuppy/comic-server/commit/4fcdb1ba71a323b2ceb568dbfab3247d1e34f83a))
+
 ## [1.33.0](https://github.com/duckpuppy/comic-server/compare/v1.32.0...v1.33.0) (2026-09-13)
 
 
