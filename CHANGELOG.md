@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.36.0](https://github.com/duckpuppy/comic-server/compare/v1.35.0...v1.36.0) (2026-09-17)
+
+
+### Features
+
+* expose AutoSync as a live Settings toggle (comic-server-r769) ([d03d3b7](https://github.com/duckpuppy/comic-server/commit/d03d3b73c00a09f74089ccb908456ac274e83084))
+* Trash gets retention countdown and Delete Permanently (comic-server-ci31, comic-server-2y3p) ([bc0f486](https://github.com/duckpuppy/comic-server/commit/bc0f4865abd213407c1f08ed598296c172c20d34))
+* Watch Folders settings UI with server-side directory browser (comic-server-obe) ([96a0bd0](https://github.com/duckpuppy/comic-server/commit/96a0bd005f56565d606f0af5fd6296df3521fe3a))
+
 ## [1.35.0](https://github.com/duckpuppy/comic-server/compare/v1.34.0...v1.35.0) (2026-09-14)
 
 
