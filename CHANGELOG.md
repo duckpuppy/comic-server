@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.35.0](https://github.com/duckpuppy/comic-server/compare/v1.34.0...v1.35.0) (2026-09-14)
+
+
+### Features
+
+* drag-to-reorder in Data Manager rule editor (comic-server-vkpq) ([030f2ea](https://github.com/duckpuppy/comic-server/commit/030f2ea33308f49019056d0b2bed0b1dc19e8492))
+
 ## [1.34.0](https://github.com/duckpuppy/comic-server/compare/v1.33.0...v1.34.0) (2026-09-14)
 
 
