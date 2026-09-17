@@ -13,8 +13,9 @@ import "fmt"
 // dm_groups/dm_rulesets (comic-server-vkpq). Version 10 adds
 // trash_settings (comic-server-4hsz). Version 11 adds
 // server_misc_settings (comic-server-wp8k). Version 12 adds
-// watch_folders (comic-server-obe).
-const schemaVersion = 12
+// watch_folders (comic-server-obe). Version 13 adds an auto_sync column
+// to server_misc_settings (comic-server-r769).
+const schemaVersion = 13
 
 // initSchema brings the database up to schemaVersion. No-ops if already
 // current - safe to call on every Open, every server startup.
@@ -86,6 +87,11 @@ func (db *DB) initSchema() error {
 		if version < 12 {
 			if err := db.migrateV11ToV12(); err != nil {
 				return fmt.Errorf("migrate v11→v12: %w", err)
+			}
+		}
+		if version < 13 {
+			if err := db.migrateV12ToV13(); err != nil {
+				return fmt.Errorf("migrate v12→v13: %w", err)
 			}
 		}
 	}
@@ -305,6 +311,18 @@ func (db *DB) migrateV10ToV11() error {
 // under schemaVersion 11 (comic-server-obe).
 func (db *DB) migrateV11ToV12() error {
 	return db.createWatchFoldersTable()
+}
+
+// migrateV12ToV13 adds the auto_sync column to server_misc_settings for a
+// database created under schemaVersion 12 (comic-server-r769). Runs
+// createServerMiscSettingsTable first for the same reason migrateV8ToV9
+// does - a synthetic test fixture that pins user_version without ever
+// having actually run the earlier migration that creates the table.
+func (db *DB) migrateV12ToV13() error {
+	if err := db.createServerMiscSettingsTable(); err != nil {
+		return fmt.Errorf("migrate v12→v13: %w", err)
+	}
+	return db.addAutoSyncColumn()
 }
 
 // createDataManagerTables creates the tables backing the Data Manager rule

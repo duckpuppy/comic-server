@@ -311,7 +311,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 	// CBZConvert.Enabled and IgnoreDevices (comic-server-wp8k, second
 	// slice of comic-server-4hsz's Settings UI push) - see
 	// applyServerMiscSettings's own doc comment for the full story.
-	if err := applyServerMiscSettings(cfg, configDB, configPath, ignoreDevicesSet, ignoreDevices); err != nil {
+	if err := applyServerMiscSettings(cfg, configDB, configPath, ignoreDevicesSet, ignoreDevices, autoSyncSet, autoSync); err != nil {
 		return fmt.Errorf("failed to apply server misc settings: %w", err)
 	}
 
@@ -645,7 +645,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 				// newCfg was just loaded fresh from config.yaml, which no longer
 				// carries CBZConvert.Enabled/IgnoreDevices at all once migrated, so
 				// without this they'd revert to their zero value on every SIGHUP.
-				if err := applyServerMiscSettings(newCfg, configDB, configPath, ignoreDevicesSet, ignoreDevices); err != nil {
+				if err := applyServerMiscSettings(newCfg, configDB, configPath, ignoreDevicesSet, ignoreDevices, autoSyncSet, autoSync); err != nil {
 					log.Error().Err(err).Msg("Failed to apply server misc settings on reload, keeping current config")
 					continue
 				}
@@ -909,7 +909,7 @@ func migrateKomgaTargetsToConfigDB(cfg *config.Config, configDB *configdb.DB) (i
 // newCfg) - a SIGHUP reload loads a fresh cfg from the now-cleared
 // config.yaml, so without reapplying this, the in-memory effective values
 // would revert to their zero value on every reload.
-func applyServerMiscSettings(cfg *config.Config, configDB *configdb.DB, configPath string, ignoreDevicesSet bool, ignoreDevicesFlag []string) error {
+func applyServerMiscSettings(cfg *config.Config, configDB *configdb.DB, configPath string, ignoreDevicesSet bool, ignoreDevicesFlag []string, autoSyncSet bool, autoSyncFlag bool) error {
 	existing, err := configDB.GetServerMiscSettings()
 	if err != nil {
 		return fmt.Errorf("check config database for existing server misc settings: %w", err)
@@ -919,11 +919,12 @@ func applyServerMiscSettings(cfg *config.Config, configDB *configdb.DB, configPa
 		seed := configdb.ServerMiscSettings{
 			CBZConvertEnabled: cfg.Server.CBZConvert.Enabled,
 			IgnoreDevices:     cfg.Server.IgnoreDevices,
+			AutoSync:          cfg.Server.AutoSync,
 		}
 		if err := configDB.UpsertServerMiscSettings(seed); err != nil {
 			return fmt.Errorf("migrate server misc settings to config database: %w", err)
 		}
-		log.Info().Msg("Migrated CBZ Convert enabled flag and ignore-devices list from config.yaml to config.db")
+		log.Info().Msg("Migrated CBZ Convert enabled flag, ignore-devices list, and auto-sync flag from config.yaml to config.db")
 
 		// Clear config.yaml's on-disk copy only - cfg's in-memory fields
 		// are restored right after Save so the rest of this process still
@@ -933,23 +934,34 @@ func applyServerMiscSettings(cfg *config.Config, configDB *configdb.DB, configPa
 		// CBZConvert for the remainder of that run).
 		cfg.Server.CBZConvert.Enabled = false
 		cfg.Server.IgnoreDevices = nil
+		cfg.Server.AutoSync = false
 		if err := config.Save(cfg, configPath); err != nil {
 			log.Error().Err(err).Msg("Failed to save config.yaml after migrating server misc settings to config.db")
 		}
 		cfg.Server.CBZConvert.Enabled = seed.CBZConvertEnabled
 		cfg.Server.IgnoreDevices = seed.IgnoreDevices
+		cfg.Server.AutoSync = seed.AutoSync
 		return nil
 	}
 
+	changed := false
 	if ignoreDevicesSet {
 		existing.IgnoreDevices = ignoreDevicesFlag
+		changed = true
+	}
+	if autoSyncSet {
+		existing.AutoSync = autoSyncFlag
+		changed = true
+	}
+	if changed {
 		if err := configDB.UpsertServerMiscSettings(*existing); err != nil {
-			return fmt.Errorf("persist --ignore-device override to config database: %w", err)
+			return fmt.Errorf("persist CLI flag override to config database: %w", err)
 		}
 	}
 
 	cfg.Server.CBZConvert.Enabled = existing.CBZConvertEnabled
 	cfg.Server.IgnoreDevices = existing.IgnoreDevices
+	cfg.Server.AutoSync = existing.AutoSync
 	return nil
 }
 

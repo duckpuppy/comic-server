@@ -184,10 +184,10 @@ class ScanInfoSettings {
             const response = await fetch('/api/settings/server-misc');
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json();
-            this.serverMisc = { cbz_convert_enabled: !!data.cbz_convert_enabled, ignore_devices: data.ignore_devices || [] };
+            this.serverMisc = { cbz_convert_enabled: !!data.cbz_convert_enabled, ignore_devices: data.ignore_devices || [], auto_sync: !!data.auto_sync };
         } catch (error) {
             console.error('Failed to load server settings:', error);
-            this.serverMisc = { cbz_convert_enabled: false, ignore_devices: [] };
+            this.serverMisc = { cbz_convert_enabled: false, ignore_devices: [], auto_sync: false };
         }
     }
 
@@ -439,12 +439,12 @@ class ScanInfoSettings {
     }
 
     renderServerMisc() {
-        const m = this.serverMisc || { cbz_convert_enabled: false, ignore_devices: [] };
+        const m = this.serverMisc || { cbz_convert_enabled: false, ignore_devices: [], auto_sync: false };
         return `
             <div class="panel scan-info-panel">
                 <div class="settings-section-header">
                     <h2>Server</h2>
-                    <p class="settings-section-description">Both take effect immediately - no restart needed.</p>
+                    <p class="settings-section-description">All take effect immediately - no restart needed.</p>
                 </div>
 
                 <div class="form-group">
@@ -454,6 +454,15 @@ class ScanInfoSettings {
                     </label>
                     <span class="form-label-inline">Convert to CBZ enabled</span>
                     <div class="form-help">Requires Trash to be configured above - repacks a comic archive as CBZ and embeds ComicInfo.xml, retiring the original into quarantine.</div>
+                </div>
+
+                <div class="form-group">
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="server-misc-auto-sync" ${m.auto_sync ? 'checked' : ''}>
+                        <span class="toggle-slider"></span>
+                    </label>
+                    <span class="form-label-inline">Auto-sync on connect</span>
+                    <div class="form-help">Automatically start a sync whenever a device connects and requests one, instead of waiting for a manual sync.</div>
                 </div>
 
                 <div class="form-group scan-info-list-group">
@@ -777,6 +786,13 @@ class ScanInfoSettings {
         if (cbzConvertToggle) {
             cbzConvertToggle.addEventListener('change', (e) => {
                 this.serverMisc.cbz_convert_enabled = e.target.checked;
+                this.saveServerMisc();
+            });
+        }
+        const autoSyncToggle = document.getElementById('server-misc-auto-sync');
+        if (autoSyncToggle) {
+            autoSyncToggle.addEventListener('change', (e) => {
+                this.serverMisc.auto_sync = e.target.checked;
                 this.saveServerMisc();
             });
         }

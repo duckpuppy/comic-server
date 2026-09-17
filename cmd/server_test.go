@@ -181,7 +181,7 @@ func TestApplyServerMiscSettings_FirstRunMigratesAndClears(t *testing.T) {
 		t.Fatalf("seed config.Save: %v", err)
 	}
 
-	if err := applyServerMiscSettings(cfg, db, configPath, false, nil); err != nil {
+	if err := applyServerMiscSettings(cfg, db, configPath, false, nil, false, false); err != nil {
 		t.Fatalf("applyServerMiscSettings: %v", err)
 	}
 
@@ -221,7 +221,7 @@ func TestApplyServerMiscSettings_SteadyStateUsesConfigDB(t *testing.T) {
 	}
 
 	cfg := &config.Config{} // simulates a fresh load from the now-cleared config.yaml
-	if err := applyServerMiscSettings(cfg, db, filepath.Join(t.TempDir(), "config.yaml"), false, nil); err != nil {
+	if err := applyServerMiscSettings(cfg, db, filepath.Join(t.TempDir(), "config.yaml"), false, nil, false, false); err != nil {
 		t.Fatalf("applyServerMiscSettings: %v", err)
 	}
 
@@ -245,7 +245,7 @@ func TestApplyServerMiscSettings_CLIFlagOverridesAndPersists(t *testing.T) {
 	}
 
 	cfg := &config.Config{}
-	if err := applyServerMiscSettings(cfg, db, filepath.Join(t.TempDir(), "config.yaml"), true, []string{"new-device"}); err != nil {
+	if err := applyServerMiscSettings(cfg, db, filepath.Join(t.TempDir(), "config.yaml"), true, []string{"new-device"}, false, false); err != nil {
 		t.Fatalf("applyServerMiscSettings: %v", err)
 	}
 
@@ -260,6 +260,37 @@ func TestApplyServerMiscSettings_CLIFlagOverridesAndPersists(t *testing.T) {
 	}
 	if len(stored.IgnoreDevices) != 1 || stored.IgnoreDevices[0] != "new-device" {
 		t.Errorf("stored.IgnoreDevices = %v, want [new-device] persisted", stored.IgnoreDevices)
+	}
+}
+
+// TestApplyServerMiscSettings_AutoSyncCLIFlagOverridesAndPersists mirrors
+// the ignore-devices override test above for --auto-sync
+// (comic-server-r769): an explicitly-passed CLI flag wins over whatever's
+// already in config.db, AND persists forward so it isn't lost on the
+// next run without the flag.
+func TestApplyServerMiscSettings_AutoSyncCLIFlagOverridesAndPersists(t *testing.T) {
+	db := newTestConfigDB(t)
+	if err := db.UpsertServerMiscSettings(configdb.ServerMiscSettings{
+		AutoSync: false,
+	}); err != nil {
+		t.Fatalf("UpsertServerMiscSettings: %v", err)
+	}
+
+	cfg := &config.Config{}
+	if err := applyServerMiscSettings(cfg, db, filepath.Join(t.TempDir(), "config.yaml"), false, nil, true, true); err != nil {
+		t.Fatalf("applyServerMiscSettings: %v", err)
+	}
+
+	if !cfg.Server.AutoSync {
+		t.Error("cfg.Server.AutoSync = false, want true (CLI override)")
+	}
+
+	stored, err := db.GetServerMiscSettings()
+	if err != nil {
+		t.Fatalf("GetServerMiscSettings: %v", err)
+	}
+	if !stored.AutoSync {
+		t.Error("stored.AutoSync = false, want true persisted")
 	}
 }
 

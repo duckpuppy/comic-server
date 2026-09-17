@@ -9,11 +9,13 @@ import (
 )
 
 // ServerMiscSettingsResponse is the GET/PUT /api/settings/server-misc wire
-// shape - two small, otherwise-unrelated settings (comic-server-wp8k)
-// bundled the same way they're stored (configdb.ServerMiscSettings).
+// shape - small, otherwise-unrelated settings (comic-server-wp8k,
+// AutoSync added in comic-server-r769) bundled the same way they're
+// stored (configdb.ServerMiscSettings).
 type ServerMiscSettingsResponse struct {
 	CBZConvertEnabled bool     `json:"cbz_convert_enabled"`
 	IgnoreDevices     []string `json:"ignore_devices"`
+	AutoSync          bool     `json:"auto_sync"`
 }
 
 // handleServerMiscSettings serves GET/PUT /api/settings/server-misc.
@@ -43,6 +45,7 @@ func (s *Server) handleGetServerMiscSettings(w http.ResponseWriter, r *http.Requ
 	if stored != nil {
 		resp.CBZConvertEnabled = stored.CBZConvertEnabled
 		resp.IgnoreDevices = stored.IgnoreDevices
+		resp.AutoSync = stored.AutoSync
 	} else {
 		// Never migrated (e.g. a fresh install with nothing in config.yaml
 		// either) - fall back to whatever's currently in effect in memory,
@@ -53,6 +56,7 @@ func (s *Server) handleGetServerMiscSettings(w http.ResponseWriter, r *http.Requ
 			if s.config.Server.IgnoreDevices != nil {
 				resp.IgnoreDevices = s.config.Server.IgnoreDevices
 			}
+			resp.AutoSync = s.config.Server.AutoSync
 		}
 		s.configMu.RUnlock()
 	}
@@ -69,6 +73,7 @@ func (s *Server) handlePutServerMiscSettings(w http.ResponseWriter, r *http.Requ
 	if err := s.configDB.UpsertServerMiscSettings(configdb.ServerMiscSettings{
 		CBZConvertEnabled: req.CBZConvertEnabled,
 		IgnoreDevices:     req.IgnoreDevices,
+		AutoSync:          req.AutoSync,
 	}); err != nil {
 		log.Error().Err(err).Msg("Failed to save server misc settings")
 		http.Error(w, "Failed to save server misc settings", http.StatusInternalServerError)
@@ -77,14 +82,15 @@ func (s *Server) handlePutServerMiscSettings(w http.ResponseWriter, r *http.Requ
 
 	// Apply immediately in-memory too, same as the config.db write, so
 	// every existing cmd-package call site reading cfg.Server.CBZConvert.
-	// Enabled / cfg.Server.IgnoreDevices directly (they were never
-	// rewritten to read through configDB - see cmd/server.go's
-	// applyServerMiscSettings) sees the new value on its very next read,
-	// with no restart and no SIGHUP needed.
+	// Enabled / cfg.Server.IgnoreDevices / cfg.Server.AutoSync directly
+	// (they were never rewritten to read through configDB - see
+	// cmd/server.go's applyServerMiscSettings) sees the new value on its
+	// very next read, with no restart and no SIGHUP needed.
 	s.configMu.Lock()
 	if s.config != nil {
 		s.config.Server.CBZConvert.Enabled = req.CBZConvertEnabled
 		s.config.Server.IgnoreDevices = req.IgnoreDevices
+		s.config.Server.AutoSync = req.AutoSync
 	}
 	s.configMu.Unlock()
 

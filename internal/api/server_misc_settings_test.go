@@ -19,6 +19,7 @@ func TestHandleGetServerMiscSettings_FallsBackToInMemoryConfig(t *testing.T) {
 	s := newServerMiscSettingsTestServer(t)
 	s.config.Server.CBZConvert.Enabled = true
 	s.config.Server.IgnoreDevices = []string{"192.168.0.24"}
+	s.config.Server.AutoSync = true
 
 	req := httptest.NewRequest(http.MethodGet, "/api/settings/server-misc", nil)
 	w := httptest.NewRecorder()
@@ -30,7 +31,7 @@ func TestHandleGetServerMiscSettings_FallsBackToInMemoryConfig(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if !got.CBZConvertEnabled || len(got.IgnoreDevices) != 1 || got.IgnoreDevices[0] != "192.168.0.24" {
+	if !got.CBZConvertEnabled || len(got.IgnoreDevices) != 1 || got.IgnoreDevices[0] != "192.168.0.24" || !got.AutoSync {
 		t.Errorf("got %+v, want the in-memory fallback values", got)
 	}
 }
@@ -38,7 +39,7 @@ func TestHandleGetServerMiscSettings_FallsBackToInMemoryConfig(t *testing.T) {
 func TestHandlePutServerMiscSettings_PersistsAndAppliesLive(t *testing.T) {
 	s := newServerMiscSettingsTestServer(t)
 
-	body, _ := json.Marshal(ServerMiscSettingsResponse{CBZConvertEnabled: true, IgnoreDevices: []string{"SM-T970"}})
+	body, _ := json.Marshal(ServerMiscSettingsResponse{CBZConvertEnabled: true, IgnoreDevices: []string{"SM-T970"}, AutoSync: true})
 	req := httptest.NewRequest(http.MethodPut, "/api/settings/server-misc", bytes.NewReader(body))
 	w := httptest.NewRecorder()
 	s.handleServerMiscSettings(w, req)
@@ -53,13 +54,16 @@ func TestHandlePutServerMiscSettings_PersistsAndAppliesLive(t *testing.T) {
 	if len(s.config.Server.IgnoreDevices) != 1 || s.config.Server.IgnoreDevices[0] != "SM-T970" {
 		t.Errorf("s.config.Server.IgnoreDevices = %v, want [SM-T970]", s.config.Server.IgnoreDevices)
 	}
+	if !s.config.Server.AutoSync {
+		t.Error("expected s.config.Server.AutoSync to be updated live")
+	}
 
 	// And config.db must have the durable copy.
 	stored, err := s.configDB.GetServerMiscSettings()
 	if err != nil {
 		t.Fatalf("GetServerMiscSettings: %v", err)
 	}
-	if stored == nil || !stored.CBZConvertEnabled || len(stored.IgnoreDevices) != 1 {
+	if stored == nil || !stored.CBZConvertEnabled || len(stored.IgnoreDevices) != 1 || !stored.AutoSync {
 		t.Errorf("stored settings = %+v, want persisted", stored)
 	}
 
@@ -71,7 +75,7 @@ func TestHandlePutServerMiscSettings_PersistsAndAppliesLive(t *testing.T) {
 	if err := json.Unmarshal(getW.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if !got.CBZConvertEnabled || len(got.IgnoreDevices) != 1 || got.IgnoreDevices[0] != "SM-T970" {
+	if !got.CBZConvertEnabled || len(got.IgnoreDevices) != 1 || got.IgnoreDevices[0] != "SM-T970" || !got.AutoSync {
 		t.Errorf("GET after PUT = %+v, want the saved values", got)
 	}
 }
