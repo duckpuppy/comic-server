@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.37.0](https://github.com/duckpuppy/comic-server/compare/v1.36.0...v1.37.0) (2026-09-17)
+
+
+### Features
+
+* Wanted issues - create, list, and link a file (comic-server-38f7) ([16157ea](https://github.com/duckpuppy/comic-server/commit/16157eacd71b4bb8423f8412cb42f62bb4a335ce))
+
 ## [1.36.0](https://github.com/duckpuppy/comic-server/compare/v1.35.0...v1.36.0) (2026-09-17)
 
 
