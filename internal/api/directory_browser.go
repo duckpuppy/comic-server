@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/duckpuppy/comic-server/internal/log"
+	"github.com/duckpuppy/comic-server/internal/watchfolder"
 )
 
 // DirectoryBrowseResponse is the wire shape for GET
@@ -20,9 +21,14 @@ import (
 // container's filesystem differs from the host), so this is a small
 // server-side directory-listing API the picker UI navigates instead.
 //
-// Only directories are ever listed (never files) - this exists purely
-// for picking a folder path, not for browsing file contents. Dotfiles/
-// dot-directories are skipped as UI noise, not as a security boundary.
+// Directories are always listed. Files are only included when the
+// caller passes ?files=1 (comic-server-38f7's "link a file to a wanted
+// book" picker needs to select one specific comic archive, not just
+// navigate folders - the Watch Folders picker never sets this, so its
+// behavior is unchanged) - and even then, only recognized comic archive
+// extensions (watchfolder.IsComicFile) are returned, not every file in
+// the directory. Dotfiles/dot-directories are skipped as UI noise, not
+// as a security boundary.
 //
 // This endpoint carries no additional access restriction beyond whatever
 // already protects the rest of the API: comic-server has no
@@ -35,6 +41,7 @@ type DirectoryBrowseResponse struct {
 	Path        string   `json:"path"`
 	Parent      string   `json:"parent,omitempty"`
 	Directories []string `json:"directories"`
+	Files       []string `json:"files,omitempty"`
 }
 
 // handleBrowseDirectory serves GET /api/system/browse-directory?path=...
@@ -75,19 +82,29 @@ func (s *Server) handleBrowseDirectory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	includeFiles := r.URL.Query().Get("files") != ""
+
 	dirs := make([]string, 0, len(entries))
+	var files []string
 	for _, e := range entries {
-		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+		if strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
-		dirs = append(dirs, e.Name())
+		if e.IsDir() {
+			dirs = append(dirs, e.Name())
+			continue
+		}
+		if includeFiles && watchfolder.IsComicFile(e.Name()) {
+			files = append(files, e.Name())
+		}
 	}
 	sort.Strings(dirs)
+	sort.Strings(files)
 
 	parent := filepath.Dir(abs)
 	if parent == abs {
 		parent = "" // already at the root - nothing to go up to
 	}
 
-	s.writeJSON(w, http.StatusOK, DirectoryBrowseResponse{Path: abs, Parent: parent, Directories: dirs})
+	s.writeJSON(w, http.StatusOK, DirectoryBrowseResponse{Path: abs, Parent: parent, Directories: dirs, Files: files})
 }

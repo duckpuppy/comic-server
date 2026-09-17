@@ -32,6 +32,17 @@ class WorkflowPage {
         this.newFilesDrillIn = false; // true when showing the New Files list instead of a stage drill-in
         this.selectedNewFiles = new Set();
         this.startingProcessing = false;
+
+        // Wanted (comic-server-38f7) - book records with no file yet, for
+        // an issue the user doesn't own a copy of. Unlike New Files, this
+        // card's View is never disabled at 0, since Create is reachable
+        // from there too even with nothing wanted yet.
+        this.wanted = { total: 0, comics: [] };
+        this.wantedDrillIn = false;
+        this.showNewWantedForm = false;
+        this.newWantedForm = { series: '', number: '', volume: 0, year: 0, publisher: '' };
+        this.savingWanted = false;
+        this.linkingWantedId = null; // wanted book id currently mid-link, or null
     }
 
     async init(ctx) {
@@ -57,6 +68,7 @@ class WorkflowPage {
             this.error = 'Failed to load workflow summary. Please try again.';
         }
         await this.loadNewFiles();
+        await this.loadWanted();
     }
 
     async loadNewFiles() {
@@ -66,6 +78,16 @@ class WorkflowPage {
             this.newFiles = await response.json();
         } catch (error) {
             console.error('Failed to load watch folder new files:', error);
+        }
+    }
+
+    async loadWanted() {
+        try {
+            const response = await fetch('/api/library/workflow/wanted');
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            this.wanted = await response.json();
+        } catch (error) {
+            console.error('Failed to load wanted books:', error);
         }
     }
 
@@ -93,6 +115,9 @@ class WorkflowPage {
         if (this.newFilesDrillIn) {
             return this.renderNewFilesDrillIn();
         }
+        if (this.wantedDrillIn) {
+            return this.renderWantedDrillIn();
+        }
         if (this.drillIn) {
             return this.renderDrillIn();
         }
@@ -118,6 +143,16 @@ class WorkflowPage {
                 <p class="empty-message">Comic files sitting in a watch folder that aren't in the library yet.</p>
                 <div class="workflow-card-actions">
                     <button class="btn btn-secondary" id="workflow-view-new-files-btn" ${this.newFiles.total === 0 ? 'disabled' : ''}>View</button>
+                </div>
+            </div>
+        `;
+        html += `
+            <div class="panel workflow-card">
+                <h2>Wanted</h2>
+                <p class="workflow-card-count">${this.wanted.total}</p>
+                <p class="empty-message">Issues you don't own a file for yet - link one in when you get it.</p>
+                <div class="workflow-card-actions">
+                    <button class="btn btn-secondary" id="workflow-view-wanted-btn">View</button>
                 </div>
             </div>
         `;
@@ -255,6 +290,74 @@ class WorkflowPage {
         return html;
     }
 
+    renderWantedDrillIn() {
+        const comics = this.wanted.comics || [];
+        let html = `
+            <div class="panel">
+                <div class="datamanager-page-header">
+                    <button class="btn btn-secondary" id="workflow-back-btn">&larr; Back</button>
+                    <h2>Wanted (${comics.length})</h2>
+                </div>
+                <p class="empty-message">Issues you don't have a file for yet. Create a placeholder, then link a file once you get one.</p>
+                <div class="datamanager-actions">
+                    <button class="btn btn-primary" id="workflow-new-wanted-btn">${this.showNewWantedForm ? 'Cancel' : '+ Create Wanted Book'}</button>
+                </div>
+                ${this.showNewWantedForm ? this.renderNewWantedForm() : ''}
+        `;
+        if (comics.length === 0) {
+            html += '<p class="empty-message">No wanted books yet.</p>';
+        } else {
+            html += '<table class="datamanager-diff-table"><thead><tr><th>Series</th><th>Number</th><th>Volume</th><th>Year</th><th>Publisher</th><th></th></tr></thead><tbody>';
+            for (const c of comics) {
+                const linking = this.linkingWantedId === c.id;
+                html += `<tr>
+                    <td>${this.escapeHtml(c.series)}</td>
+                    <td>${this.escapeHtml(c.number)}</td>
+                    <td>${c.volume || ''}</td>
+                    <td>${c.year || ''}</td>
+                    <td>${this.escapeHtml(c.publisher)}</td>
+                    <td><button class="btn btn-small workflow-link-wanted-btn" data-id="${this.escapeAttr(c.id)}" ${linking ? 'disabled' : ''}>${linking ? 'Linking…' : 'Link File'}</button></td>
+                </tr>`;
+            }
+            html += '</tbody></table>';
+        }
+        html += '</div>';
+        return html;
+    }
+
+    renderNewWantedForm() {
+        const f = this.newWantedForm;
+        return `
+            <div class="panel scan-info-panel">
+                <div class="form-group">
+                    <label for="wanted-series">Series</label>
+                    <input type="text" id="wanted-series" class="form-control" value="${this.escapeAttr(f.series)}" placeholder="e.g. Batman">
+                </div>
+                <div class="form-group">
+                    <label for="wanted-number">Number</label>
+                    <input type="text" id="wanted-number" class="form-control" value="${this.escapeAttr(f.number)}">
+                </div>
+                <div class="form-group">
+                    <label for="wanted-volume">Volume</label>
+                    <input type="number" id="wanted-volume" class="form-control" value="${f.volume}" style="max-width:8rem;">
+                </div>
+                <div class="form-group">
+                    <label for="wanted-year">Year</label>
+                    <input type="number" id="wanted-year" class="form-control" value="${f.year}" style="max-width:8rem;">
+                </div>
+                <div class="form-group">
+                    <label for="wanted-publisher">Publisher</label>
+                    <input type="text" id="wanted-publisher" class="form-control" value="${this.escapeAttr(f.publisher)}">
+                </div>
+                <div class="datamanager-actions">
+                    <button class="btn btn-primary" id="workflow-save-wanted-btn" ${this.savingWanted ? 'disabled' : ''}>
+                        ${this.savingWanted ? 'Creating…' : 'Create'}
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
     formatSize(bytes) {
         if (!bytes) return '';
         const units = ['B', 'KB', 'MB', 'GB'];
@@ -300,10 +403,45 @@ class WorkflowPage {
             el.addEventListener('click', () => this.openDrillIn(el.dataset.stage, el.dataset.label));
         });
 
+        const viewWantedBtn = document.getElementById('workflow-view-wanted-btn');
+        if (viewWantedBtn) viewWantedBtn.addEventListener('click', () => {
+            this.wantedDrillIn = true;
+            this.render();
+            this.attachListeners();
+        });
+
+        const newWantedBtn = document.getElementById('workflow-new-wanted-btn');
+        if (newWantedBtn) newWantedBtn.addEventListener('click', () => {
+            this.showNewWantedForm = !this.showNewWantedForm;
+            this.render();
+            this.attachListeners();
+        });
+
+        const bindWantedField = (id, key, transform) => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('input', (e) => {
+                this.newWantedForm[key] = transform ? transform(e.target.value) : e.target.value;
+            });
+        };
+        bindWantedField('wanted-series', 'series');
+        bindWantedField('wanted-number', 'number');
+        bindWantedField('wanted-volume', 'volume', v => parseInt(v, 10) || 0);
+        bindWantedField('wanted-year', 'year', v => parseInt(v, 10) || 0);
+        bindWantedField('wanted-publisher', 'publisher');
+
+        const saveWantedBtn = document.getElementById('workflow-save-wanted-btn');
+        if (saveWantedBtn) saveWantedBtn.addEventListener('click', () => this.createWantedBook());
+
+        document.querySelectorAll('.workflow-link-wanted-btn').forEach(el => {
+            el.addEventListener('click', () => this.linkWantedBook(el.dataset.id));
+        });
+
         const backBtn = document.getElementById('workflow-back-btn');
         if (backBtn) backBtn.addEventListener('click', () => {
             this.drillIn = null;
             this.newFilesDrillIn = false;
+            this.wantedDrillIn = false;
+            this.showNewWantedForm = false;
             this.render();
             this.attachListeners();
         });
@@ -423,6 +561,71 @@ class WorkflowPage {
             this.lastResult = `Failed: ${error.message}`;
         } finally {
             this.startingProcessing = false;
+            this.render();
+            this.attachListeners();
+        }
+    }
+
+    async createWantedBook() {
+        if (!this.newWantedForm.series.trim()) {
+            dialogs.toast('Series is required.', 'error');
+            return;
+        }
+        this.savingWanted = true;
+        this.render();
+        this.attachListeners();
+
+        try {
+            const response = await fetch('/api/library/workflow/wanted', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(this.newWantedForm),
+            });
+            const text = await response.text();
+            if (!response.ok) throw new Error(friendlyErrorText(response, text, 'Failed to create wanted book'));
+            this.newWantedForm = { series: '', number: '', volume: 0, year: 0, publisher: '' };
+            this.showNewWantedForm = false;
+            await this.loadWanted();
+            dialogs.toast('Wanted book created.', 'success');
+        } catch (error) {
+            console.error('Failed to create wanted book:', error);
+            dialogs.toast('Failed to create wanted book: ' + error.message, 'error');
+        } finally {
+            this.savingWanted = false;
+            this.render();
+            this.attachListeners();
+        }
+    }
+
+    // linkWantedBook opens the server-side file picker (comic-server-obe's
+    // directory browser, extended for this file-picking mode) and, once a
+    // file is chosen, attaches it to the wanted book - the book then
+    // re-enters the pipeline via normal InferStage classification, so a
+    // full reload (not just loadWanted) keeps the stage cards' counts in
+    // sync too.
+    async linkWantedBook(bookId) {
+        const filePath = await dialogs.browseServerFile({ title: 'Link a File' });
+        if (!filePath) return;
+
+        this.linkingWantedId = bookId;
+        this.render();
+        this.attachListeners();
+
+        try {
+            const response = await fetch('/api/library/workflow/wanted/link', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ book_id: bookId, file_path: filePath }),
+            });
+            const text = await response.text();
+            if (!response.ok) throw new Error(friendlyErrorText(response, text, 'Failed to link file'));
+            dialogs.toast('File linked - book re-entered the pipeline.', 'success');
+            await this.load();
+        } catch (error) {
+            console.error('Failed to link file:', error);
+            dialogs.toast('Failed to link file: ' + error.message, 'error');
+        } finally {
+            this.linkingWantedId = null;
             this.render();
             this.attachListeners();
         }

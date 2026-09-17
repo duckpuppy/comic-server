@@ -189,6 +189,103 @@ class Dialogs {
         });
     }
 
+    // browseServerFile({title, startPath}) -> Promise<string|null>
+    // browseServerDirectory's sibling for picking one specific FILE
+    // rather than a folder (comic-server-38f7's "link a file to a wanted
+    // book" picker) - navigates the same way, but clicking a file
+    // resolves immediately (the natural file-picker gesture) instead of
+    // needing a separate "Select" click, and there's no "select current
+    // folder" footer action since a bare folder isn't a valid selection
+    // here. Only recognized comic archive extensions are listed - see
+    // GET /api/system/browse-directory's ?files=1 doc comment.
+    browseServerFile({ title = 'Choose a File', startPath = '/' } = {}) {
+        return new Promise((resolve) => {
+            let currentPath = startPath;
+            let currentParent = null;
+            let currentDirs = [];
+            let currentFiles = [];
+            let currentError = null;
+
+            const renderBody = () => `
+                ${currentError ? `<p class="datamanager-errors">${this.escapeHtml(currentError)}</p>` : ''}
+                <p class="dialog-browse-current-path">${this.escapeHtml(currentPath)}</p>
+                <div class="dialog-folder-tree" id="dialog-browse-list">
+                    ${currentParent ? `
+                        <div class="dialog-folder-row" data-nav="up">
+                            <span class="dialog-folder-icon">⬆️</span>
+                            <span class="dialog-folder-name">..</span>
+                        </div>
+                    ` : ''}
+                    ${currentDirs.map(name => `
+                        <div class="dialog-folder-row" data-nav="into" data-name="${this.escapeHtml(name)}">
+                            <span class="dialog-folder-icon">\u{1F4C1}</span>
+                            <span class="dialog-folder-name">${this.escapeHtml(name)}</span>
+                        </div>
+                    `).join('')}
+                    ${currentFiles.map(name => `
+                        <div class="dialog-folder-row" data-nav="file" data-name="${this.escapeHtml(name)}">
+                            <span class="dialog-folder-icon">\u{1F4C4}</span>
+                            <span class="dialog-folder-name">${this.escapeHtml(name)}</span>
+                        </div>
+                    `).join('')}
+                    ${currentDirs.length === 0 && currentFiles.length === 0 && !currentParent ? '<p class="empty-hint">Nothing here.</p>' : ''}
+                </div>
+            `;
+
+            const attachRowListeners = () => {
+                const body = document.querySelector('#dialogs-modal .modal-body');
+                if (!body) return;
+                body.querySelectorAll('[data-nav="up"]').forEach(el => {
+                    el.addEventListener('click', () => loadAndRender(currentParent));
+                });
+                body.querySelectorAll('[data-nav="into"]').forEach(el => {
+                    el.addEventListener('click', () => {
+                        const sep = currentPath.endsWith('/') ? '' : '/';
+                        loadAndRender(currentPath + sep + el.dataset.name);
+                    });
+                });
+                body.querySelectorAll('[data-nav="file"]').forEach(el => {
+                    el.addEventListener('click', () => {
+                        const sep = currentPath.endsWith('/') ? '' : '/';
+                        this._settle(resolve, currentPath + sep + el.dataset.name);
+                    });
+                });
+            };
+
+            const loadAndRender = async (path) => {
+                try {
+                    const response = await fetch(`/api/system/browse-directory?path=${encodeURIComponent(path)}&files=1`);
+                    const text = await response.text();
+                    if (!response.ok) {
+                        throw new Error(typeof friendlyErrorText === 'function' ? friendlyErrorText(response, text, 'Failed to browse') : text);
+                    }
+                    const data = JSON.parse(text);
+                    currentPath = data.path;
+                    currentParent = data.parent || null;
+                    currentDirs = data.directories || [];
+                    currentFiles = data.files || [];
+                    currentError = null;
+                } catch (error) {
+                    currentError = `Failed to browse: ${error.message}`;
+                }
+                const body = document.querySelector('#dialogs-modal .modal-body');
+                if (body) body.innerHTML = renderBody();
+                attachRowListeners();
+            };
+
+            this._openModal({
+                title,
+                bodyHTML: renderBody(),
+                footerHTML: `<button class="btn btn-secondary" data-action="cancel">Cancel</button>`,
+                onCancel: () => this._settle(resolve, null),
+                onOpen: () => {
+                    attachRowListeners();
+                    loadAndRender(currentPath);
+                },
+            });
+        });
+    }
+
     // toast(message, type) - non-blocking, auto-dismissing notification.
     // type: 'success' | 'error' | 'info' (default). Replaces the ~44
     // alert() call sites that were just transient success/error feedback,

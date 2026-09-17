@@ -44,6 +44,42 @@ func TestHandleBrowseDirectory_ListsSubdirectoriesOnly(t *testing.T) {
 	}
 }
 
+// TestHandleBrowseDirectory_FilesOnlyIncludedWithQueryParam covers
+// comic-server-38f7's extension of the Watch Folders directory browser
+// (comic-server-obe) into a file picker: files are listed only when
+// ?files=1 is passed (Watch Folders itself never sets it, so its
+// behavior is unaffected), and only recognized comic archive extensions
+// are returned, not arbitrary files.
+func TestHandleBrowseDirectory_FilesOnlyIncludedWithQueryParam(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "book.cbz"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "notes.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &Server{}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/system/browse-directory?path="+root, nil)
+	w := httptest.NewRecorder()
+	s.handleBrowseDirectory(w, req)
+	var withoutFiles DirectoryBrowseResponse
+	json.NewDecoder(w.Body).Decode(&withoutFiles)
+	if len(withoutFiles.Files) != 0 {
+		t.Errorf("expected no files without ?files=1, got %v", withoutFiles.Files)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/system/browse-directory?path="+root+"&files=1", nil)
+	w = httptest.NewRecorder()
+	s.handleBrowseDirectory(w, req)
+	var withFiles DirectoryBrowseResponse
+	json.NewDecoder(w.Body).Decode(&withFiles)
+	if len(withFiles.Files) != 1 || withFiles.Files[0] != "book.cbz" {
+		t.Errorf("Files = %v, want [book.cbz] (notes.txt is not a comic archive)", withFiles.Files)
+	}
+}
+
 func TestHandleBrowseDirectory_EmptyPathDefaultsToRoot(t *testing.T) {
 	s := &Server{}
 	req := httptest.NewRequest(http.MethodGet, "/api/system/browse-directory", nil)
