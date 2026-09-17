@@ -337,6 +337,28 @@ func (t *Trash) Restore(id string) error {
 	return nil
 }
 
+// DeleteNow permanently deletes one quarantined entry (by the ID returned
+// from List) immediately, bypassing RetentionDays - the on-demand
+// counterpart to Sweep's age-based bulk purge (comic-server-2y3p). Prunes
+// any directory under Root left empty by the deletion, same best-effort
+// cleanup Sweep does.
+func (t *Trash) DeleteNow(id string) error {
+	quarantinePath, err := t.resolveID(id)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(quarantinePath); err != nil {
+		return fmt.Errorf("trash: delete: %w", err)
+	}
+
+	for dir := filepath.Dir(quarantinePath); dir != t.Root && strings.HasPrefix(dir, t.Root); dir = filepath.Dir(dir) {
+		if os.Remove(dir) != nil {
+			break // not empty (or already gone) - nothing further up can be empty either
+		}
+	}
+	return nil
+}
+
 // resolveID converts an Entry.ID back to an absolute quarantine path,
 // rejecting anything that would resolve outside Root (a malformed or
 // tampered-with ID from an API caller).

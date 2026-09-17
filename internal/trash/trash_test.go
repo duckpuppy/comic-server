@@ -567,6 +567,81 @@ func TestRestore_RejectsPathEscapingRoot(t *testing.T) {
 	}
 }
 
+// TestDeleteNow_RemovesEntryPermanently covers comic-server-2y3p's
+// on-demand delete: unlike Restore, nothing is left behind afterward -
+// the entry disappears from List and the original file never comes back.
+func TestDeleteNow_RemovesEntryPermanently(t *testing.T) {
+	libDir := t.TempDir()
+	trashDir := t.TempDir()
+	tr := &Trash{Root: trashDir, RetentionDays: 30}
+
+	target := filepath.Join(libDir, "book.cbz")
+	mustWrite(t, target, "original content")
+	if err := tr.Quarantine(target); err != nil {
+		t.Fatalf("Quarantine failed: %v", err)
+	}
+	entries, err := tr.List()
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d, err=%v", len(entries), err)
+	}
+
+	if err := tr.DeleteNow(entries[0].ID); err != nil {
+		t.Fatalf("DeleteNow failed: %v", err)
+	}
+
+	entries, err = tr.List()
+	if err != nil || len(entries) != 0 {
+		t.Errorf("expected trash empty after DeleteNow, got %d entries, err=%v", len(entries), err)
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Errorf("expected original path to stay gone (this is a PERMANENT delete), stat err=%v", err)
+	}
+}
+
+// TestDeleteNow_PrunesEmptyDirectory mirrors Sweep's own best-effort
+// directory cleanup - a nested quarantine path (mirroring the original's
+// directory structure) shouldn't leave an empty shell behind.
+func TestDeleteNow_PrunesEmptyDirectory(t *testing.T) {
+	libDir := t.TempDir()
+	trashDir := t.TempDir()
+	tr := &Trash{Root: trashDir, RetentionDays: 30}
+
+	target := filepath.Join(libDir, "nested", "deep", "book.cbz")
+	mustWrite(t, target, "content")
+	if err := tr.Quarantine(target); err != nil {
+		t.Fatalf("Quarantine failed: %v", err)
+	}
+	entries, err := tr.List()
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d, err=%v", len(entries), err)
+	}
+	quarantineDir := filepath.Dir(filepath.Join(trashDir, filepath.FromSlash(entries[0].ID)))
+
+	if err := tr.DeleteNow(entries[0].ID); err != nil {
+		t.Fatalf("DeleteNow failed: %v", err)
+	}
+
+	if _, err := os.Stat(quarantineDir); !os.IsNotExist(err) {
+		t.Errorf("expected now-empty quarantine directory %s to be pruned, stat err=%v", quarantineDir, err)
+	}
+}
+
+func TestDeleteNow_UnknownID(t *testing.T) {
+	tr := &Trash{Root: t.TempDir(), RetentionDays: 30}
+	if err := tr.DeleteNow("does/not/exist.cbz~123"); err == nil {
+		t.Error("expected error deleting an unknown ID")
+	}
+}
+
+func TestDeleteNow_RejectsPathEscapingRoot(t *testing.T) {
+	tr := &Trash{Root: t.TempDir(), RetentionDays: 30}
+	for _, id := range []string{"../outside.cbz~123", "", "..", "a/../../outside.cbz~123"} {
+		if err := tr.DeleteNow(id); err == nil {
+			t.Errorf("expected error deleting id %q", id)
+		}
+	}
+}
+
 // --- test helpers ---
 
 func mustWrite(t *testing.T, path, content string) {

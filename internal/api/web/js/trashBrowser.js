@@ -69,6 +69,20 @@ class TrashBrowser {
         return `${Math.floor(diffDays)}d ago`;
     }
 
+    // formatDeletesIn renders entry.deletes_at (server-computed, see
+    // TrashEntryResponse.DeletesAt) as a countdown - comic-server-ci31.
+    // "any moment" covers the (rare) case a background Sweep hasn't run
+    // yet even though the deadline has already passed, rather than
+    // showing a confusing negative day count.
+    formatDeletesIn(isoString) {
+        const at = new Date(isoString);
+        const diffDays = (at.getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+        if (diffDays <= 0) return 'any moment';
+        if (diffDays < 1) return 'today';
+        const days = Math.ceil(diffDays);
+        return `${days} day${days === 1 ? '' : 's'}`;
+    }
+
     render() {
         const app = document.getElementById('app');
 
@@ -94,6 +108,9 @@ class TrashBrowser {
                     <button class="btn btn-primary" id="restore-selected-btn" ${this.selectedIds.size === 0 ? 'disabled' : ''}>
                         Restore Selected
                     </button>
+                    <button class="btn btn-danger" id="delete-selected-btn" ${this.selectedIds.size === 0 ? 'disabled' : ''}>
+                        Delete Permanently
+                    </button>
                 </div>
 
                 ${this.loading
@@ -117,6 +134,7 @@ class TrashBrowser {
                         <th>Original Path</th>
                         <th>Size</th>
                         <th>Quarantined</th>
+                        <th>Deletes In</th>
                         <th></th>
                     </tr>
                 </thead>
@@ -137,8 +155,10 @@ class TrashBrowser {
                 <td class="trash-original-path" title="${this.escapeHtml(entry.original_path)}">${this.escapeHtml(entry.original_path)}</td>
                 <td>${this.formatSize(entry.size)}</td>
                 <td title="${this.escapeHtml(entry.quarantined_at)}">${this.formatRelativeTime(entry.quarantined_at)}</td>
+                <td title="${this.escapeHtml(entry.deletes_at)}">${this.formatDeletesIn(entry.deletes_at)}</td>
                 <td>
                     <button class="btn btn-small trash-restore-btn" data-id="${this.escapeHtml(entry.id)}">Restore</button>
+                    <button class="btn btn-small btn-danger trash-delete-btn" data-id="${this.escapeHtml(entry.id)}">Delete</button>
                 </td>
             </tr>
         `;
@@ -180,6 +200,17 @@ class TrashBrowser {
                 this.confirmAndRestore(Array.from(this.selectedIds));
             });
         }
+
+        document.querySelectorAll('.trash-delete-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.confirmAndDelete([btn.dataset.id]));
+        });
+
+        const deleteSelectedBtn = document.getElementById('delete-selected-btn');
+        if (deleteSelectedBtn) {
+            deleteSelectedBtn.addEventListener('click', () => {
+                this.confirmAndDelete(Array.from(this.selectedIds));
+            });
+        }
     }
 
     async confirmAndRestore(ids) {
@@ -212,6 +243,45 @@ class TrashBrowser {
         } catch (error) {
             console.error('Failed to restore trash entries:', error);
             dialogs.toast('Failed to restore: ' + error.message, 'error');
+        }
+    }
+
+    // confirmAndDelete permanently removes one or more quarantined files -
+    // comic-server-2y3p. Unlike confirmAndRestore, this is NOT undoable,
+    // so the dialog wording says so explicitly and uses the danger
+    // styling, same "destructive-adjacent" pattern already used for
+    // Convert to CBZ elsewhere in this app.
+    async confirmAndDelete(ids) {
+        if (ids.length === 0) return;
+        const label = ids.length === 1 ? '1 item' : `${ids.length} items`;
+        const ok = await dialogs.confirm({
+            title: 'Delete Permanently',
+            message: `Permanently delete ${label} from trash? This cannot be undone.`,
+            confirmLabel: 'Delete Permanently',
+            danger: true,
+        });
+        if (!ok) return;
+        try {
+            const response = await fetch('/api/trash/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids })
+            });
+            const text = await response.text();
+            if (!response.ok) {
+                throw new Error(friendlyErrorText(response, text, 'Failed to delete'));
+            }
+            const result = JSON.parse(text);
+            if (result.errors && result.errors.length > 0) {
+                dialogs.toast(`Deleted ${result.deleted}, but some failed:\n${result.errors.join('\n')}`, 'error', 8000);
+            }
+            ids.forEach(id => this.selectedIds.delete(id));
+            await this.loadEntries();
+            this.render();
+            this.attachListeners();
+        } catch (error) {
+            console.error('Failed to delete trash entries:', error);
+            dialogs.toast('Failed to delete: ' + error.message, 'error');
         }
     }
 
