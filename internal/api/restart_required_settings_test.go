@@ -53,9 +53,10 @@ func TestHandlePutRestartRequiredSettings_PersistsAndFlagsRestartRequired(t *tes
 	s := newRestartRequiredSettingsTestServer(t)
 
 	body, _ := json.Marshal(restartRequiredSettingsPutRequest{
-		LibraryPath:   "/new/ComicDb.xml",
-		ServerPort:    8080,
-		DiscoveryPort: 7615,
+		LibraryPath:            "/new/ComicDb.xml",
+		ServerPort:             8080,
+		DiscoveryPort:          7615,
+		RateLimitWindowSeconds: 60,
 	})
 	req := httptest.NewRequest(http.MethodPut, "/api/settings/restart-required", bytes.NewReader(body))
 	w := httptest.NewRecorder()
@@ -105,8 +106,9 @@ func TestHandlePutRestartRequiredSettings_EmptyAPIKeyLeavesExistingKeyAlone(t *t
 	s.config.Server.Komga.APIKey = "existing-komga-key"
 
 	body, _ := json.Marshal(restartRequiredSettingsPutRequest{
-		ServerPort:    7620,
-		DiscoveryPort: 7615,
+		ServerPort:             7620,
+		DiscoveryPort:          7615,
+		RateLimitWindowSeconds: 60,
 		// ComicVineAPIKey and KomgaAPIKey both left empty.
 	})
 	req := httptest.NewRequest(http.MethodPut, "/api/settings/restart-required", bytes.NewReader(body))
@@ -137,9 +139,10 @@ func TestHandlePutRestartRequiredSettings_NonEmptyAPIKeyReplacesExisting(t *test
 	s.config.Server.ComicVineAPIKey = "old-key"
 
 	body, _ := json.Marshal(restartRequiredSettingsPutRequest{
-		ServerPort:      7620,
-		DiscoveryPort:   7615,
-		ComicVineAPIKey: "new-key",
+		ServerPort:             7620,
+		DiscoveryPort:          7615,
+		RateLimitWindowSeconds: 60,
+		ComicVineAPIKey:        "new-key",
 	})
 	req := httptest.NewRequest(http.MethodPut, "/api/settings/restart-required", bytes.NewReader(body))
 	w := httptest.NewRecorder()

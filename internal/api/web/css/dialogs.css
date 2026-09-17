@@ -16,6 +16,16 @@
     font-size: 0.9375rem;
 }
 
+/* browseServerDirectory's current-path readout, above its reused
+   .dialog-folder-tree listing. */
+.dialog-browse-current-path {
+    font-family: monospace;
+    font-size: 0.85rem;
+    color: var(--text-secondary, #666);
+    margin: 0 0 0.5rem 0;
+    word-break: break-all;
+}
+
 .dialog-folder-tree {
     max-height: 20rem;
     overflow-y: auto;

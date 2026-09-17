@@ -12,8 +12,9 @@ import "fmt"
 // ui_settings (comic-server-8qk). Version 9 adds a source column to
 // dm_groups/dm_rulesets (comic-server-vkpq). Version 10 adds
 // trash_settings (comic-server-4hsz). Version 11 adds
-// server_misc_settings (comic-server-wp8k).
-const schemaVersion = 11
+// server_misc_settings (comic-server-wp8k). Version 12 adds
+// watch_folders (comic-server-obe).
+const schemaVersion = 12
 
 // initSchema brings the database up to schemaVersion. No-ops if already
 // current - safe to call on every Open, every server startup.
@@ -82,6 +83,11 @@ func (db *DB) initSchema() error {
 				return fmt.Errorf("migrate v10→v11: %w", err)
 			}
 		}
+		if version < 12 {
+			if err := db.migrateV11ToV12(); err != nil {
+				return fmt.Errorf("migrate v11→v12: %w", err)
+			}
+		}
 	}
 
 	if _, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d", schemaVersion)); err != nil {
@@ -117,7 +123,10 @@ func (db *DB) createTables() error {
 	if err := db.createTrashSettingsTable(); err != nil {
 		return err
 	}
-	return db.createServerMiscSettingsTable()
+	if err := db.createServerMiscSettingsTable(); err != nil {
+		return err
+	}
+	return db.createWatchFoldersTable()
 }
 
 // migrateV1ToV2 adds the devices/device_lists tables for a database that
@@ -290,6 +299,12 @@ func (db *DB) migrateV9ToV10() error {
 // created under schemaVersion 10 (comic-server-wp8k).
 func (db *DB) migrateV10ToV11() error {
 	return db.createServerMiscSettingsTable()
+}
+
+// migrateV11ToV12 adds the watch_folders table for a database created
+// under schemaVersion 11 (comic-server-obe).
+func (db *DB) migrateV11ToV12() error {
+	return db.createWatchFoldersTable()
 }
 
 // createDataManagerTables creates the tables backing the Data Manager rule

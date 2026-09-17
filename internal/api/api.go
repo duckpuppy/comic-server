@@ -265,6 +265,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/settings/library-import", s.handleLibraryImport)
 	s.mux.HandleFunc("/api/settings/server-misc", s.handleServerMiscSettings)
 	s.mux.HandleFunc("/api/settings/restart-required", s.handleRestartRequiredSettings)
+	s.mux.HandleFunc("/api/system/browse-directory", s.handleBrowseDirectory)
+	s.mux.HandleFunc("/api/settings/watch-folders", s.handleWatchFoldersSettings)
 
 	// WebSocket endpoint
 	s.mux.HandleFunc("/ws", s.handleWebSocket)

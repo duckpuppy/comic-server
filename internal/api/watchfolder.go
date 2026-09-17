@@ -29,13 +29,12 @@ func (s *Server) handleGetWatchFolderNewFiles(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	s.configMu.RLock()
-	folders := []string{}
-	if s.config != nil {
-		folders = s.config.Server.WatchFolders
+	folders, err := s.effectiveWatchFolders()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to load watch folders")
+		http.Error(w, "Failed to load watch folders", http.StatusInternalServerError)
+		return
 	}
-	s.configMu.RUnlock()
-
 	if len(folders) == 0 {
 		s.writeJSON(w, http.StatusOK, map[string]any{"files": []watchfolder.DiscoveredFile{}, "total": 0})
 		return
@@ -106,12 +105,12 @@ func (s *Server) handleStartProcessingNewFiles(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	s.configMu.RLock()
-	folders := []string{}
-	if s.config != nil {
-		folders = s.config.Server.WatchFolders
+	folders, err := s.effectiveWatchFolders()
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to load watch folders")
+		http.Error(w, "Failed to load watch folders", http.StatusInternalServerError)
+		return
 	}
-	s.configMu.RUnlock()
 
 	found, err := s.scanWatchFolders(folders)
 	if err != nil {

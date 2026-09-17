@@ -37,6 +37,8 @@ import (
 // they can't see.
 type RestartRequiredSettings struct {
 	LibraryPath          string `json:"library_path"`
+	DatabasePath         string `json:"database_path"`
+	CoverCacheDir        string `json:"cover_cache_dir"`
 	ServerPort           int    `json:"server_port"`
 	DiscoveryPort        int    `json:"discovery_port"`
 	BindAddress          string `json:"bind_address"`
@@ -45,6 +47,17 @@ type RestartRequiredSettings struct {
 	KomgaBaseURL         string `json:"komga_base_url"`
 	KomgaAPIKeySet       bool   `json:"komga_api_key_set"`
 	KomgaSyncIntervalSec int    `json:"komga_sync_interval_sec"`
+
+	// The four fields below are baked once into a long-lived object at
+	// startup (the connection semaphore and the two rate.Limiter
+	// instances - see cmd/server.go) rather than read fresh per request,
+	// same restart-required reasoning as everything else here (audited
+	// for comic-server-obe).
+	MaxConcurrentConnections     int `json:"max_concurrent_connections"`
+	MaxConnectionsPerIP          int `json:"max_connections_per_ip"`
+	MaxRequestsPerDevice         int `json:"max_requests_per_device"`
+	RateLimitWindowSeconds       int `json:"rate_limit_window_seconds"`
+	LibraryCacheFlushIntervalSec int `json:"library_cache_flush_interval_sec"`
 }
 
 // RestartRequiredSettingsResponse is the GET .../restart-required wire
@@ -68,15 +81,22 @@ func restartRequiredSettingsFromConfig(cfg *config.Config) RestartRequiredSettin
 		return RestartRequiredSettings{}
 	}
 	return RestartRequiredSettings{
-		LibraryPath:          cfg.Server.LibraryPath,
-		ServerPort:           cfg.Server.ServerPort,
-		DiscoveryPort:        cfg.Server.DiscoveryPort,
-		BindAddress:          cfg.Server.BindAddress,
-		ComicVineAPIKeySet:   cfg.Server.ComicVineAPIKey != "",
-		KomgaEnabled:         cfg.Server.Komga.Enabled,
-		KomgaBaseURL:         cfg.Server.Komga.BaseURL,
-		KomgaAPIKeySet:       cfg.Server.Komga.APIKey != "",
-		KomgaSyncIntervalSec: cfg.Server.Komga.SyncIntervalSec,
+		LibraryPath:                  cfg.Server.LibraryPath,
+		DatabasePath:                 cfg.Server.DatabasePath,
+		CoverCacheDir:                cfg.Server.CoverCacheDir,
+		ServerPort:                   cfg.Server.ServerPort,
+		DiscoveryPort:                cfg.Server.DiscoveryPort,
+		BindAddress:                  cfg.Server.BindAddress,
+		ComicVineAPIKeySet:           cfg.Server.ComicVineAPIKey != "",
+		KomgaEnabled:                 cfg.Server.Komga.Enabled,
+		KomgaBaseURL:                 cfg.Server.Komga.BaseURL,
+		KomgaAPIKeySet:               cfg.Server.Komga.APIKey != "",
+		KomgaSyncIntervalSec:         cfg.Server.Komga.SyncIntervalSec,
+		MaxConcurrentConnections:     cfg.Server.MaxConcurrentConnections,
+		MaxConnectionsPerIP:          cfg.Server.MaxConnectionsPerIP,
+		MaxRequestsPerDevice:         cfg.Server.MaxRequestsPerDevice,
+		RateLimitWindowSeconds:       cfg.Server.RateLimitWindowSeconds,
+		LibraryCacheFlushIntervalSec: cfg.Server.LibraryCacheFlushIntervalSec,
 	}
 }
 
@@ -96,15 +116,22 @@ func (s *Server) SetActiveRestartRequiredSettings(cfg *config.Config) {
 // returns, since PUT is the one direction these secrets actually need to
 // travel in.
 type restartRequiredSettingsPutRequest struct {
-	LibraryPath          string `json:"library_path"`
-	ServerPort           int    `json:"server_port"`
-	DiscoveryPort        int    `json:"discovery_port"`
-	BindAddress          string `json:"bind_address"`
-	ComicVineAPIKey      string `json:"comicvine_api_key"`
-	KomgaEnabled         bool   `json:"komga_enabled"`
-	KomgaBaseURL         string `json:"komga_base_url"`
-	KomgaAPIKey          string `json:"komga_api_key"`
-	KomgaSyncIntervalSec int    `json:"komga_sync_interval_sec"`
+	LibraryPath                  string `json:"library_path"`
+	DatabasePath                 string `json:"database_path"`
+	CoverCacheDir                string `json:"cover_cache_dir"`
+	ServerPort                   int    `json:"server_port"`
+	DiscoveryPort                int    `json:"discovery_port"`
+	BindAddress                  string `json:"bind_address"`
+	ComicVineAPIKey              string `json:"comicvine_api_key"`
+	KomgaEnabled                 bool   `json:"komga_enabled"`
+	KomgaBaseURL                 string `json:"komga_base_url"`
+	KomgaAPIKey                  string `json:"komga_api_key"`
+	KomgaSyncIntervalSec         int    `json:"komga_sync_interval_sec"`
+	MaxConcurrentConnections     int    `json:"max_concurrent_connections"`
+	MaxConnectionsPerIP          int    `json:"max_connections_per_ip"`
+	MaxRequestsPerDevice         int    `json:"max_requests_per_device"`
+	RateLimitWindowSeconds       int    `json:"rate_limit_window_seconds"`
+	LibraryCacheFlushIntervalSec int    `json:"library_cache_flush_interval_sec"`
 }
 
 // handleRestartRequiredSettings serves GET/PUT /api/settings/restart-required.
@@ -151,12 +178,19 @@ func (s *Server) handlePutRestartRequiredSettings(w http.ResponseWriter, r *http
 	// mutates the live in-memory config.
 	candidate := *s.config
 	candidate.Server.LibraryPath = req.LibraryPath
+	candidate.Server.DatabasePath = req.DatabasePath
+	candidate.Server.CoverCacheDir = req.CoverCacheDir
 	candidate.Server.ServerPort = req.ServerPort
 	candidate.Server.DiscoveryPort = req.DiscoveryPort
 	candidate.Server.BindAddress = req.BindAddress
 	candidate.Server.Komga.Enabled = req.KomgaEnabled
 	candidate.Server.Komga.BaseURL = req.KomgaBaseURL
 	candidate.Server.Komga.SyncIntervalSec = req.KomgaSyncIntervalSec
+	candidate.Server.MaxConcurrentConnections = req.MaxConcurrentConnections
+	candidate.Server.MaxConnectionsPerIP = req.MaxConnectionsPerIP
+	candidate.Server.MaxRequestsPerDevice = req.MaxRequestsPerDevice
+	candidate.Server.RateLimitWindowSeconds = req.RateLimitWindowSeconds
+	candidate.Server.LibraryCacheFlushIntervalSec = req.LibraryCacheFlushIntervalSec
 	if req.ComicVineAPIKey != "" {
 		candidate.Server.ComicVineAPIKey = req.ComicVineAPIKey
 	}

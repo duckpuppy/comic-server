@@ -54,6 +54,69 @@ class ScanInfoSettings {
         this.restartRequired = null;
         this.restartRequiredForm = null;
         this.restartRequiredSaving = false;
+
+        // Watch Folders (comic-server-obe): "dump" directories comic files
+        // land in before being promoted into real library book records
+        // (comic-server-chh's Workflow "New Files" stage). Read fresh at
+        // the point of use server-side (see effectiveWatchFolders in
+        // internal/api/watch_folders_settings.go), so - unlike the
+        // restart-required section above - a folder added here is scanned
+        // on the very next request, no restart needed.
+        this.watchFolders = null; // string[]
+        this.watchFoldersSaving = false;
+    }
+
+    async loadWatchFolders() {
+        try {
+            const response = await fetch('/api/settings/watch-folders');
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const data = await response.json();
+            this.watchFolders = data.folders || [];
+        } catch (error) {
+            console.error('Failed to load watch folders:', error);
+            this.watchFolders = [];
+        }
+    }
+
+    async saveWatchFolders() {
+        this.watchFoldersSaving = true;
+        this.render();
+        this.attachListeners();
+        try {
+            const response = await fetch('/api/settings/watch-folders', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ folders: this.watchFolders }),
+            });
+            const text = await response.text();
+            if (!response.ok) throw new Error(friendlyErrorText(response, text));
+            const data = JSON.parse(text);
+            this.watchFolders = data.folders || [];
+            dialogs.toast('Watch folders saved.', 'success');
+        } catch (error) {
+            console.error('Failed to save watch folders:', error);
+            dialogs.toast('Failed to save watch folders: ' + error.message, 'error');
+        } finally {
+            this.watchFoldersSaving = false;
+            this.render();
+            this.attachListeners();
+        }
+    }
+
+    async addWatchFolder() {
+        const picked = await dialogs.browseServerDirectory({ title: 'Add Watch Folder' });
+        if (!picked) return;
+        if (this.watchFolders.includes(picked)) {
+            dialogs.toast('That folder is already in the list.', 'info');
+            return;
+        }
+        this.watchFolders.push(picked);
+        await this.saveWatchFolders();
+    }
+
+    removeWatchFolder(index) {
+        this.watchFolders.splice(index, 1);
+        this.saveWatchFolders();
     }
 
     async loadRestartRequired() {
@@ -64,6 +127,8 @@ class ScanInfoSettings {
             this.restartRequired = data;
             this.restartRequiredForm = {
                 library_path: data.saved.library_path || '',
+                database_path: data.saved.database_path || '',
+                cover_cache_dir: data.saved.cover_cache_dir || '',
                 server_port: data.saved.server_port || 0,
                 discovery_port: data.saved.discovery_port || 0,
                 bind_address: data.saved.bind_address || '',
@@ -72,6 +137,11 @@ class ScanInfoSettings {
                 komga_base_url: data.saved.komga_base_url || '',
                 komga_api_key: '',
                 komga_sync_interval_sec: data.saved.komga_sync_interval_sec || 0,
+                max_concurrent_connections: data.saved.max_concurrent_connections || 0,
+                max_connections_per_ip: data.saved.max_connections_per_ip || 0,
+                max_requests_per_device: data.saved.max_requests_per_device || 0,
+                rate_limit_window_seconds: data.saved.rate_limit_window_seconds || 0,
+                library_cache_flush_interval_sec: data.saved.library_cache_flush_interval_sec || 0,
             };
         } catch (error) {
             console.error('Failed to load restart-required settings:', error);
@@ -127,7 +197,7 @@ class ScanInfoSettings {
         // leaving the page blank until the fetch resolves
         // (comic-server-4te).
         this.render();
-        await Promise.all([this.load(), this.loadTheme(), this.loadTrash(), this.loadImportStatus(), this.loadServerMisc(), this.loadRestartRequired()]);
+        await Promise.all([this.load(), this.loadTheme(), this.loadTrash(), this.loadImportStatus(), this.loadServerMisc(), this.loadRestartRequired(), this.loadWatchFolders()]);
         if (ctx && ctx.aborted) return;
         this.render();
         this.attachListeners();
@@ -316,6 +386,7 @@ class ScanInfoSettings {
                 ${this.renderAppearance()}
                 ${this.renderLibraryImport()}
                 ${this.renderServerMisc()}
+                ${this.renderWatchFolders()}
                 ${this.renderRestartRequired()}
                 ${this.renderTrash()}
                 ${this.renderBody()}
@@ -409,6 +480,41 @@ class ScanInfoSettings {
         `;
     }
 
+    // renderWatchFolders shows "dump" directories comic files land in
+    // before being promoted into real library book records
+    // (comic-server-chh, comic-server-obe). Each add/remove saves
+    // immediately (no separate Save button) - matches the Server panel's
+    // own "both take effect immediately" pattern above, since this is
+    // also live-effect, not restart-required.
+    renderWatchFolders() {
+        const folders = this.watchFolders || [];
+        return `
+            <div class="panel scan-info-panel">
+                <div class="settings-section-header">
+                    <h2>Watch Folders</h2>
+                    <p class="settings-section-description">Directories scanned for comic files not yet in the library - see the Workflow dashboard's "New Files" stage to promote them.</p>
+                </div>
+
+                ${folders.length === 0 ? `
+                    <p class="empty-hint">No watch folders configured.</p>
+                ` : `
+                    <ul class="scan-info-list" data-field="watch_folders">
+                        ${folders.map((path, i) => `
+                            <li class="scan-info-list-item">
+                                <span class="scan-info-list-value">${this.escapeHtml(path)}</span>
+                                <button type="button" class="btn btn-small btn-danger watch-folder-remove-btn" data-index="${i}" ${this.watchFoldersSaving ? 'disabled' : ''}>✕</button>
+                            </li>
+                        `).join('')}
+                    </ul>
+                `}
+
+                <div class="scan-info-actions">
+                    <button class="btn btn-secondary" id="watch-folder-add-btn" ${this.watchFoldersSaving ? 'disabled' : ''}>+ Add Watch Folder</button>
+                </div>
+            </div>
+        `;
+    }
+
     // renderRestartRequired shows library path/network/ComicVine/Komga
     // connection settings - every one baked into an object or listener
     // socket once at startup (comic-server-yvbh), unlike Server above.
@@ -436,6 +542,18 @@ class ScanInfoSettings {
                 <div class="form-group">
                     <label for="rr-library-path">Library path</label>
                     <input type="text" id="rr-library-path" class="form-control" value="${this.escapeAttr(f.library_path)}" placeholder="/data/ComicDb.xml">
+                    <div class="form-help">The XML library. Leave blank if using the experimental SQLite database path below instead.</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="rr-database-path">Database path</label>
+                    <input type="text" id="rr-database-path" class="form-control" value="${this.escapeAttr(f.database_path)}" placeholder="(blank = use Library path above)">
+                    <div class="form-help">Experimental SQLite storage - an alternative to Library path, not used alongside it.</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="rr-cover-cache-dir">Cover cache directory</label>
+                    <input type="text" id="rr-cover-cache-dir" class="form-control" value="${this.escapeAttr(f.cover_cache_dir)}" placeholder="(blank = XDG cache dir)">
                 </div>
 
                 <div class="form-group">
@@ -479,6 +597,40 @@ class ScanInfoSettings {
                 <div class="form-group">
                     <label for="rr-komga-interval">Komga sync interval (seconds)</label>
                     <input type="number" id="rr-komga-interval" class="form-control" min="1" value="${f.komga_sync_interval_sec}" style="max-width:8rem;">
+                </div>
+
+                <div class="settings-section-header">
+                    <h3>Advanced</h3>
+                    <p class="settings-section-description">Connection limits and rate limiting - safe to leave at their defaults.</p>
+                </div>
+
+                <div class="form-group">
+                    <label for="rr-max-concurrent-connections">Max concurrent connections</label>
+                    <input type="number" id="rr-max-concurrent-connections" class="form-control" min="0" value="${f.max_concurrent_connections}" style="max-width:8rem;">
+                    <div class="form-help">0 = unlimited.</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="rr-max-connections-per-ip">Max connections per IP</label>
+                    <input type="number" id="rr-max-connections-per-ip" class="form-control" min="0" value="${f.max_connections_per_ip}" style="max-width:8rem;">
+                    <div class="form-help">Per rate-limit window below. 0 = unlimited.</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="rr-max-requests-per-device">Max requests per device</label>
+                    <input type="number" id="rr-max-requests-per-device" class="form-control" min="0" value="${f.max_requests_per_device}" style="max-width:8rem;">
+                    <div class="form-help">Per rate-limit window below. 0 = unlimited.</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="rr-rate-limit-window">Rate limit window (seconds)</label>
+                    <input type="number" id="rr-rate-limit-window" class="form-control" min="1" value="${f.rate_limit_window_seconds}" style="max-width:8rem;">
+                </div>
+
+                <div class="form-group">
+                    <label for="rr-cache-flush-interval">Library cache flush interval (seconds)</label>
+                    <input type="number" id="rr-cache-flush-interval" class="form-control" min="0" value="${f.library_cache_flush_interval_sec}" style="max-width:8rem;">
+                    <div class="form-help">0 = flush on every change.</div>
                 </div>
 
                 <div class="scan-info-actions">
@@ -682,6 +834,12 @@ class ScanInfoSettings {
             trashSaveBtn.addEventListener('click', () => this.saveTrash());
         }
 
+        const addWatchFolderBtn = document.getElementById('watch-folder-add-btn');
+        if (addWatchFolderBtn) addWatchFolderBtn.addEventListener('click', () => this.addWatchFolder());
+        document.querySelectorAll('.watch-folder-remove-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.removeWatchFolder(parseInt(btn.dataset.index, 10)));
+        });
+
         if (this.restartRequiredForm) {
             const bindField = (id, key, transform) => {
                 const el = document.getElementById(id);
@@ -690,6 +848,8 @@ class ScanInfoSettings {
                 });
             };
             bindField('rr-library-path', 'library_path');
+            bindField('rr-database-path', 'database_path');
+            bindField('rr-cover-cache-dir', 'cover_cache_dir');
             bindField('rr-server-port', 'server_port', v => parseInt(v, 10) || 0);
             bindField('rr-discovery-port', 'discovery_port', v => parseInt(v, 10) || 0);
             bindField('rr-bind-address', 'bind_address');
@@ -697,6 +857,11 @@ class ScanInfoSettings {
             bindField('rr-komga-base-url', 'komga_base_url');
             bindField('rr-komga-key', 'komga_api_key');
             bindField('rr-komga-interval', 'komga_sync_interval_sec', v => parseInt(v, 10) || 0);
+            bindField('rr-max-concurrent-connections', 'max_concurrent_connections', v => parseInt(v, 10) || 0);
+            bindField('rr-max-connections-per-ip', 'max_connections_per_ip', v => parseInt(v, 10) || 0);
+            bindField('rr-max-requests-per-device', 'max_requests_per_device', v => parseInt(v, 10) || 0);
+            bindField('rr-rate-limit-window', 'rate_limit_window_seconds', v => parseInt(v, 10) || 0);
+            bindField('rr-cache-flush-interval', 'library_cache_flush_interval_sec', v => parseInt(v, 10) || 0);
 
             const komgaEnabledToggle = document.getElementById('rr-komga-enabled');
             if (komgaEnabledToggle) {

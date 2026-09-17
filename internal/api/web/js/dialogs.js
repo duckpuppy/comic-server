@@ -103,6 +103,92 @@ class Dialogs {
         });
     }
 
+    // browseServerDirectory({title, startPath}) -> Promise<string|null>
+    // Navigates the SERVER's filesystem (not the browser's - see
+    // /api/system/browse-directory's own doc comment) via live fetches,
+    // for any setting that needs a server-side directory path (Watch
+    // Folders is the first caller, comic-server-obe; comic-server-38f7
+    // and comic-server-fkq are expected to reuse this same dialog rather
+    // than building their own picker). Resolves the currently-displayed
+    // path when "Select This Folder" is clicked, or null on cancel.
+    browseServerDirectory({ title = 'Choose a Folder', startPath = '/' } = {}) {
+        return new Promise((resolve) => {
+            let currentPath = startPath;
+            let currentParent = null;
+            let currentDirs = [];
+            let currentError = null;
+
+            const renderBody = () => `
+                ${currentError ? `<p class="datamanager-errors">${this.escapeHtml(currentError)}</p>` : ''}
+                <p class="dialog-browse-current-path">${this.escapeHtml(currentPath)}</p>
+                <div class="dialog-folder-tree" id="dialog-browse-list">
+                    ${currentParent ? `
+                        <div class="dialog-folder-row" data-nav="up">
+                            <span class="dialog-folder-icon">⬆️</span>
+                            <span class="dialog-folder-name">..</span>
+                        </div>
+                    ` : ''}
+                    ${currentDirs.map(name => `
+                        <div class="dialog-folder-row" data-nav="into" data-name="${this.escapeHtml(name)}">
+                            <span class="dialog-folder-icon">\u{1F4C1}</span>
+                            <span class="dialog-folder-name">${this.escapeHtml(name)}</span>
+                        </div>
+                    `).join('')}
+                    ${currentDirs.length === 0 && !currentParent ? '<p class="empty-hint">No subfolders here.</p>' : ''}
+                </div>
+            `;
+
+            const attachRowListeners = () => {
+                const body = document.querySelector('#dialogs-modal .modal-body');
+                if (!body) return;
+                body.querySelectorAll('[data-nav="up"]').forEach(el => {
+                    el.addEventListener('click', () => loadAndRender(currentParent));
+                });
+                body.querySelectorAll('[data-nav="into"]').forEach(el => {
+                    el.addEventListener('click', () => {
+                        const sep = currentPath.endsWith('/') ? '' : '/';
+                        loadAndRender(currentPath + sep + el.dataset.name);
+                    });
+                });
+            };
+
+            const loadAndRender = async (path) => {
+                try {
+                    const response = await fetch(`/api/system/browse-directory?path=${encodeURIComponent(path)}`);
+                    const text = await response.text();
+                    if (!response.ok) {
+                        throw new Error(typeof friendlyErrorText === 'function' ? friendlyErrorText(response, text, 'Failed to browse') : text);
+                    }
+                    const data = JSON.parse(text);
+                    currentPath = data.path;
+                    currentParent = data.parent || null;
+                    currentDirs = data.directories || [];
+                    currentError = null;
+                } catch (error) {
+                    currentError = `Failed to browse: ${error.message}`;
+                }
+                const body = document.querySelector('#dialogs-modal .modal-body');
+                if (body) body.innerHTML = renderBody();
+                attachRowListeners();
+            };
+
+            this._openModal({
+                title,
+                bodyHTML: renderBody(),
+                footerHTML: `
+                    <button class="btn btn-secondary" data-action="cancel">Cancel</button>
+                    <button class="btn btn-primary" data-action="confirm">Select This Folder</button>
+                `,
+                onAction: () => this._settle(resolve, currentPath),
+                onCancel: () => this._settle(resolve, null),
+                onOpen: () => {
+                    attachRowListeners();
+                    loadAndRender(currentPath);
+                },
+            });
+        });
+    }
+
     // toast(message, type) - non-blocking, auto-dismissing notification.
     // type: 'success' | 'error' | 'info' (default). Replaces the ~44
     // alert() call sites that were just transient success/error feedback,
