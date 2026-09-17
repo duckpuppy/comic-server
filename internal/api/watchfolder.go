@@ -49,6 +49,39 @@ func (s *Server) handleGetWatchFolderNewFiles(w http.ResponseWriter, r *http.Req
 	s.writeJSON(w, http.StatusOK, map[string]any{"files": found, "total": len(found)})
 }
 
+// handleScanAdHocFolder previews an ad-hoc, one-off folder pick
+// (comic-server-fkq) - any folder on the server's filesystem, not just a
+// permanently-configured server.watch_folders entry. Reuses
+// scanWatchFolders unchanged, so the same not-yet-in-library de-dup
+// filtering applies here too - confirmed with the user rather than
+// assumed, matching how the New Files card right next to this one
+// already behaves.
+// GET /api/library/workflow/scan-folder?path=...
+func (s *Server) handleScanAdHocFolder(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.backend == nil {
+		http.Error(w, "Library not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	path := r.URL.Query().Get("path")
+	if path == "" {
+		http.Error(w, "path is required", http.StatusBadRequest)
+		return
+	}
+
+	found, err := s.scanWatchFolders([]string{path})
+	if err != nil {
+		http.Error(w, "Failed to scan folder", http.StatusInternalServerError)
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, map[string]any{"files": found, "total": len(found)})
+}
+
 // scanWatchFolders builds the known-FilePath set from every current book
 // and scans folders for anything not in it.
 func (s *Server) scanWatchFolders(folders []string) ([]watchfolder.DiscoveredFile, error) {
@@ -65,9 +98,14 @@ func (s *Server) scanWatchFolders(folders []string) ([]watchfolder.DiscoveredFil
 }
 
 // startProcessingRequest is the body for POST
-// /api/library/workflow/new-files/start.
+// /api/library/workflow/new-files/start. Folder is optional - when set
+// (comic-server-fkq's ad-hoc "process this folder" action), paths are
+// re-verified against a fresh scan of THAT folder instead of the
+// permanently-configured server.watch_folders list, so a one-off pick
+// doesn't need to be added to watch_folders first (or ever).
 type startProcessingRequest struct {
-	Paths []string `json:"paths"`
+	Paths  []string `json:"paths"`
+	Folder string   `json:"folder,omitempty"`
 }
 
 // startProcessingResult reports what happened to one requested path.
@@ -105,11 +143,17 @@ func (s *Server) handleStartProcessingNewFiles(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	folders, err := s.effectiveWatchFolders()
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to load watch folders")
-		http.Error(w, "Failed to load watch folders", http.StatusInternalServerError)
-		return
+	var folders []string
+	if req.Folder != "" {
+		folders = []string{req.Folder}
+	} else {
+		var err error
+		folders, err = s.effectiveWatchFolders()
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to load watch folders")
+			http.Error(w, "Failed to load watch folders", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	found, err := s.scanWatchFolders(folders)

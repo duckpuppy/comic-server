@@ -236,6 +236,7 @@ func (s *Server) registerRoutes() {
 	// exists at all.
 	s.mux.HandleFunc("/api/library/workflow/new-files", s.handleGetWatchFolderNewFiles)
 	s.mux.HandleFunc("/api/library/workflow/new-files/start", s.handleStartProcessingNewFiles)
+	s.mux.HandleFunc("/api/library/workflow/scan-folder", s.handleScanAdHocFolder)
 	s.mux.HandleFunc("/api/library/workflow/wanted", s.handleWantedBooks)
 	s.mux.HandleFunc("/api/library/workflow/wanted/link", s.handleLinkWantedBook)
 	s.mux.HandleFunc("/api/library/workflow/", s.handleWorkflowStageSubRouter)

@@ -32,6 +32,14 @@ class WorkflowPage {
         this.newFilesDrillIn = false; // true when showing the New Files list instead of a stage drill-in
         this.selectedNewFiles = new Set();
         this.startingProcessing = false;
+        // Ad-hoc "process this folder" spike (comic-server-fkq) - a
+        // one-off pick-any-folder action, distinct from the
+        // permanently-configured watch_folders list above. Never needs
+        // its own drill-in state: scan, confirm the count, and process -
+        // all driven through dialogs (browseServerDirectory + confirm),
+        // reusing the exact same New Files creation flow
+        // (handleStartProcessingNewFiles) with an explicit folder.
+        this.processingFolder = false;
 
         // Wanted (comic-server-38f7) - book records with no file yet, for
         // an issue the user doesn't own a copy of. Unlike New Files, this
@@ -143,6 +151,9 @@ class WorkflowPage {
                 <p class="empty-message">Comic files sitting in a watch folder that aren't in the library yet.</p>
                 <div class="workflow-card-actions">
                     <button class="btn btn-secondary" id="workflow-view-new-files-btn" ${this.newFiles.total === 0 ? 'disabled' : ''}>View</button>
+                    <button class="btn btn-secondary" id="workflow-process-folder-btn" ${this.processingFolder ? 'disabled' : ''}>
+                        ${this.processingFolder ? 'Scanning…' : 'Process a Folder…'}
+                    </button>
                 </div>
             </div>
         `;
@@ -375,6 +386,9 @@ class WorkflowPage {
             this.attachListeners();
         });
 
+        const processFolderBtn = document.getElementById('workflow-process-folder-btn');
+        if (processFolderBtn) processFolderBtn.addEventListener('click', () => this.processFolder());
+
         const selectAll = document.getElementById('workflow-new-files-select-all');
         if (selectAll) selectAll.addEventListener('change', () => {
             const files = this.newFiles.files || [];
@@ -561,6 +575,83 @@ class WorkflowPage {
             this.lastResult = `Failed: ${error.message}`;
         } finally {
             this.startingProcessing = false;
+            this.render();
+            this.attachListeners();
+        }
+    }
+
+    // processFolder is the ad-hoc "process this folder" spike
+    // (comic-server-fkq): pick ANY server-side folder (not a
+    // permanently-configured watch folder), scan it with the same
+    // not-yet-in-library filter the New Files card uses, show the count
+    // and get an explicit confirm (the guardrail against fat-fingering
+    // something huge like the whole library root), then process
+    // everything found through the same creation flow New Files itself
+    // uses - just with an explicit folder instead of the configured list.
+    async processFolder() {
+        const folder = await dialogs.browseServerDirectory({ title: 'Process a Folder' });
+        if (!folder) return;
+
+        this.processingFolder = true;
+        this.lastResult = null;
+        this.render();
+        this.attachListeners();
+
+        let found;
+        try {
+            const response = await fetch(`/api/library/workflow/scan-folder?path=${encodeURIComponent(folder)}`);
+            const text = await response.text();
+            if (!response.ok) throw new Error(friendlyErrorText(response, text, 'Failed to scan folder'));
+            found = JSON.parse(text);
+        } catch (error) {
+            console.error('Failed to scan folder:', error);
+            this.lastResult = `Failed: ${error.message}`;
+            this.processingFolder = false;
+            this.render();
+            this.attachListeners();
+            return;
+        }
+
+        const files = found.files || [];
+        if (files.length === 0) {
+            dialogs.toast('No new comic files found in that folder.', 'info');
+            this.processingFolder = false;
+            this.render();
+            this.attachListeners();
+            return;
+        }
+
+        const ok = await dialogs.confirm({
+            title: 'Process Folder',
+            message: `${files.length} new comic file${files.length === 1 ? '' : 's'} found in ${folder}. Add ${files.length === 1 ? 'it' : 'all of them'} to the library and start processing?`,
+            confirmLabel: 'Process',
+        });
+        if (!ok) {
+            this.processingFolder = false;
+            this.render();
+            this.attachListeners();
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/library/workflow/new-files/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ paths: files.map(f => f.path), folder }),
+            });
+            const text = await response.text();
+            if (!response.ok) throw new Error(friendlyErrorText(response, text, 'Failed to start processing'));
+            const result = text ? JSON.parse(text) : {};
+            const failed = (result.results || []).filter(r => r.error);
+            this.lastResult = failed.length > 0
+                ? `Started processing ${result.created} file(s) from ${folder}; ${failed.length} could not be started: ${failed.map(f => f.error).join('; ')}`
+                : `Started processing ${result.created} file(s) from ${folder}.`;
+            await this.load();
+        } catch (error) {
+            console.error('Failed to process folder:', error);
+            this.lastResult = `Failed: ${error.message}`;
+        } finally {
+            this.processingFolder = false;
             this.render();
             this.attachListeners();
         }

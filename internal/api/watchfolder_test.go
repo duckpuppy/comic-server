@@ -243,6 +243,108 @@ func TestHandleStartProcessingNewFiles_ComicInfoXMLWinsOverFilenameGuess(t *test
 	}
 }
 
+// TestHandleScanAdHocFolder_FindsFileNotInLibrary covers comic-server-fkq's
+// ad-hoc pick-any-folder preview - the folder is NOT in
+// server.watch_folders, confirming this endpoint scans whatever path is
+// passed in, not the configured list.
+func TestHandleScanAdHocFolder_FindsFileNotInLibrary(t *testing.T) {
+	dir := t.TempDir()
+	newPath := filepath.Join(dir, "Batman 001 (2020).cbz")
+	if err := os.WriteFile(newPath, []byte("data"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	s := newWatchFolderTestServer(t, nil, nil) // no watch folders configured at all
+	req := httptest.NewRequest(http.MethodGet, "/api/library/workflow/scan-folder?path="+dir, nil)
+	w := httptest.NewRecorder()
+	s.handleScanAdHocFolder(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var result struct {
+		Total int `json:"total"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if result.Total != 1 {
+		t.Errorf("expected 1 file found in the ad-hoc folder, got %d", result.Total)
+	}
+}
+
+// TestHandleScanAdHocFolder_ExcludesFileAlreadyInLibrary confirms the
+// same de-dup filtering as the New Files card applies here too
+// (comic-server-fkq's confirmed design decision).
+func TestHandleScanAdHocFolder_ExcludesFileAlreadyInLibrary(t *testing.T) {
+	dir := t.TempDir()
+	knownPath := filepath.Join(dir, "Known 001.cbz")
+	if err := os.WriteFile(knownPath, []byte("data"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	s := newWatchFolderTestServer(t, []library.ComicBook{{ID: "1", FilePath: knownPath}}, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/library/workflow/scan-folder?path="+dir, nil)
+	w := httptest.NewRecorder()
+	s.handleScanAdHocFolder(w, req)
+
+	var result struct {
+		Total int `json:"total"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &result)
+	if result.Total != 0 {
+		t.Errorf("expected 0 files (already known), got %d", result.Total)
+	}
+}
+
+func TestHandleScanAdHocFolder_MissingPathIs400(t *testing.T) {
+	s := newWatchFolderTestServer(t, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/library/workflow/scan-folder", nil)
+	w := httptest.NewRecorder()
+	s.handleScanAdHocFolder(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+// TestHandleStartProcessingNewFiles_AdHocFolderNotInWatchFolders is the
+// core comic-server-fkq regression: a path from a folder that was NEVER
+// added to server.watch_folders must still process successfully when the
+// request carries that folder explicitly - proving the ad-hoc path
+// doesn't depend on the configured watch-folder list at all.
+func TestHandleStartProcessingNewFiles_AdHocFolderNotInWatchFolders(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "Sandman 001 (2020).cbz")
+	if err := os.WriteFile(path, []byte("data"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	// No watch folders configured - the ad-hoc folder is a complete stranger to config.
+	s := newWatchFolderTestServer(t, nil, nil)
+
+	escapedPath := strings.ReplaceAll(path, `\`, `\\`)
+	body := strings.NewReader(`{"paths": ["` + escapedPath + `"], "folder": "` + strings.ReplaceAll(dir, `\`, `\\`) + `"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/library/workflow/new-files/start", body)
+	w := httptest.NewRecorder()
+	s.handleStartProcessingNewFiles(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var result struct {
+		Created int `json:"created"`
+		Results []struct {
+			Error string `json:"error"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if result.Created != 1 {
+		t.Fatalf("expected 1 book created from the ad-hoc folder, got %d: %+v", result.Created, result.Results)
+	}
+}
+
 // writeTestCBZWithComicInfo writes a minimal valid CBZ containing only a
 // ComicInfo.xml entry at path.
 func writeTestCBZWithComicInfo(t *testing.T, path, comicInfoXML string) {
