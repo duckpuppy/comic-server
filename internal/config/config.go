@@ -87,7 +87,6 @@ type ServerConfig struct {
 
 	// Sync settings
 	AutoSync                     bool `yaml:"auto_sync,omitempty" toml:"auto_sync,omitempty"`                                               // Enable automatic sync when devices connect
-	MaxConcurrentSync            int  `yaml:"max_concurrent_sync,omitempty" toml:"max_concurrent_sync,omitempty"`                           // Max concurrent syncs (0 = unlimited)
 	MaxConcurrentConnections     int  `yaml:"max_concurrent_connections,omitempty" toml:"max_concurrent_connections,omitempty"`             // Max concurrent connections (0 = unlimited)
 	LibraryCacheFlushIntervalSec int  `yaml:"library_cache_flush_interval_sec,omitempty" toml:"library_cache_flush_interval_sec,omitempty"` // Library cache flush interval in seconds (0 = flush on every change)
 
@@ -282,7 +281,6 @@ func DefaultServerConfig() ServerConfig {
 		BindAddress:                  "", // Empty = bind to all interfaces
 		IgnoreDevices:                []string{},
 		AutoSync:                     false,
-		MaxConcurrentSync:            0,   // 0 = unlimited (v0.2 has mutex limiting to 1)
 		MaxConcurrentConnections:     5,   // Default: 5 concurrent connections
 		LibraryCacheFlushIntervalSec: 30,  // Default: 30 seconds (balance between performance and data safety)
 		MaxConnectionsPerIP:          10,  // Default: 10 connections/minute per IP

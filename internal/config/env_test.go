@@ -16,7 +16,6 @@ func TestApplyEnvironment(t *testing.T) {
 		"COMIC_SERVER_IGNORE_DEVICES",
 		"COMIC_SERVER_WATCH_FOLDERS",
 		"COMIC_SERVER_AUTO_SYNC",
-		"COMIC_SERVER_MAX_CONCURRENT_SYNC",
 		"COMIC_SERVER_LOG_LEVEL",
 		"COMIC_SERVER_LOG_FORMAT",
 		"COMIC_SERVER_KOMGA_API_KEY",
@@ -144,20 +143,6 @@ func TestApplyEnvironment(t *testing.T) {
 
 		if !cfg.Server.AutoSync {
 			t.Errorf("AutoSync = %v, want true", cfg.Server.AutoSync)
-		}
-	})
-
-	t.Run("max concurrent sync override", func(t *testing.T) {
-		cleanup()
-		os.Setenv("COMIC_SERVER_MAX_CONCURRENT_SYNC", "5")
-
-		cfg := NewConfig()
-		if err := cfg.ApplyEnvironment(); err != nil {
-			t.Fatalf("ApplyEnvironment() error = %v", err)
-		}
-
-		if cfg.Server.MaxConcurrentSync != 5 {
-			t.Errorf("MaxConcurrentSync = %v, want 5", cfg.Server.MaxConcurrentSync)
 		}
 	})
 

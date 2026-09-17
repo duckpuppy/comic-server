@@ -326,7 +326,7 @@ server:
     - "Untrusted Tablet" # By device name
 
   # Connection limits
-  max_concurrent_sync: 5  # Max simultaneous syncs (0 = unlimited)
+  max_concurrent_connections: 5  # Max simultaneous connections (0 = unlimited)
 ```
 
 See [docs/SECURITY.md](SECURITY.md) for detailed security documentation.

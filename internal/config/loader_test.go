@@ -293,7 +293,6 @@ func TestLoadServerConfig(t *testing.T) {
     - device-1
     - device-2
   auto_sync: true
-  max_concurrent_sync: 3
   log_level: debug
   log_format: json
 `
@@ -325,9 +324,6 @@ func TestLoadServerConfig(t *testing.T) {
 	}
 	if !cfg.Server.AutoSync {
 		t.Errorf("AutoSync = %v, want true", cfg.Server.AutoSync)
-	}
-	if cfg.Server.MaxConcurrentSync != 3 {
-		t.Errorf("MaxConcurrentSync = %v, want 3", cfg.Server.MaxConcurrentSync)
 	}
 	if cfg.Server.LogLevel != "debug" {
 		t.Errorf("LogLevel = %v, want debug", cfg.Server.LogLevel)

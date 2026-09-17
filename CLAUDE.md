@@ -354,7 +354,6 @@ type ServerConfig struct {
 
     // Sync settings
     AutoSync         bool  // Auto-sync when devices connect
-    MaxConcurrentSync int  // Max concurrent syncs (0 = unlimited)
 
     // Logging settings
     LogLevel  string  // debug, info, warn, error (default: info)
@@ -391,7 +390,6 @@ All server settings can be configured via environment variables:
 - `COMIC_SERVER_BIND_ADDRESS` - Network bind address
 - `COMIC_SERVER_IGNORE_DEVICES` - Comma-separated list of devices to ignore
 - `COMIC_SERVER_AUTO_SYNC` - Enable auto-sync (true/false)
-- `COMIC_SERVER_MAX_CONCURRENT_SYNC` - Max concurrent syncs
 - `COMIC_SERVER_LOG_LEVEL` - Log level (debug/info/warn/error)
 - `COMIC_SERVER_LOG_FORMAT` - Log format (text/json)
 - `COMIC_SERVER_TRASH_PATH` - Quarantine directory for internal/trash (see below)
@@ -409,7 +407,6 @@ server:
   ignore_devices:
     - 192.168.0.24  # Production tablet (prevent accidental sync)
   auto_sync: false
-  max_concurrent_sync: 0  # 0 = unlimited
   log_level: info
   log_format: text
   trash_path: ""  # Empty = disabled; required if cbz_convert.enabled (see internal/trash)

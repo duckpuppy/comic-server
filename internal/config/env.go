@@ -93,14 +93,6 @@ func (c *Config) ApplyEnvironment() error {
 		c.Server.AutoSync = autoSync
 	}
 
-	if val := os.Getenv("COMIC_SERVER_MAX_CONCURRENT_SYNC"); val != "" {
-		maxSync, err := strconv.Atoi(val)
-		if err != nil {
-			return err
-		}
-		c.Server.MaxConcurrentSync = maxSync
-	}
-
 	// Logging settings
 	if val := os.Getenv("COMIC_SERVER_LOG_LEVEL"); val != "" {
 		c.Server.LogLevel = strings.ToLower(val)
