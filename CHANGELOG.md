@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.38.0](https://github.com/duckpuppy/comic-server/compare/v1.37.0...v1.38.0) (2026-09-17)
+
+
+### Features
+
+* ad-hoc "process this folder" action in Workflow (comic-server-fkq) ([a8848df](https://github.com/duckpuppy/comic-server/commit/a8848dfa107d7b3b08f1ccbe8421d2f188a77d29))
+
+
+### Bug Fixes
+
+* remove dead ServerConfig.MaxConcurrentSync field (comic-server-s18p) ([d9ea747](https://github.com/duckpuppy/comic-server/commit/d9ea74750033546560ae4d1d4970533da2ebcd08))
+
 ## [1.37.0](https://github.com/duckpuppy/comic-server/compare/v1.36.0...v1.37.0) (2026-09-17)
 
 
