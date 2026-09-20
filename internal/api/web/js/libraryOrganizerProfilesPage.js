@@ -1,10 +1,11 @@
-// Library Organizer Profile Editor (comic-server-7ecr) - create, edit,
-// and delete profiles entirely through the web UI, with no
-// losettingsx.dat import required. First slice covers only the fields
-// Plan/Apply actually read (BaseFolder/FolderTemplate/FileTemplate/
-// CopyMode/ReplaceMultipleSpaces/EmptyFolder/FilelessFormat + exclude
-// rules) - the rest of LOProfile's fields are either dead weight
-// (comic-server-b2al) or deferred lookup tables (comic-server-kt4w) and
+// Library Organizer Profile Editor (comic-server-7ecr, extended by
+// comic-server-b2al) - create, edit, and delete profiles entirely through
+// the web UI, with no losettingsx.dat import required. Covers every field
+// Plan/Apply actually read: BaseFolder/FolderTemplate/FileTemplate/
+// CopyMode/ReplaceMultipleSpaces/EmptyFolder/FilelessFormat, exclude
+// rules, UseFolder/UseFileName, RemoveEmptyFolder + its exceptions list,
+// and FailEmptyValues/FailedFields/MoveFailed/FailedFolder. Months/
+// IllegalCharacters lookup tables remain deferred (comic-server-kt4w) and
 // keep whatever value they already have (see the API's mergeLOProfileWire).
 //
 // Profiles created/edited here are read by the exact same
@@ -145,6 +146,35 @@ class LibraryOrganizerProfilesPage {
                         <label>Fileless extension</label>
                         <input type="text" class="form-control lop-field" data-id="${p.id}" data-field="fileless_format" value="${this.escapeAttr(p.fileless_format)}" placeholder=".jpg" style="max-width:8rem;">
                     </div>
+                    <div class="form-group">
+                        <label><input type="checkbox" class="lop-field" data-id="${p.id}" data-field="use_folder" ${p.use_folder ? 'checked' : ''}> Reorganize folder (off keeps each book's current folder unchanged)</label>
+                    </div>
+                    <div class="form-group">
+                        <label><input type="checkbox" class="lop-field" data-id="${p.id}" data-field="use_filename" ${p.use_filename ? 'checked' : ''}> Reorganize filename (off keeps each book's current filename unchanged)</label>
+                    </div>
+                    <div class="form-group">
+                        <label><input type="checkbox" class="lop-field" data-id="${p.id}" data-field="remove_empty_folder" ${p.remove_empty_folder ? 'checked' : ''}> Delete a book's old folder after a move, once it's completely empty (Move mode only)</label>
+                    </div>
+                    <div class="form-group">
+                        <label>Folders to never delete, even if emptied (one per line)</label>
+                        <textarea class="form-control lop-field lop-list-field" data-id="${p.id}" data-field="excluded_empty_folders" rows="2" placeholder="/comics/Archive">${this.escapeHtml((p.excluded_empty_folders || []).join('\n'))}</textarea>
+                    </div>
+
+                    <h3>Handle missing metadata</h3>
+                    <div class="form-group">
+                        <label><input type="checkbox" class="lop-field" data-id="${p.id}" data-field="fail_empty_values" ${p.fail_empty_values ? 'checked' : ''}> Fail a book's move if a required field below is empty</label>
+                    </div>
+                    <div class="form-group">
+                        <label>Fields that must not be empty (one per line, e.g. <code>publisher</code>, <code>series</code>)</label>
+                        <textarea class="form-control lop-field lop-list-field" data-id="${p.id}" data-field="failed_fields" rows="2" placeholder="publisher">${this.escapeHtml((p.failed_fields || []).join('\n'))}</textarea>
+                    </div>
+                    <div class="form-group">
+                        <label><input type="checkbox" class="lop-field" data-id="${p.id}" data-field="move_failed" ${p.move_failed ? 'checked' : ''}> Move failed books to a separate folder (off leaves them at their current path, untouched)</label>
+                    </div>
+                    <div class="form-group">
+                        <label>Failed-books folder</label>
+                        <input type="text" class="form-control lop-field" data-id="${p.id}" data-field="failed_folder" value="${this.escapeAttr(p.failed_folder)}" placeholder="/comics/Needs Review">
+                    </div>
 
                     <h3>Exclude rules</h3>
                     <div class="form-group">
@@ -221,8 +251,18 @@ class LibraryOrganizerProfilesPage {
             btn.addEventListener('click', () => this.deleteProfile(btn.dataset.id));
         });
         document.querySelectorAll('.lop-field').forEach(el => {
-            const commit = () => this.updateProfileField(el.dataset.id, el.dataset.field, el.type === 'checkbox' ? el.checked : el.value);
-            el.addEventListener(el.tagName === 'SELECT' || el.type === 'checkbox' ? 'change' : 'change', commit);
+            const commit = () => {
+                let value;
+                if (el.classList.contains('lop-list-field')) {
+                    value = el.value.split('\n').map(s => s.trim()).filter(s => s !== '');
+                } else if (el.type === 'checkbox') {
+                    value = el.checked;
+                } else {
+                    value = el.value;
+                }
+                this.updateProfileField(el.dataset.id, el.dataset.field, value);
+            };
+            el.addEventListener('change', commit);
         });
         document.querySelectorAll('.lop-rule-field, .lop-rule-operator, .lop-rule-value').forEach(el => {
             el.addEventListener('change', () => this.updateRule(el.dataset.profile, el.dataset.id));

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/duckpuppy/comic-server/internal/library"
 	"github.com/duckpuppy/comic-server/internal/libraryorganizer"
@@ -165,11 +166,25 @@ func (s *Server) handleOrganizeApply(w http.ResponseWriter, r *http.Request) {
 		byID[b.ID] = b
 	}
 
+	p, err := s.configDB.GetLOProfile(r.URL.Query().Get("profile"))
+	if err != nil || p == nil {
+		http.Error(w, "Failed to reload profile for apply", http.StatusInternalServerError)
+		return
+	}
+	excludedEmptyFolders, err := s.loLoadExcludedEmptyFolders(p.ID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to load profile excluded empty folders: %v", err), http.StatusInternalServerError)
+		return
+	}
+
 	outcomes := libraryorganizer.Apply(moves, libraryorganizer.ApplyOptions{
-		Mode:     mode,
-		Trash:    tr,
-		Books:    byID,
-		Rulesets: s.loadWorkflowRulesets(),
+		Mode:                 mode,
+		Trash:                tr,
+		Books:                byID,
+		Rulesets:             s.loadWorkflowRulesets(),
+		RemoveEmptyFolder:    p.RemoveEmptyFolder,
+		ExcludedEmptyFolders: excludedEmptyFolders,
+		BaseFolderResolved:   s.resolveBookFilePath(p.BaseFolder),
 	})
 
 	result := LOOrganizeApplyResult{Processed: len(outcomes)}
@@ -240,6 +255,14 @@ func (s *Server) loadLOPlanOptions(profileID string) (libraryorganizer.PlanOptio
 	if err != nil {
 		return libraryorganizer.PlanOptions{}, 0, fmt.Sprintf("Failed to load profile illegal characters: %v", err), http.StatusInternalServerError
 	}
+	failedFields, err := s.loLoadFailedFields(p.ID)
+	if err != nil {
+		return libraryorganizer.PlanOptions{}, 0, fmt.Sprintf("Failed to load profile failed fields: %v", err), http.StatusInternalServerError
+	}
+	emptyData, err := s.loLoadEmptyData(p.ID)
+	if err != nil {
+		return libraryorganizer.PlanOptions{}, 0, fmt.Sprintf("Failed to load profile empty data: %v", err), http.StatusInternalServerError
+	}
 	excludeRules, err := s.configDB.ListLOExcludeRules(p.ID)
 	if err != nil {
 		return libraryorganizer.PlanOptions{}, 0, fmt.Sprintf("Failed to load profile exclude rules: %v", err), http.StatusInternalServerError
@@ -257,6 +280,9 @@ func (s *Server) loadLOPlanOptions(profileID string) (libraryorganizer.PlanOptio
 			ReplaceMultipleSpaces: p.ReplaceMultipleSpaces,
 			EmptyFolder:           p.EmptyFolder,
 			FilelessFormat:        p.FilelessFormat,
+			EmptyData:             emptyData,
+			FailEmptyValues:       p.FailEmptyValues,
+			FailedFields:          failedFields,
 		},
 		Exclude: libraryorganizer.ExcludeConfig{
 			Rules:           rules,
@@ -266,6 +292,10 @@ func (s *Server) loadLOPlanOptions(profileID string) (libraryorganizer.PlanOptio
 		BaseFolder:     p.BaseFolder,
 		FolderTemplate: p.FolderTemplate,
 		FileTemplate:   p.FileTemplate,
+		UseFolder:      p.UseFolder,
+		UseFileName:    p.UseFileName,
+		MoveFailed:     p.MoveFailed,
+		FailedFolder:   p.FailedFolder,
 		ResolvePath:    s.resolveBookFilePath,
 	}
 
@@ -316,6 +346,63 @@ func (s *Server) loLoadIllegalCharacters(profileID string) (libraryorganizer.Ill
 		illegal[item.Name] = item.Value
 	}
 	return illegal, nil
+}
+
+// loNormalizeFieldName maps a losettingsx.dat FailedFields/EmptyData item
+// Name (the real plugin's own PascalCase/Shadow-prefixed internal field
+// identifiers, e.g. "Publisher", "ShadowSeries") to comic-server's
+// lowercase template-token key (see pathmaker.go's fieldTable) - a
+// deliberate simplification (case-insensitive + strip a leading "Shadow")
+// rather than porting locommon.py's full ~40-entry field_to_name/
+// name_to_field mapping table, since none of the user's real profiles
+// reference a field outside fieldTable's own scope (comic-server-b2al).
+func loNormalizeFieldName(name string) string {
+	return strings.ToLower(strings.TrimPrefix(name, "Shadow"))
+}
+
+// loLoadFailedFields loads a profile's "failed_fields" item collection
+// (comic-server-b2al) into the set hasFailedEmptyField checks against.
+func (s *Server) loLoadFailedFields(profileID string) (map[string]bool, error) {
+	items, err := s.configDB.ListLOProfileItems(profileID, "failed_fields")
+	if err != nil {
+		return nil, err
+	}
+	fields := make(map[string]bool, len(items))
+	for _, item := range items {
+		fields[loNormalizeFieldName(item.Name)] = true
+	}
+	return fields, nil
+}
+
+// loLoadEmptyData loads a profile's "empty_data" item collection
+// (comic-server-b2al) - Name is the field, Value is the substitution text
+// insertField uses instead of dropping the field to "" silently.
+func (s *Server) loLoadEmptyData(profileID string) (map[string]string, error) {
+	items, err := s.configDB.ListLOProfileItems(profileID, "empty_data")
+	if err != nil {
+		return nil, err
+	}
+	data := make(map[string]string, len(items))
+	for _, item := range items {
+		data[loNormalizeFieldName(item.Name)] = item.Value
+	}
+	return data, nil
+}
+
+// loLoadExcludedEmptyFolders loads a profile's "excluded_empty_folder"
+// item collection (comic-server-b2al) - Name is the raw folder path,
+// resolved here so Apply's removeEmptyFolders can compare it directly
+// against resolved paths it climbs.
+func (s *Server) loLoadExcludedEmptyFolders(profileID string) (map[string]bool, error) {
+	items, err := s.configDB.ListLOProfileItems(profileID, "excluded_empty_folder")
+	if err != nil {
+		return nil, err
+	}
+	folders := make(map[string]bool, len(items))
+	for _, item := range items {
+		folders[s.resolveBookFilePath(item.Name)] = true
+	}
+	return folders, nil
 }
 
 // LOProfileSummary is the JSON shape for one profile in the picker list -

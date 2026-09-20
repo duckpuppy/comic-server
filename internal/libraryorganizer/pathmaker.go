@@ -145,6 +145,23 @@ type Profile struct {
 	ReplaceMultipleSpaces bool
 	EmptyFolder           string // fallback text for a folder segment that resolves empty
 	FilelessFormat        string // extension used for a book with no FilePath, e.g. ".jpg"
+
+	// EmptyData substitutes a per-field replacement when that field
+	// resolves to an empty value, instead of just dropping it silently -
+	// keyed by fieldTable's lowercase names (comic-server-b2al). Real
+	// plugin: PathMaker.insert_field's `if field in self.profile.EmptyData`
+	// branch.
+	EmptyData map[string]string
+
+	// FailEmptyValues/FailedFields mark a book's move as failed when any
+	// field in FailedFields resolves empty (comic-server-b2al) - a
+	// DIFFERENT failure mode than MakeFolderPath/MakeFileName's own ok=false
+	// (an unsupported/unresolvable field): the field resolved just fine,
+	// its VALUE was empty. FailedFields is keyed the same as EmptyData.
+	// See hasFailedEmptyField and PlanOptions.MoveFailed/FailedFolder for
+	// what happens to a book once this fires.
+	FailEmptyValues bool
+	FailedFields    map[string]bool
 }
 
 // multipleSpaceRegex mirrors the Python's own `\s\s+` collapse.
@@ -159,16 +176,21 @@ var multipleSpaceRegex = regexp.MustCompile(`\s\s+`)
 // -char-cleaned and trailing-period-stripped INDEPENDENTLY, not the whole
 // path at once - a publisher name containing "/" only pollutes its own
 // segment.
-func MakeFolderPath(book *library.ComicBook, template string, profile Profile) ([]string, bool) {
+// The third return, failedEmpty, is true when profile.FailEmptyValues is
+// on and this template referenced a FailedFields field that resolved
+// empty (comic-server-b2al) - a caller-facing failure distinct from ok
+// (which means "unsupported/unresolvable field syntax").
+func MakeFolderPath(book *library.ComicBook, template string, profile Profile) (segments []string, ok bool, failedEmpty bool) {
 	template = strings.Trim(strings.TrimSpace(template), `\`)
 	if template == "" {
-		return nil, true
+		return nil, true, false
 	}
 
-	rough, ok := insertFieldsIntoTemplate(template, book, profile)
-	segments := strings.Split(rough, `\`)
-	out := make([]string, 0, len(segments))
-	for _, seg := range segments {
+	rough, ok, emptyFields := insertFieldsIntoTemplate(template, book, profile)
+	failedEmpty = hasFailedEmptyField(profile, emptyFields)
+	rawSegments := strings.Split(rough, `\`)
+	out := make([]string, 0, len(rawSegments))
+	for _, seg := range rawSegments {
 		if strings.TrimSpace(seg) == "" {
 			seg = profile.EmptyFolder
 		}
@@ -179,21 +201,39 @@ func MakeFolderPath(book *library.ComicBook, template string, profile Profile) (
 		}
 		out = append(out, seg)
 	}
-	return out, ok
+	return out, ok, failedEmpty
+}
+
+// hasFailedEmptyField reports whether profile.FailEmptyValues is on and
+// any of emptyFields (the field names insertFieldsIntoTemplate found
+// resolving to an empty value) is one profile.FailedFields is configured
+// to fail on - mirrors PathMaker.insert_field's own FailEmptyValues/
+// FailedFields check.
+func hasFailedEmptyField(profile Profile, emptyFields map[string]bool) bool {
+	if !profile.FailEmptyValues {
+		return false
+	}
+	for f := range emptyFields {
+		if profile.FailedFields[f] {
+			return true
+		}
+	}
+	return false
 }
 
 // MakeFileName expands a FileTemplate into a cleaned file name WITHOUT
 // extension (the caller appends the source file's real extension, or
 // profile.FilelessFormat for a fileless book - an apply-time concern, not
 // a template-engine one). Mirrors PathMaker.make_file_name.
-func MakeFileName(book *library.ComicBook, template string, profile Profile) (string, bool) {
-	name, ok := insertFieldsIntoTemplate(template, book, profile)
+func MakeFileName(book *library.ComicBook, template string, profile Profile) (name string, ok bool, failedEmpty bool) {
+	name, ok, emptyFields := insertFieldsIntoTemplate(template, book, profile)
+	failedEmpty = hasFailedEmptyField(profile, emptyFields)
 	name = strings.TrimSpace(name)
 	name = replaceIllegalCharacters(name, profile.IllegalCharacters)
 	if profile.ReplaceMultipleSpaces {
 		name = multipleSpaceRegex.ReplaceAllString(name, " ")
 	}
-	return name, ok
+	return name, ok, failedEmpty
 }
 
 func replaceIllegalCharacters(text string, table IllegalCharacters) string {
@@ -230,8 +270,13 @@ func sortByLenDesc(keys []string) {
 // was unrecognized - the caller (preview, comic-server-3bz.4) surfaces
 // that as a flagged failure rather than silently emitting the literal
 // {<unknownfield>} text into a real file path.
-func insertFieldsIntoTemplate(template string, book *library.ComicBook, profile Profile) (string, bool) {
+// The third return, emptyFields, is the set of fieldTable field names
+// (comic-server-b2al) whose resolved value was empty anywhere in
+// template - MakeFolderPath/MakeFileName check this against
+// profile.FailEmptyValues/FailedFields via hasFailedEmptyField.
+func insertFieldsIntoTemplate(template string, book *library.ComicBook, profile Profile) (string, bool, map[string]bool) {
 	ok := true
+	emptyFields := map[string]bool{}
 	for {
 		matches := templateFieldRegex.FindAllStringSubmatchIndex(template, -1)
 		if len(matches) == 0 {
@@ -240,10 +285,13 @@ func insertFieldsIntoTemplate(template string, book *library.ComicBook, profile 
 		invalidCount := 0
 		next := templateFieldRegex.ReplaceAllStringFunc(template, func(m string) string {
 			sub := templateFieldRegex.FindStringSubmatch(m)
-			replacement, valid := insertField(sub, book, profile)
+			replacement, valid, emptyField := insertField(sub, book, profile)
 			if !valid {
 				invalidCount++
 				ok = false
+			}
+			if emptyField != "" {
+				emptyFields[emptyField] = true
 			}
 			return replacement
 		})
@@ -258,14 +306,17 @@ func insertFieldsIntoTemplate(template string, book *library.ComicBook, profile 
 		}
 		template = next
 	}
-	return template, ok
+	return template, ok, emptyFields
 }
 
 // insertField mirrors PathMaker.insert_field for the plain
 // (non-inversion, non-conditional) form only - see the package doc
 // comment on comic-server-3bz.1's scoping of '!'/'?' template syntax.
 // sub is templateFieldRegex's submatch slice: [full, prefix, name, args, postfix].
-func insertField(sub []string, book *library.ComicBook, profile Profile) (result string, ok bool) {
+// emptyField (comic-server-b2al) reports name when this field resolved to
+// an empty value - separate from ok, which only covers "unsupported
+// syntax/unknown field".
+func insertField(sub []string, book *library.ComicBook, profile Profile) (result string, ok bool, emptyField string) {
 	prefix, name, args, postfix := sub[1], sub[2], sub[3], sub[4]
 
 	if strings.HasPrefix(name, "!") || strings.HasPrefix(name, "?") {
@@ -274,17 +325,17 @@ func insertField(sub []string, book *library.ComicBook, profile Profile) (result
 		// caller knows this template isn't fully supported rather than
 		// silently producing a path with the raw template syntax baked
 		// into it.
-		return sub[0], false
+		return sub[0], false, ""
 	}
 
 	def, known := fieldTable[name]
 	if !known {
-		return sub[0], false
+		return sub[0], false, ""
 	}
 
 	value, valid := def.resolve(book, profile)
 	if !valid {
-		return sub[0], false
+		return sub[0], false, ""
 	}
 
 	if def.numeric && args != "" {
@@ -294,9 +345,16 @@ func insertField(sub []string, book *library.ComicBook, profile Profile) (result
 	}
 
 	if value == "" {
-		return "", true
+		// EmptyData (comic-server-b2al) substitutes a configured
+		// per-field replacement instead of just dropping the field
+		// silently - mirrors PathMaker.insert_field's own
+		// `if field in self.profile.EmptyData` branch.
+		if sub, ok := profile.EmptyData[name]; ok {
+			return sub, true, name
+		}
+		return "", true, name
 	}
-	return prefix + value + postfix, true
+	return prefix + value + postfix, true, ""
 }
 
 // padNumeric mirrors PathMaker.pad: zero-pads a numeric string's integer

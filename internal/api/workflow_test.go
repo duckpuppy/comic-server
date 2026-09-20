@@ -153,6 +153,8 @@ func TestHandleGetWorkflowStageBooks_ToMoveIncludesTargetPath(t *testing.T) {
 		BaseFolder:      `G:\Comics`,
 		FolderTemplate:  `{<publisher>}`,
 		FileTemplate:    `{<series>}`,
+		UseFolder:       true,
+		UseFileName:     true,
 		ExcludeMode:     "Only",
 		ExcludeOperator: "Any",
 	}); err != nil {

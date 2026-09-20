@@ -174,6 +174,116 @@ func TestApply_FilelessBookUpdatesPathWithoutFileOp(t *testing.T) {
 	}
 }
 
+func TestApply_RemoveEmptyFolderClimbsToBaseFolder(t *testing.T) {
+	base := t.TempDir()
+	src := filepath.Join(base, "Old Series", "Sub", "old.cbz")
+	dst := filepath.Join(base, "new.cbz")
+	writeSourceFile(t, src, "comic bytes")
+
+	book := &library.ComicBook{ID: "b1", FilePath: `Old Series/Sub/old.cbz`}
+	moves := []PlannedMove{{
+		BookID: "b1", OldRawPath: `Old Series/Sub/old.cbz`, NewRawPath: `new.cbz`,
+		OldResolvedPath: src, NewResolvedPath: dst,
+	}}
+
+	Apply(moves, ApplyOptions{
+		Mode:               ModeMove,
+		Trash:              newTestTrash(t),
+		Books:              map[string]*library.ComicBook{"b1": book},
+		RemoveEmptyFolder:  true,
+		BaseFolderResolved: base,
+	})
+
+	if _, err := os.Stat(filepath.Join(base, "Old Series", "Sub")); !os.IsNotExist(err) {
+		t.Errorf("expected emptied Sub folder to be removed, stat err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(base, "Old Series")); !os.IsNotExist(err) {
+		t.Errorf("expected emptied Old Series folder to be removed, stat err = %v", err)
+	}
+	if _, err := os.Stat(base); err != nil {
+		t.Errorf("BaseFolder itself must never be removed: %v", err)
+	}
+}
+
+func TestApply_RemoveEmptyFolderStopsAtNonEmptyDir(t *testing.T) {
+	base := t.TempDir()
+	src := filepath.Join(base, "Old Series", "old.cbz")
+	sibling := filepath.Join(base, "Old Series", "keep-me.txt")
+	dst := filepath.Join(base, "new.cbz")
+	writeSourceFile(t, src, "comic bytes")
+	writeSourceFile(t, sibling, "not a comic")
+
+	book := &library.ComicBook{ID: "b1", FilePath: `Old Series/old.cbz`}
+	moves := []PlannedMove{{
+		BookID: "b1", OldRawPath: `Old Series/old.cbz`, NewRawPath: `new.cbz`,
+		OldResolvedPath: src, NewResolvedPath: dst,
+	}}
+
+	Apply(moves, ApplyOptions{
+		Mode:               ModeMove,
+		Trash:              newTestTrash(t),
+		Books:              map[string]*library.ComicBook{"b1": book},
+		RemoveEmptyFolder:  true,
+		BaseFolderResolved: base,
+	})
+
+	if _, err := os.Stat(filepath.Join(base, "Old Series")); err != nil {
+		t.Errorf("non-empty folder must survive: %v", err)
+	}
+}
+
+func TestApply_RemoveEmptyFolderRespectsExclusions(t *testing.T) {
+	base := t.TempDir()
+	src := filepath.Join(base, "Keep This", "old.cbz")
+	dst := filepath.Join(base, "new.cbz")
+	writeSourceFile(t, src, "comic bytes")
+
+	book := &library.ComicBook{ID: "b1", FilePath: `Keep This/old.cbz`}
+	moves := []PlannedMove{{
+		BookID: "b1", OldRawPath: `Keep This/old.cbz`, NewRawPath: `new.cbz`,
+		OldResolvedPath: src, NewResolvedPath: dst,
+	}}
+	excludedDir := filepath.Join(base, "Keep This")
+
+	Apply(moves, ApplyOptions{
+		Mode:                 ModeMove,
+		Trash:                newTestTrash(t),
+		Books:                map[string]*library.ComicBook{"b1": book},
+		RemoveEmptyFolder:    true,
+		BaseFolderResolved:   base,
+		ExcludedEmptyFolders: map[string]bool{excludedDir: true},
+	})
+
+	if _, err := os.Stat(excludedDir); err != nil {
+		t.Errorf("excluded folder must survive even when empty: %v", err)
+	}
+}
+
+func TestApply_RemoveEmptyFolderNeverRunsInCopyMode(t *testing.T) {
+	base := t.TempDir()
+	src := filepath.Join(base, "Old Series", "old.cbz")
+	dst := filepath.Join(base, "new.cbz")
+	writeSourceFile(t, src, "comic bytes")
+
+	book := &library.ComicBook{ID: "b1", FilePath: `Old Series/old.cbz`}
+	moves := []PlannedMove{{
+		BookID: "b1", OldRawPath: `Old Series/old.cbz`, NewRawPath: `new.cbz`,
+		OldResolvedPath: src, NewResolvedPath: dst,
+	}}
+
+	Apply(moves, ApplyOptions{
+		Mode:               ModeCopy,
+		Trash:              newTestTrash(t),
+		Books:              map[string]*library.ComicBook{"b1": book},
+		RemoveEmptyFolder:  true,
+		BaseFolderResolved: base,
+	})
+
+	if _, err := os.Stat(filepath.Join(base, "Old Series")); err != nil {
+		t.Errorf("Copy mode must never delete the source folder: %v", err)
+	}
+}
+
 func TestApply_UnknownBookIDIsFailed(t *testing.T) {
 	moves := []PlannedMove{{BookID: "missing", OldResolvedPath: "/x", NewResolvedPath: "/y"}}
 	outcomes := Apply(moves, ApplyOptions{

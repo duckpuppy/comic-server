@@ -14,6 +14,8 @@ func realPlanOptions() PlanOptions {
 		BaseFolder:     `G:\Comics`,
 		FolderTemplate: `{<publisher>}\{<imprint>}\{<series>} ({<volume>}{ <format>})`,
 		FileTemplate:   `{<series>}{ Vol.<volume>}{ #<number2>}{ (of <count2>)}{ ({<month>, }<year>)}`,
+		UseFolder:      true,
+		UseFileName:    true,
 	}
 }
 
@@ -163,6 +165,80 @@ func TestPlan_PosixBaseFolderProducesForwardSlashPath(t *testing.T) {
 	}
 	if strings.Contains(moves[0].NewRawPath, `\`) {
 		t.Errorf("NewRawPath = %q, must not mix separators with a POSIX BaseFolder", moves[0].NewRawPath)
+	}
+}
+
+func TestPlan_UseFolderOffKeepsCurrentDirectory(t *testing.T) {
+	opts := realPlanOptions()
+	opts.UseFolder = false
+	book := &library.ComicBook{
+		ID: "b1", Series: "Sandman", Publisher: "DC Comics", Volume: 1989, Number: "1",
+		FilePath: `G:\Elsewhere\Sandman 01.cbz`,
+	}
+	moves := Plan([]*library.ComicBook{book}, opts)
+	if moves[0].Failed || moves[0].Skipped {
+		t.Fatalf("unexpected flags: %+v", moves[0])
+	}
+	want := `G:\Elsewhere\Sandman Vol.1989 #01.cbz`
+	if moves[0].NewRawPath != want {
+		t.Errorf("NewRawPath = %q, want %q (current directory kept, only filename reorganized)", moves[0].NewRawPath, want)
+	}
+}
+
+func TestPlan_UseFileNameOffKeepsCurrentFileName(t *testing.T) {
+	opts := realPlanOptions()
+	opts.UseFileName = false
+	book := &library.ComicBook{
+		ID: "b1", Series: "Sandman", Publisher: "DC Comics", Volume: 1989, Number: "1",
+		FilePath: `G:\Elsewhere\weird original name.cbz`,
+	}
+	moves := Plan([]*library.ComicBook{book}, opts)
+	if moves[0].Failed || moves[0].Skipped {
+		t.Fatalf("unexpected flags: %+v", moves[0])
+	}
+	if moves[0].NewFile != "weird original name.cbz" {
+		t.Errorf("NewFile = %q, want the book's current filename kept unchanged", moves[0].NewFile)
+	}
+	want := `G:\Comics\DC Comics\Sandman (1989)\weird original name.cbz`
+	if moves[0].NewRawPath != want {
+		t.Errorf("NewRawPath = %q, want %q", moves[0].NewRawPath, want)
+	}
+}
+
+func TestPlan_FailEmptyValuesWithoutMoveFailedLeavesBookAtCurrentPath(t *testing.T) {
+	opts := realPlanOptions()
+	opts.Profile.FailEmptyValues = true
+	opts.Profile.FailedFields = map[string]bool{"imprint": true}
+	opts.MoveFailed = false
+	book := &library.ComicBook{
+		ID: "b1", Series: "Foo", Publisher: "P", Volume: 1, // no Imprint -> resolves empty
+		FilePath: `G:\Comics\Foo\Foo 01.cbz`,
+	}
+	moves := Plan([]*library.ComicBook{book}, opts)
+	if !moves[0].Failed {
+		t.Fatalf("expected Failed=true when a FailedFields field resolves empty, got %+v", moves[0])
+	}
+	if moves[0].FailReason == "" {
+		t.Error("expected a non-empty FailReason")
+	}
+}
+
+func TestPlan_FailEmptyValuesWithMoveFailedRedirectsToFailedFolder(t *testing.T) {
+	opts := realPlanOptions()
+	opts.Profile.FailEmptyValues = true
+	opts.Profile.FailedFields = map[string]bool{"imprint": true}
+	opts.MoveFailed = true
+	opts.FailedFolder = `G:\Failed`
+	book := &library.ComicBook{
+		ID: "b1", Series: "Foo", Publisher: "P", Volume: 1, // no Imprint -> resolves empty
+		FilePath: `G:\Comics\Foo\Foo 01.cbz`,
+	}
+	moves := Plan([]*library.ComicBook{book}, opts)
+	if moves[0].Failed {
+		t.Fatalf("expected Failed=false when MoveFailed redirects instead of aborting, got %+v", moves[0])
+	}
+	if !strings.HasPrefix(moves[0].NewRawPath, `G:\Failed\`) {
+		t.Errorf("NewRawPath = %q, want it redirected under FailedFolder", moves[0].NewRawPath)
 	}
 }
 

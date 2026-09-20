@@ -48,6 +48,8 @@ func createTestLOProfile(t *testing.T, s *Server, baseFolder string) string {
 		BaseFolder:      baseFolder,
 		FolderTemplate:  `{<publisher>}`,
 		FileTemplate:    `{<series>}`,
+		UseFolder:       true,
+		UseFileName:     true,
 		ExcludeMode:     "Only",
 		ExcludeOperator: "Any",
 	})

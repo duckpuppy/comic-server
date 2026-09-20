@@ -65,6 +65,24 @@ type PlanOptions struct {
 	FolderTemplate string
 	FileTemplate   string
 
+	// UseFolder/UseFileName gate whether Plan reorganizes that dimension
+	// at all (comic-server-b2al) - real plugin's own per-profile toggles.
+	// When UseFolder is false, a book's CURRENT directory is kept exactly
+	// (BaseFolder/FolderTemplate are never consulted); when UseFileName is
+	// false, its CURRENT filename+extension is kept exactly. Both default
+	// false (Go zero value) would organize nothing - callers must set
+	// these explicitly, same as every other profile field.
+	UseFolder   bool
+	UseFileName bool
+
+	// MoveFailed/FailedFolder (comic-server-b2al) redirect a book whose
+	// template hit a FailEmptyValues/FailedFields failure (see
+	// hasFailedEmptyField) to FailedFolder instead of BaseFolder, rather
+	// than leaving it at PlannedMove.Failed=true with no move at all.
+	// FailedFolder is raw/unresolved, same style as BaseFolder.
+	MoveFailed   bool
+	FailedFolder string
+
 	// ResolvePath translates a raw Windows-style library path into a path
 	// this process can actually open - same shape and purpose as
 	// cbzconvert.Convert's resolvePath parameter (comic-server's existing
@@ -118,8 +136,24 @@ func Plan(books []*library.ComicBook, opts PlanOptions) []PlannedMove {
 			continue
 		}
 
-		folder, folderOK := MakeFolderPath(book, opts.FolderTemplate, opts.Profile)
-		fileName, fileOK := MakeFileName(book, opts.FileTemplate, opts.Profile)
+		// UseFolder/UseFileName (comic-server-b2al) gate whether each
+		// dimension is reorganized at all - off means "keep the book's
+		// CURRENT folder/filename exactly", so MakeFolderPath/MakeFileName
+		// aren't even called for that dimension (mirrors the real
+		// plugin's own process_book, which uses book.FileDirectory/
+		// book.FileNameWithExtension directly in that case).
+		var folderSegments []string
+		folderOK, folderFailedEmpty := true, false
+		if opts.UseFolder {
+			folderSegments, folderOK, folderFailedEmpty = MakeFolderPath(book, opts.FolderTemplate, opts.Profile)
+		}
+
+		var fileName string
+		fileOK, fileFailedEmpty := true, false
+		if opts.UseFileName {
+			fileName, fileOK, fileFailedEmpty = MakeFileName(book, opts.FileTemplate, opts.Profile)
+		}
+
 		if !folderOK || !fileOK {
 			move.Failed = true
 			move.FailReason = "template references an unsupported or unresolvable field"
@@ -127,10 +161,50 @@ func Plan(books []*library.ComicBook, opts PlanOptions) []PlannedMove {
 			continue
 		}
 
-		fullFileName := fileName + fileExtension(book, opts.Profile)
-		move.NewFolder = folder
+		// FailEmptyValues/FailedFields (comic-server-b2al): a field
+		// resolving empty in EITHER template marks the whole move failed.
+		// Without MoveFailed, the real plugin reverts the book to its
+		// current path entirely rather than moving it anywhere - same
+		// "no-op, but tell the user why" treatment as any other Failed
+		// move here.
+		failedEmpty := folderFailedEmpty || fileFailedEmpty
+		if failedEmpty && !opts.MoveFailed {
+			move.Failed = true
+			move.FailReason = "a required field resolved empty"
+			moves = append(moves, move)
+			continue
+		}
+
+		var fullFileName string
+		if opts.UseFileName {
+			fullFileName = fileName + fileExtension(book, opts.Profile)
+		} else {
+			fullFileName = baseNameWithExt(book.FilePath)
+		}
+
+		var newSegments []string
+		if opts.UseFolder {
+			// MoveFailed/FailedFolder (comic-server-b2al) only has
+			// anywhere to redirect TO because MakeFolderPath's segments
+			// get joined onto a base folder here - when UseFolder is off
+			// there's no base folder involved at all (the book's current
+			// directory is kept raw), so a failed-empty book with
+			// UseFolder off has no FailedFolder redirect available,
+			// matching the real plugin's own structure exactly.
+			baseFolder := opts.BaseFolder
+			if failedEmpty && opts.MoveFailed {
+				baseFolder = opts.FailedFolder
+			}
+			newSegments = append([]string{baseFolder}, folderSegments...)
+			move.NewFolder = folderSegments
+		} else {
+			currentDir := dirOf(book.FilePath)
+			newSegments = []string{currentDir}
+			move.NewFolder = []string{currentDir}
+		}
+
 		move.NewFile = fullFileName
-		move.NewRawPath = joinRawPath(append(append([]string{opts.BaseFolder}, folder...), fullFileName))
+		move.NewRawPath = joinRawPath(append(newSegments, fullFileName))
 		move.NewResolvedPath = resolvePath(move.NewRawPath)
 
 		// A book already at its own planned destination is a no-op, not

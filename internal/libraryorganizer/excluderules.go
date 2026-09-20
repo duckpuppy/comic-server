@@ -259,3 +259,30 @@ func baseNameNoExt(path string) string {
 	}
 	return base
 }
+
+// dirOf and baseNameWithExt are the RAW-path-aware counterparts to
+// extOf/baseNameNoExt above - used when Plan's UseFolder/UseFileName is
+// off (comic-server-b2al) and a book's CURRENT directory or filename must
+// be kept byte-for-byte (including its original separator style), not
+// reconstructed from template segments the way MakeFolderPath/
+// MakeFileName otherwise would.
+func dirOf(path string) string {
+	idx := lastSeparatorIndex(path)
+	if idx < 0 {
+		return ""
+	}
+	return path[:idx]
+}
+
+func baseNameWithExt(path string) string {
+	idx := lastSeparatorIndex(path)
+	return path[idx+1:]
+}
+
+func lastSeparatorIndex(path string) int {
+	idx := strings.LastIndexByte(path, '/')
+	if bsIdx := strings.LastIndexByte(path, '\\'); bsIdx > idx {
+		idx = bsIdx
+	}
+	return idx
+}

@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/duckpuppy/comic-server/internal/datamanager"
 	"github.com/duckpuppy/comic-server/internal/library"
@@ -68,6 +69,20 @@ type ApplyOptions struct {
 	// just-in-time backfill of a book that has never had an explicit
 	// stage set - same parameter InferStage itself takes.
 	Rulesets []datamanager.Ruleset
+
+	// RemoveEmptyFolder (comic-server-b2al) mirrors the real plugin's own
+	// per-profile toggle: after a successful Move (never Copy - the
+	// source file is deliberately left alone in that mode), climb the
+	// book's OLD directory and each ancestor, deleting any that end up
+	// completely empty. ExcludedEmptyFolders (RESOLVED paths) are never
+	// deleted, matching the real plugin's own exception list.
+	// BaseFolderResolved (RESOLVED, matching OldResolvedPath's style) is
+	// the climb's stop boundary - a safety guard beyond what the real
+	// plugin has, so this can never delete the library root itself or
+	// anything above it.
+	RemoveEmptyFolder    bool
+	ExcludedEmptyFolders map[string]bool
+	BaseFolderResolved   string
 }
 
 // Apply executes every move in moves that Plan approved (not Skipped, not
@@ -130,6 +145,10 @@ func Apply(moves []PlannedMove, opts ApplyOptions) []ApplyOutcome {
 			continue
 		}
 
+		if opts.Mode == ModeMove && opts.RemoveEmptyFolder {
+			removeEmptyFolders(filepath.Dir(m.OldResolvedPath), opts.BaseFolderResolved, opts.ExcludedEmptyFolders)
+		}
+
 		book.FilePath = m.NewRawPath
 		advance(book, opts.Rulesets)
 		outcome.Applied = true
@@ -168,6 +187,34 @@ func applyOne(m PlannedMove, opts ApplyOptions) error {
 	}
 
 	return nil
+}
+
+// removeEmptyFolders (comic-server-b2al) recursively deletes dir and each
+// ancestor up to (but not including) stopAt, as long as each is
+// completely empty and not in excluded - mirrors lobookmover.py's own
+// remove_empty_folders, with one added safety guard the original didn't
+// have: climbing never deletes stopAt itself or anything above it.
+func removeEmptyFolders(dir, stopAt string, excluded map[string]bool) {
+	for {
+		if dir == "" || dir == stopAt || !strings.HasPrefix(dir, stopAt) {
+			return
+		}
+		if excluded[dir] {
+			return
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil || len(entries) != 0 {
+			return
+		}
+		if err := os.Remove(dir); err != nil {
+			return
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return // reached the filesystem root - nowhere left to climb
+		}
+		dir = parent
+	}
 }
 
 // copyFile copies src's bytes to tmpPath - the write callback trash.WriteNew

@@ -41,13 +41,13 @@ type LOExcludeRuleWire struct {
 	SortOrder int    `json:"sort_order"`
 }
 
-// LOProfileWire is the wire shape of one profile - only the fields
-// comic-server-7ecr's first-slice editor exposes (core path-building
-// fields + exclude rules). Every other configdb.LOProfile field either
-// isn't read by Plan/Apply at all (comic-server-b2al tracks that cleanup)
-// or is deferred (Months/IllegalCharacters lookup tables, comic-server-kt4w)
-// - both keep their current values on update since this DTO never carries
-// them, see loProfileFromWire's merge-onto-existing behavior.
+// LOProfileWire is the wire shape of one profile - core path-building
+// fields, exclude rules, and every toggle Plan/Apply actually read
+// (comic-server-7ecr's first slice plus comic-server-b2al's later
+// additions). Months/IllegalCharacters remain deferred lookup tables
+// (comic-server-kt4w) - they keep their current values on update since
+// this DTO never carries them, see mergeLOProfileWire's merge-onto-existing
+// behavior.
 type LOProfileWire struct {
 	ID                    string              `json:"id,omitempty"`
 	Name                  string              `json:"name"`
@@ -61,6 +61,20 @@ type LOProfileWire struct {
 	ExcludeMode           string              `json:"exclude_mode"`
 	ExcludeOperator       string              `json:"exclude_operator"`
 	ExcludeRules          []LOExcludeRuleWire `json:"exclude_rules"`
+
+	// UseFolder/UseFileName/RemoveEmptyFolder/FailEmptyValues/MoveFailed/
+	// FailedFolder/FailedFields/ExcludedEmptyFolders (comic-server-b2al) -
+	// the real plugin's own per-profile toggles this editor now exposes,
+	// having ground-truthed each against the real plugin's source (see
+	// pathmaker.go/plan.go/apply.go doc comments for the exact semantics).
+	UseFolder            bool     `json:"use_folder"`
+	UseFileName          bool     `json:"use_filename"`
+	RemoveEmptyFolder    bool     `json:"remove_empty_folder"`
+	ExcludedEmptyFolders []string `json:"excluded_empty_folders"`
+	FailEmptyValues      bool     `json:"fail_empty_values"`
+	FailedFields         []string `json:"failed_fields"`
+	MoveFailed           bool     `json:"move_failed"`
+	FailedFolder         string   `json:"failed_folder"`
 }
 
 func loExcludeRuleToWire(r configdb.LOExcludeRule) LOExcludeRuleWire {
@@ -76,6 +90,14 @@ func (s *Server) loadLOProfileWire(p configdb.LOProfile) (LOProfileWire, error) 
 	for i, r := range rules {
 		wireRules[i] = loExcludeRuleToWire(r)
 	}
+	excludedEmptyFolders, err := loListItemNames(s.configDB, p.ID, "excluded_empty_folder")
+	if err != nil {
+		return LOProfileWire{}, fmt.Errorf("list excluded empty folders: %w", err)
+	}
+	failedFields, err := loListItemNames(s.configDB, p.ID, "failed_fields")
+	if err != nil {
+		return LOProfileWire{}, fmt.Errorf("list failed fields: %w", err)
+	}
 	return LOProfileWire{
 		ID:                    p.ID,
 		Name:                  p.Name,
@@ -89,7 +111,31 @@ func (s *Server) loadLOProfileWire(p configdb.LOProfile) (LOProfileWire, error) 
 		ExcludeMode:           p.ExcludeMode,
 		ExcludeOperator:       p.ExcludeOperator,
 		ExcludeRules:          wireRules,
+		UseFolder:             p.UseFolder,
+		UseFileName:           p.UseFileName,
+		RemoveEmptyFolder:     p.RemoveEmptyFolder,
+		ExcludedEmptyFolders:  excludedEmptyFolders,
+		FailEmptyValues:       p.FailEmptyValues,
+		FailedFields:          failedFields,
+		MoveFailed:            p.MoveFailed,
+		FailedFolder:          p.FailedFolder,
 	}, nil
+}
+
+// loListItemNames returns just the Name of each item in a profile's
+// name-only category collection (ExcludedEmptyFolder, FailedFields) - the
+// editor's own simple list shape, distinct from Name/Value categories
+// like EmptyData.
+func loListItemNames(db *configdb.DB, profileID, category string) ([]string, error) {
+	items, err := db.ListLOProfileItems(profileID, category)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, len(items))
+	for i, item := range items {
+		names[i] = item.Name
+	}
+	return names, nil
 }
 
 // mergeLOProfileWire applies req onto existing (a profile already loaded
@@ -108,7 +154,27 @@ func mergeLOProfileWire(existing configdb.LOProfile, req LOProfileWire) configdb
 	existing.FilelessFormat = req.FilelessFormat
 	existing.ExcludeMode = req.ExcludeMode
 	existing.ExcludeOperator = req.ExcludeOperator
+	existing.UseFolder = req.UseFolder
+	existing.UseFileName = req.UseFileName
+	existing.RemoveEmptyFolder = req.RemoveEmptyFolder
+	existing.FailEmptyValues = req.FailEmptyValues
+	existing.MoveFailed = req.MoveFailed
+	existing.FailedFolder = req.FailedFolder
 	return existing
+}
+
+// saveLOProfileLists replaces a profile's ExcludedEmptyFolders/
+// FailedFields item collections wholesale with req's own lists (nil/empty
+// clears the collection, matching an ordinary form submission with an
+// emptied field, not "leave whatever was there").
+func (s *Server) saveLOProfileLists(profileID string, req LOProfileWire) error {
+	if err := s.configDB.ReplaceLOProfileItems(profileID, "excluded_empty_folder", req.ExcludedEmptyFolders); err != nil {
+		return fmt.Errorf("excluded empty folders: %w", err)
+	}
+	if err := s.configDB.ReplaceLOProfileItems(profileID, "failed_fields", req.FailedFields); err != nil {
+		return fmt.Errorf("failed fields: %w", err)
+	}
+	return nil
 }
 
 // handleLOProfilesRouter dispatches every /api/library/organize-profiles/
@@ -177,6 +243,10 @@ func (s *Server) handleLOProfilesCollection(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "Failed to create profile: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if err := s.saveLOProfileLists(p.ID, req); err != nil {
+		http.Error(w, "Failed to save profile lists: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 	wire, err := s.loadLOProfileWire(p)
 	if err != nil {
 		http.Error(w, "Failed to load created profile: "+err.Error(), http.StatusInternalServerError)
@@ -220,6 +290,10 @@ func (s *Server) handleLOProfileItem(w http.ResponseWriter, r *http.Request, id 
 		updated := mergeLOProfileWire(*existing, req)
 		if err := s.configDB.UpdateLOProfile(updated); err != nil {
 			http.Error(w, "Failed to update profile: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := s.saveLOProfileLists(updated.ID, req); err != nil {
+			http.Error(w, "Failed to save profile lists: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 		wire, err := s.loadLOProfileWire(updated)

@@ -47,7 +47,7 @@ func TestMakeFolderPath_RealDefaultProfileTemplate(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, ok := MakeFolderPath(tt.book, template, realProfile())
+			got, ok, _ := MakeFolderPath(tt.book, template, realProfile())
 			if !ok {
 				t.Fatalf("MakeFolderPath() ok = false, want true")
 			}
@@ -98,7 +98,7 @@ func TestMakeFileName_RealDefaultProfileTemplate(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, ok := MakeFileName(tt.book, template, realProfile())
+			got, ok, _ := MakeFileName(tt.book, template, realProfile())
 			if !ok {
 				t.Fatalf("MakeFileName() ok = false, want true")
 			}
@@ -112,7 +112,7 @@ func TestMakeFileName_RealDefaultProfileTemplate(t *testing.T) {
 func TestMakeFolderPath_IllegalCharactersReplacedPerSegment(t *testing.T) {
 	book := &library.ComicBook{Publisher: `A/B: Comics`, Series: "Foo"}
 	template := `{<publisher>}\{<series>}`
-	got, ok := MakeFolderPath(book, template, realProfile())
+	got, ok, _ := MakeFolderPath(book, template, realProfile())
 	if !ok {
 		t.Fatalf("ok = false")
 	}
@@ -124,7 +124,7 @@ func TestMakeFolderPath_IllegalCharactersReplacedPerSegment(t *testing.T) {
 
 func TestMakeFolderPath_UnknownFieldReportedInvalid(t *testing.T) {
 	book := &library.ComicBook{Series: "Foo"}
-	_, ok := MakeFolderPath(book, `{<series>}\{<notarealfield>}`, realProfile())
+	_, ok, _ := MakeFolderPath(book, `{<series>}\{<notarealfield>}`, realProfile())
 	if ok {
 		t.Error("expected ok=false for a template referencing an unsupported field")
 	}
@@ -156,7 +156,7 @@ func TestMakeFileName_ReplaceMultipleSpacesCollapsesRuns(t *testing.T) {
 	// it to a single space, matching the Python's own \s\s+ -> " " pass.
 	book := &library.ComicBook{Volume: 1, Number: "1"}
 	template := `{<series>}{ Vol.<volume>}{ #<number>}`
-	got, ok := MakeFileName(book, template, realProfile())
+	got, ok, _ := MakeFileName(book, template, realProfile())
 	if !ok {
 		t.Fatalf("ok = false")
 	}

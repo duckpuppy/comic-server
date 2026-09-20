@@ -198,6 +198,34 @@ func (db *DB) ListLOProfileItems(profileID, category string) ([]LOProfileItem, e
 	return items, rows.Err()
 }
 
+// ReplaceLOProfileItems atomically replaces every item in one profile's
+// category collection with names (Value left empty - for the simple
+// name-only lists the web editor manages, ExcludedEmptyFolder and
+// FailedFields, comic-server-b2al). Categories with a real Name/Value
+// pairing (EmptyData, Months, IllegalCharacters) go through
+// CreateLOProfileItem directly instead, since this helper would drop
+// their Value.
+func (db *DB) ReplaceLOProfileItems(profileID, category string, names []string) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("replace lo_profile_items for profile %s (%s): %w", profileID, category, err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`DELETE FROM lo_profile_items WHERE profile_id = ? AND category = ?`, profileID, category); err != nil {
+		return fmt.Errorf("replace lo_profile_items for profile %s (%s): %w", profileID, category, err)
+	}
+	for _, name := range names {
+		if _, err := tx.Exec(`
+			INSERT INTO lo_profile_items (profile_id, category, name, value)
+			VALUES (?, ?, ?, '')
+		`, profileID, category, name); err != nil {
+			return fmt.Errorf("replace lo_profile_items for profile %s (%s): %w", profileID, category, err)
+		}
+	}
+	return tx.Commit()
+}
+
 // CreateLOExcludeRule adds one exclude-rule condition to a profile,
 // returning its new autoincrement ID.
 func (db *DB) CreateLOExcludeRule(rule LOExcludeRule) (int64, error) {
