@@ -30,14 +30,15 @@ class KomgaStatus {
     async load() {
         try {
             const response = await fetch('/api/komga/status');
-            if (response.status === 503) {
-                this.notConfigured = true;
-                return;
-            }
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}`);
             }
-            this.snapshot = await response.json();
+            const data = await response.json();
+            if (!data.configured) {
+                this.notConfigured = true;
+                return;
+            }
+            this.snapshot = data;
         } catch (error) {
             console.error('Failed to load Komga sync status:', error);
             this.error = 'Failed to load Komga sync status. Please try again.';

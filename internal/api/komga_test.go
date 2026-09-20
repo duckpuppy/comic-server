@@ -36,8 +36,15 @@ func TestHandleKomgaStatus_NotConfigured(t *testing.T) {
 	w := httptest.NewRecorder()
 	srv.handleKomgaStatus(w, req)
 
-	if w.Code != http.StatusServiceUnavailable {
-		t.Errorf("status = %d, want 503", w.Code)
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", w.Code)
+	}
+	var resp komgaStatusResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Configured {
+		t.Errorf("configured = true, want false")
 	}
 }
 

@@ -303,9 +303,9 @@ class ScanInfoSettings {
     async loadImportStatus() {
         try {
             const response = await fetch('/api/settings/library-import');
-            if (response.status === 404) return; // no import has ever run
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            this.importJob = await response.json();
+            const data = await response.json();
+            this.importJob = data.job || null; // null: no import has ever run
         } catch (error) {
             console.error('Failed to load library import status:', error);
         }

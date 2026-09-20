@@ -124,7 +124,9 @@ func (s *Server) SetCoverCache(cache *covers.Cache) {
 
 // SetKomgaStatus wires Komga sync status reporting into the API server.
 // Call this once at startup when Komga sync is enabled; without it,
-// /api/komga/status responds with 503 Service Unavailable.
+// /api/komga/status responds 200 with "configured": false (see
+// comic-server-hono - a 5xx for a normal, expected state spammed the
+// browser console on every unconfigured/scratch server).
 func (s *Server) SetKomgaStatus(status *komga.StatusStore) {
 	s.komgaStatus = status
 }

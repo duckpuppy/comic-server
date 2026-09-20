@@ -223,7 +223,14 @@ func TestHandleLibraryImport_GetBeforeAnyImport(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/settings/library-import", nil)
 	w := httptest.NewRecorder()
 	s.handleLibraryImport(w, req)
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("expected 404 before any import has run, got %d", w.Code)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 before any import has run, got %d", w.Code)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp["job"] != nil {
+		t.Errorf("job = %v, want nil", resp["job"])
 	}
 }

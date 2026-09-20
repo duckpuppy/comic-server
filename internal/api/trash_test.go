@@ -26,15 +26,22 @@ func newTrashTestServer(t *testing.T, trashPath string) *Server {
 	}
 }
 
-func TestHandleListTrash_NotConfiguredReturns503(t *testing.T) {
+func TestHandleListTrash_NotConfiguredReturns200(t *testing.T) {
 	s := newTrashTestServer(t, "")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/trash", nil)
 	w := httptest.NewRecorder()
 	s.handleListTrash(w, req)
 
-	if w.Code != http.StatusServiceUnavailable {
-		t.Fatalf("expected 503, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if configured, _ := resp["configured"].(bool); configured {
+		t.Errorf("configured = true, want false")
 	}
 }
 

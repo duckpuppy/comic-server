@@ -22,13 +22,8 @@ class TrashBrowser {
     async loadEntries() {
         try {
             const response = await fetch('/api/trash');
-            if (response.status === 503) {
-                this.notConfigured = true;
-                this.entries = [];
-                return;
-            }
-            this.notConfigured = false;
             const data = await response.json();
+            this.notConfigured = !data.configured;
             this.entries = data.entries || [];
             // Loading may have dropped entries that were selected (e.g.
             // restored from another tab) - drop stale selections rather

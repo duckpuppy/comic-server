@@ -95,15 +95,16 @@ func (s *Server) handleLibraryImport(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// "No import has run yet" is a normal state on any freshly-set-up server,
+// not an error - it used to be signaled with a 404, which the browser
+// logs as a console error on every Settings page load regardless of how
+// the JS handles it (comic-server-hono). Reporting it as 200 with
+// "job": null instead keeps the console clean.
 func (s *Server) handleGetLibraryImportStatus(w http.ResponseWriter, r *http.Request) {
 	s.libImportJobMu.RLock()
 	job := s.libImportJob
 	s.libImportJobMu.RUnlock()
-	if job == nil {
-		http.Error(w, "No library import has been run yet", http.StatusNotFound)
-		return
-	}
-	s.writeJSON(w, http.StatusOK, job)
+	s.writeJSON(w, http.StatusOK, map[string]any{"job": job})
 }
 
 // handlePostLibraryImport receives the uploaded ComicDb.xml (multipart

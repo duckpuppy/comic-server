@@ -51,8 +51,8 @@ class Dashboard {
             ]);
             const stats = await statsRes.json();
             const lists = await listsRes.json();
-            // /api/trash 503s when trash isn't configured - not an error,
-            // just means there's nothing to show a count for.
+            // /api/trash returns 200 with entries: [] when trash isn't
+            // configured - nothing to show a count for, not an error.
             const trashData = trashRes.ok ? await trashRes.json() : { entries: [] };
 
             const set = (id, val) => {

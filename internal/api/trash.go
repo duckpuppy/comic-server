@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -36,6 +37,12 @@ func toTrashEntryResponse(e trash.Entry, retentionDays int) TrashEntryResponse {
 
 // handleListTrash returns every quarantined file, newest first.
 // GET /api/trash
+//
+// "Not configured" (errTrashNotConfigured) is a normal state - trash is
+// optional - reported as 200 with "configured": false rather than a 5xx,
+// which the browser logs as a console error on every page load of an
+// unconfigured server regardless of how the JS handles it
+// (comic-server-hono). A genuine config/setup error still 5xxs.
 func (s *Server) handleListTrash(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -43,6 +50,10 @@ func (s *Server) handleListTrash(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tr, err := s.newTrashFromConfig()
+	if errors.Is(err, errTrashNotConfigured) {
+		s.writeJSON(w, http.StatusOK, map[string]any{"configured": false, "entries": []TrashEntryResponse{}})
+		return
+	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
@@ -59,7 +70,7 @@ func (s *Server) handleListTrash(w http.ResponseWriter, r *http.Request) {
 	for _, e := range entries {
 		resp = append(resp, toTrashEntryResponse(e, tr.RetentionDays))
 	}
-	s.writeJSON(w, http.StatusOK, map[string]any{"entries": resp})
+	s.writeJSON(w, http.StatusOK, map[string]any{"configured": true, "entries": resp})
 }
 
 // TrashRestoreRequest is the body for POST /api/trash/restore. A single
