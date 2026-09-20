@@ -41,13 +41,23 @@ type LOExcludeRuleWire struct {
 	SortOrder int    `json:"sort_order"`
 }
 
+// LOPairWire is one Name/Value entry in a lookup-table collection (Months,
+// IllegalCharacters) - a plain object keeps ordering predictable and
+// mirrors the exclude-rules array shape, unlike a JSON map whose key
+// ordering isn't guaranteed across marshal/unmarshal round trips.
+type LOPairWire struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
 // LOProfileWire is the wire shape of one profile - core path-building
 // fields, exclude rules, and every toggle Plan/Apply actually read
 // (comic-server-7ecr's first slice plus comic-server-b2al's later
-// additions). Months/IllegalCharacters remain deferred lookup tables
-// (comic-server-kt4w) - they keep their current values on update since
-// this DTO never carries them, see mergeLOProfileWire's merge-onto-existing
-// behavior.
+// additions, plus comic-server-kt4w's Months/IllegalCharacters lookup
+// tables). A PUT that omits Months/IllegalCharacters entirely (nil slice)
+// clears the collection just like ExcludedEmptyFolders/FailedFields do -
+// the UI always round-trips the full list on save so this never surprises
+// a real edit.
 type LOProfileWire struct {
 	ID                    string              `json:"id,omitempty"`
 	Name                  string              `json:"name"`
@@ -75,6 +85,14 @@ type LOProfileWire struct {
 	FailedFields         []string `json:"failed_fields"`
 	MoveFailed           bool     `json:"move_failed"`
 	FailedFolder         string   `json:"failed_folder"`
+
+	// Months/IllegalCharacters (comic-server-kt4w) - real Name/Value
+	// lookup tables. An empty/missing list is safe: loLoadMonths/
+	// loLoadIllegalCharacters already fall back to
+	// libraryorganizer.DefaultMonths/DefaultIllegalCharacters whenever a
+	// profile has zero stored items in that category.
+	Months            []LOPairWire `json:"months"`
+	IllegalCharacters []LOPairWire `json:"illegal_characters"`
 }
 
 func loExcludeRuleToWire(r configdb.LOExcludeRule) LOExcludeRuleWire {
@@ -98,6 +116,14 @@ func (s *Server) loadLOProfileWire(p configdb.LOProfile) (LOProfileWire, error) 
 	if err != nil {
 		return LOProfileWire{}, fmt.Errorf("list failed fields: %w", err)
 	}
+	months, err := loListItemPairs(s.configDB, p.ID, "months")
+	if err != nil {
+		return LOProfileWire{}, fmt.Errorf("list months: %w", err)
+	}
+	illegalCharacters, err := loListItemPairs(s.configDB, p.ID, "illegal_characters")
+	if err != nil {
+		return LOProfileWire{}, fmt.Errorf("list illegal characters: %w", err)
+	}
 	return LOProfileWire{
 		ID:                    p.ID,
 		Name:                  p.Name,
@@ -119,6 +145,8 @@ func (s *Server) loadLOProfileWire(p configdb.LOProfile) (LOProfileWire, error) 
 		FailedFields:          failedFields,
 		MoveFailed:            p.MoveFailed,
 		FailedFolder:          p.FailedFolder,
+		Months:                months,
+		IllegalCharacters:     illegalCharacters,
 	}, nil
 }
 
@@ -138,11 +166,27 @@ func loListItemNames(db *configdb.DB, profileID, category string) ([]string, err
 	return names, nil
 }
 
+// loListItemPairs returns every item in a profile's Name/Value category
+// collection (Months, IllegalCharacters) as wire pairs.
+func loListItemPairs(db *configdb.DB, profileID, category string) ([]LOPairWire, error) {
+	items, err := db.ListLOProfileItems(profileID, category)
+	if err != nil {
+		return nil, err
+	}
+	pairs := make([]LOPairWire, len(items))
+	for i, item := range items {
+		pairs[i] = LOPairWire{Name: item.Name, Value: item.Value}
+	}
+	return pairs, nil
+}
+
 // mergeLOProfileWire applies req onto existing (a profile already loaded
 // from config.db, or a zero-value one for create) - fields this DTO
 // doesn't carry (UseFolder, UseFileName, the dead fields comic-server-b2al
-// tracks, Months/IllegalCharacters) are left exactly as they were, never
-// reset to a Go zero value by an edit through this editor.
+// tracks) are left exactly as they were, never reset to a Go zero value by
+// an edit through this editor. Months/IllegalCharacters live in
+// lo_profile_items, not the LOProfile row, so they're saved separately by
+// saveLOProfileLists rather than merged here.
 func mergeLOProfileWire(existing configdb.LOProfile, req LOProfileWire) configdb.LOProfile {
 	existing.Name = req.Name
 	existing.BaseFolder = req.BaseFolder
@@ -164,9 +208,12 @@ func mergeLOProfileWire(existing configdb.LOProfile, req LOProfileWire) configdb
 }
 
 // saveLOProfileLists replaces a profile's ExcludedEmptyFolders/
-// FailedFields item collections wholesale with req's own lists (nil/empty
-// clears the collection, matching an ordinary form submission with an
-// emptied field, not "leave whatever was there").
+// FailedFields/Months/IllegalCharacters item collections wholesale with
+// req's own lists (nil/empty clears the collection, matching an ordinary
+// form submission with an emptied field, not "leave whatever was there").
+// An emptied Months/IllegalCharacters is safe: loLoadMonths/
+// loLoadIllegalCharacters fall back to the stock defaults whenever a
+// profile has zero stored items in that category.
 func (s *Server) saveLOProfileLists(profileID string, req LOProfileWire) error {
 	if err := s.configDB.ReplaceLOProfileItems(profileID, "excluded_empty_folder", req.ExcludedEmptyFolders); err != nil {
 		return fmt.Errorf("excluded empty folders: %w", err)
@@ -174,7 +221,23 @@ func (s *Server) saveLOProfileLists(profileID string, req LOProfileWire) error {
 	if err := s.configDB.ReplaceLOProfileItems(profileID, "failed_fields", req.FailedFields); err != nil {
 		return fmt.Errorf("failed fields: %w", err)
 	}
+	if err := s.configDB.ReplaceLOProfileItemPairs(profileID, "months", loPairsToItems(profileID, "months", req.Months)); err != nil {
+		return fmt.Errorf("months: %w", err)
+	}
+	if err := s.configDB.ReplaceLOProfileItemPairs(profileID, "illegal_characters", loPairsToItems(profileID, "illegal_characters", req.IllegalCharacters)); err != nil {
+		return fmt.Errorf("illegal characters: %w", err)
+	}
 	return nil
+}
+
+// loPairsToItems converts wire pairs into LOProfileItem rows for a given
+// profile/category.
+func loPairsToItems(profileID, category string, pairs []LOPairWire) []configdb.LOProfileItem {
+	items := make([]configdb.LOProfileItem, len(pairs))
+	for i, pair := range pairs {
+		items[i] = configdb.LOProfileItem{ProfileID: profileID, Category: category, Name: pair.Name, Value: pair.Value}
+	}
+	return items
 }
 
 // handleLOProfilesRouter dispatches every /api/library/organize-profiles/

@@ -1,12 +1,14 @@
 // Library Organizer Profile Editor (comic-server-7ecr, extended by
-// comic-server-b2al) - create, edit, and delete profiles entirely through
-// the web UI, with no losettingsx.dat import required. Covers every field
-// Plan/Apply actually read: BaseFolder/FolderTemplate/FileTemplate/
-// CopyMode/ReplaceMultipleSpaces/EmptyFolder/FilelessFormat, exclude
-// rules, UseFolder/UseFileName, RemoveEmptyFolder + its exceptions list,
-// and FailEmptyValues/FailedFields/MoveFailed/FailedFolder. Months/
-// IllegalCharacters lookup tables remain deferred (comic-server-kt4w) and
-// keep whatever value they already have (see the API's mergeLOProfileWire).
+// comic-server-b2al and comic-server-kt4w) - create, edit, and delete
+// profiles entirely through the web UI, with no losettingsx.dat import
+// required. Covers every field Plan/Apply actually read:
+// BaseFolder/FolderTemplate/FileTemplate/CopyMode/ReplaceMultipleSpaces/
+// EmptyFolder/FilelessFormat, exclude rules, UseFolder/UseFileName,
+// RemoveEmptyFolder + its exceptions list,
+// FailEmptyValues/FailedFields/MoveFailed/FailedFolder, and the Months/
+// IllegalCharacters Name/Value lookup tables (an empty list is safe - the
+// API falls back to the stock defaults, see loLoadMonths/
+// loLoadIllegalCharacters).
 //
 // Profiles created/edited here are read by the exact same
 // configdb.GetLOProfile path organizePage.js's own Preview/Apply already
@@ -195,7 +197,44 @@ class LibraryOrganizerProfilesPage {
                         ${p.exclude_rules.map(r => this.renderRuleRow(p.id, r)).join('')}
                     </ul>
                     ${this.renderNewRuleForm(p.id)}
+
+                    <h3>Months</h3>
+                    <p class="empty-message">Display name for each ComicBook.Month value (1-12 are calendar months, 13-16 are ComicRack's quarterly specials: Spring/Summer/Fall/Winter). Leave empty to use the stock English names.</p>
+                    ${this.renderPairSection(p.id, 'months', p.months, 'Month #', 'Display name')}
+
+                    <h3>Illegal Characters</h3>
+                    <p class="empty-message">Characters to substitute out of generated folder/file names, and what to replace each with (empty replacement deletes the character). Leave empty to use the stock substitution table.</p>
+                    ${this.renderPairSection(p.id, 'illegal_characters', p.illegal_characters, 'Character', 'Replacement')}
                 </div>
+            </div>
+        `;
+    }
+
+    renderPairSection(profileId, category, items, namePlaceholder, valuePlaceholder) {
+        return `
+            <ul class="dmr-row-list">
+                ${(items || []).map((item, index) => this.renderPairRow(profileId, category, index, item, namePlaceholder, valuePlaceholder)).join('')}
+            </ul>
+            ${this.renderNewPairForm(profileId, category, namePlaceholder, valuePlaceholder)}
+        `;
+    }
+
+    renderPairRow(profileId, category, index, item, namePlaceholder, valuePlaceholder) {
+        return `
+            <li class="dmr-editor-row" data-profile="${this.escapeAttr(profileId)}" data-category="${category}" data-index="${index}">
+                <input type="text" class="dmr-value-input lop-pair-name" data-profile="${this.escapeAttr(profileId)}" data-category="${category}" data-index="${index}" value="${this.escapeAttr(item.name)}" placeholder="${this.escapeAttr(namePlaceholder)}">
+                <input type="text" class="dmr-value-input lop-pair-value" data-profile="${this.escapeAttr(profileId)}" data-category="${category}" data-index="${index}" value="${this.escapeAttr(item.value)}" placeholder="${this.escapeAttr(valuePlaceholder)}">
+                <button class="btn btn-small btn-danger lop-delete-pair-btn" data-profile="${this.escapeAttr(profileId)}" data-category="${category}" data-index="${index}">✕</button>
+            </li>
+        `;
+    }
+
+    renderNewPairForm(profileId, category, namePlaceholder, valuePlaceholder) {
+        return `
+            <div class="dmr-new-row" data-profile="${this.escapeAttr(profileId)}" data-category="${category}">
+                <input type="text" class="lop-new-pair-name" data-profile="${this.escapeAttr(profileId)}" data-category="${category}" placeholder="${this.escapeAttr(namePlaceholder)}">
+                <input type="text" class="lop-new-pair-value" data-profile="${this.escapeAttr(profileId)}" data-category="${category}" placeholder="${this.escapeAttr(valuePlaceholder)}">
+                <button class="btn btn-small lop-add-pair-btn" data-profile="${this.escapeAttr(profileId)}" data-category="${category}">+ Add</button>
             </div>
         `;
     }
@@ -272,6 +311,15 @@ class LibraryOrganizerProfilesPage {
         });
         document.querySelectorAll('.lop-add-rule-btn').forEach(btn => {
             btn.addEventListener('click', () => this.addRule(btn.dataset.profile));
+        });
+        document.querySelectorAll('.lop-pair-name, .lop-pair-value').forEach(el => {
+            el.addEventListener('change', () => this.updatePair(el.dataset.profile, el.dataset.category, el.dataset.index));
+        });
+        document.querySelectorAll('.lop-delete-pair-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.deletePair(btn.dataset.profile, btn.dataset.category, btn.dataset.index));
+        });
+        document.querySelectorAll('.lop-add-pair-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.addPair(btn.dataset.profile, btn.dataset.category));
         });
     }
 
@@ -412,6 +460,38 @@ class LibraryOrganizerProfilesPage {
             console.error('Failed to add rule:', error);
             dialogs.toast('Failed to add: ' + error.message, 'error');
         }
+    }
+
+    async updatePair(profileId, category, indexStr) {
+        const p = this.findProfile(profileId);
+        if (!p) return;
+        const index = Number(indexStr);
+        const nameInput = document.querySelector(`.lop-pair-name[data-profile="${CSS.escape(profileId)}"][data-category="${category}"][data-index="${indexStr}"]`);
+        const valueInput = document.querySelector(`.lop-pair-value[data-profile="${CSS.escape(profileId)}"][data-category="${category}"][data-index="${indexStr}"]`);
+        const items = (p[category] || []).slice();
+        items[index] = { name: nameInput.value, value: valueInput.value };
+        await this.updateProfileField(profileId, category, items);
+    }
+
+    async addPair(profileId, category) {
+        const container = document.querySelector(`.dmr-new-row[data-profile="${CSS.escape(profileId)}"][data-category="${category}"]`);
+        const name = container.querySelector('.lop-new-pair-name').value;
+        const value = container.querySelector('.lop-new-pair-value').value;
+        if (name.trim() === '') return;
+        const p = this.findProfile(profileId);
+        if (!p) return;
+        const items = (p[category] || []).slice();
+        items.push({ name, value });
+        await this.updateProfileField(profileId, category, items);
+    }
+
+    async deletePair(profileId, category, indexStr) {
+        const p = this.findProfile(profileId);
+        if (!p) return;
+        const index = Number(indexStr);
+        const items = (p[category] || []).slice();
+        items.splice(index, 1);
+        await this.updateProfileField(profileId, category, items);
     }
 
     escapeHtml(text) {

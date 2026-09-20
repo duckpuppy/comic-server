@@ -96,6 +96,61 @@ func TestLOProfileItems_RoundTrip(t *testing.T) {
 	}
 }
 
+// TestReplaceLOProfileItemPairs_PreservesValueAndReplacesWholesale covers
+// comic-server-kt4w's Months/IllegalCharacters editor: unlike
+// ReplaceLOProfileItems (Name-only), this helper must round-trip the
+// Value half of each pair, and a second call must wholesale replace the
+// first, not append to it.
+func TestReplaceLOProfileItemPairs_PreservesValueAndReplacesWholesale(t *testing.T) {
+	db := newTestDMDB(t)
+	if err := db.CreateLOProfile(LOProfile{ID: "p1", Name: "Default"}); err != nil {
+		t.Fatalf("CreateLOProfile: %v", err)
+	}
+
+	first := []LOProfileItem{
+		{Name: "1", Value: "January"},
+		{Name: "13", Value: "Spring"},
+	}
+	if err := db.ReplaceLOProfileItemPairs("p1", "months", first); err != nil {
+		t.Fatalf("ReplaceLOProfileItemPairs: %v", err)
+	}
+	got, err := db.ListLOProfileItems("p1", "months")
+	if err != nil {
+		t.Fatalf("ListLOProfileItems: %v", err)
+	}
+	if len(got) != 2 || got[0].Name != "1" || got[0].Value != "January" || got[1].Name != "13" || got[1].Value != "Spring" {
+		t.Fatalf("months after first replace = %+v, want [{1 January} {13 Spring}]", got)
+	}
+
+	second := []LOProfileItem{
+		{Name: `"`, Value: "'"},
+	}
+	if err := db.ReplaceLOProfileItemPairs("p1", "months", second); err != nil {
+		t.Fatalf("ReplaceLOProfileItemPairs (second): %v", err)
+	}
+	got, err = db.ListLOProfileItems("p1", "months")
+	if err != nil {
+		t.Fatalf("ListLOProfileItems after second replace: %v", err)
+	}
+	if len(got) != 1 || got[0].Name != `"` || got[0].Value != "'" {
+		t.Fatalf("months after second replace = %+v, want wholesale replacement with [{%q '}]", got, `"`)
+	}
+
+	// Empty slice clears the collection entirely (falls back to stock
+	// defaults at read time, per loLoadMonths - this helper just needs to
+	// leave zero rows behind).
+	if err := db.ReplaceLOProfileItemPairs("p1", "months", nil); err != nil {
+		t.Fatalf("ReplaceLOProfileItemPairs (clear): %v", err)
+	}
+	got, err = db.ListLOProfileItems("p1", "months")
+	if err != nil {
+		t.Fatalf("ListLOProfileItems after clear: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("months after clear = %+v, want empty", got)
+	}
+}
+
 func TestLOExcludeRules_RoundTrip(t *testing.T) {
 	db := newTestDMDB(t)
 	if err := db.CreateLOProfile(LOProfile{ID: "p1", Name: "Archive"}); err != nil {

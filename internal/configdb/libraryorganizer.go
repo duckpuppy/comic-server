@@ -226,6 +226,31 @@ func (db *DB) ReplaceLOProfileItems(profileID, category string, names []string) 
 	return tx.Commit()
 }
 
+// ReplaceLOProfileItemPairs atomically replaces every item in one
+// profile's category collection with items, preserving each item's Value -
+// for the real Name/Value lookup tables (Months, IllegalCharacters) where
+// ReplaceLOProfileItems (Value forced to "") would silently drop data.
+func (db *DB) ReplaceLOProfileItemPairs(profileID, category string, items []LOProfileItem) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("replace lo_profile_item_pairs for profile %s (%s): %w", profileID, category, err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`DELETE FROM lo_profile_items WHERE profile_id = ? AND category = ?`, profileID, category); err != nil {
+		return fmt.Errorf("replace lo_profile_item_pairs for profile %s (%s): %w", profileID, category, err)
+	}
+	for _, item := range items {
+		if _, err := tx.Exec(`
+			INSERT INTO lo_profile_items (profile_id, category, name, value)
+			VALUES (?, ?, ?, ?)
+		`, profileID, category, item.Name, item.Value); err != nil {
+			return fmt.Errorf("replace lo_profile_item_pairs for profile %s (%s): %w", profileID, category, err)
+		}
+	}
+	return tx.Commit()
+}
+
 // CreateLOExcludeRule adds one exclude-rule condition to a profile,
 // returning its new autoincrement ID.
 func (db *DB) CreateLOExcludeRule(rule LOExcludeRule) (int64, error) {
