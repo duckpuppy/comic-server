@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.40.0](https://github.com/duckpuppy/comic-server/compare/v1.39.0...v1.40.0) (2026-09-20)
+
+
+### Features
+
+* export library/smart lists back to ComicDb.xml (comic-server-bcl6) ([77a4ea6](https://github.com/duckpuppy/comic-server/commit/77a4ea6ef401fe6ef05a9eb263a75cd84f627463))
+* Library Organizer profile editor for Months/IllegalCharacters (comic-server-kt4w) ([5851451](https://github.com/duckpuppy/comic-server/commit/5851451799f800f548eb33d901131fe7394c5557))
+* one-click server restart via in-place re-exec (comic-server-9klu) ([6abb3b8](https://github.com/duckpuppy/comic-server/commit/6abb3b8bcf764e0afecbe30c28f3058fc69e9a00))
+
 ## [1.39.0](https://github.com/duckpuppy/comic-server/compare/v1.38.0...v1.39.0) (2026-09-20)
 
 
