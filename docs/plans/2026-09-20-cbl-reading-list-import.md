@@ -104,9 +104,47 @@ algorithm exactly — ground-truthed from
 
 Recommend: **default to drop + report** unmatched entries in an import
 summary (series/number/year of each miss), with an explicit opt-in flag
-to create placeholder stub books instead (matching ComicRack's behavior,
-useful for pairing with CV completeness data later — "missing from this
-reading order").
+to add them to the existing **wanted-books** mechanism instead of
+inventing a separate placeholder concept — see 2e.
+
+### 2d. Match-correction UI (user design note, 2026-09-20)
+
+The string-matching fallback path (§2b) can produce a wrong match: it
+takes the first candidate on an ambiguous tie (step 7, matching
+ComicRack's own behavior) and normalized-series comparisons can overlap
+two different real series. Recommend a review/correction surface, scoped
+to a single import's results, not a general-purpose relink tool:
+
+- After an import, show each entry with which path matched it (CV-ID /
+  string-fallback / unmatched), and for string-fallback matches, which
+  candidate(s) were considered.
+- Let the user re-point a wrong match to a different book, or unmatch it
+  (moving it to unmatched/wanted per §2c).
+- Not needed for CV-ID matches in the common case — that path is a direct
+  ID lookup, not a heuristic guess — though a manual override should
+  still be available for the rare bad-CV-ID-in-the-source-file case.
+- This can be a fast-follow after the plain import ships, once real
+  string-fallback match quality is visible (many CBLs may hit the CV-ID
+  path 100% of the time per this session's sampling, shrinking how often
+  this UI is actually needed — measure before over-building it).
+
+### 2e. Missing issues → wanted list (user design note, 2026-09-20)
+
+comic-server already has a wanted-books mechanism (**comic-server-38f7**):
+a "wanted" book is an ordinary book record with `FilePath == ""` (see
+`internal/api/wanted.go`, `POST /api/library/workflow/wanted`). Reuse this
+directly for CBL entries the library doesn't own, instead of a bespoke
+placeholder-book concept:
+
+- On unmatched entries (§2c), offer "add missing issues to wanted list"
+  (per-import, or per-entry) rather than an import-specific stub.
+- This also gives a natural home for "issues I own zero copies of, from a
+  reading order I imported" as a discoverable, already-supported view
+  (whatever the Wanted UI already surfaces), no new UI needed for that
+  part.
+- Populate wanted-book fields (Series/Number/Volume/Year/Format, and the
+  CV ID when the `<Database>` element provided one) from the CBL entry
+  directly.
 
 ### 2d. Measuring real match rate — not yet done
 
@@ -231,3 +269,10 @@ Once this spec is accepted:
 6. Watch/reimport (§5, §6 phase 3) — large, blocked on match-rate data
    from bead 2 and a merge-policy decision; do not start until phase 1
    ships and match rate is known.
+7. Add unmatched CBL entries to the existing wanted-books mechanism
+   (§2e, comic-server-38f7) — small, depends on 2-4. Do this instead of
+   a bespoke placeholder-book concept.
+8. Match-correction UI for an import's results (§2d) — medium, depends
+   on 4. Fast-follow after phase 1 ships; hold until real string-fallback
+   match quality is visible from bead 2's scratch measurement - may turn
+   out to be needed rarely if CV-ID coverage stays near 100%.
