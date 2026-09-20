@@ -137,7 +137,19 @@ directly for CBL entries the library doesn't own, instead of a bespoke
 placeholder-book concept:
 
 - On unmatched entries (§2c), offer "add missing issues to wanted list"
-  (per-import, or per-entry) rather than an import-specific stub.
+  as an explicit **per-import, manual action** ("N unmatched — add all to
+  wanted list"), not automatic on every import. **Decision (2026-09-20):**
+  manual for the initial ship. Rationale: matches this codebase's existing
+  pattern for actions with downstream weight (CBZ convert is
+  explicit-trigger-behind-a-confirm, not automatic, for the same reason);
+  the real string-fallback match rate is still unmeasured (§2f) so
+  auto-adding on an unproven match path risks polluting the wanted list
+  from day one; and reimport/watch reconciliation (does a wanted entry
+  get removed if the issue is later obtained elsewhere? per §6 phase 3)
+  is unresolved, which an automatic path would make load-bearing
+  immediately. An "auto-add on import" **setting is a plausible later
+  addition**, cheap to add once real usage patterns are visible — but do
+  not build it in the first slice.
 - This also gives a natural home for "issues I own zero copies of, from a
   reading order I imported" as a discoverable, already-supported view
   (whatever the Wanted UI already surfaces), no new UI needed for that
@@ -146,7 +158,7 @@ placeholder-book concept:
   CV ID when the `<Database>` element provided one) from the CBL entry
   directly.
 
-### 2d. Measuring real match rate — not yet done
+### 2f. Measuring real match rate — not yet done
 
 This bead is research-only; no matcher code was written, so no real match
 rate against the 66K-book library has been measured. **Do this as step 1
