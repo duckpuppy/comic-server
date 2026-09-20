@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.39.0](https://github.com/duckpuppy/comic-server/compare/v1.38.0...v1.39.0) (2026-09-20)
+
+
+### Features
+
+* implement 3 real Library Organizer profile behaviors (comic-server-b2al) ([bc64903](https://github.com/duckpuppy/comic-server/commit/bc64903a4553aae5b4637269bc087eab1310a510))
+
 ## [1.38.0](https://github.com/duckpuppy/comic-server/compare/v1.37.0...v1.38.0) (2026-09-17)
 
 
