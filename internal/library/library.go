@@ -8,7 +8,15 @@ import (
 
 // ComicLibrary represents the root library container from ComicDb.xml
 type ComicLibrary struct {
-	XMLName    xml.Name        `xml:"ComicDatabase"`
+	XMLName xml.Name `xml:"ComicDatabase"`
+	// XSI declares the xmlns:xsi namespace on the root element, matching
+	// real ComicRackCE output (see testdata/library/ComicDb.xml). Populated
+	// automatically by SaveLibrary/MarshalXML - callers don't need to set
+	// it themselves. See ComicListItem/ComicBookMatcher's MarshalXML for
+	// why this can't just be a namespaced `xml:"...type,attr"` tag (Go's
+	// encoder would invent its own throwaway prefix instead of reusing
+	// this declaration).
+	XSI        string          `xml:"xmlns:xsi,attr,omitempty"`
 	ID         string          `xml:"Id,attr"`
 	Name       string          `xml:"Name,omitempty"`
 	Books      []ComicBook     `xml:"Books>Book"`
@@ -17,6 +25,31 @@ type ComicLibrary struct {
 	// cvData holds optional ComicVine enrichment data keyed by book ID.
 	// Set via SetCVData; used by smart list matchers during evaluation.
 	cvData map[string]*CVCompleteness `xml:"-"`
+}
+
+// xsiNamespace is the standard XML Schema Instance namespace URI that
+// ComicRackCE declares on its ComicDatabase root element in order to use
+// xsi:type attributes on <Item>/<ComicBookMatcher> elements.
+const xsiNamespace = "http://www.w3.org/2001/XMLSchema-instance"
+
+// MarshalXML implements xml.Marshaler for ComicLibrary. It ensures the
+// xmlns:xsi namespace declaration is always present on the root element
+// when marshaling, regardless of whether the caller set XSI explicitly -
+// needed for the xsi:type attributes emitted by ComicListItem and
+// ComicBookMatcher's own MarshalXML to be valid, well-formed XML.
+func (l ComicLibrary) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+	type comicLibraryAlias ComicLibrary
+	alias := comicLibraryAlias(l)
+	if alias.XSI == "" {
+		alias.XSI = xsiNamespace
+	}
+	// A type with a MarshalXML method loses the automatic top-level
+	// element-name inference from its XMLName field (that inference only
+	// happens for plain structs), so it has to be set explicitly here -
+	// otherwise Marshal falls back to the Go type name ("ComicLibrary")
+	// instead of "ComicDatabase".
+	start.Name = xml.Name{Local: "ComicDatabase"}
+	return e.EncodeElement(alias, start)
 }
 
 // SetCVData sets ComicVine enrichment data for use by CV smart list matchers.
@@ -153,10 +186,10 @@ type ComicPageInfo struct {
 // ComicListItem represents a reading list or smart list
 // This is polymorphic in the C# code, but we'll parse common fields
 type ComicListItem struct {
-	Type        string `xml:"type,attr"`        // xsi:type attribute
-	ID          string `xml:"Id,attr"`          // Id attribute
-	Name        string `xml:"Name,attr"`        // Name attribute
-	MatcherMode string `xml:"MatcherMode,attr"` // "And", "Or" - attribute for smart lists
+	Type        string `xml:"type,attr,omitempty"` // xsi:type attribute - see MarshalXML
+	ID          string `xml:"Id,attr"`             // Id attribute
+	Name        string `xml:"Name,attr"`           // Name attribute
+	MatcherMode string `xml:"MatcherMode,attr"`    // "And", "Or" - attribute for smart lists
 	Description string `xml:"Description,omitempty"`
 	Favorite    bool   `xml:"Favorite,omitempty"`
 	BookCount   int    `xml:"BookCount,omitempty"`
@@ -179,6 +212,26 @@ type ComicListItem struct {
 	Collapsed  bool            `xml:"Collapsed,omitempty"`
 }
 
+// MarshalXML implements xml.Marshaler for ComicListItem so that Type is
+// emitted as a literal "xsi:type" attribute rather than a plain "type"
+// attribute. Go's encoding/xml has no way to make a namespaced attribute
+// tag (e.g. `xml:"http://www.w3.org/2001/XMLSchema-instance type,attr"`)
+// reuse an existing xmlns:xsi prefix declared elsewhere in the document -
+// it always invents its own throwaway prefix - so this writes the
+// attribute name literally instead. Unmarshaling is unaffected: Go's
+// decoder already matches an unprefixed `type,attr` tag against a
+// namespaced xsi:type attribute by local name, which is why LoadLibrary
+// never needed a matching UnmarshalXML.
+func (c ComicListItem) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+	if c.Type != "" {
+		start.Attr = append(start.Attr, xml.Attr{Name: xml.Name{Local: "xsi:type"}, Value: c.Type})
+	}
+	type comicListItemAlias ComicListItem
+	alias := comicListItemAlias(c)
+	alias.Type = ""
+	return e.EncodeElement(alias, start)
+}
+
 // ComicReadingListItem represents a book reference in a reading list
 type ComicReadingListItem struct {
 	Series   string `xml:"Series,attr,omitempty"`
@@ -193,7 +246,7 @@ type ComicReadingListItem struct {
 // ComicBookMatcher represents a filter rule for smart lists
 // This can be either a value matcher (has MatchOperator/MatchValue) or a group matcher (has nested Matchers)
 type ComicBookMatcher struct {
-	Type          string             `xml:"type,attr"`                           // xsi:type attribute (e.g., "ComicBookDirectoryMatcher" or "ComicBookGroupMatcher")
+	Type          string             `xml:"type,attr,omitempty"`                 // xsi:type attribute - see MarshalXML
 	Not           bool               `xml:"Not,attr,omitempty"`                  // Negation flag
 	MatchOperator string             `xml:"MatchOperator,attr,omitempty"`        // Operator number (0-7) - only for value matchers
 	MatchValue    string             `xml:"MatchValue,omitempty"`                // Value to match (child element) - only for value matchers
@@ -201,6 +254,18 @@ type ComicBookMatcher struct {
 	Option        string             `xml:"Option,attr,omitempty"`               // Option for AllProperties matcher: "All", "Series", "Writer", "Artists", "Descriptive", "File", "Catalog"
 	MatcherMode   string             `xml:"MatcherMode,attr,omitempty"`          // "And" or "Or" - only for group matchers
 	Matchers      []ComicBookMatcher `xml:"Matchers>ComicBookMatcher,omitempty"` // Nested matchers - only for group matchers
+}
+
+// MarshalXML implements xml.Marshaler for ComicBookMatcher, emitting Type
+// as a literal "xsi:type" attribute. See ComicListItem.MarshalXML for why.
+func (c ComicBookMatcher) MarshalXML(e *xml.Encoder, start xml.StartElement) error {
+	if c.Type != "" {
+		start.Attr = append(start.Attr, xml.Attr{Name: xml.Name{Local: "xsi:type"}, Value: c.Type})
+	}
+	type comicBookMatcherAlias ComicBookMatcher
+	alias := comicBookMatcherAlias(c)
+	alias.Type = ""
+	return e.EncodeElement(alias, start)
 }
 
 // LoadLibrary loads and parses a ComicRack library XML file

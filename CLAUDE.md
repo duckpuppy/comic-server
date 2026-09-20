@@ -260,6 +260,26 @@ comic-server import --xml /path/to/ComicDb.xml --db /path/to/library.db --verbos
 comic-server db info --db /path/to/library.db
 ```
 
+**Export Command** (comic-server-bcl6): the reverse of import - reconstructs
+a full `ComicDb.xml` (every book, every smart/reading list with matchers)
+from the SQLite database, for real ComicRackCE to open. Three
+comic-server-only smart list matcher types (`ComicServerCVSeriesCompleteMatcher`,
+`ComicServerCVMissingCountMatcher`, `ComicServerCVPercentOwnedMatcher` - see
+ComicVine Enrichment below) aren't recognized by ComicRackCE, so exporting a
+smart list containing one drops just that matcher (keeping the list's other
+matchers/structure intact) and prints a warning per drop.
+
+```bash
+# Export SQLite database back to ComicDb.xml
+comic-server export --db /path/to/library.db --xml /path/to/ComicDb.xml
+
+# Preview without writing the XML file
+comic-server export --db /path/to/library.db --xml /path/to/ComicDb.xml --dry-run
+
+# Verbose output
+comic-server export --db /path/to/library.db --xml /path/to/ComicDb.xml --verbose
+```
+
 **Key Features**:
 
 - **Idempotent import**: Importing the same XML twice results in no changes

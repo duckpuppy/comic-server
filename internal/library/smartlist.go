@@ -1428,6 +1428,15 @@ func isCVMatcherType(xmlType string) bool {
 	return ok
 }
 
+// IsCVOnlyMatcherType reports whether xmlType is one of the comic-server
+// extension matcher types (CVSeriesComplete/CVMissingCount/CVPercentOwned)
+// that real ComicRackCE does not understand. Exported for
+// internal/storage's export command, which needs to drop these when
+// writing a ComicDb.xml that stock ComicRackCE will open.
+func IsCVOnlyMatcherType(xmlType string) bool {
+	return isCVMatcherType(xmlType)
+}
+
 func hasCVMatcher(matchers []ComicBookMatcher) bool {
 	for i := range matchers {
 		if isCVMatcherType(matchers[i].Type) {
