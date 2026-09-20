@@ -55,6 +55,12 @@ class ScanInfoSettings {
         this.restartRequiredForm = null;
         this.restartRequiredSaving = false;
 
+        // Self-restart (comic-server-9klu): true from the moment the user
+        // confirms "Restart now" until the server has answered
+        // /api/health again and the page reloads. Whether this platform
+        // supports it at all comes from restartRequired.restart_supported.
+        this.restarting = false;
+
         // Watch Folders (comic-server-obe): "dump" directories comic files
         // land in before being promoted into real library book records
         // (comic-server-chh's Workflow "New Files" stage). Read fresh at
@@ -177,6 +183,97 @@ class ScanInfoSettings {
             this.render();
             this.attachListeners();
         }
+    }
+
+    // restartSupported is true when the server can re-exec itself in place
+    // (POST /api/system/restart) - false on Windows or if unwired, in which
+    // case the UI keeps its manual-restart wording and shows no button.
+    restartSupported() {
+        return !!(this.restartRequired && this.restartRequired.restart_supported);
+    }
+
+    renderRestartNowButton() {
+        if (!this.restartSupported()) return '';
+        return ` <button class="btn btn-primary restart-now-btn" ${this.restarting ? 'disabled' : ''}>` +
+            `${this.restarting ? 'Restarting…' : 'Restart now'}</button>`;
+    }
+
+    // parseUptimeSeconds converts /api/health's Go Duration string
+    // ("1h2m3.5s", "850ms", ...) to seconds, or NaN if unrecognised.
+    parseUptimeSeconds(str) {
+        if (typeof str !== 'string' || !str) return NaN;
+        const unit = { h: 3600, m: 60, s: 1, ms: 0.001, 'µs': 1e-6, us: 1e-6, ns: 1e-9 };
+        const re = /(\d+(?:\.\d+)?)(ms|µs|us|ns|h|m|s)/g;
+        let total = 0, matched = false, m;
+        while ((m = re.exec(str)) !== null) {
+            total += parseFloat(m[1]) * unit[m[2]];
+            matched = true;
+        }
+        return matched ? total : NaN;
+    }
+
+    async fetchUptimeSeconds() {
+        const response = await fetch('/api/health', { cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        return this.parseUptimeSeconds(data.uptime);
+    }
+
+    // restartNow confirms, asks the server to restart itself, then polls
+    // /api/health until the NEW process answers (the old one can still
+    // answer for a moment while it shuts down, so "answers" alone isn't
+    // enough: we need to have seen it go down, or its uptime reset) and
+    // reloads the page.
+    async restartNow() {
+        if (this.restarting) return;
+        const ok = await dialogs.confirm({
+            title: 'Restart comic-server',
+            message: 'Restart comic-server now? Any sync in progress will be interrupted, and the web UI will be unavailable for a few seconds.',
+            confirmLabel: 'Restart now',
+        });
+        if (!ok) return;
+
+        let prevUptime = NaN;
+        try { prevUptime = await this.fetchUptimeSeconds(); } catch (e) { /* best effort */ }
+
+        this.restarting = true;
+        this.render();
+        this.attachListeners();
+        try {
+            const response = await fetch('/api/system/restart', { method: 'POST' });
+            if (!response.ok) {
+                const text = await response.text();
+                throw new Error(friendlyErrorText(response, text));
+            }
+        } catch (error) {
+            console.error('Failed to request restart:', error);
+            dialogs.toast('Failed to restart: ' + error.message, 'error');
+            this.restarting = false;
+            this.render();
+            this.attachListeners();
+            return;
+        }
+
+        const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+        const deadline = Date.now() + 120000;
+        let sawDown = false;
+        await sleep(1000);
+        while (Date.now() < deadline) {
+            try {
+                const uptime = await this.fetchUptimeSeconds();
+                if (sawDown || (!Number.isNaN(prevUptime) && uptime < prevUptime)) {
+                    window.location.reload();
+                    return;
+                }
+            } catch (e) {
+                sawDown = true;
+            }
+            await sleep(1000);
+        }
+        dialogs.toast('comic-server did not come back within 2 minutes - check the server logs.', 'error');
+        this.restarting = false;
+        this.render();
+        this.attachListeners();
     }
 
     async loadServerMisc() {
@@ -433,7 +530,7 @@ class ScanInfoSettings {
         let html = `<p class="datamanager-summary">Imported "${this.escapeHtml(job.filename)}" in ${s.duration_sec.toFixed(1)}s: ` +
             `${s.books_added} added, ${s.books_updated} updated, ${s.books_deleted} deleted, ${s.books_unchanged} unchanged.</p>`;
         if (job.restart_required) {
-            html += `<p class="datamanager-errors">This provisioned a new database - restart comic-server to start serving from it.</p>`;
+            html += `<p class="datamanager-errors">This provisioned a new database - restart comic-server to start serving from it.${this.renderRestartNowButton()}</p>`;
         }
         return html;
     }
@@ -537,7 +634,7 @@ class ScanInfoSettings {
         }
         const saved = this.restartRequired.saved;
         const banner = this.restartRequired.restart_required
-            ? `<p class="datamanager-errors">⚠ Saved changes below differ from what's currently running - restart comic-server to apply them.</p>`
+            ? `<p class="datamanager-errors">⚠ Saved changes below differ from what's currently running - restart comic-server to apply them.${this.renderRestartNowButton()}</p>`
             : '';
 
         return `
@@ -854,6 +951,10 @@ class ScanInfoSettings {
         if (addWatchFolderBtn) addWatchFolderBtn.addEventListener('click', () => this.addWatchFolder());
         document.querySelectorAll('.watch-folder-remove-btn').forEach(btn => {
             btn.addEventListener('click', () => this.removeWatchFolder(parseInt(btn.dataset.index, 10)));
+        });
+
+        document.querySelectorAll('.restart-now-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.restartNow());
         });
 
         if (this.restartRequiredForm) {

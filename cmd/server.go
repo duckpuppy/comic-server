@@ -494,6 +494,22 @@ func runServer(cmd *cobra.Command, args []string) error {
 		apiServer.SetKomgaStatus(komgaStatus)
 	}
 
+	// restartCh carries "restart requested" from the API handler into the main
+	// loop below, which runs the same graceful shutdown as SIGTERM and then
+	// returns with restartRequested set; cmd.Execute re-execs the binary
+	// only after this function's defers have run (comic-server-9klu).
+	// Buffered + non-blocking send so a double-click can't block a handler.
+	restartCh := make(chan struct{}, 1)
+	if restartSupported {
+		apiServer.SetRestartFunc(func() error {
+			select {
+			case restartCh <- struct{}{}:
+			default:
+			}
+			return nil
+		})
+	}
+
 	httpServer := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.Server.ServerPort),
 		Handler: apiServer,
@@ -688,6 +704,24 @@ func runServer(cmd *cobra.Command, args []string) error {
 
 				return nil
 			}
+
+		case <-restartCh:
+			log.Info().Msg("Restart requested, shutting down server before re-exec")
+
+			// Same graceful HTTP shutdown as SIGTERM. The request that
+			// triggered this has already been answered (202) and its
+			// connection goes idle once flushed, so Shutdown lets it finish.
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := httpServer.Shutdown(shutdownCtx); err != nil {
+				log.Error().Err(err).Msg("Failed to shutdown HTTP server gracefully")
+			}
+
+			// Returning runs every deferred cleanup (backend/config.db
+			// close, listener stop, ...). cmd.Execute performs the actual
+			// exec after that.
+			restartRequested.Store(true)
+			return nil
 
 		case err := <-errorChan:
 			log.Error().Err(err).Msg("Discovery listener error")

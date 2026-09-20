@@ -100,6 +100,11 @@ type Server struct {
 	// it is already running; otherwise the sync has been started (in the
 	// background - this returns without waiting for it to finish).
 	triggerSync func(deviceID string) error
+
+	// restartFn requests a graceful restart of the whole process. Set via
+	// SetRestartFunc; nil means restart isn't supported (Windows) or
+	// isn't wired - see system_restart.go (comic-server-9klu).
+	restartFn func() error
 }
 
 // SetSyncTrigger wires manual sync-trigger support into the API server
@@ -269,6 +274,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/settings/server-misc", s.handleServerMiscSettings)
 	s.mux.HandleFunc("/api/settings/restart-required", s.handleRestartRequiredSettings)
 	s.mux.HandleFunc("/api/system/browse-directory", s.handleBrowseDirectory)
+	s.mux.HandleFunc("/api/system/restart", s.handleSystemRestart)
 	s.mux.HandleFunc("/api/settings/watch-folders", s.handleWatchFoldersSettings)
 
 	// WebSocket endpoint

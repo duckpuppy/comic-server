@@ -69,8 +69,9 @@ type LibraryImportJobStatus struct {
 	// database_path (comic-server-szvk's "Case B": nothing was configured
 	// yet) - the server's live backend was chosen once at startup and
 	// isn't hot-swappable, so the import took effect on disk but won't be
-	// served until the process restarts. Making this case live too is
-	// comic-server-9klu. False (the common case, "Case A") when an
+	// served until the process restarts (one click via POST
+	// /api/system/restart where supported - comic-server-9klu - otherwise
+	// a manual restart). False (the common case, "Case A") when an
 	// already-configured, already-running SQLite backend was reimported
 	// into directly and took effect immediately.
 	RestartRequired bool                    `json:"restart_required,omitempty"`
@@ -214,8 +215,11 @@ func (s *Server) runLibraryImport(job *LibraryImportJobStatus, stagingPath strin
 	}
 
 	// Case B: nothing configured yet - provision a brand-new database_path
-	// and import into it, but don't touch s.backend (comic-server-9klu
-	// tracks making this live without a restart too).
+	// and import into it, but don't touch s.backend. The live backend is
+	// chosen once at startup and deliberately isn't hot-swappable, so a
+	// restart is required for this to be served; comic-server-9klu made
+	// that one click (POST /api/system/restart) on platforms that can
+	// re-exec in place, rather than a live swap.
 	dataDir, err := config.EnsureDataDir()
 	if err != nil {
 		finish(nil, false, fmt.Errorf("prepare data directory: %w", err))

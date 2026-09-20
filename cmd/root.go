@@ -24,6 +24,15 @@ func Execute() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+
+	// A restart was requested via the API: runServer has fully returned by
+	// now, so every deferred cleanup has run. Re-exec only returns on error.
+	if restartRequested.Load() {
+		if err := execSelf(); err != nil {
+			fmt.Fprintln(os.Stderr, "restart failed:", err)
+			os.Exit(1)
+		}
+	}
 }
 
 var (

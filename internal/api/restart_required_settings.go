@@ -70,6 +70,11 @@ type RestartRequiredSettingsResponse struct {
 	Saved           RestartRequiredSettings `json:"saved"`
 	Active          RestartRequiredSettings `json:"active"`
 	RestartRequired bool                    `json:"restart_required"`
+	// RestartSupported is true when this process can restart itself in
+	// place via POST /api/system/restart (comic-server-9klu) - the UI
+	// shows a "Restart now" button when true and its existing
+	// manual-restart message when false (e.g. Windows).
+	RestartSupported bool `json:"restart_supported"`
 }
 
 // restartRequiredSettingsFromConfig extracts the wire shape from a full
@@ -154,9 +159,10 @@ func (s *Server) handleGetRestartRequiredSettings(w http.ResponseWriter, r *http
 	active := s.activeRestartRequiredSettings
 
 	s.writeJSON(w, http.StatusOK, RestartRequiredSettingsResponse{
-		Saved:           saved,
-		Active:          active,
-		RestartRequired: saved != active,
+		Saved:            saved,
+		Active:           active,
+		RestartRequired:  saved != active,
+		RestartSupported: s.restartSupported(),
 	})
 }
 
