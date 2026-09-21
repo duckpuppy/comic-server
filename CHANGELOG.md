@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.44.0](https://github.com/duckpuppy/comic-server/compare/v1.43.1...v1.44.0) (2026-09-21)
+
+
+### Features
+
+* CBL import match-correction UI (comic-server-a2hz) ([6a7a02c](https://github.com/duckpuppy/comic-server/commit/6a7a02cf0e5e610cdb4814c93596aa7f496b8220))
+
+
+### Bug Fixes
+
+* dark mode variants for hardcoded status/badge colors (comic-server-ha6) ([6267fdc](https://github.com/duckpuppy/comic-server/commit/6267fdc6f532dafc4611372bf5b49556a898bf90))
+* propagate LibraryRoot changes to the running Komga syncer (comic-server-zaef) ([13c09d1](https://github.com/duckpuppy/comic-server/commit/13c09d133c7a97715f14730e4cbe4166ef9910c1))
+
 ## [1.43.1](https://github.com/duckpuppy/comic-server/compare/v1.43.0...v1.43.1) (2026-09-21)
 
 
