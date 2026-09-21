@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.41.0](https://github.com/duckpuppy/comic-server/compare/v1.40.0...v1.41.0) (2026-09-21)
+
+
+### Features
+
+* add unmatched CBL entries to the wanted-books list (comic-server-sx2d) ([5f83306](https://github.com/duckpuppy/comic-server/commit/5f83306461ee878af8277f6765d7af23840e0d1c))
+* browse and import CBL reading lists from a git repo (comic-server-oprf) ([247eaf1](https://github.com/duckpuppy/comic-server/commit/247eaf1a930213ed34d46e50f1d75c3825244035))
+* CBL import data model - schema v6 (comic-server-tnv4) ([882e991](https://github.com/duckpuppy/comic-server/commit/882e991d01c1055f20779382c51fe01b31905aba))
+* CBL local-file import - CLI, API, Settings UI (comic-server-zc0g) ([686cbd0](https://github.com/duckpuppy/comic-server/commit/686cbd04c9374a08f6b2b66804cb42d15d1d497d))
+* CBL parser and library matcher (comic-server-wqfn, comic-server-t9k0) ([8cb2529](https://github.com/duckpuppy/comic-server/commit/8cb252925b0669fe78894fa8da4ac87649854396))
+
+
+### Bug Fixes
+
+* report unconfigured/no-history states as 200, not 5xx/404 (comic-server-hono) ([59b0b41](https://github.com/duckpuppy/comic-server/commit/59b0b416a4e34ade3613b8349d31d46bc34a5bd9))
+
+
+### Documentation
+
+* add match-correction UI and wanted-list follow-ups to CBL spec ([b6fe56c](https://github.com/duckpuppy/comic-server/commit/b6fe56c6bf192389c76686674540f8e077295f32))
+* CBL reading list import design spec (comic-server-r1j4) ([ca03561](https://github.com/duckpuppy/comic-server/commit/ca0356161fa07273963f57215fa15b0a1fb4a132))
+* decide manual (not automatic) add-missing-to-wanted for CBL import ([3eb803d](https://github.com/duckpuppy/comic-server/commit/3eb803d1f3cdbe59e0c7082d0c978dc47fe8e97d))
+
 ## [1.40.0](https://github.com/duckpuppy/comic-server/compare/v1.39.0...v1.40.0) (2026-09-20)
 
 
