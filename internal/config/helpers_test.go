@@ -34,6 +34,16 @@ func TestResolveSmartList(t *testing.T) {
 					{Type: "Read", MatchOperator: "Equal", MatchValue: "false"},
 				},
 			},
+			{
+				Type: "ComicReadingList",
+				ID:   "list-guid-4",
+				Name: "CBL Import",
+			},
+			{
+				Type: "comicrack:ComicListItemFolder",
+				ID:   "folder-guid-1",
+				Name: "A Folder",
+			},
 		},
 	}
 
@@ -63,7 +73,22 @@ func TestResolveSmartList(t *testing.T) {
 			name:        "not found",
 			listName:    "Nonexistent List",
 			wantErr:     true,
-			errContains: "smart list",
+			errContains: "not found",
+		},
+		{
+			// comic-server-hmld: a reading list (CBL import or hand-made)
+			// must resolve like any other assignable list type.
+			name:     "reading list resolves",
+			listName: "CBL Import",
+			wantID:   "list-guid-4",
+			wantName: "CBL Import",
+			wantErr:  false,
+		},
+		{
+			name:        "folder is rejected",
+			listName:    "A Folder",
+			wantErr:     true,
+			errContains: "not found",
 		},
 	}
 
@@ -112,6 +137,8 @@ func TestFindListByGUID(t *testing.T) {
 		ComicLists: []library.ComicListItem{
 			{Type: "comicrack:ComicSmartListItem", ID: "list-guid-1", Name: "List One"},
 			{Type: "comicrack:ComicSmartListItem", ID: "list-guid-2", Name: "List Two"},
+			{Type: "ComicReadingList", ID: "list-guid-3", Name: "CBL Import"},
+			{Type: "comicrack:ComicListItemFolder", ID: "folder-guid-1", Name: "A Folder"},
 		},
 	}
 
@@ -130,6 +157,25 @@ func TestFindListByGUID(t *testing.T) {
 		list := FindListByGUID(lib, "nonexistent")
 		if list != nil {
 			t.Error("FindListByGUID() should return nil for nonexistent list")
+		}
+	})
+
+	t.Run("reading list found", func(t *testing.T) {
+		// comic-server-hmld: a CBL-imported reading list must resolve by
+		// GUID like any other assignable list type.
+		list := FindListByGUID(lib, "list-guid-3")
+		if list == nil {
+			t.Fatal("FindListByGUID() returned nil for a reading list")
+		}
+		if list.Name != "CBL Import" {
+			t.Errorf("FindListByGUID() name = %v, want CBL Import", list.Name)
+		}
+	})
+
+	t.Run("folder rejected", func(t *testing.T) {
+		list := FindListByGUID(lib, "folder-guid-1")
+		if list != nil {
+			t.Error("FindListByGUID() should return nil for a folder")
 		}
 	})
 }
