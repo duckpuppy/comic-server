@@ -3,7 +3,7 @@ package storage
 import "fmt"
 
 // Schema version for migrations
-const schemaVersion = 5
+const schemaVersion = 6
 
 // initSchema creates the database tables if they don't exist.
 func (db *DB) initSchema() error {
@@ -43,6 +43,11 @@ func (db *DB) initSchema() error {
 		if version < 5 {
 			if err := db.migrateV4ToV5(); err != nil {
 				return fmt.Errorf("migrate v4→v5: %w", err)
+			}
+		}
+		if version < 6 {
+			if err := db.migrateV5ToV6(); err != nil {
+				return fmt.Errorf("migrate v5→v6: %w", err)
 			}
 		}
 	}
@@ -147,6 +152,73 @@ func (db *DB) migrateV3ToV4() error {
 func (db *DB) migrateV4ToV5() error {
 	if _, err := db.Exec("ALTER TABLE lists ADD COLUMN base_list_id TEXT"); err != nil {
 		return fmt.Errorf("add base_list_id column: %w", err)
+	}
+	return nil
+}
+
+// migrateV5ToV6 adds CBL reading-list import support (comic-server-tnv4,
+// spec docs/plans/2026-09-20-cbl-reading-list-import.md §4): source
+// provenance on lists that came from a CBL import, and a per-entry
+// record of every CBL entry seen at import time (matched or not),
+// needed by the later match-correction UI (comic-server-a2hz) and
+// wanted-list integration (comic-server-sx2d) beads.
+//
+// cbl_source/cbl_source_ref/cbl_imported_at are NULL for every list not
+// imported from a CBL (the overwhelming majority) - this is additive,
+// not a behavior change for existing lists. Deliberately separate from
+// the existing import_hash/updated_at columns on `lists`, which mean
+// something different (ComicDb.xml-wide import/reimport change
+// detection - see import.go, reimport_merge.go); reusing those would
+// conflate two unrelated import concepts.
+func (db *DB) migrateV5ToV6() error {
+	stmts := []string{
+		"ALTER TABLE lists ADD COLUMN cbl_source TEXT",
+		"ALTER TABLE lists ADD COLUMN cbl_source_ref TEXT",
+		"ALTER TABLE lists ADD COLUMN cbl_imported_at TEXT",
+	}
+	for _, s := range stmts {
+		if _, err := db.Exec(s); err != nil {
+			return fmt.Errorf("migrate v5->v6: %s: %w", s, err)
+		}
+	}
+	return db.createCBLImportEntriesTable()
+}
+
+// createCBLImportEntriesTable creates cbl_import_entries if it doesn't
+// exist - shared between the fresh-database path (createTables) and the
+// v5->v6 migration path for existing databases.
+func (db *DB) createCBLImportEntriesTable() error {
+	_, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS cbl_import_entries (
+			id TEXT PRIMARY KEY,
+			list_id TEXT NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
+			-- book_id is set when this entry matched a real book; NULL
+			-- when unmatched (dropped from the list itself, per spec
+			-- §2c, but kept here so the match-correction UI and
+			-- wanted-list flow can see what was missed).
+			book_id TEXT REFERENCES books(id) ON DELETE SET NULL,
+			position INTEGER NOT NULL,
+			-- match_path: 'cv_id' / 'series_number' / 'none' - see
+			-- internal/cbl.MatchPath.
+			match_path TEXT NOT NULL,
+			-- Raw CBL entry fields, kept even when matched, so an
+			-- unmatched entry still has something to display/act on
+			-- (add to wanted list, manual re-match) without re-parsing
+			-- the original file.
+			series TEXT NOT NULL,
+			number TEXT NOT NULL,
+			volume INTEGER,
+			year INTEGER,
+			format TEXT,
+			cv_issue_id INTEGER
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("create cbl_import_entries table: %w", err)
+	}
+	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_cbl_import_entries_list ON cbl_import_entries(list_id, position)`)
+	if err != nil {
+		return fmt.Errorf("create cbl_import_entries index: %w", err)
 	}
 	return nil
 }
@@ -365,7 +437,15 @@ func (db *DB) createTables() error {
 			updated_at TEXT,
 
 			-- Soft delete (comic-server-b53): NULL = not deleted
-			deleted_at TEXT
+			deleted_at TEXT,
+
+			-- CBL reading-list import provenance (comic-server-tnv4).
+			-- NULL for every list not imported from a CBL. Deliberately
+			-- separate from import_hash/updated_at above, which track
+			-- ComicDb.xml-wide import/reimport, an unrelated concept.
+			cbl_source TEXT,
+			cbl_source_ref TEXT,
+			cbl_imported_at TEXT
 		)
 	`)
 	if err != nil {
@@ -397,6 +477,10 @@ func (db *DB) createTables() error {
 	`)
 	if err != nil {
 		return fmt.Errorf("create reading_list_items table: %w", err)
+	}
+
+	if err := db.createCBLImportEntriesTable(); err != nil {
+		return err
 	}
 
 	// Library metadata table
