@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.42.0](https://github.com/duckpuppy/comic-server/compare/v1.41.0...v1.42.0) (2026-09-21)
+
+
+### Features
+
+* promote ComicVine volume/issue ID to first-class SQL columns (comic-server-r8td) ([f318b73](https://github.com/duckpuppy/comic-server/commit/f318b73c5d175d1abc22cc34ff2a3c42ddb3dd05))
+
 ## [1.41.0](https://github.com/duckpuppy/comic-server/compare/v1.40.0...v1.41.0) (2026-09-21)
 
 
