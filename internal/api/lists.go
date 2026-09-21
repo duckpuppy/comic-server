@@ -359,6 +359,18 @@ func (s *Server) handleListsRouter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// /api/library/lists/:listId/cbl-import-entries[/:entryId/correct]
+	// (comic-server-a2hz, match-correction UI)
+	if idx := strings.Index(suffix, "/cbl-import-entries"); idx != -1 {
+		listID := suffix[:idx]
+		entriesSuffix := suffix[idx+len("/cbl-import-entries"):]
+		if s.routeCBLImportEntries(w, r, listID, entriesSuffix) {
+			return
+		}
+		http.NotFound(w, r)
+		return
+	}
+
 	// /api/library/lists/:listId/komga
 	if strings.HasSuffix(path, "/komga") {
 		switch r.Method {

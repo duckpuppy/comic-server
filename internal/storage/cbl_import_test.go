@@ -103,6 +103,191 @@ func TestImportCBL_MatchesAndCreatesList(t *testing.T) {
 	}
 }
 
+// TestImportCBL_RecordsAmbiguousCandidates is the persistence half of
+// comic-server-a2hz (match-correction UI): when the string-fallback path
+// ties between two real candidates, ImportCBL must record the full
+// candidate set (not just the arbitrary FirstOrDefault pick) so the UI
+// can offer the others.
+func TestImportCBL_RecordsAmbiguousCandidates(t *testing.T) {
+	dup1 := library.ComicBook{ID: "book-1", FilePath: "/x/dup1.cbz", Series: "Weird Duplicates", Number: "1", Volume: -1, Year: 2000}
+	dup2 := library.ComicBook{ID: "book-2", FilePath: "/x/dup2.cbz", Series: "Weird Duplicates", Number: "1", Volume: -1, Year: 2000}
+	db := newTestDBWithBooks(t, []library.ComicBook{dup1, dup2})
+
+	rl := &cbl.ReadingList{
+		Name:  "Ambiguous",
+		Books: []cbl.Book{{Series: "Weird Duplicates", Number: "1", Volume: -1, Year: 2000}},
+	}
+	result, err := db.ImportCBL(rl, CBLImportSource{Source: "local_file"})
+	if err != nil {
+		t.Fatalf("ImportCBL: %v", err)
+	}
+
+	entries, err := db.GetCBLImportEntries(result.ListID)
+	if err != nil {
+		t.Fatalf("GetCBLImportEntries: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("len(entries) = %d, want 1", len(entries))
+	}
+	e := entries[0]
+	if e.Path != cbl.MatchSeriesNumber {
+		t.Fatalf("Path = %v, want MatchSeriesNumber", e.Path)
+	}
+	if e.BookID != "book-1" {
+		t.Errorf("BookID = %q, want book-1 (FirstOrDefault pick)", e.BookID)
+	}
+	gotCandidates := append([]string(nil), e.CandidateBookIDs...)
+	wantCandidates := []string{"book-1", "book-2"}
+	if len(gotCandidates) != len(wantCandidates) {
+		t.Fatalf("CandidateBookIDs = %v, want %v", gotCandidates, wantCandidates)
+	}
+	for i := range wantCandidates {
+		if gotCandidates[i] != wantCandidates[i] {
+			t.Errorf("CandidateBookIDs[%d] = %q, want %q", i, gotCandidates[i], wantCandidates[i])
+		}
+	}
+}
+
+// TestCorrectCBLImportEntry_RepointsToDifferentBook covers the primary
+// match-correction flow (spec §2d): the string-fallback path guessed
+// book-1 out of a tie with book-2, and the user re-points the entry to
+// the actually-correct book-2.
+func TestCorrectCBLImportEntry_RepointsToDifferentBook(t *testing.T) {
+	dup1 := library.ComicBook{ID: "book-1", FilePath: "/x/dup1.cbz", Series: "Weird Duplicates", Number: "1", Volume: -1, Year: 2000}
+	dup2 := library.ComicBook{ID: "book-2", FilePath: "/x/dup2.cbz", Series: "Weird Duplicates", Number: "1", Volume: -1, Year: 2000}
+	db := newTestDBWithBooks(t, []library.ComicBook{dup1, dup2})
+
+	rl := &cbl.ReadingList{
+		Name:  "Ambiguous",
+		Books: []cbl.Book{{Series: "Weird Duplicates", Number: "1", Volume: -1, Year: 2000}},
+	}
+	result, err := db.ImportCBL(rl, CBLImportSource{})
+	if err != nil {
+		t.Fatalf("ImportCBL: %v", err)
+	}
+	entries, err := db.GetCBLImportEntries(result.ListID)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("GetCBLImportEntries: entries=%v err=%v", entries, err)
+	}
+	entryID := entries[0].ID
+
+	corrected, err := db.CorrectCBLImportEntry(entryID, "book-2")
+	if err != nil {
+		t.Fatalf("CorrectCBLImportEntry: %v", err)
+	}
+	if corrected.BookID != "book-2" {
+		t.Errorf("corrected.BookID = %q, want book-2", corrected.BookID)
+	}
+	if corrected.Path != cbl.MatchManual {
+		t.Errorf("corrected.Path = %v, want MatchManual", corrected.Path)
+	}
+
+	// reading_list_items reflects the swap: book-1 out, book-2 in.
+	var memberIDs []string
+	rows, err := db.Query(`SELECT book_id FROM reading_list_items WHERE list_id = ? ORDER BY book_id`, result.ListID)
+	if err != nil {
+		t.Fatalf("query reading_list_items: %v", err)
+	}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		memberIDs = append(memberIDs, id)
+	}
+	rows.Close()
+	if len(memberIDs) != 1 || memberIDs[0] != "book-2" {
+		t.Errorf("reading_list_items = %v, want [book-2]", memberIDs)
+	}
+
+	// book_count still reflects the one-book list, not a phantom +1.
+	list, err := db.GetList(result.ListID)
+	if err != nil || list == nil {
+		t.Fatalf("GetList: list=%v err=%v", list, err)
+	}
+	if list.BookCount != 1 {
+		t.Errorf("BookCount = %d, want 1", list.BookCount)
+	}
+}
+
+// TestCorrectCBLImportEntry_Unmatch covers dropping a wrong match
+// entirely (spec §2d "unmatch an entry", feeding into the wanted-list
+// flow per §2e/comic-server-sx2d).
+func TestCorrectCBLImportEntry_Unmatch(t *testing.T) {
+	batman := library.ComicBook{ID: "book-1", FilePath: "/x/batman1.cbz", Series: "Batman", Number: "1", Volume: 1940, Year: 1940}
+	db := newTestDBWithBooks(t, []library.ComicBook{batman})
+
+	rl := &cbl.ReadingList{
+		Name:  "Solo",
+		Books: []cbl.Book{{Series: "Batman", Number: "1", Volume: 1940, Year: 1940}},
+	}
+	result, err := db.ImportCBL(rl, CBLImportSource{})
+	if err != nil {
+		t.Fatalf("ImportCBL: %v", err)
+	}
+	entries, err := db.GetCBLImportEntries(result.ListID)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("GetCBLImportEntries: entries=%v err=%v", entries, err)
+	}
+
+	corrected, err := db.CorrectCBLImportEntry(entries[0].ID, "")
+	if err != nil {
+		t.Fatalf("CorrectCBLImportEntry: %v", err)
+	}
+	if corrected.BookID != "" {
+		t.Errorf("corrected.BookID = %q, want empty (unmatched)", corrected.BookID)
+	}
+	if corrected.Path != cbl.MatchNone {
+		t.Errorf("corrected.Path = %v, want MatchNone", corrected.Path)
+	}
+
+	list, err := db.GetList(result.ListID)
+	if err != nil || list == nil {
+		t.Fatalf("GetList: list=%v err=%v", list, err)
+	}
+	if list.BookCount != 0 {
+		t.Errorf("BookCount = %d, want 0 after unmatching the only entry", list.BookCount)
+	}
+
+	// GetUnresolvedCBLImportEntries now sees it - the wanted-list flow's
+	// entry point (comic-server-sx2d).
+	unresolved, err := db.GetUnresolvedCBLImportEntries(result.ListID)
+	if err != nil {
+		t.Fatalf("GetUnresolvedCBLImportEntries: %v", err)
+	}
+	if len(unresolved) != 1 {
+		t.Errorf("len(unresolved) = %d, want 1", len(unresolved))
+	}
+}
+
+func TestCorrectCBLImportEntry_UnknownEntry(t *testing.T) {
+	db := newTestDBWithBooks(t, nil)
+	if _, err := db.CorrectCBLImportEntry("does-not-exist", "book-1"); err != ErrCBLImportEntryNotFound {
+		t.Errorf("err = %v, want ErrCBLImportEntryNotFound", err)
+	}
+}
+
+func TestCorrectCBLImportEntry_UnknownBook(t *testing.T) {
+	batman := library.ComicBook{ID: "book-1", FilePath: "/x/batman1.cbz", Series: "Batman", Number: "1", Volume: 1940, Year: 1940}
+	db := newTestDBWithBooks(t, []library.ComicBook{batman})
+	rl := &cbl.ReadingList{
+		Name:  "Solo",
+		Books: []cbl.Book{{Series: "Batman", Number: "1", Volume: 1940, Year: 1940}},
+	}
+	result, err := db.ImportCBL(rl, CBLImportSource{})
+	if err != nil {
+		t.Fatalf("ImportCBL: %v", err)
+	}
+	entries, err := db.GetCBLImportEntries(result.ListID)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("GetCBLImportEntries: entries=%v err=%v", entries, err)
+	}
+
+	if _, err := db.CorrectCBLImportEntry(entries[0].ID, "does-not-exist"); err != ErrCBLCandidateBookNotFound {
+		t.Errorf("err = %v, want ErrCBLCandidateBookNotFound", err)
+	}
+}
+
 func TestImportCBL_RejectsSmartList(t *testing.T) {
 	db := newTestDBWithBooks(t, nil)
 	// A CBL with real <Matchers> content - parsed via cbl.Parse to

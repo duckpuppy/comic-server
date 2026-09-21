@@ -3,7 +3,7 @@ package storage
 import "fmt"
 
 // Schema version for migrations
-const schemaVersion = 8
+const schemaVersion = 9
 
 // initSchema creates the database tables if they don't exist.
 func (db *DB) initSchema() error {
@@ -58,6 +58,11 @@ func (db *DB) initSchema() error {
 		if version < 8 {
 			if err := db.migrateV7ToV8(); err != nil {
 				return fmt.Errorf("migrate v7→v8: %w", err)
+			}
+		}
+		if version < 9 {
+			if err := db.migrateV8ToV9(); err != nil {
+				return fmt.Errorf("migrate v8→v9: %w", err)
 			}
 		}
 	}
@@ -305,6 +310,36 @@ func (db *DB) migrateV7ToV8() error {
 	return nil
 }
 
+// migrateV8ToV9 adds cbl_import_entries.candidate_book_ids (comic-server-a2hz:
+// match-correction UI) - see createCBLImportEntriesTable's column comment
+// for what it holds. Same "check first, ALTER only if actually missing"
+// shape as migrateV6ToV7, for the same reason: createCBLImportEntriesTable
+// already includes the column for a fresh database or one upgrading
+// straight through an intermediate version in the same Open() call.
+func (db *DB) migrateV8ToV9() error {
+	// createCBLImportEntriesTable is CREATE TABLE IF NOT EXISTS - a no-op
+	// against a database that already has the table (the real-world
+	// case: every production database reaches v8 via migrateV5ToV6,
+	// which already created it), but makes this migration self-contained
+	// against a database that, for whatever reason, never ran that
+	// earlier migration and doesn't have the table at all yet.
+	if err := db.createCBLImportEntriesTable(); err != nil {
+		return err
+	}
+
+	hasColumn, err := db.hasColumn("cbl_import_entries", "candidate_book_ids")
+	if err != nil {
+		return fmt.Errorf("check candidate_book_ids column: %w", err)
+	}
+	if hasColumn {
+		return nil
+	}
+	if _, err := db.Exec("ALTER TABLE cbl_import_entries ADD COLUMN candidate_book_ids TEXT"); err != nil {
+		return fmt.Errorf("add candidate_book_ids column: %w", err)
+	}
+	return nil
+}
+
 // createCBLImportEntriesTable creates cbl_import_entries if it doesn't
 // exist - shared between the fresh-database path (createTables) and the
 // v5->v6 migration path for existing databases.
@@ -335,7 +370,18 @@ func (db *DB) createCBLImportEntriesTable() error {
 			-- Set when this entry was explicitly added to the
 			-- wanted-books list (comic-server-sx2d) - see
 			-- migrateV6ToV7's doc comment.
-			wanted_book_id TEXT
+			wanted_book_id TEXT,
+			-- JSON array of book IDs: the final narrowed candidate set
+			-- internal/cbl.MatchEntry considered for a series_number
+			-- match, when it was ambiguous (more than one candidate
+			-- survived narrowing, spec §2b step 7's arbitrary
+			-- FirstOrDefault tie-break). NULL for a cv_id match (not a
+			-- heuristic guess) or an unambiguous series_number match
+			-- (nothing to second-guess). Lets the match-correction UI
+			-- (comic-server-a2hz) offer "here's what else this entry
+			-- could have meant" without re-running the matcher - see
+			-- migrateV8ToV9's doc comment.
+			candidate_book_ids TEXT
 		)
 	`)
 	if err != nil {

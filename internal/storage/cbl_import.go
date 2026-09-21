@@ -2,6 +2,8 @@ package storage
 
 import (
 	"database/sql"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -51,6 +53,12 @@ type CBLImportEntry struct {
 	Year      int
 	Format    string
 	CVIssueID int // 0 if the entry carried no <Database Name="cv"> id
+
+	// CandidateBookIDs is the narrowed candidate set cbl.MatchEntry was
+	// choosing among (cbl.Match.Candidates), when Path == MatchSeriesNumber
+	// and it was ambiguous (len > 1) - see createCBLImportEntriesTable's
+	// candidate_book_ids column comment. Empty otherwise.
+	CandidateBookIDs []string
 }
 
 // ErrCBLIsSmartList is returned by ImportCBL when the parsed CBL embeds
@@ -109,16 +117,17 @@ func (db *DB) ImportCBL(rl *cbl.ReadingList, source CBLImportSource) (*CBLImport
 		m := cbl.MatchEntry(entry, candidatePtrs)
 		cvIssueID, _ := entry.CVIssueID()
 		ie := CBLImportEntry{
-			ID:        uuid.NewString(),
-			ListID:    result.ListID,
-			Position:  pos,
-			Path:      m.Path,
-			Series:    entry.Series,
-			Number:    entry.Number,
-			Volume:    entry.Volume,
-			Year:      entry.Year,
-			Format:    entry.Format,
-			CVIssueID: cvIssueID,
+			ID:               uuid.NewString(),
+			ListID:           result.ListID,
+			Position:         pos,
+			Path:             m.Path,
+			Series:           entry.Series,
+			Number:           entry.Number,
+			Volume:           entry.Volume,
+			Year:             entry.Year,
+			Format:           entry.Format,
+			CVIssueID:        cvIssueID,
+			CandidateBookIDs: candidateBookIDs(m),
 		}
 		switch m.Path {
 		case cbl.MatchCVID:
@@ -161,14 +170,18 @@ func (db *DB) ImportCBL(rl *cbl.ReadingList, source CBLImportSource) (*CBLImport
 	}
 
 	for _, ie := range result.Entries {
+		candidateJSON, err := candidateBookIDsJSON(ie.CandidateBookIDs)
+		if err != nil {
+			return nil, err
+		}
 		if _, err := tx.Exec(`
 			INSERT INTO cbl_import_entries (
 				id, list_id, book_id, position, match_path,
-				series, number, volume, year, format, cv_issue_id
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				series, number, volume, year, format, cv_issue_id, candidate_book_ids
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`,
 			ie.ID, ie.ListID, nullIfEmpty(ie.BookID), ie.Position, ie.Path.String(),
-			ie.Series, ie.Number, ie.Volume, ie.Year, ie.Format, nullIfZero(ie.CVIssueID),
+			ie.Series, ie.Number, ie.Volume, ie.Year, ie.Format, nullIfZero(ie.CVIssueID), candidateJSON,
 		); err != nil {
 			return nil, fmt.Errorf("insert cbl_import_entries row: %w", err)
 		}
@@ -178,6 +191,35 @@ func (db *DB) ImportCBL(rl *cbl.ReadingList, source CBLImportSource) (*CBLImport
 		return nil, fmt.Errorf("commit: %w", err)
 	}
 	return result, nil
+}
+
+// candidateBookIDs extracts the book IDs from an ambiguous
+// cbl.MatchSeriesNumber match's Candidates (spec §2d) - nil for anything
+// else (a cv_id match, no match, or an unambiguous single-candidate
+// series_number match has nothing worth persisting to second-guess).
+func candidateBookIDs(m cbl.Match) []string {
+	if m.Path != cbl.MatchSeriesNumber || len(m.Candidates) < 2 {
+		return nil
+	}
+	ids := make([]string, len(m.Candidates))
+	for i, b := range m.Candidates {
+		ids[i] = b.ID
+	}
+	return ids
+}
+
+// candidateBookIDsJSON encodes ids as a JSON array for the
+// candidate_book_ids column, or nil (SQL NULL) when there's nothing to
+// store.
+func candidateBookIDsJSON(ids []string) (any, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	b, err := json.Marshal(ids)
+	if err != nil {
+		return nil, fmt.Errorf("marshal candidate_book_ids: %w", err)
+	}
+	return string(b), nil
 }
 
 // GetUnresolvedCBLImportEntries returns every entry from a CBL import
@@ -228,6 +270,177 @@ func (db *DB) MarkCBLImportEntryWanted(entryID, bookID string) error {
 		return fmt.Errorf("mark cbl_import_entries wanted: %w", err)
 	}
 	return nil
+}
+
+// GetCBLImportEntries returns every entry recorded for listID's CBL
+// import (matched, unmatched, or manually corrected), in the CBL's
+// original order - the read side of the match-correction UI
+// (comic-server-a2hz, spec §2d). Unlike GetUnresolvedCBLImportEntries,
+// this includes matched entries (with BookID and, for an ambiguous
+// series_number match, CandidateBookIDs) so the UI can show what every
+// entry resolved to, not just the misses.
+func (db *DB) GetCBLImportEntries(listID string) ([]CBLImportEntry, error) {
+	rows, err := db.Query(`
+		SELECT id, list_id, book_id, position, match_path, series, number, volume, year, format, cv_issue_id, candidate_book_ids
+		FROM cbl_import_entries
+		WHERE list_id = ?
+		ORDER BY position
+	`, listID)
+	if err != nil {
+		return nil, fmt.Errorf("query cbl_import_entries: %w", err)
+	}
+	defer rows.Close()
+
+	var entries []CBLImportEntry
+	for rows.Next() {
+		e, err := scanCBLImportEntry(rows)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}
+
+// cblImportEntryScanner is the subset of *sql.Rows/*sql.Row that
+// scanCBLImportEntry needs - lets GetCBLImportEntry (single row) and
+// GetCBLImportEntries (many rows) share one scan implementation.
+type cblImportEntryScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanCBLImportEntry(row cblImportEntryScanner) (CBLImportEntry, error) {
+	var e CBLImportEntry
+	var bookID sql.NullString
+	var volume, year, cvIssueID sql.NullInt64
+	var format, candidateJSON sql.NullString
+	var matchPath string
+	if err := row.Scan(&e.ID, &e.ListID, &bookID, &e.Position, &matchPath, &e.Series, &e.Number, &volume, &year, &format, &cvIssueID, &candidateJSON); err != nil {
+		return CBLImportEntry{}, fmt.Errorf("scan cbl_import_entries row: %w", err)
+	}
+	e.BookID = bookID.String
+	e.Path = matchPathFromString(matchPath)
+	e.Volume = int(volume.Int64)
+	e.Year = int(year.Int64)
+	e.Format = format.String
+	e.CVIssueID = int(cvIssueID.Int64)
+	if candidateJSON.Valid && candidateJSON.String != "" {
+		if err := json.Unmarshal([]byte(candidateJSON.String), &e.CandidateBookIDs); err != nil {
+			return CBLImportEntry{}, fmt.Errorf("unmarshal candidate_book_ids for entry %s: %w", e.ID, err)
+		}
+	}
+	return e, nil
+}
+
+// matchPathFromString is the inverse of cbl.MatchPath.String() - parses
+// the match_path column back into the typed enum. Falls back to
+// cbl.MatchNone for anything unrecognized rather than erroring, matching
+// this codebase's general tolerance for stored data it can't parse
+// cleanly (e.g. cvIssueID's strconv.Atoi error handling).
+func matchPathFromString(s string) cbl.MatchPath {
+	switch s {
+	case "cv_id":
+		return cbl.MatchCVID
+	case "series_number":
+		return cbl.MatchSeriesNumber
+	case "manual":
+		return cbl.MatchManual
+	default:
+		return cbl.MatchNone
+	}
+}
+
+// ErrCBLImportEntryNotFound is returned by CorrectCBLImportEntry when
+// entryID doesn't exist.
+var ErrCBLImportEntryNotFound = fmt.Errorf("cbl: import entry not found")
+
+// ErrCBLCandidateBookNotFound is returned by CorrectCBLImportEntry when
+// newBookID doesn't exist in the library.
+var ErrCBLCandidateBookNotFound = fmt.Errorf("cbl: candidate book not found")
+
+// CorrectCBLImportEntry re-points entryID's match to newBookID (any real
+// book, not just one of its recorded Candidates - the UI is expected to
+// offer the candidates as quick picks, but this doesn't enforce that),
+// or unmatches it when newBookID is empty - the write side of the
+// match-correction UI (comic-server-a2hz, spec §2d). Updates the list's
+// reading_list_items membership and book_count to match, and marks the
+// entry's match_path as cbl.MatchManual so the UI can distinguish a
+// user-corrected entry from the matcher's own output. Scoped to one
+// entry at a time, not a general relink tool (spec §2d's own scope note)
+// - see CBLReimportPolicy for why this doesn't survive a later reimport.
+func (db *DB) CorrectCBLImportEntry(entryID, newBookID string) (*CBLImportEntry, error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	row := tx.QueryRow(`
+		SELECT id, list_id, book_id, position, match_path, series, number, volume, year, format, cv_issue_id, candidate_book_ids
+		FROM cbl_import_entries WHERE id = ?
+	`, entryID)
+	entry, err := scanCBLImportEntry(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrCBLImportEntryNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if newBookID != "" {
+		var exists int
+		if err := tx.QueryRow(`SELECT 1 FROM books WHERE id = ?`, newBookID).Scan(&exists); err == sql.ErrNoRows {
+			return nil, ErrCBLCandidateBookNotFound
+		} else if err != nil {
+			return nil, fmt.Errorf("check candidate book: %w", err)
+		}
+	}
+
+	oldBookID := entry.BookID
+	if oldBookID != "" && oldBookID != newBookID {
+		if _, err := tx.Exec(`DELETE FROM reading_list_items WHERE list_id = ? AND book_id = ?`, entry.ListID, oldBookID); err != nil {
+			return nil, fmt.Errorf("remove old reading list item: %w", err)
+		}
+	}
+	if newBookID != "" && newBookID != oldBookID {
+		// INSERT OR REPLACE: newBookID may already be a member of this
+		// list (re-pointing one entry to a book another entry already
+		// matched) - overwrite its position rather than erroring on the
+		// (list_id, book_id) primary key.
+		if _, err := tx.Exec(
+			`INSERT OR REPLACE INTO reading_list_items (list_id, book_id, position) VALUES (?, ?, ?)`,
+			entry.ListID, newBookID, entry.Position,
+		); err != nil {
+			return nil, fmt.Errorf("insert corrected reading list item: %w", err)
+		}
+	}
+
+	newPath := cbl.MatchManual
+	if newBookID == "" {
+		newPath = cbl.MatchNone
+	}
+	if _, err := tx.Exec(
+		`UPDATE cbl_import_entries SET book_id = ?, match_path = ? WHERE id = ?`,
+		nullIfEmpty(newBookID), newPath.String(), entryID,
+	); err != nil {
+		return nil, fmt.Errorf("update cbl_import_entries: %w", err)
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	if _, err := tx.Exec(
+		`UPDATE lists SET book_count = (SELECT COUNT(*) FROM reading_list_items WHERE list_id = ?), updated_at = ? WHERE id = ?`,
+		entry.ListID, now, entry.ListID,
+	); err != nil {
+		return nil, fmt.Errorf("update list book_count: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit: %w", err)
+	}
+
+	entry.BookID = newBookID
+	entry.Path = newPath
+	return &entry, nil
 }
 
 func nullIfEmpty(s string) any {

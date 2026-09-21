@@ -15,6 +15,12 @@ class ListDetail {
         this.schema = null;
         this.activeTab = 'matchers';
         this.loading = true;
+
+        // CBL match-correction UI (comic-server-a2hz) - entries are only
+        // fetched lazily, on first switch to the Matches tab (cbl_imported
+        // lists only), not on every list load. null = not fetched yet.
+        this.cblEntries = null;
+        this.cblEntriesLoading = false;
     }
 
     async init(ctx) {
@@ -243,6 +249,7 @@ class ListDetail {
                  (comic-server-030). -->
             <div class="list-detail-tabs">
                 ${this.renderTabButton('matchers', 'Details')}
+                ${this.list.cbl_imported ? this.renderTabButton('matches', 'Matches') : ''}
                 ${this.renderTabButton('devices', 'Devices')}
                 ${this.renderTabButton('komga', 'Komga')}
             </div>
@@ -258,6 +265,14 @@ class ListDetail {
                         ${this.renderMatchers()}
                     </ul>
                 </div>
+
+                <!-- CBL Match-Correction Panel (comic-server-a2hz) -->
+                ${this.list.cbl_imported ? `
+                <div class="panel cbl-matches-panel${this.tabPanelActiveClass('matches')}" data-tab-panel="matches">
+                    <h2>Match Results</h2>
+                    ${this.renderCBLMatchesPanel()}
+                </div>
+                ` : ''}
 
                 <!-- Device Assignments Panel -->
                 <div class="panel devices-panel${this.tabPanelActiveClass('devices')}" data-tab-panel="devices">
@@ -837,6 +852,145 @@ class ListDetail {
         }
     }
 
+    // --- CBL match-correction UI (comic-server-a2hz, spec §2d) ---
+    //
+    // Shows every entry from this list's CBL import - which path matched
+    // it (CV-ID / string-fallback / unmatched / manually corrected), and
+    // for an ambiguous string-fallback match, the other candidates the
+    // matcher's tie-break was choosing among. Lets the user re-point a
+    // wrong match to one of those candidates, or unmatch it entirely.
+    // Scoped to this one import's results (POST .../correct only ever
+    // touches one cbl_import_entries row) - not a general relink tool.
+
+    renderCBLMatchesPanel() {
+        if (this.cblEntriesLoading) {
+            return '<p class="empty-message">Loading match results…</p>';
+        }
+        if (this.cblEntries === null) {
+            return '<p class="empty-message">Switch to this tab to load match results.</p>';
+        }
+        if (this.cblEntries.length === 0) {
+            return '<p class="empty-message">No entries recorded for this import.</p>';
+        }
+        return `
+            <p class="cbl-matches-info">
+                CV-ID matches are direct ID lookups, not heuristics - a manual override
+                is available but rarely needed. String-fallback matches can tie between
+                similar-looking books; where that happened, the other candidate(s) are
+                offered below.
+            </p>
+            <table class="cbl-matches-table">
+                <thead>
+                    <tr>
+                        <th>Entry</th>
+                        <th>Match</th>
+                        <th>Matched Book</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${this.cblEntries.map(e => this.renderCBLMatchRow(e)).join('')}
+                </tbody>
+            </table>
+        `;
+    }
+
+    renderCBLMatchRow(entry) {
+        const entryLabel = `${this.escapeHtml(entry.series)} #${this.escapeHtml(entry.number)}` +
+            (entry.year ? ` (${entry.year})` : '');
+        const pathBadge = this.renderCBLMatchPathBadge(entry.match_path);
+        const bookLabel = entry.book
+            ? `${this.escapeHtml(entry.book.series)} #${this.escapeHtml(entry.book.number)}` +
+              (entry.book.year ? ` (${entry.book.year})` : '')
+            : '<span class="cbl-match-none">Not matched</span>';
+
+        const otherCandidates = (entry.candidates || []).filter(c => !entry.book || c.id !== entry.book.id);
+        const candidateButtons = otherCandidates.map(c => `
+            <button class="btn btn-small btn-secondary cbl-correct-btn"
+                    data-entry-id="${this.escapeHtml(entry.id)}" data-book-id="${this.escapeHtml(c.id)}"
+                    title="Re-point this entry to this book instead">
+                Use: ${this.escapeHtml(c.series)} #${this.escapeHtml(c.number)}${c.year ? ` (${c.year})` : ''}
+            </button>
+        `).join('');
+        const unmatchButton = entry.book ? `
+            <button class="btn btn-small btn-danger cbl-correct-btn"
+                    data-entry-id="${this.escapeHtml(entry.id)}" data-book-id=""
+                    title="Remove this entry's match">
+                Unmatch
+            </button>
+        ` : '';
+
+        return `
+            <tr data-entry-id="${this.escapeHtml(entry.id)}">
+                <td>${entryLabel}</td>
+                <td>${pathBadge}</td>
+                <td>${bookLabel}</td>
+                <td class="cbl-match-actions">${candidateButtons}${unmatchButton}</td>
+            </tr>
+        `;
+    }
+
+    renderCBLMatchPathBadge(path) {
+        const labels = {
+            cv_id: 'CV-ID',
+            series_number: 'String match',
+            manual: 'Manually corrected',
+            none: 'Unmatched',
+        };
+        return `<span class="cbl-match-badge cbl-match-badge-${path}">${labels[path] || path}</span>`;
+    }
+
+    async loadCBLEntriesAndSwitchTab() {
+        this.activeTab = 'matches';
+        this.cblEntriesLoading = true;
+        this.render();
+        this.attachListeners();
+
+        try {
+            const resp = await fetch(`/api/library/lists/${this.listId}/cbl-import-entries`);
+            if (!resp.ok) {
+                const text = await resp.text();
+                throw new Error(friendlyErrorText(resp, text, 'Failed to load match results'));
+            }
+            const data = await resp.json();
+            this.cblEntries = data.entries || [];
+        } catch (e) {
+            console.error('Failed to load CBL import entries:', e);
+            dialogs.toast('Failed to load match results: ' + e.message, 'error');
+            this.cblEntries = [];
+        }
+        this.cblEntriesLoading = false;
+        this.render();
+        this.attachListeners();
+    }
+
+    async correctCBLEntry(entryId, bookId) {
+        try {
+            const resp = await fetch(`/api/library/lists/${this.listId}/cbl-import-entries/${encodeURIComponent(entryId)}/correct`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ book_id: bookId }),
+            });
+            if (!resp.ok) {
+                const text = await resp.text();
+                throw new Error(friendlyErrorText(resp, text, 'Correction failed'));
+            }
+            const corrected = await resp.json();
+            const idx = this.cblEntries.findIndex(e => e.id === entryId);
+            if (idx !== -1) this.cblEntries[idx] = corrected;
+
+            // The list's own book_count/membership changed too.
+            this.previewOffset = 0;
+            await Promise.all([this.loadListDetail(), this.loadPreview()]);
+            dialogs.toast(bookId ? 'Match corrected' : 'Entry unmatched', 'success');
+            this.render();
+            this.attachListeners();
+        } catch (e) {
+            console.error('Failed to correct CBL import entry:', e);
+            dialogs.toast('Correction failed: ' + e.message, 'error');
+        }
+    }
+
     // --- Event wiring ---
 
     attachListeners() {
@@ -857,7 +1011,22 @@ class ListDetail {
 
     attachReadListeners() {
         document.querySelectorAll('.list-detail-tab').forEach(btn => {
-            btn.addEventListener('click', () => this.switchTab(btn.dataset.tab));
+            btn.addEventListener('click', () => {
+                // Matches tab content is fetched lazily on first visit
+                // (comic-server-a2hz) - switchTab alone only toggles CSS
+                // classes on panels already in the DOM.
+                if (btn.dataset.tab === 'matches' && this.cblEntries === null) {
+                    this.loadCBLEntriesAndSwitchTab();
+                } else {
+                    this.switchTab(btn.dataset.tab);
+                }
+            });
+        });
+
+        document.querySelectorAll('.cbl-correct-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.correctCBLEntry(btn.dataset.entryId, btn.dataset.bookId);
+            });
         });
 
         const loadMoreBtn = document.getElementById('load-more-btn');

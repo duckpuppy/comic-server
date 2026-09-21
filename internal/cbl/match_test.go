@@ -120,7 +120,7 @@ func TestMatchEntry_StillAmbiguousTakesFirst(t *testing.T) {
 	if m.Path != MatchSeriesNumber || m.Book == nil {
 		t.Fatalf("expected a match despite ambiguity, got %+v", m)
 	}
-	if m.Candidate != 2 {
-		t.Errorf("Candidate count = %d, want 2 (diagnostic for match-correction UI)", m.Candidate)
+	if len(m.Candidates) != 2 {
+		t.Errorf("len(Candidates) = %d, want 2 (diagnostic for match-correction UI)", len(m.Candidates))
 	}
 }

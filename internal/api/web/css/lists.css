@@ -704,6 +704,76 @@
     color: #d20f39; /* Catppuccin red */
 }
 
+/* CBL match-correction panel (comic-server-a2hz) */
+.cbl-matches-info {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin: 0 0 1rem 0;
+}
+
+.cbl-matches-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.cbl-matches-table th {
+    text-align: left;
+    padding: 0.4rem 0.6rem;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 0.8rem;
+}
+
+.cbl-matches-table td {
+    padding: 0.4rem 0.6rem;
+    border-bottom: 1px solid var(--border-color);
+    vertical-align: middle;
+}
+
+.cbl-match-none {
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+.cbl-match-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
+.cbl-match-badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+.cbl-match-badge-cv_id {
+    background: color-mix(in srgb, #a6da95 20%, transparent); /* Catppuccin green */
+    color: #a6da95;
+}
+
+.cbl-match-badge-series_number {
+    background: color-mix(in srgb, #df8e1d 20%, transparent); /* Catppuccin yellow */
+    color: #df8e1d;
+}
+
+.cbl-match-badge-manual {
+    background: color-mix(in srgb, #8aadf4 20%, transparent); /* Catppuccin blue */
+    color: #8aadf4;
+}
+
+.cbl-match-badge-none {
+    background: color-mix(in srgb, #d20f39 20%, transparent); /* Catppuccin red */
+    color: #d20f39;
+}
+
 .list-unread-count {
     color: #df8e1d;   /* Catppuccin yellow */
     font-weight: 600;

@@ -22,6 +22,12 @@ const (
 	// MatchSeriesNumber means the entry matched via the ComicRackCE-parity
 	// Series/Number/Volume/Year/Format fallback (spec §2b).
 	MatchSeriesNumber
+	// MatchManual means a user corrected this entry via the
+	// match-correction UI (spec §2d, comic-server-a2hz) - re-pointing it
+	// to a different book than MatchEntry picked, or confirming one of
+	// the tied candidates by hand. Never produced by MatchEntry itself;
+	// set by the storage layer when applying a correction.
+	MatchManual
 )
 
 func (p MatchPath) String() string {
@@ -30,6 +36,8 @@ func (p MatchPath) String() string {
 		return "cv_id"
 	case MatchSeriesNumber:
 		return "series_number"
+	case MatchManual:
+		return "manual"
 	default:
 		return "none"
 	}
@@ -37,10 +45,19 @@ func (p MatchPath) String() string {
 
 // Match is the result of matching one CBL Book against the library.
 type Match struct {
-	Entry     Book
-	Path      MatchPath
-	Book      *library.ComicBook // nil if Path == MatchNone
-	Candidate int                // len(candidates) considered at the final narrowing step, for diagnostics (spec §2d - which candidates were considered)
+	Entry Book
+	Path  MatchPath
+	Book  *library.ComicBook // nil if Path == MatchNone
+
+	// Candidates is the final narrowed candidate set MatchEntry was
+	// choosing among when Path == MatchSeriesNumber (spec §2d - "which
+	// candidates were considered"). Length 1 means the match was
+	// unambiguous; length > 1 means step 7's FirstOrDefault tie-break
+	// picked Book (= Candidates[0]) arbitrarily among real ties - exactly
+	// the case the match-correction UI exists for. Always nil for
+	// MatchCVID (a direct ID lookup, not a heuristic) and MatchNone
+	// (nothing to have narrowed).
+	Candidates []*library.ComicBook
 }
 
 // rxVolumeInName and rxSpecial replicate ComicRackCE's ComicInfo.cs
@@ -84,7 +101,7 @@ func MatchEntry(entry Book, books []*library.ComicBook) Match {
 	if cvID, ok := entry.CVIssueID(); ok {
 		for _, b := range books {
 			if issueID, ok := cvIssueID(b); ok && issueID == cvID {
-				return Match{Entry: entry, Path: MatchCVID, Book: b, Candidate: 1}
+				return Match{Entry: entry, Path: MatchCVID, Book: b}
 			}
 		}
 	}
@@ -122,14 +139,16 @@ func MatchEntry(entry Book, books []*library.ComicBook) Match {
 	}
 
 	if len(candidates) == 0 {
-		return Match{Entry: entry, Path: MatchNone, Candidate: 0}
+		return Match{Entry: entry, Path: MatchNone}
 	}
 	// FirstOrDefault() tie-break, matching the reference implementation
 	// exactly (spec §2b step 7) - an arbitrary pick on a still-ambiguous
 	// set is a known fuzziness in ComicRack itself, not something
-	// comic-server needs to solve better by default. See spec §2d for
-	// the planned match-correction UI that lets a user fix this later.
-	return Match{Entry: entry, Path: MatchSeriesNumber, Book: candidates[0], Candidate: len(candidates)}
+	// comic-server needs to solve better by default. Candidates carries
+	// the full narrowed set (not just its length) so the match-correction
+	// UI (spec §2d, comic-server-a2hz) can offer the other candidates a
+	// user can re-point to instead of Book, when this pick is wrong.
+	return Match{Entry: entry, Path: MatchSeriesNumber, Book: candidates[0], Candidates: candidates}
 }
 
 func cvIssueID(b *library.ComicBook) (int, bool) {

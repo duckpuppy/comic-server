@@ -24,6 +24,16 @@ import (
 // it must refuse to operate on a list with a non-NULL cbl_source -
 // enforcing that a CBL-imported list stays reimport-only, not
 // hand-edited out from under its own source of truth.
+//
+// The match-correction UI (comic-server-a2hz, cbl_import_entries.book_id
+// re-pointed via CorrectCBLImportEntry) is a narrower, deliberate
+// exception to that "no hand-editing" rule - it corrects a specific
+// entry's match within one import's results (spec §2d), never adds or
+// removes a CBL entry itself. A subsequent reimport still fully replaces
+// cbl_import_entries from a fresh match, so a manual correction does NOT
+// survive across reimports - accepted per the same reasoning as the rest
+// of this policy: reimport is authoritative, and the fresh match is what
+// a user asked for by triggering it.
 
 // GetCBLSource returns listID's CBL import provenance, or nil if the
 // list wasn't imported from a CBL (cbl_source is NULL).
@@ -126,16 +136,17 @@ func (db *DB) ReimportCBL(listID string, rl *cbl.ReadingList, newSource CBLImpor
 		m := cbl.MatchEntry(entry, candidatePtrs)
 		cvIssueID, _ := entry.CVIssueID()
 		ie := CBLImportEntry{
-			ID:        uuid.NewString(),
-			ListID:    listID,
-			Position:  pos,
-			Path:      m.Path,
-			Series:    entry.Series,
-			Number:    entry.Number,
-			Volume:    entry.Volume,
-			Year:      entry.Year,
-			Format:    entry.Format,
-			CVIssueID: cvIssueID,
+			ID:               uuid.NewString(),
+			ListID:           listID,
+			Position:         pos,
+			Path:             m.Path,
+			Series:           entry.Series,
+			Number:           entry.Number,
+			Volume:           entry.Volume,
+			Year:             entry.Year,
+			Format:           entry.Format,
+			CVIssueID:        cvIssueID,
+			CandidateBookIDs: candidateBookIDs(m),
 		}
 		switch m.Path {
 		case cbl.MatchCVID, cbl.MatchSeriesNumber:
@@ -185,14 +196,18 @@ func (db *DB) ReimportCBL(listID string, rl *cbl.ReadingList, newSource CBLImpor
 		return nil, fmt.Errorf("clear cbl_import_entries: %w", err)
 	}
 	for _, ie := range result.Entries {
+		candidateJSON, err := candidateBookIDsJSON(ie.CandidateBookIDs)
+		if err != nil {
+			return nil, err
+		}
 		if _, err := tx.Exec(`
 			INSERT INTO cbl_import_entries (
 				id, list_id, book_id, position, match_path,
-				series, number, volume, year, format, cv_issue_id
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				series, number, volume, year, format, cv_issue_id, candidate_book_ids
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`,
 			ie.ID, ie.ListID, nullIfEmpty(ie.BookID), ie.Position, ie.Path.String(),
-			ie.Series, ie.Number, ie.Volume, ie.Year, ie.Format, nullIfZero(ie.CVIssueID),
+			ie.Series, ie.Number, ie.Volume, ie.Year, ie.Format, nullIfZero(ie.CVIssueID), candidateJSON,
 		); err != nil {
 			return nil, fmt.Errorf("insert cbl_import_entries row: %w", err)
 		}
