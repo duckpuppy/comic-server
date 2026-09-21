@@ -265,6 +265,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/library/cbl-repo/import", s.handleCBLRepoImport)
 	s.mux.HandleFunc("/api/library/workflow/wanted", s.handleWantedBooks)
 	s.mux.HandleFunc("/api/library/workflow/wanted/link", s.handleLinkWantedBook)
+	s.mux.HandleFunc("/api/library/workflow/wanted/from-cbl-import", s.handleAddCBLUnmatchedToWanted)
 	s.mux.HandleFunc("/api/library/workflow/", s.handleWorkflowStageSubRouter)
 
 	// Trash browser endpoints (comic-server-tfs)

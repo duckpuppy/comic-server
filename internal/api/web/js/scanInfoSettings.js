@@ -55,6 +55,23 @@ class ScanInfoSettings {
         this.cblRepoLoading = false;
         this.cblRepoImportingPath = null;
         this.cblRepoError = null;
+        this.cblRepoLastResult = null; // most recent import-from-repo result, for its unmatched/wanted section
+
+        // "Add unmatched to wanted list" (comic-server-sx2d) - manual,
+        // per-import action, shared by both the local-file and
+        // repo-import result panels. cblWantedAddingListId is the list
+        // currently being processed (disables its button);
+        // cblWantedAddedListIds tracks which lists have already had this
+        // run (hides the button, shows a confirmation instead) - this
+        // action is idempotent server-side too, but avoiding a pointless
+        // second click is simple client-side polish.
+        this.cblWantedAddingListId = null;
+        this.cblWantedAddedListIds = new Set();
+        // Tracks which unmatched-entries <details> panels are expanded,
+        // so a re-render (e.g. right after clicking "Add to wanted
+        // list") doesn't collapse the panel and hide its own
+        // confirmation message from the user.
+        this.cblUnmatchedDetailsOpen = new Set();
 
         // Server misc settings (comic-server-wp8k, second slice of the
         // Settings UI push): CBZ Convert enabled + ignore-devices, both
@@ -546,12 +563,39 @@ class ScanInfoSettings {
             const text = await response.text();
             if (!response.ok) throw new Error(friendlyErrorText(response, text));
             const result = JSON.parse(text);
+            this.cblRepoLastResult = result;
             dialogs.toast(`Reading list "${result.name}" imported (${result.matched_cv_id + result.matched_series_number} matched, ${result.unmatched} unmatched).`, 'success');
         } catch (error) {
             console.error('Failed to import from CBL repo:', error);
             this.cblRepoError = `Failed: ${error.message}`;
         } finally {
             this.cblRepoImportingPath = null;
+            this.render();
+            this.attachListeners();
+        }
+    }
+
+    async runAddCBLUnmatchedToWanted(listId) {
+        this.cblWantedAddingListId = listId;
+        this.render();
+        this.attachListeners();
+
+        try {
+            const response = await fetch('/api/library/workflow/wanted/from-cbl-import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ list_id: listId }),
+            });
+            const text = await response.text();
+            if (!response.ok) throw new Error(friendlyErrorText(response, text));
+            const result = JSON.parse(text);
+            this.cblWantedAddedListIds.add(listId);
+            dialogs.toast(`Added ${result.created} book${result.created === 1 ? '' : 's'} to the wanted list.`, 'success');
+        } catch (error) {
+            console.error('Failed to add unmatched CBL entries to wanted list:', error);
+            dialogs.toast(`Failed: ${error.message}`, 'error');
+        } finally {
+            this.cblWantedAddingListId = null;
             this.render();
             this.attachListeners();
         }
@@ -672,6 +716,7 @@ class ScanInfoSettings {
                 </div>
                 ${this.cblRepoError ? `<p class="datamanager-errors">${this.escapeHtml(this.cblRepoError)}</p>` : ''}
                 ${this.renderCBLRepoFiles()}
+                ${this.cblRepoLastResult ? this.renderCBLUnmatchedSection(this.cblRepoLastResult, 'cbl-repo') : ''}
             </div>
         `;
     }
@@ -706,19 +751,36 @@ class ScanInfoSettings {
         let html = `<p class="datamanager-summary">Imported "${this.escapeHtml(r.name)}" as a new list: ` +
             `${r.matched_cv_id} matched by ComicVine ID, ${r.matched_series_number} matched by series/number, ` +
             `${r.unmatched} unmatched.</p>`;
-
-        const unmatched = (r.entries || []).filter(e => e.match_path === 'none');
-        if (unmatched.length > 0) {
-            html += `
-                <details class="cbl-import-unmatched">
-                    <summary>${unmatched.length} unmatched ${unmatched.length === 1 ? 'entry' : 'entries'}</summary>
-                    <ul>
-                        ${unmatched.map(e => `<li>${this.escapeHtml(e.series)} #${this.escapeHtml(e.number)}${e.year ? ` (${e.year})` : ''}</li>`).join('')}
-                    </ul>
-                </details>
-            `;
-        }
+        html += this.renderCBLUnmatchedSection(r, 'cbl');
         return html;
+    }
+
+    // renderCBLUnmatchedSection renders the unmatched-entries disclosure
+    // plus the "add to wanted list" action (comic-server-sx2d) shared by
+    // both the local-file import result and the repo-import result.
+    // idPrefix keeps element IDs distinct between the two panels.
+    renderCBLUnmatchedSection(r, idPrefix) {
+        const unmatched = (r.entries || []).filter(e => e.match_path === 'none');
+        if (unmatched.length === 0) return '';
+
+        const adding = this.cblWantedAddingListId === r.list_id;
+        const added = this.cblWantedAddedListIds && this.cblWantedAddedListIds.has(r.list_id);
+        const open = this.cblUnmatchedDetailsOpen.has(r.list_id);
+
+        return `
+            <details class="cbl-import-unmatched" data-list-id="${this.escapeHtml(r.list_id)}" ${open ? 'open' : ''}>
+                <summary>${unmatched.length} unmatched ${unmatched.length === 1 ? 'entry' : 'entries'}</summary>
+                <ul>
+                    ${unmatched.map(e => `<li>${this.escapeHtml(e.series)} #${this.escapeHtml(e.number)}${e.year ? ` (${e.year})` : ''}</li>`).join('')}
+                </ul>
+                ${added
+                    ? `<p class="empty-hint">Added to the wanted list.</p>`
+                    : `<button class="btn btn-secondary btn-small ${idPrefix}-wanted-btn" data-list-id="${this.escapeHtml(r.list_id)}" ${adding ? 'disabled' : ''}>
+                        ${adding ? 'Adding…' : `Add ${unmatched.length} unmatched to wanted list`}
+                      </button>`
+                }
+            </details>
+        `;
     }
 
     renderImportResult() {
@@ -1159,6 +1221,19 @@ class ScanInfoSettings {
         }
         document.querySelectorAll('.cbl-repo-import-btn').forEach(btn => {
             btn.addEventListener('click', () => this.runCBLRepoImport(btn.dataset.path));
+        });
+        document.querySelectorAll('.cbl-wanted-btn, .cbl-repo-wanted-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.runAddCBLUnmatchedToWanted(btn.dataset.listId));
+        });
+        document.querySelectorAll('.cbl-import-unmatched').forEach(details => {
+            details.addEventListener('toggle', () => {
+                const listId = details.dataset.listId;
+                if (details.open) {
+                    this.cblUnmatchedDetailsOpen.add(listId);
+                } else {
+                    this.cblUnmatchedDetailsOpen.delete(listId);
+                }
+            });
         });
 
         document.querySelectorAll('input[name="theme-default"]').forEach(el => {

@@ -135,4 +135,91 @@ func TestFreshDB_HasCBLColumnsAndTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cbl_import_entries table missing from fresh db: %v", err)
 	}
+
+	hasWantedBookID, err := db.hasColumn("cbl_import_entries", "wanted_book_id")
+	if err != nil {
+		t.Fatalf("check wanted_book_id column: %v", err)
+	}
+	if !hasWantedBookID {
+		t.Error("fresh cbl_import_entries table missing wanted_book_id column")
+	}
+}
+
+// TestMigrateV6ToV7_AddsWantedBookIDColumn simulates a database already
+// sitting at schema v6 (comic-server-tnv4 shipped, comic-server-sx2d not
+// yet) - cbl_import_entries exists but without wanted_book_id - and
+// confirms opening it adds the column via the real ALTER path (not the
+// "already had it from v5->v6" skip path TestMigrateV5ToV6 exercises).
+func TestMigrateV6ToV7_AddsWantedBookIDColumn(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	raw, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open raw db: %v", err)
+	}
+	v6Lists := `
+		CREATE TABLE lists (
+			id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL,
+			parent_id TEXT, description TEXT, favorite INTEGER DEFAULT 0,
+			collapsed INTEGER DEFAULT 0, matcher_mode TEXT, matchers TEXT,
+			base_list_id TEXT, book_count INTEGER DEFAULT 0, import_hash TEXT,
+			updated_at TEXT, deleted_at TEXT,
+			cbl_source TEXT, cbl_source_ref TEXT, cbl_imported_at TEXT
+		)
+	`
+	v6Books := `CREATE TABLE books (id TEXT PRIMARY KEY)`
+	// v6 shape: no wanted_book_id yet (comic-server-sx2d hasn't shipped).
+	v6CBLImportEntries := `
+		CREATE TABLE cbl_import_entries (
+			id TEXT PRIMARY KEY, list_id TEXT NOT NULL, book_id TEXT,
+			position INTEGER NOT NULL, match_path TEXT NOT NULL,
+			series TEXT NOT NULL, number TEXT NOT NULL, volume INTEGER,
+			year INTEGER, format TEXT, cv_issue_id INTEGER
+		)
+	`
+	for _, stmt := range []string{v6Lists, v6Books, v6CBLImportEntries, "PRAGMA user_version = 6"} {
+		if _, err := raw.Exec(stmt); err != nil {
+			t.Fatalf("exec %q: %v", stmt, err)
+		}
+	}
+	if _, err := raw.Exec(`
+		INSERT INTO cbl_import_entries (id, list_id, position, match_path, series, number)
+		VALUES ('entry-1', 'list-1', 0, 'none', 'Old Series', '1')
+	`); err != nil {
+		t.Fatalf("seed entry: %v", err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatalf("close raw db: %v", err)
+	}
+
+	db, err := Open(dbPath)
+	if err != nil {
+		t.Fatalf("Open (should migrate v6->v7): %v", err)
+	}
+	defer db.Close()
+
+	var version int
+	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
+		t.Fatalf("get schema version: %v", err)
+	}
+	if version != schemaVersion {
+		t.Errorf("schema version = %d, want %d", version, schemaVersion)
+	}
+
+	// The pre-existing entry survives, and its new wanted_book_id is NULL.
+	var series string
+	var wantedBookID sql.NullString
+	err = db.QueryRow(`SELECT series, wanted_book_id FROM cbl_import_entries WHERE id = ?`, "entry-1").Scan(&series, &wantedBookID)
+	if err != nil {
+		t.Fatalf("query migrated entry: %v", err)
+	}
+	if series != "Old Series" {
+		t.Errorf("series = %q, want %q (entry content must survive migration)", series, "Old Series")
+	}
+	if wantedBookID.Valid {
+		t.Errorf("expected wanted_book_id NULL on a pre-migration entry, got %q", wantedBookID.String)
+	}
+
+	if err := db.MarkCBLImportEntryWanted("entry-1", "wanted-1"); err != nil {
+		t.Fatalf("MarkCBLImportEntryWanted post-migration: %v", err)
+	}
 }

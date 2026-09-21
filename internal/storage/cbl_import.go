@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"database/sql"
 	"fmt"
 	"time"
 
@@ -177,6 +178,56 @@ func (db *DB) ImportCBL(rl *cbl.ReadingList, source CBLImportSource) (*CBLImport
 		return nil, fmt.Errorf("commit: %w", err)
 	}
 	return result, nil
+}
+
+// GetUnresolvedCBLImportEntries returns every entry from a CBL import
+// that didn't match a real book AND hasn't already been added to the
+// wanted-books list (comic-server-sx2d) - the set "add unmatched to
+// wanted" should act on. Running that action twice is a no-op the
+// second time: once an entry gets a wanted_book_id, it's excluded here.
+func (db *DB) GetUnresolvedCBLImportEntries(listID string) ([]CBLImportEntry, error) {
+	rows, err := db.Query(`
+		SELECT id, list_id, position, match_path, series, number, volume, year, format, cv_issue_id
+		FROM cbl_import_entries
+		WHERE list_id = ? AND match_path = 'none' AND wanted_book_id IS NULL
+		ORDER BY position
+	`, listID)
+	if err != nil {
+		return nil, fmt.Errorf("query unresolved cbl_import_entries: %w", err)
+	}
+	defer rows.Close()
+
+	var entries []CBLImportEntry
+	for rows.Next() {
+		var e CBLImportEntry
+		var volume, year, cvIssueID sql.NullInt64
+		var format sql.NullString
+		var matchPath string
+		if err := rows.Scan(&e.ID, &e.ListID, &e.Position, &matchPath, &e.Series, &e.Number, &volume, &year, &format, &cvIssueID); err != nil {
+			return nil, fmt.Errorf("scan cbl_import_entries row: %w", err)
+		}
+		// This query's WHERE clause only ever returns match_path='none'
+		// rows (see the SELECT above), so this is always cbl.MatchNone -
+		// no need to parse the string column back into a MatchPath.
+		e.Path = cbl.MatchNone
+		e.Volume = int(volume.Int64)
+		e.Year = int(year.Int64)
+		e.Format = format.String
+		e.CVIssueID = int(cvIssueID.Int64)
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}
+
+// MarkCBLImportEntryWanted records that entryID's unmatched CBL entry
+// was added to the wanted-books list as bookID - see
+// GetUnresolvedCBLImportEntries.
+func (db *DB) MarkCBLImportEntryWanted(entryID, bookID string) error {
+	_, err := db.Exec(`UPDATE cbl_import_entries SET wanted_book_id = ? WHERE id = ?`, bookID, entryID)
+	if err != nil {
+		return fmt.Errorf("mark cbl_import_entries wanted: %w", err)
+	}
+	return nil
 }
 
 func nullIfEmpty(s string) any {

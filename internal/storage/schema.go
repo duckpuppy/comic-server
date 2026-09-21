@@ -3,7 +3,7 @@ package storage
 import "fmt"
 
 // Schema version for migrations
-const schemaVersion = 6
+const schemaVersion = 7
 
 // initSchema creates the database tables if they don't exist.
 func (db *DB) initSchema() error {
@@ -48,6 +48,11 @@ func (db *DB) initSchema() error {
 		if version < 6 {
 			if err := db.migrateV5ToV6(); err != nil {
 				return fmt.Errorf("migrate v5→v6: %w", err)
+			}
+		}
+		if version < 7 {
+			if err := db.migrateV6ToV7(); err != nil {
+				return fmt.Errorf("migrate v6→v7: %w", err)
 			}
 		}
 	}
@@ -184,6 +189,48 @@ func (db *DB) migrateV5ToV6() error {
 	return db.createCBLImportEntriesTable()
 }
 
+// migrateV6ToV7 adds cbl_import_entries.wanted_book_id
+// (comic-server-sx2d, spec §2e): when a user explicitly adds an
+// unmatched CBL entry to the wanted-books list (comic-server-38f7), this
+// records which wanted book that entry became, both for idempotency
+// (running "add unmatched to wanted" twice must not create duplicates)
+// and so a later feature (comic-server-a2hz's match-correction UI) can
+// distinguish "unmatched, nothing done yet" from "unmatched, already
+// wanted-listed".
+func (db *DB) migrateV6ToV7() error {
+	// createCBLImportEntriesTable's DDL already includes wanted_book_id
+	// (it must, to give a truly fresh v0 database - which only ever runs
+	// createTables(), never the numbered migrations - the full current
+	// schema). That means an upgrade that goes v5->v6->v7 in the same
+	// Open() call already gets the column from v5->v6's table creation,
+	// making this ALTER redundant - check first rather than erroring on
+	// "duplicate column name" for that path. A database that was
+	// already sitting at v6 (table existed without the column) still
+	// needs the real ALTER.
+	hasColumn, err := db.hasColumn("cbl_import_entries", "wanted_book_id")
+	if err != nil {
+		return fmt.Errorf("check wanted_book_id column: %w", err)
+	}
+	if hasColumn {
+		return nil
+	}
+	if _, err := db.Exec("ALTER TABLE cbl_import_entries ADD COLUMN wanted_book_id TEXT"); err != nil {
+		return fmt.Errorf("add wanted_book_id column: %w", err)
+	}
+	return nil
+}
+
+// hasColumn reports whether table has a column named column, via
+// SQLite's pragma_table_info.
+func (db *DB) hasColumn(table, column string) (bool, error) {
+	rows, err := db.Query(`SELECT 1 FROM pragma_table_info(?) WHERE name = ?`, table, column)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	return rows.Next(), rows.Err()
+}
+
 // createCBLImportEntriesTable creates cbl_import_entries if it doesn't
 // exist - shared between the fresh-database path (createTables) and the
 // v5->v6 migration path for existing databases.
@@ -210,7 +257,11 @@ func (db *DB) createCBLImportEntriesTable() error {
 			volume INTEGER,
 			year INTEGER,
 			format TEXT,
-			cv_issue_id INTEGER
+			cv_issue_id INTEGER,
+			-- Set when this entry was explicitly added to the
+			-- wanted-books list (comic-server-sx2d) - see
+			-- migrateV6ToV7's doc comment.
+			wanted_book_id TEXT
 		)
 	`)
 	if err != nil {
