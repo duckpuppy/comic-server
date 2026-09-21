@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.43.1](https://github.com/duckpuppy/comic-server/compare/v1.43.0...v1.43.1) (2026-09-21)
+
+
+### Bug Fixes
+
+* give reading lists their own edit view instead of the matcher editor (comic-server-d1lk) ([d6293a3](https://github.com/duckpuppy/comic-server/commit/d6293a3b00413896751df96b72ff21e7462711bb))
+
 ## [1.43.0](https://github.com/duckpuppy/comic-server/compare/v1.42.0...v1.43.0) (2026-09-21)
 
 
