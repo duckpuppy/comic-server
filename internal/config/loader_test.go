@@ -26,6 +26,62 @@ func TestLoadNonexistentFile(t *testing.T) {
 	}
 }
 
+// TestLoadNonexistentFile_StillAppliesEnvironmentAndDefaults is the
+// comic-server-n5ms regression test: Load() used to return an
+// unprocessed NewConfig() when the config file didn't exist yet,
+// skipping ApplyDefaults/ApplyEnvironment/Validate entirely - so on a
+// fresh install (e.g. a first-run Docker container configured purely by
+// COMIC_SERVER_* environment variables, before any config.yaml exists),
+// every one of those env vars was silently ignored. Confirms both a
+// defaulted field and an explicit env-var override take effect even
+// with no config file on disk.
+func TestLoadNonexistentFile_StillAppliesEnvironmentAndDefaults(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "nonexistent.yaml")
+
+	t.Setenv("COMIC_SERVER_LOG_LEVEL", "debug")
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() should not error for nonexistent file, got: %v", err)
+	}
+
+	// ApplyDefaults ran: a default that's non-zero (never explicitly set
+	// here) must be present.
+	if cfg.Server.ServerPort == 0 {
+		t.Error("Server.ServerPort is 0 - ApplyDefaults did not run for a nonexistent config file")
+	}
+
+	// ApplyEnvironment ran: the env var set above must have taken effect.
+	if cfg.Server.LogLevel != "debug" {
+		t.Errorf("Server.LogLevel = %q, want %q (COMIC_SERVER_LOG_LEVEL was ignored)", cfg.Server.LogLevel, "debug")
+	}
+}
+
+// TestLoadEmptyFile_StillAppliesEnvironmentAndDefaults covers the other
+// early-return branch Load() has (an existing-but-empty config file) -
+// same comic-server-n5ms bug, same fix.
+func TestLoadEmptyFile_StillAppliesEnvironmentAndDefaults(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "empty.yaml")
+	if err := os.WriteFile(configPath, []byte{}, 0o644); err != nil {
+		t.Fatalf("write empty config file: %v", err)
+	}
+
+	t.Setenv("COMIC_SERVER_LOG_LEVEL", "debug")
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() should not error for an empty file, got: %v", err)
+	}
+	if cfg.Server.ServerPort == 0 {
+		t.Error("Server.ServerPort is 0 - ApplyDefaults did not run for an empty config file")
+	}
+	if cfg.Server.LogLevel != "debug" {
+		t.Errorf("Server.LogLevel = %q, want %q (COMIC_SERVER_LOG_LEVEL was ignored)", cfg.Server.LogLevel, "debug")
+	}
+}
+
 func TestLoadYAML(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
