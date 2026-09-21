@@ -300,8 +300,31 @@ class ListDetail {
         });
     }
 
+    // Reading list membership comes from a CBL import and is never
+    // resolved via Matchers (see comic-server-zw0o) - showing the
+    // matcher editor for one is a no-op on save and confusing UX
+    // (comic-server-d1lk). Reading lists get a small editor scoped to
+    // Name/Description/Favorite instead.
+    isReadingList() {
+        return this.list && this.list.type === 'ComicReadingList';
+    }
+
     renderEditView() {
         const state = this.editState;
+        const detailsPanel = `
+            <div class="panel matchers-panel">
+                <h2>Details</h2>
+                <div class="list-edit-field">
+                    <label for="edit-list-description">Description</label>
+                    <textarea id="edit-list-description" class="list-description-input"
+                              placeholder="Description">${this.escapeHtml(state.description)}</textarea>
+                </div>
+                <label class="list-favorite-toggle">
+                    <input type="checkbox" id="edit-list-favorite" ${state.favorite ? 'checked' : ''}> Favorite
+                </label>
+            </div>
+        `;
+
         return `
             <!-- Edit Header -->
             <div class="list-detail-header">
@@ -315,6 +338,8 @@ class ListDetail {
                 </div>
             </div>
 
+            ${this.isReadingList() ? detailsPanel : `
+            ${detailsPanel}
             <!-- Matchers Editor -->
             <div class="panel matchers-panel">
                 <div class="matchers-editor-header">
@@ -335,6 +360,7 @@ class ListDetail {
 
                 <button id="add-matcher-btn" class="btn btn-secondary btn-add-matcher">+ Add Matcher</button>
             </div>
+            `}
         `;
     }
 
@@ -576,6 +602,8 @@ class ListDetail {
         this.fetchRawList().then(rawList => {
             this.editState = {
                 name: rawList ? rawList.Name : this.list.name,
+                description: rawList ? (rawList.Description || '') : '',
+                favorite: rawList ? !!rawList.Favorite : false,
                 matcherMode: rawList ? (rawList.MatcherMode || 'And') : (this.list.matcher_mode || 'And'),
                 matchers: rawList ? (rawList.Matchers || []) : []
             };
@@ -605,8 +633,12 @@ class ListDetail {
 
     collectEditState() {
         const nameInput = document.getElementById('edit-list-name');
+        const descInput = document.getElementById('edit-list-description');
+        const favInput = document.getElementById('edit-list-favorite');
         const modeSelect = document.getElementById('edit-matcher-mode');
         if (nameInput) this.editState.name = nameInput.value.trim();
+        if (descInput) this.editState.description = descInput.value;
+        if (favInput) this.editState.favorite = favInput.checked;
         if (modeSelect) this.editState.matcherMode = modeSelect.value;
     }
 
@@ -666,6 +698,8 @@ class ListDetail {
         const body = {
             name: state.name,
             type: this.list.type,
+            description: state.description,
+            favorite: state.favorite,
             matcher_mode: state.matcherMode,
             matchers: state.matchers
         };

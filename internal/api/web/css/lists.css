@@ -1138,6 +1138,39 @@
     min-width: 200px;
 }
 
+/* Description/Favorite fields (list edit view - comic-server-d1lk) */
+.list-edit-field {
+    margin-bottom: 0.75rem;
+}
+
+.list-edit-field label {
+    display: block;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.25rem;
+}
+
+.list-description-input {
+    width: 100%;
+    min-height: 4rem;
+    padding: 0.5rem;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font: inherit;
+    resize: vertical;
+}
+
+.list-favorite-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
 /* Matchers editor */
 .matchers-editor-header {
     display: flex;
