@@ -3,7 +3,7 @@ package storage
 import "fmt"
 
 // Schema version for migrations
-const schemaVersion = 7
+const schemaVersion = 8
 
 // initSchema creates the database tables if they don't exist.
 func (db *DB) initSchema() error {
@@ -53,6 +53,11 @@ func (db *DB) initSchema() error {
 		if version < 7 {
 			if err := db.migrateV6ToV7(); err != nil {
 				return fmt.Errorf("migrate v6→v7: %w", err)
+			}
+		}
+		if version < 8 {
+			if err := db.migrateV7ToV8(); err != nil {
+				return fmt.Errorf("migrate v7→v8: %w", err)
 			}
 		}
 	}
@@ -231,6 +236,75 @@ func (db *DB) hasColumn(table, column string) (bool, error) {
 	return rows.Next(), rows.Err()
 }
 
+// migrateV7ToV8 promotes ComicVine volume/issue ID to first-class,
+// indexed columns on `books` (comic-server-r8td), instead of living only
+// as comicvine_volume=N/comicvine_issue=N rows in the generic
+// book_custom_values table. This is a REAL migration, not a permanent
+// shadow field: book_custom_values stops storing these two keys at rest.
+//
+// Backward compatibility is preserved by construction, not by keeping a
+// duplicate copy: every place that reconstructs a book's
+// CustomValuesStore string for reads (loadBookCustomValues,
+// loadTagsAndCustomValuesBatch, liveBookSnapshot) now also synthesizes
+// comicvine_volume=/comicvine_issue= into that string from these new
+// columns. So book.CustomValuesStore looks IDENTICAL to before this
+// migration for every existing caller (internal/cbl/match.go,
+// internal/workflow/stage.go, internal/comicvine/*,
+// internal/api/cbl_wanted.go) and for ComicDb.xml export
+// (internal/storage/export.go, which reuses GetAllBooks/GetBook) -
+// none of them needed to change. See comic-server-r8td's bead notes for
+// the exact touch points this was designed against.
+func (db *DB) migrateV7ToV8() error {
+	hasColumn, err := db.hasColumn("books", "cv_volume_id")
+	if err != nil {
+		return fmt.Errorf("check cv_volume_id column: %w", err)
+	}
+	if hasColumn {
+		return nil // already current (fresh-DB createTables path got there directly)
+	}
+
+	stmts := []string{
+		"ALTER TABLE books ADD COLUMN cv_volume_id INTEGER",
+		"ALTER TABLE books ADD COLUMN cv_issue_id INTEGER",
+		"CREATE INDEX IF NOT EXISTS idx_books_cv_volume_id ON books(cv_volume_id) WHERE cv_volume_id IS NOT NULL",
+		"CREATE INDEX IF NOT EXISTS idx_books_cv_issue_id ON books(cv_issue_id) WHERE cv_issue_id IS NOT NULL",
+	}
+	for _, s := range stmts {
+		if _, err := db.Exec(s); err != nil {
+			return fmt.Errorf("migrate v7->v8: %s: %w", s, err)
+		}
+	}
+
+	// Backfill from whatever's already sitting in book_custom_values,
+	// then remove those rows - canonical storage moves, it doesn't
+	// duplicate. CAST(... AS INTEGER) is forgiving (returns 0 on a
+	// non-numeric value) rather than erroring, matching this codebase's
+	// existing tolerance for malformed custom-value data elsewhere
+	// (e.g. cvIssueID's strconv.Atoi error just means "not tagged").
+	if _, err := db.Exec(`
+		UPDATE books SET cv_volume_id = (
+			SELECT CAST(value AS INTEGER) FROM book_custom_values
+			WHERE book_id = books.id AND key = 'comicvine_volume'
+		)
+		WHERE id IN (SELECT book_id FROM book_custom_values WHERE key = 'comicvine_volume')
+	`); err != nil {
+		return fmt.Errorf("backfill cv_volume_id: %w", err)
+	}
+	if _, err := db.Exec(`
+		UPDATE books SET cv_issue_id = (
+			SELECT CAST(value AS INTEGER) FROM book_custom_values
+			WHERE book_id = books.id AND key = 'comicvine_issue'
+		)
+		WHERE id IN (SELECT book_id FROM book_custom_values WHERE key = 'comicvine_issue')
+	`); err != nil {
+		return fmt.Errorf("backfill cv_issue_id: %w", err)
+	}
+	if _, err := db.Exec(`DELETE FROM book_custom_values WHERE key IN ('comicvine_volume', 'comicvine_issue')`); err != nil {
+		return fmt.Errorf("remove migrated comicvine_volume/comicvine_issue rows: %w", err)
+	}
+	return nil
+}
+
 // createCBLImportEntriesTable creates cbl_import_entries if it doesn't
 // exist - shared between the fresh-database path (createTables) and the
 // v5->v6 migration path for existing databases.
@@ -399,7 +473,15 @@ func (db *DB) createTables() error {
 
 			-- Reimport merge (comic-server-aio): JSON snapshot of the book
 			-- as last parsed from XML, for field-level diffing on reimport
-			xml_snapshot TEXT
+			xml_snapshot TEXT,
+
+			-- ComicVine identity, first-class (comic-server-r8td) - see
+			-- migrateV7ToV8's doc comment for the full design. NULL when
+			-- untagged; synthesized back into CustomValuesStore
+			-- (comicvine_volume/comicvine_issue) on every read for
+			-- backward compatibility.
+			cv_volume_id INTEGER,
+			cv_issue_id INTEGER
 		)
 	`)
 	if err != nil {
@@ -408,6 +490,8 @@ func (db *DB) createTables() error {
 
 	// Indexes for common queries (smart list filtering)
 	indexes := []string{
+		"CREATE INDEX IF NOT EXISTS idx_books_cv_volume_id ON books(cv_volume_id) WHERE cv_volume_id IS NOT NULL",
+		"CREATE INDEX IF NOT EXISTS idx_books_cv_issue_id ON books(cv_issue_id) WHERE cv_issue_id IS NOT NULL",
 		"CREATE INDEX IF NOT EXISTS idx_books_series ON books(series)",
 		"CREATE INDEX IF NOT EXISTS idx_books_publisher ON books(publisher)",
 		"CREATE INDEX IF NOT EXISTS idx_books_year ON books(year)",

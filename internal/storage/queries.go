@@ -72,6 +72,38 @@ func (db *DB) GetBooksWhere(whereClause string, args ...any) ([]library.ComicBoo
 	return db.queryBooks(whereClause, args...)
 }
 
+// GetBookByCVIssueID looks up a book by its ComicVine issue ID via the
+// indexed cv_issue_id column (comic-server-r8td) - an O(log n) indexed
+// lookup, unlike scanning the whole library and parsing each book's
+// CustomValuesStore for a comicvine_issue key (what every caller had to
+// do before this column existed). Returns (nil, nil) if no book has that
+// issue ID; multiple books could in principle share one CV issue ID
+// (owning the same issue twice under different records), so this returns
+// only the first match - callers needing every match should use
+// GetBooksWhere("cv_issue_id = ?", issueID) directly instead.
+func (db *DB) GetBookByCVIssueID(issueID int) (*library.ComicBook, error) {
+	books, err := db.queryBooks("cv_issue_id = ?", issueID)
+	if err != nil {
+		return nil, err
+	}
+	if len(books) == 0 {
+		return nil, nil
+	}
+	return &books[0], nil
+}
+
+// GetBookByCVVolumeID is GetBookByCVIssueID's volume-ID counterpart.
+func (db *DB) GetBookByCVVolumeID(volumeID int) (*library.ComicBook, error) {
+	books, err := db.queryBooks("cv_volume_id = ?", volumeID)
+	if err != nil {
+		return nil, err
+	}
+	if len(books) == 0 {
+		return nil, nil
+	}
+	return &books[0], nil
+}
+
 // queryBooks runs a SELECT over the books table (optionally filtered by
 // whereClause, always excluding soft-deleted rows - see comic-server-b53)
 // and batch-loads tags/custom values for the result set in a small, fixed
@@ -162,6 +194,28 @@ func (db *DB) loadTagsAndCustomValuesBatch(books []library.ComicBook) error {
 	if err != nil {
 		return fmt.Errorf("batch load custom values: %w", err)
 	}
+
+	// comicvine_volume/comicvine_issue: first-class columns
+	// (comic-server-r8td), synthesized back into the reconstructed
+	// CustomValuesStore - see loadBookCustomValues's doc comment for why.
+	err = db.chunkedInQuery(ids, "SELECT id, cv_volume_id, cv_issue_id FROM books WHERE id IN (%s) AND (cv_volume_id IS NOT NULL OR cv_issue_id IS NOT NULL)", func(rows *sql.Rows) error {
+		var bookID string
+		var cvVolumeID, cvIssueID sql.NullInt64
+		if err := rows.Scan(&bookID, &cvVolumeID, &cvIssueID); err != nil {
+			return err
+		}
+		if cvVolumeID.Valid {
+			cvByBook[bookID] = append(cvByBook[bookID], fmt.Sprintf("comicvine_volume=%d", cvVolumeID.Int64))
+		}
+		if cvIssueID.Valid {
+			cvByBook[bookID] = append(cvByBook[bookID], fmt.Sprintf("comicvine_issue=%d", cvIssueID.Int64))
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("batch load cv_volume_id/cv_issue_id: %w", err)
+	}
+
 	for bookID, parts := range cvByBook {
 		if i, ok := idIndex[bookID]; ok && len(parts) > 0 {
 			books[i].CustomValuesStore = "," + joinStrings(parts, ",")
@@ -463,6 +517,15 @@ func scanList(s scanner) (*library.ComicListItem, error) {
 	return &list, nil
 }
 
+// loadBookCustomValues reconstructs book.CustomValuesStore from
+// book_custom_values, PLUS comicvine_volume/comicvine_issue synthesized
+// from the first-class cv_volume_id/cv_issue_id columns
+// (comic-server-r8td) - those two keys are no longer stored as
+// book_custom_values rows (see migrateV7ToV8), but every existing
+// caller of CustomValuesStore (the CBL matcher, workflow staging, the
+// ComicVine scraper, XML export) still expects to find them there by
+// string key, so this keeps the reconstructed value byte-for-byte
+// equivalent to before the migration.
 func (db *DB) loadBookCustomValues(book *library.ComicBook) error {
 	rows, err := db.Query("SELECT key, value FROM book_custom_values WHERE book_id = ?", book.ID)
 	if err != nil {
@@ -480,6 +543,17 @@ func (db *DB) loadBookCustomValues(book *library.ComicBook) error {
 	}
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterate custom values: %w", err)
+	}
+
+	var cvVolumeID, cvIssueID sql.NullInt64
+	if err := db.QueryRow("SELECT cv_volume_id, cv_issue_id FROM books WHERE id = ?", book.ID).Scan(&cvVolumeID, &cvIssueID); err != nil {
+		return fmt.Errorf("query cv_volume_id/cv_issue_id: %w", err)
+	}
+	if cvVolumeID.Valid {
+		parts = append(parts, fmt.Sprintf("comicvine_volume=%d", cvVolumeID.Int64))
+	}
+	if cvIssueID.Valid {
+		parts = append(parts, fmt.Sprintf("comicvine_issue=%d", cvIssueID.Int64))
 	}
 
 	if len(parts) > 0 {

@@ -42,9 +42,15 @@ func TestMigrateV5ToV6_AddsCBLImportSupport(t *testing.T) {
 	// cbl_import_entries.book_id references books(id) - SQLite needs the
 	// referenced table to exist even for a NULL FK value, so a minimal
 	// stand-in is required here even though this migration doesn't
-	// touch books itself.
+	// touch books itself. book_custom_values is a real table in every
+	// actual v5+ database (createTables always creates it) - included
+	// here too so this fixture stays realistic enough for the later
+	// v7->v8 migration (comic-server-r8td) to also run against it in the
+	// same Open() call without erroring on a table that would never
+	// actually be missing in practice.
 	v5Books := `CREATE TABLE books (id TEXT PRIMARY KEY)`
-	for _, stmt := range []string{v5Lists, v5Books, "PRAGMA user_version = 5"} {
+	v5CustomValues := `CREATE TABLE book_custom_values (book_id TEXT NOT NULL, key TEXT NOT NULL, value TEXT, PRIMARY KEY (book_id, key))`
+	for _, stmt := range []string{v5Lists, v5Books, v5CustomValues, "PRAGMA user_version = 5"} {
 		if _, err := raw.Exec(stmt); err != nil {
 			t.Fatalf("exec %q: %v", stmt, err)
 		}
@@ -167,6 +173,10 @@ func TestMigrateV6ToV7_AddsWantedBookIDColumn(t *testing.T) {
 		)
 	`
 	v6Books := `CREATE TABLE books (id TEXT PRIMARY KEY)`
+	// book_custom_values is a real table in every actual v6 database -
+	// included so the v7->v8 migration (comic-server-r8td) can also run
+	// against this fixture in the same Open() call without erroring.
+	v6CustomValues := `CREATE TABLE book_custom_values (book_id TEXT NOT NULL, key TEXT NOT NULL, value TEXT, PRIMARY KEY (book_id, key))`
 	// v6 shape: no wanted_book_id yet (comic-server-sx2d hasn't shipped).
 	v6CBLImportEntries := `
 		CREATE TABLE cbl_import_entries (
@@ -176,7 +186,7 @@ func TestMigrateV6ToV7_AddsWantedBookIDColumn(t *testing.T) {
 			year INTEGER, format TEXT, cv_issue_id INTEGER
 		)
 	`
-	for _, stmt := range []string{v6Lists, v6Books, v6CBLImportEntries, "PRAGMA user_version = 6"} {
+	for _, stmt := range []string{v6Lists, v6Books, v6CustomValues, v6CBLImportEntries, "PRAGMA user_version = 6"} {
 		if _, err := raw.Exec(stmt); err != nil {
 			t.Fatalf("exec %q: %v", stmt, err)
 		}

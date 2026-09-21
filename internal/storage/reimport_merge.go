@@ -206,6 +206,25 @@ func (db *DB) liveBookSnapshot(tx *sql.Tx, id string) (*library.ComicBook, error
 	if err := cvRows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate live custom values for %s: %w", id, err)
 	}
+
+	// comicvine_volume/comicvine_issue: first-class columns
+	// (comic-server-r8td), synthesized back in so this "what does the
+	// live row currently look like" snapshot stays byte-for-byte
+	// equivalent to what it would have been before that migration - the
+	// field-level diff this snapshot feeds (diffBookColumns) compares
+	// CustomValuesStore as a whole string, so a silent difference here
+	// would look like a live edit that never happened.
+	var cvVolumeID, cvIssueID sql.NullInt64
+	if err := tx.QueryRow("SELECT cv_volume_id, cv_issue_id FROM books WHERE id = ?", id).Scan(&cvVolumeID, &cvIssueID); err != nil {
+		return nil, fmt.Errorf("query live cv_volume_id/cv_issue_id for %s: %w", id, err)
+	}
+	if cvVolumeID.Valid {
+		parts = append(parts, fmt.Sprintf("comicvine_volume=%d", cvVolumeID.Int64))
+	}
+	if cvIssueID.Valid {
+		parts = append(parts, fmt.Sprintf("comicvine_issue=%d", cvIssueID.Int64))
+	}
+
 	if len(parts) > 0 {
 		book.CustomValuesStore = "," + joinStrings(parts, ",")
 	}

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -414,13 +415,34 @@ func (db *DB) updateBook(tx *sql.Tx, book *library.ComicBook, hash string) error
 	return nil
 }
 
+// insertBookCustomValues writes book's CustomValuesStore into
+// book_custom_values, EXCEPT comicvine_volume/comicvine_issue, which are
+// first-class columns on `books` itself (comic-server-r8td) - see
+// migrateV7ToV8's doc comment. Always sets cv_volume_id/cv_issue_id
+// (possibly to NULL), even when CustomValuesStore is empty - this
+// function is called from a delete-and-reinsert path (insertBook,
+// updateBook, UpdateBookFields all clear book_custom_values first), so
+// an empty/reduced CustomValuesStore genuinely means "no longer tagged"
+// and must clear these columns too, not leave a stale value behind.
 func (db *DB) insertBookCustomValues(tx *sql.Tx, book *library.ComicBook) error {
-	if book.CustomValuesStore == "" {
-		return nil
-	}
-
-	// Parse custom values from ComicRack format: ",key1=value1,key2=value2"
 	customValues := parseCustomValues(book.CustomValuesStore)
+
+	var cvVolumeID, cvIssueID any // nil (SQL NULL) unless a valid int is present
+	if v, ok := customValues["comicvine_volume"]; ok {
+		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+			cvVolumeID = n
+		}
+		delete(customValues, "comicvine_volume")
+	}
+	if v, ok := customValues["comicvine_issue"]; ok {
+		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+			cvIssueID = n
+		}
+		delete(customValues, "comicvine_issue")
+	}
+	if _, err := tx.Exec("UPDATE books SET cv_volume_id = ?, cv_issue_id = ? WHERE id = ?", cvVolumeID, cvIssueID, book.ID); err != nil {
+		return fmt.Errorf("set cv_volume_id/cv_issue_id: %w", err)
+	}
 
 	for key, value := range customValues {
 		_, err := tx.Exec(
