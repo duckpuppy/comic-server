@@ -230,7 +230,7 @@ func TestBuildListTree_FoldersBeforeListsAlphabetical(t *testing.T) {
 
 	backend := library.NewXMLBackendFromLibrary(&library.ComicLibrary{}, "", nil)
 	server := &Server{backend: backend, listCache: library.NewListCache(5 * time.Minute)}
-	tree := server.buildListTree(items)
+	tree := server.buildListTree(items, nil)
 
 	if len(tree) != 4 {
 		t.Fatalf("expected 4 top-level nodes, got %d", len(tree))

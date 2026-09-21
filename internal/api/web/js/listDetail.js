@@ -197,17 +197,28 @@ class ListDetail {
 
     renderReadView() {
         const canEdit = true; // Only disable when backend signals read-only
+        const cblBadge = this.list.cbl_imported
+            ? `<span class="cbl-badge" title="${this.escapeHtml(this.list.cbl_source || '')}">CBL</span>`
+            : '';
         return `
             <!-- Header -->
             <div class="list-detail-header">
                 <div class="list-detail-header-row">
-                    <h1>${this.escapeHtml(this.list.name)}</h1>
+                    <h1>${this.escapeHtml(this.list.name)} ${cblBadge}</h1>
                     ${canEdit ? `
                     <div class="list-header-actions">
+                        ${this.list.cbl_imported ? '<button id="cbl-reimport-check-btn" class="btn btn-secondary">Check for Updates</button>' : ''}
                         <button id="edit-list-btn" class="btn btn-secondary">Edit</button>
                         <button id="delete-list-btn" class="btn btn-danger">Delete</button>
                     </div>` : ''}
                 </div>
+                ${this.list.cbl_imported ? `
+                <p class="list-cbl-note">
+                    Book membership for this list comes from a CBL import and is reimport-only
+                    &mdash; name/description/favorite can still be edited here.
+                </p>
+                ${this.cblReimportStatusHtml || ''}
+                ` : ''}
                 <p class="list-count">
                     ${this.list.book_count.toLocaleString()} comics
                     ${this.list.unread_count > 0
@@ -706,6 +717,92 @@ class ListDetail {
         }
     }
 
+    // --- CBL reimport (comic-server-zw0o) ---
+    //
+    // Two-step flow, matching this codebase's other destructive-adjacent
+    // actions (e.g. CBZ convert's confirm()): "Check for Updates" is a
+    // read-only preview (calls the bulk reimport-check endpoint and
+    // picks out this list); only after that shows a real change does a
+    // "Reimport" button appear, and only a confirm() on THAT applies it.
+    // Reimport is a full replace of this list's book membership (see
+    // storage.CBLReimportPolicy) - there is nothing to merge, since
+    // comic-server has no feature that lets a user hand-edit a reading
+    // list's membership in the first place.
+    async checkCBLReimport() {
+        const btn = document.getElementById('cbl-reimport-check-btn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Checking...'; }
+        try {
+            const resp = await fetch('/api/library/cbl-repo/reimport-check');
+            if (!resp.ok) {
+                const text = await resp.text();
+                throw new Error(friendlyErrorText(resp, text, 'Check failed'));
+            }
+            const candidates = await resp.json();
+            const mine = (candidates || []).find(c => c.list_id === this.listId);
+            this.cblReimportStatusHtml = this.renderCBLReimportStatus(mine);
+        } catch (e) {
+            console.error('CBL reimport check failed:', e);
+            dialogs.toast('Check for updates failed: ' + e.message, 'error');
+            this.cblReimportStatusHtml = '';
+        }
+        this.render();
+        this.attachListeners();
+    }
+
+    renderCBLReimportStatus(candidate) {
+        if (!candidate) {
+            return '<p class="list-cbl-status">Could not find this list in the upstream repo check.</p>';
+        }
+        switch (candidate.status) {
+            case 'unchanged':
+                return '<p class="list-cbl-status">Up to date with upstream.</p>';
+            case 'modified':
+                return `
+                    <p class="list-cbl-status list-cbl-status-actionable">Upstream file changed.
+                        <button id="cbl-reimport-apply-btn" class="btn btn-primary btn-sm">Reimport</button>
+                    </p>`;
+            case 'renamed':
+                return `
+                    <p class="list-cbl-status list-cbl-status-actionable">Upstream file was renamed to
+                        <code>${this.escapeHtml(candidate.new_path)}</code>.
+                        <button id="cbl-reimport-apply-btn" class="btn btn-primary btn-sm">Reimport</button>
+                    </p>`;
+            case 'orphaned':
+                return '<p class="list-cbl-status list-cbl-status-warn">Upstream file was deleted or changed too much for git to trace as a rename. Left as-is - reimport refused rather than guessing a successor.</p>';
+            case 'base_unknown':
+                return '<p class="list-cbl-status list-cbl-status-warn">Upstream history was rewritten since this list\'s last import. Delete and freshly re-import instead.</p>';
+            default:
+                return `<p class="list-cbl-status list-cbl-status-warn">${this.escapeHtml(candidate.error || 'Check failed.')}</p>`;
+        }
+    }
+
+    async applyCBLReimport() {
+        const ok = await dialogs.confirm({
+            title: 'Reimport CBL List',
+            message: `Replace this list's books with the upstream CBL's current contents? Any books currently in the list that are no longer in the upstream file will be removed.`,
+            confirmLabel: 'Reimport',
+        });
+        if (!ok) return;
+
+        try {
+            const resp = await fetch(`/api/library/lists/${this.listId}/cbl-reimport`, { method: 'POST' });
+            if (!resp.ok) {
+                const text = await resp.text();
+                throw new Error(friendlyErrorText(resp, text, 'Reimport failed'));
+            }
+            const result = await resp.json();
+            dialogs.toast(`Reimported: ${result.matched_cv_id + result.matched_series_number} matched, ${result.unmatched} unmatched`, 'success');
+            this.cblReimportStatusHtml = '';
+            await this.loadListDetail();
+            await this.loadPreview();
+            this.render();
+            this.attachListeners();
+        } catch (e) {
+            console.error('CBL reimport failed:', e);
+            dialogs.toast('Reimport failed: ' + e.message, 'error');
+        }
+    }
+
     // --- Event wiring ---
 
     attachListeners() {
@@ -749,6 +846,19 @@ class ListDetail {
         const deleteBtn = document.getElementById('delete-list-btn');
         if (deleteBtn) {
             deleteBtn.addEventListener('click', () => this.deleteList());
+        }
+
+        const cblCheckBtn = document.getElementById('cbl-reimport-check-btn');
+        if (cblCheckBtn) {
+            cblCheckBtn.addEventListener('click', () => this.checkCBLReimport());
+        }
+
+        // Only present after checkCBLReimport() re-renders with an
+        // actionable status (modified/renamed) - re-wired each render
+        // since renderReadView() replaces the DOM node.
+        const cblApplyBtn = document.getElementById('cbl-reimport-apply-btn');
+        if (cblApplyBtn) {
+            cblApplyBtn.addEventListener('click', () => this.applyCBLReimport());
         }
 
         // Assign device button

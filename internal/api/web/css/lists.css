@@ -393,6 +393,24 @@
 .fb-type-folder  { color: #dfa021; }
 .fb-type-smart   { color: #8aadf4; }
 .fb-type-idlist  { color: #c6a0f6; }
+.fb-type-reading { color: #a6da95; }
+
+/* CBL-imported badge (comic-server-zw0o) - a reading list whose
+   membership is owned by an upstream CBL file, reimport-only rather
+   than hand-edited. Shown on list tiles/rows/tree nodes and the list
+   detail header. */
+.cbl-badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    background: color-mix(in srgb, #a6da95 20%, transparent);
+    color: #a6da95;
+    white-space: nowrap;
+}
 
 .fb-col-count {
     font-size: 0.875rem;
@@ -665,6 +683,25 @@
 .list-count {
     font-size: 1rem;
     color: var(--text-secondary);
+}
+
+.list-cbl-note {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin: 0.25rem 0;
+}
+
+.list-cbl-status {
+    font-size: 0.9rem;
+    margin: 0.25rem 0;
+}
+
+.list-cbl-status-actionable {
+    color: #df8e1d; /* Catppuccin yellow - matches .list-unread-count */
+}
+
+.list-cbl-status-warn {
+    color: #d20f39; /* Catppuccin red */
 }
 
 .list-unread-count {

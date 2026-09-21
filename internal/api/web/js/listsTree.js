@@ -129,12 +129,14 @@ class ListsTree {
             const isSelected = this.selectedListId === node.id;
             const total = node.book_count || 0;
             const unread = node.unread_count || 0;
+            const cblBadge = node.cbl_imported ? '<span class="cbl-badge" title="Imported from a CBL reading list - reimport to update">CBL</span>' : '';
             return `
                 <div class="tree-node list${isSelected ? ' selected' : ''}"
                      style="padding-left: ${indent + 16}px"
                      data-list-id="${node.id}">
                     <span class="list-icon">📋</span>
                     <span class="node-name">${node.name}</span>
+                    ${cblBadge}
                     ${renderCountBadges(total, unread, isSelected)}
                 </div>
             `;

@@ -11,7 +11,41 @@ import (
 
 	"github.com/duckpuppy/comic-server/internal/library"
 	"github.com/duckpuppy/comic-server/internal/log"
+	"github.com/duckpuppy/comic-server/internal/storage"
 )
+
+// isBrowsableListType reports whether a list.Type belongs in the lists
+// browser/tree/dashboard - SmartList and IdListItem (their existing
+// behavior), plus ComicReadingList (comic-server-zw0o): reading lists,
+// including CBL imports, had no browsing surface at all before this -
+// device/Komga sync and GetBooksForList already handled them, only the
+// browsing UI's own type filter excluded them.
+func isBrowsableListType(t string) bool {
+	return strings.Contains(t, "SmartList") || strings.Contains(t, "IdListItem") || t == "ComicReadingList"
+}
+
+// cblProvenanceMap returns listID -> CBLImportSource for every
+// CBL-imported list, for annotating list summaries/tree nodes/detail
+// with a "CBL imported" badge. Empty (not an error) when the backend
+// isn't SQLite-backed (XML backend never has CBL imports) or nothing
+// has been imported yet. This is a plain DB read, no git operations -
+// cheap enough to call on every list-browsing request.
+func (s *Server) cblProvenanceMap() map[string]storage.CBLImportSource {
+	m := map[string]storage.CBLImportSource{}
+	sb, ok := s.backend.(*storage.SQLiteBackend)
+	if !ok {
+		return m
+	}
+	lists, err := sb.DB().ListCBLImportedLists()
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to load CBL import provenance for list browsing")
+		return m
+	}
+	for _, l := range lists {
+		m[l.ListID] = l.CBLImportSource
+	}
+	return m
+}
 
 func newUUID() string {
 	return uuid.New().String()
@@ -26,6 +60,9 @@ type ListSummary struct {
 	BookCount    int    `json:"book_count"`
 	UnreadCount  int    `json:"unread_count"`
 	MatcherCount int    `json:"matcher_count"`
+	// CBLImported is true when this list was created by a CBL import
+	// (comic-server-zw0o) - drives the "CBL" badge in the lists browser.
+	CBLImported bool `json:"cbl_imported,omitempty"`
 }
 
 // ListTreeNode represents a node in the list tree (folder or smart list)
@@ -39,6 +76,7 @@ type ListTreeNode struct {
 	MatcherCount int            `json:"matcher_count,omitempty"`
 	MatcherMode  string         `json:"matcher_mode,omitempty"`
 	Children     []ListTreeNode `json:"children,omitempty"`
+	CBLImported  bool           `json:"cbl_imported,omitempty"`
 }
 
 // countUnread returns the number of unread books in a slice.
@@ -104,8 +142,10 @@ func (s *Server) refreshListCountAsync(list *library.ComicListItem) {
 	}()
 }
 
-// buildListTree recursively builds a tree structure from ComicListItems
-func (s *Server) buildListTree(items []library.ComicListItem) []ListTreeNode {
+// buildListTree recursively builds a tree structure from ComicListItems.
+// cblMap (see cblProvenanceMap) is threaded through the recursion rather
+// than re-queried per folder.
+func (s *Server) buildListTree(items []library.ComicListItem, cblMap map[string]storage.CBLImportSource) []ListTreeNode {
 	nodes := make([]ListTreeNode, 0)
 
 	for i := range items {
@@ -121,22 +161,21 @@ func (s *Server) buildListTree(items []library.ComicListItem) []ListTreeNode {
 			IsFolder: isFolder,
 		}
 
-		isSmartOrId := strings.Contains(item.Type, "SmartList") || strings.Contains(item.Type, "IdListItem")
-
 		if isFolder {
 			// Recursively build children for folders
-			node.Children = s.buildListTree(item.ChildItems)
-		} else if isSmartOrId {
+			node.Children = s.buildListTree(item.ChildItems, cblMap)
+		} else if isBrowsableListType(item.Type) {
 			count, unread := s.getListCounts(item)
 
 			node.BookCount = count
 			node.UnreadCount = unread
 			node.MatcherCount = len(item.Matchers)
 			node.MatcherMode = item.MatcherMode
+			_, node.CBLImported = cblMap[item.ID]
 		} else {
-			// Not a folder and not a smart/id list (e.g. a plain reading
-			// list) - skip it so the tree only ever contains what
-			// handleGetLists() (the dashboard's source of truth) counts.
+			// Not a folder and not a browsable list type - skip it so
+			// the tree only ever contains what handleGetLists() (the
+			// dashboard's source of truth) counts.
 			continue
 		}
 
@@ -176,7 +215,7 @@ func (s *Server) handleGetListTree(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to get lists", http.StatusInternalServerError)
 		return
 	}
-	tree := s.buildListTree(allLists)
+	tree := s.buildListTree(allLists, s.cblProvenanceMap())
 
 	response := map[string]interface{}{
 		"tree": tree,
@@ -213,6 +252,7 @@ func (s *Server) handleGetLists(w http.ResponseWriter, r *http.Request) {
 	}
 
 	lists := make([]ListSummary, 0)
+	cblMap := s.cblProvenanceMap()
 
 	// Recursively collect smart lists from all folders
 	var collectSmartLists func(items []library.ComicListItem)
@@ -226,10 +266,10 @@ func (s *Server) handleGetLists(w http.ResponseWriter, r *http.Request) {
 				Int("child_count", len(list.ChildItems)).
 				Msg("Checking list")
 
-			// Include smart lists and id lists (not folders or reading lists)
-			isSmartOrId := strings.Contains(list.Type, "SmartList") || strings.Contains(list.Type, "IdListItem")
-			if isSmartOrId {
+			// Include smart lists, id lists, and reading lists (not folders)
+			if isBrowsableListType(list.Type) {
 				count, unread := s.getListCounts(&list)
+				_, cblImported := cblMap[list.ID]
 
 				lists = append(lists, ListSummary{
 					ID:           list.ID,
@@ -239,6 +279,7 @@ func (s *Server) handleGetLists(w http.ResponseWriter, r *http.Request) {
 					BookCount:    count,
 					UnreadCount:  unread,
 					MatcherCount: len(list.Matchers),
+					CBLImported:  cblImported,
 				})
 			}
 
@@ -311,6 +352,13 @@ func (s *Server) handleListsRouter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// /api/library/lists/:listId/cbl-reimport
+	if strings.HasSuffix(path, "/cbl-reimport") {
+		listID := strings.TrimSuffix(suffix, "/cbl-reimport")
+		s.handleCBLReimport(w, r, listID)
+		return
+	}
+
 	// /api/library/lists/:listId/komga
 	if strings.HasSuffix(path, "/komga") {
 		switch r.Method {
@@ -341,6 +389,14 @@ type ListDetail struct {
 	BookCount            int                   `json:"book_count"`
 	UnreadCount          int                   `json:"unread_count"`
 	Matchers             []library.MatcherInfo `json:"matchers"`
+	// CBL import provenance (comic-server-zw0o) - CBLSource is the raw
+	// "git:<repo-url>:<path>" / "local_file" string, empty when
+	// CBLImported is false. The frontend uses CBLImported for the badge
+	// and calls .../cbl-repo/reimport-check to learn whether a reimport
+	// is actually available right now (a git op, deliberately NOT done
+	// on every detail-page load).
+	CBLImported bool   `json:"cbl_imported,omitempty"`
+	CBLSource   string `json:"cbl_source,omitempty"`
 }
 
 // handleGetListDetail returns details for a specific list
@@ -388,6 +444,14 @@ func (s *Server) handleGetListDetail(w http.ResponseWriter, r *http.Request) {
 		BookCount:            count,
 		UnreadCount:          unread,
 		Matchers:             matchers,
+	}
+	if sb, ok := s.backend.(*storage.SQLiteBackend); ok {
+		if source, err := sb.DB().GetCBLSource(listID); err != nil {
+			log.Warn().Err(err).Str("list_id", listID).Msg("Failed to load CBL import provenance for list detail")
+		} else if source != nil {
+			detail.CBLImported = true
+			detail.CBLSource = source.Source
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

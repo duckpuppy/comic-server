@@ -265,10 +265,11 @@ class ListsBrowser {
         const countHtml = typeof renderCountBadges === 'function'
             ? renderCountBadges(total, unread, false)
             : `<span class="book-count">${total.toLocaleString()}</span>`;
+        const cblBadge = list.cbl_imported ? '<span class="cbl-badge" title="Imported from a CBL reading list - reimport to update">CBL</span>' : '';
         return `
             <div class="fb-icon-item fb-icon-list-item" data-list-id="${list.id}" title="${this.escapeHtml(list.name)} — ${total.toLocaleString()} comics, ${unread.toLocaleString()} unread">
                 <div class="${cls}"></div>
-                <span class="fb-icon-label">${this.escapeHtml(list.name)}</span>
+                <span class="fb-icon-label">${this.escapeHtml(list.name)} ${cblBadge}</span>
                 <span class="fb-icon-counts">${countHtml}</span>
                 <div class="fb-item-actions" data-stop>
                     <button class="fb-action-btn" data-action="move" data-id="${list.id}" data-name="${this.escapeHtml(list.name)}" title="Move">↪</button>
@@ -329,20 +330,23 @@ class ListsBrowser {
 
     renderDetailList(list) {
         const isIdList = list.type && list.type.includes('IdListItem');
-        const typeLabel = isIdList ? 'ID List' : 'Smart List';
-        const typeClass = isIdList ? 'fb-type-idlist' : 'fb-type-smart';
+        const isReadingList = list.type === 'ComicReadingList';
+        const typeLabel = isIdList ? 'ID List' : isReadingList ? 'Reading List' : 'Smart List';
+        const typeClass = isIdList ? 'fb-type-idlist' : isReadingList ? 'fb-type-reading' : 'fb-type-smart';
         const iconClass = isIdList ? 'fb-row-idlist-icon' : 'fb-row-list-icon';
         const total = list.book_count || 0;
         const unread = list.unread_count || 0;
         const countHtml = typeof renderCountBadges === 'function'
             ? renderCountBadges(total, unread, false)
             : `<span class="fb-col-count">${total.toLocaleString()}</span>`;
+        const cblBadge = list.cbl_imported ? '<span class="cbl-badge" title="Imported from a CBL reading list - reimport to update">CBL</span>' : '';
 
         return `
             <div class="fb-row fb-list-row" data-list-id="${list.id}">
                 <span class="fb-col-name">
                     <span class="${iconClass}"></span>
                     <span class="fb-row-name">${this.escapeHtml(list.name)}</span>
+                    ${cblBadge}
                 </span>
                 <span class="fb-col-type ${typeClass}">${typeLabel}</span>
                 <span class="fb-col-count fb-count-badges">${countHtml}</span>
