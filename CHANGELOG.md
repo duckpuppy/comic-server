@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.43.0](https://github.com/duckpuppy/comic-server/compare/v1.42.0...v1.43.0) (2026-09-21)
+
+
+### Features
+
+* CBL watch/reimport backend - git diff detection + full-replace reimport (comic-server-zw0o) ([83059ec](https://github.com/duckpuppy/comic-server/commit/83059eca6b31eeb25dd4aa6275096be590457af7))
+* surface reading lists + CBL badge/reimport in the web UI (comic-server-zw0o) ([60a48ce](https://github.com/duckpuppy/comic-server/commit/60a48ce26ae0a6f1f517230866de21dabfba1bbc))
+
+
+### Bug Fixes
+
+* apply defaults/env/validation even with no config file yet (comic-server-n5ms) ([0d82c8c](https://github.com/duckpuppy/comic-server/commit/0d82c8cb1da664b0cc32ea3591a19a1f50c1cd74))
+* CLI list-resolvers rejected reading lists; add end-to-end CBL sync proof (comic-server-hmld) ([b4cfbed](https://github.com/duckpuppy/comic-server/commit/b4cfbed8a90771b14118552bae2e41c2d2b59b41))
+
 ## [1.42.0](https://github.com/duckpuppy/comic-server/compare/v1.41.0...v1.42.0) (2026-09-21)
 
 
