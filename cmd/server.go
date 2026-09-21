@@ -698,6 +698,21 @@ func runServer(cmd *cobra.Command, args []string) error {
 						Msg("Library path changed in config - server restart required to apply")
 				}
 
+				// LibraryRoot, unlike LibraryPath above, IS picked up live -
+				// push it into the running Komga syncer so it doesn't keep
+				// translating paths against a stale root until the process
+				// is restarted (comic-server-zaef). Cover extraction/path
+				// translation already reads cfg.Server.LibraryRoot fresh
+				// per-request via the `cfg =` assignment below, so this is
+				// the one other place that had baked in a copy at startup.
+				if komgaSyncer != nil && newCfg.Server.LibraryRoot != cfg.Server.LibraryRoot {
+					komgaSyncer.SetLocalRoot(newCfg.Server.LibraryRoot)
+					log.Info().
+						Str("old_root", cfg.Server.LibraryRoot).
+						Str("new_root", newCfg.Server.LibraryRoot).
+						Msg("LibraryRoot changed in config - updated running Komga syncer")
+				}
+
 				// Update configuration
 				cfg = newCfg
 				log.Info().Msg("Configuration reloaded successfully")

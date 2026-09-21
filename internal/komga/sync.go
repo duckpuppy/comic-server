@@ -67,7 +67,13 @@ type Syncer struct {
 	backend library.Backend
 	opts    SyncOptions
 
-	targetsMu sync.RWMutex // protects opts.Targets specifically (see SetTargets)
+	// mu protects the mutable subset of opts (Targets, LocalRoot) that can
+	// change after construction - via the web UI's Komga target endpoints
+	// (SetTargets) or a config reload changing Server.LibraryRoot
+	// (SetLocalRoot, comic-server-zaef). Everything else in opts (BaseURL,
+	// APIKey, RemoteRoot, Interval) is set once at construction and never
+	// mutated, so it's read without locking.
+	mu sync.RWMutex
 
 	trigger chan struct{}
 }
@@ -92,18 +98,38 @@ func NewSyncer(backend library.Backend, opts SyncOptions) *Syncer {
 // without a config reload or restart. Call TriggerNow afterward to push the
 // new set immediately rather than waiting for the next interval.
 func (s *Syncer) SetTargets(targets []Target) {
-	s.targetsMu.Lock()
-	defer s.targetsMu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.opts.Targets = targets
 }
 
 // Targets returns the current target set.
 func (s *Syncer) Targets() []Target {
-	s.targetsMu.RLock()
-	defer s.targetsMu.RUnlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	targets := make([]Target, len(s.opts.Targets))
 	copy(targets, s.opts.Targets)
 	return targets
+}
+
+// SetLocalRoot updates LocalRoot (comic-server's real filesystem root used
+// to translate book.FilePath into Komga's view of the same file - see
+// SyncOptions.LocalRoot). Safe to call concurrently with Run. Call this
+// whenever Server.LibraryRoot changes on a config reload (cmd/server.go's
+// SIGHUP handler) so the running syncer doesn't keep translating paths
+// against a stale root until the process is restarted (comic-server-zaef).
+func (s *Syncer) SetLocalRoot(root string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.opts.LocalRoot = root
+}
+
+// localRoot returns the current LocalRoot under the read lock, for use by
+// syncTarget/pushReadStatus instead of reading s.opts.LocalRoot directly.
+func (s *Syncer) localRoot() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.opts.LocalRoot
 }
 
 // TriggerNow requests an immediate sync pass in addition to the regular
@@ -221,13 +247,14 @@ func (s *Syncer) syncTarget(ctx context.Context, idx *Index, target Target) Targ
 
 	var matched []string
 	var unmatched []UnmatchedBook
+	localRoot := s.localRoot()
 
 	switch target.Type {
 	case TargetCollection:
-		matched, unmatched = idx.ResolveCollectionSeries(books, s.opts.LocalRoot, s.opts.RemoteRoot)
+		matched, unmatched = idx.ResolveCollectionSeries(books, localRoot, s.opts.RemoteRoot)
 		err = s.client.UpsertCollection(ctx, target.KomgaName, matched)
 	case TargetReadList:
-		matched, unmatched = idx.ResolveReadListBooks(books, s.opts.LocalRoot, s.opts.RemoteRoot)
+		matched, unmatched = idx.ResolveReadListBooks(books, localRoot, s.opts.RemoteRoot)
 		err = s.client.UpsertReadList(ctx, target.KomgaName, matched)
 	default:
 		err = fmt.Errorf("unknown target type %q", target.Type)
@@ -253,7 +280,7 @@ func (s *Syncer) syncTarget(ctx context.Context, idx *Index, target Target) Targ
 // Collection target (series-level grouping) needs the underlying per-BOOK
 // Komga ID here, since read status is inherently per-issue.
 func (s *Syncer) pushReadStatus(ctx context.Context, idx *Index, books []*library.ComicBook) (pushed int, failed []UnmatchedBook) {
-	matched, unmatched := idx.ResolveBookReadStatus(books, s.opts.LocalRoot, s.opts.RemoteRoot)
+	matched, unmatched := idx.ResolveBookReadStatus(books, s.localRoot(), s.opts.RemoteRoot)
 	failed = append(failed, unmatched...)
 
 	for _, rs := range matched {

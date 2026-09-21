@@ -673,6 +673,72 @@ func TestSyncer_SetTargets(t *testing.T) {
 	}
 }
 
+// TestSyncer_SetLocalRoot is the regression test for comic-server-zaef: a
+// running Syncer previously kept the LocalRoot it was constructed with
+// forever, so changing Server.LibraryRoot in config and sending SIGHUP
+// updated path translation everywhere else (covers.go) but left the Komga
+// syncer pushing against the stale root until a full restart. Proves
+// SetLocalRoot takes effect on the very next sync pass, the same way
+// SetTargets already does above.
+func TestSyncer_SetLocalRoot(t *testing.T) {
+	var upsertedSeriesIDs []string
+	c, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/v1/series":
+			json.NewEncoder(w).Encode(pageResponse[Series]{
+				Content: []Series{{ID: "s1", Name: "Batman", URL: "/data/Batman"}},
+				Last:    true,
+			})
+		case r.URL.Path == "/api/v1/books":
+			json.NewEncoder(w).Encode(pageResponse[Book]{Last: true})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/collections":
+			json.NewEncoder(w).Encode(pageResponse[collectionDto]{Last: true})
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/collections":
+			var body map[string]any
+			json.NewDecoder(r.Body).Decode(&body)
+			upsertedSeriesIDs = nil
+			if ids, ok := body["seriesIds"].([]any); ok {
+				for _, id := range ids {
+					upsertedSeriesIDs = append(upsertedSeriesIDs, id.(string))
+				}
+			}
+			json.NewEncoder(w).Encode(collectionDto{ID: "new-id"})
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	})
+
+	backend := &fakeBackend{
+		lists: map[string]*library.ComicListItem{
+			"{GUID-1}": {ID: "{GUID-1}", Name: "Batman Comics"},
+		},
+		books: map[string][]*library.ComicBook{
+			"{GUID-1}": {{ID: "1", FilePath: `G:\Comics\Batman\Batman #1.cbz`}},
+		},
+	}
+
+	syncer := NewSyncer(backend, SyncOptions{
+		LocalRoot:  `H:\WrongRoot\`, // deliberately stale - book's path won't translate under this root
+		RemoteRoot: "/data",
+		Targets: []Target{
+			{ListID: "{GUID-1}", KomgaName: "Batman Collection", Type: TargetCollection},
+		},
+	})
+	syncer.client = c
+
+	syncer.syncOnce(context.Background(), nil)
+	if len(upsertedSeriesIDs) != 0 {
+		t.Fatalf("expected 0 matched series against the wrong root, got %v", upsertedSeriesIDs)
+	}
+
+	syncer.SetLocalRoot(`G:\Comics\`)
+
+	syncer.syncOnce(context.Background(), nil)
+	if len(upsertedSeriesIDs) != 1 || upsertedSeriesIDs[0] != "s1" {
+		t.Fatalf("expected SetLocalRoot to take effect on the next syncOnce, got %v", upsertedSeriesIDs)
+	}
+}
+
 func TestNewSyncer_DefaultsInterval(t *testing.T) {
 	backend := &fakeBackend{}
 	syncer := NewSyncer(backend, SyncOptions{})
