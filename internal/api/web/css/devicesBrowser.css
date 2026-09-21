@@ -222,12 +222,12 @@
 }
 
 .device-card-footer .btn-danger {
-    background: #dc2626;
+    background: var(--danger-color);
     color: white;
 }
 
 .device-card-footer .btn-danger:hover {
-    background: #b91c1c;
+    background: var(--danger-hover-color);
 }
 
 .device-card-footer .btn-register,
@@ -390,7 +390,7 @@
 }
 
 .sync-error {
-    background: var(--status-error-bg, #fee);
+    background: var(--status-error-bg);
     border: 1px solid var(--status-error);
     border-radius: 4px;
     padding: 0.75rem;
@@ -444,7 +444,7 @@
 
 .empty-hint {
     font-size: 0.9rem;
-    color: var(--text-tertiary, #999);
+    color: var(--text-tertiary);
 }
 
 /* Responsive */

@@ -25,6 +25,12 @@
     --status-warning: #f59e0b;
     --status-error: #ef4444;
     --status-progress: #3b82f6;
+    /* Background counterpart of --status-error, for a bordered/tinted
+       error box (e.g. .sync-error) rather than the plain dot/border use
+       above - previously referenced by name (var(--status-error-bg,
+       #fee)) but never actually defined, so it silently ran on that
+       fallback in every theme (comic-server-ha6). */
+    --status-error-bg: #fee2e2;
 
     /* Card background */
     --card-bg: #ffffff;
@@ -37,6 +43,37 @@
        token whose dark value would make them disappear entirely. */
     --bg-tertiary: #fafafa;
     --track-bg: #e5e7eb;
+
+    /* Third tier of text muting, below --text-secondary (e.g. an empty-
+       state hint) - previously referenced by name in 3 files but never
+       actually defined, so it silently fell back to inherited/unset text
+       color wherever no literal fallback was given (comic-server-ha6). */
+    --text-tertiary: #9ca3af;
+
+    /* Status pill pairs (pastel background + matching dark text) used by
+       badges across lists.css/deviceDetail.css/komgaStatus.css - the
+       hardcoded-hex versions of these (Tailwind's *-100/*-800 shades)
+       read fine on a dark page in practice (checked visually,
+       comic-server-8qk) but don't actually adapt to it: a light pastel
+       bg behind dark text stays exactly that light pastel regardless of
+       theme. Dark mode below redefines these as translucent tints of
+       the existing (already dark-aware) accent colors instead - same
+       technique already used for the CBL/list-type badges elsewhere in
+       lists.css - for real per-theme contrast rather than a static
+       light-only look (comic-server-ha6).
+       Solid danger buttons get the same treatment via
+       --danger-hover-color. */
+    --pill-success-bg: #d1fae5;
+    --pill-success-text: #065f46;
+    --pill-warning-bg: #fef3c7;
+    --pill-warning-text: #92400e;
+    --pill-error-bg: #fee2e2;
+    --pill-error-text: #991b1b;
+    --pill-info-bg: #dbeafe;
+    --pill-info-text: #1e40af;
+    --pill-neutral-bg: #f3f4f6;
+    --pill-neutral-text: #6b7280;
+    --danger-hover-color: #b91c1c;
 }
 
 /* Dark mode (comic-server-8qk). Two ways this activates:
@@ -58,10 +95,23 @@
         --bg-secondary: #1f2937;
         --text-primary: #f3f4f6;
         --text-secondary: #9ca3af;
+        --text-tertiary: #6b7280;
         --border-color: #374151;
         --card-bg: #1f2937;
         --bg-tertiary: #1a2231;
         --track-bg: #374151;
+        --status-error-bg: color-mix(in srgb, var(--danger-color) 15%, transparent);
+        --pill-success-bg: color-mix(in srgb, var(--success-color) 20%, transparent);
+        --pill-success-text: var(--success-color);
+        --pill-warning-bg: color-mix(in srgb, var(--warning-color) 20%, transparent);
+        --pill-warning-text: var(--warning-color);
+        --pill-error-bg: color-mix(in srgb, var(--danger-color) 20%, transparent);
+        --pill-error-text: var(--danger-color);
+        --pill-info-bg: color-mix(in srgb, var(--primary-color) 20%, transparent);
+        --pill-info-text: var(--primary-color);
+        --pill-neutral-bg: var(--bg-tertiary);
+        --pill-neutral-text: var(--text-secondary);
+        --danger-hover-color: color-mix(in srgb, var(--danger-color) 80%, black);
     }
 }
 
@@ -75,10 +125,23 @@
     --bg-secondary: #1f2937;
     --text-primary: #f3f4f6;
     --text-secondary: #9ca3af;
+    --text-tertiary: #6b7280;
     --border-color: #374151;
     --card-bg: #1f2937;
     --bg-tertiary: #1a2231;
     --track-bg: #374151;
+    --status-error-bg: color-mix(in srgb, var(--danger-color) 15%, transparent);
+    --pill-success-bg: color-mix(in srgb, var(--success-color) 20%, transparent);
+    --pill-success-text: var(--success-color);
+    --pill-warning-bg: color-mix(in srgb, var(--warning-color) 20%, transparent);
+    --pill-warning-text: var(--warning-color);
+    --pill-error-bg: color-mix(in srgb, var(--danger-color) 20%, transparent);
+    --pill-error-text: var(--danger-color);
+    --pill-info-bg: color-mix(in srgb, var(--primary-color) 20%, transparent);
+    --pill-info-text: var(--primary-color);
+    --pill-neutral-bg: var(--bg-tertiary);
+    --pill-neutral-text: var(--text-secondary);
+    --danger-hover-color: color-mix(in srgb, var(--danger-color) 80%, black);
 }
 
 body {

@@ -996,13 +996,13 @@
 }
 
 .device-status.enabled {
-    background: #d1fae5;
-    color: #065f46;
+    background: var(--pill-success-bg);
+    color: var(--pill-success-text);
 }
 
 .device-status.disabled {
-    background: #fee2e2;
-    color: #991b1b;
+    background: var(--pill-error-bg);
+    color: var(--pill-error-text);
 }
 
 .device-assignment-actions {
@@ -1011,12 +1011,12 @@
 }
 
 .btn-danger {
-    background: #dc2626;
+    background: var(--danger-color);
     color: white;
 }
 
 .btn-danger:hover {
-    background: #b91c1c;
+    background: var(--danger-hover-color);
 }
 
 .btn-toggle {

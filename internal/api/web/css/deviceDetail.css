@@ -33,23 +33,23 @@
 }
 
 .status-badge.online {
-    background: #d1fae5;
-    color: #065f46;
+    background: var(--pill-success-bg);
+    color: var(--pill-success-text);
 }
 
 .status-badge.idle {
-    background: #fef3c7;
-    color: #92400e;
+    background: var(--pill-warning-bg);
+    color: var(--pill-warning-text);
 }
 
 .status-badge.offline {
-    background: #fee2e2;
-    color: #991b1b;
+    background: var(--pill-error-bg);
+    color: var(--pill-error-text);
 }
 
 .status-badge.syncing {
-    background: #dbeafe;
-    color: #1e40af;
+    background: var(--pill-info-bg);
+    color: var(--pill-info-text);
 }
 
 /* Device Info Cards */
@@ -151,13 +151,13 @@
 }
 
 .status-indicator.enabled {
-    background: #d1fae5;
-    color: #065f46;
+    background: var(--pill-success-bg);
+    color: var(--pill-success-text);
 }
 
 .status-indicator.disabled {
-    background: #f3f4f6;
-    color: #6b7280;
+    background: var(--pill-neutral-bg);
+    color: var(--pill-neutral-text);
 }
 
 /* Sync History Panel */
@@ -209,18 +209,18 @@
 }
 
 .history-status.status-success {
-    background: #d1fae5;
-    color: #065f46;
+    background: var(--pill-success-bg);
+    color: var(--pill-success-text);
 }
 
 .history-status.status-error {
-    background: #fee2e2;
-    color: #991b1b;
+    background: var(--pill-error-bg);
+    color: var(--pill-error-text);
 }
 
 .history-status.status-warning {
-    background: #fef3c7;
-    color: #92400e;
+    background: var(--pill-warning-bg);
+    color: var(--pill-warning-text);
 }
 
 .history-item-stats {
@@ -349,7 +349,7 @@
 }
 
 .toggle-switch input:checked + .toggle-slider {
-    background-color: #10b981;
+    background-color: var(--success-color);
 }
 
 .toggle-switch input:checked + .toggle-slider:before {
@@ -473,12 +473,12 @@
 
 /* Button Styles */
 .btn-danger {
-    background-color: #ef4444;
+    background-color: var(--danger-color);
     color: white;
 }
 
 .btn-danger:hover:not(:disabled) {
-    background-color: #dc2626;
+    background-color: var(--danger-hover-color);
 }
 
 .btn-small {

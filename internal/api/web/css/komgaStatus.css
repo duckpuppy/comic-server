@@ -3,8 +3,8 @@
    this file used to carry are gone, .dashboard-panel's own styling
    covers that now. */
 .komga-index-error {
-    background: #fee2e2;
-    color: #991b1b;
+    background: var(--pill-error-bg);
+    color: var(--pill-error-text);
     border-radius: 0.5rem;
     padding: 1rem;
     margin-bottom: 1.5rem;
@@ -94,12 +94,12 @@
 }
 
 .komga-stat-warning {
-    color: #92400e;
+    color: var(--pill-warning-text);
 }
 
 .komga-target-error {
     margin-top: 0.75rem;
-    color: #991b1b;
+    color: var(--pill-error-text);
     font-size: 0.9rem;
 }
 
