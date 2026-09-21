@@ -107,5 +107,13 @@ func (c *Config) ApplyEnvironment() error {
 		c.Server.Komga.APIKey = val
 	}
 
+	// CBL repo browsing/import
+	if val := os.Getenv("COMIC_SERVER_CBL_REPO_URL"); val != "" {
+		c.Server.CBLRepo.URL = val
+	}
+	if val := os.Getenv("COMIC_SERVER_CBL_REPO_CLONE_PATH"); val != "" {
+		c.Server.CBLRepo.ClonePath = val
+	}
+
 	return nil
 }

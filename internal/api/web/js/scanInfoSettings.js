@@ -44,6 +44,18 @@ class ScanInfoSettings {
         this.cblResult = null;
         this.cblError = null;
 
+        // CBL repo browse/import (comic-server-oprf): browse a cloned
+        // git-hosted CBL collection (default DieselTech/CBL-ReadingLists)
+        // and import a chosen file. cblRepoStatus is null until the first
+        // status fetch; cblRepoFiles/cblRepoQuery/cblRepoLoading/
+        // cblRepoImportingPath drive the browse/search/import UI.
+        this.cblRepoStatus = null;
+        this.cblRepoFiles = null;
+        this.cblRepoQuery = '';
+        this.cblRepoLoading = false;
+        this.cblRepoImportingPath = null;
+        this.cblRepoError = null;
+
         // Server misc settings (comic-server-wp8k, second slice of the
         // Settings UI push): CBZ Convert enabled + ignore-devices, both
         // live-effect (no restart needed) unlike the still-config.yaml-only
@@ -305,7 +317,7 @@ class ScanInfoSettings {
         // leaving the page blank until the fetch resolves
         // (comic-server-4te).
         this.render();
-        await Promise.all([this.load(), this.loadTheme(), this.loadTrash(), this.loadImportStatus(), this.loadServerMisc(), this.loadRestartRequired(), this.loadWatchFolders()]);
+        await Promise.all([this.load(), this.loadTheme(), this.loadTrash(), this.loadImportStatus(), this.loadServerMisc(), this.loadRestartRequired(), this.loadWatchFolders(), this.loadCBLRepoStatus()]);
         if (ctx && ctx.aborted) return;
         this.render();
         this.attachListeners();
@@ -484,6 +496,67 @@ class ScanInfoSettings {
         }
     }
 
+    async loadCBLRepoStatus() {
+        try {
+            const response = await fetch('/api/library/cbl-repo/status');
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            this.cblRepoStatus = await response.json();
+        } catch (error) {
+            console.error('Failed to load CBL repo status:', error);
+        }
+    }
+
+    async runCBLRepoBrowse() {
+        if (!this.cblRepoStatus || !this.cblRepoStatus.configured) return;
+        this.cblRepoLoading = true;
+        this.cblRepoError = null;
+        this.render();
+        this.attachListeners();
+
+        try {
+            const url = '/api/library/cbl-repo/browse' + (this.cblRepoQuery ? `?q=${encodeURIComponent(this.cblRepoQuery)}` : '');
+            const response = await fetch(url);
+            const text = await response.text();
+            if (!response.ok) throw new Error(friendlyErrorText(response, text));
+            const data = JSON.parse(text);
+            this.cblRepoFiles = data.files || [];
+            await this.loadCBLRepoStatus();
+        } catch (error) {
+            console.error('Failed to browse CBL repo:', error);
+            this.cblRepoError = `Failed: ${error.message}`;
+        } finally {
+            this.cblRepoLoading = false;
+            this.render();
+            this.attachListeners();
+        }
+    }
+
+    async runCBLRepoImport(path) {
+        this.cblRepoImportingPath = path;
+        this.cblRepoError = null;
+        this.render();
+        this.attachListeners();
+
+        try {
+            const response = await fetch('/api/library/cbl-repo/import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path }),
+            });
+            const text = await response.text();
+            if (!response.ok) throw new Error(friendlyErrorText(response, text));
+            const result = JSON.parse(text);
+            dialogs.toast(`Reading list "${result.name}" imported (${result.matched_cv_id + result.matched_series_number} matched, ${result.unmatched} unmatched).`, 'success');
+        } catch (error) {
+            console.error('Failed to import from CBL repo:', error);
+            this.cblRepoError = `Failed: ${error.message}`;
+        } finally {
+            this.cblRepoImportingPath = null;
+            this.render();
+            this.attachListeners();
+        }
+    }
+
     async runCBLImport() {
         if (!this.cblFile) return;
         this.cblImporting = true;
@@ -571,7 +644,55 @@ class ScanInfoSettings {
                 </div>
 
                 ${this.renderCBLImportResult()}
+                ${this.renderCBLRepoBrowser()}
             </div>
+        `;
+    }
+
+    renderCBLRepoBrowser() {
+        if (!this.cblRepoStatus || !this.cblRepoStatus.configured) {
+            return `
+                <div class="settings-section-description">
+                    <p class="empty-hint">Browsing a CBL collection (e.g. DieselTech/CBL-ReadingLists) is not configured. Set server.cbl_repo.url to enable it.</p>
+                </div>
+            `;
+        }
+
+        const status = this.cblRepoStatus;
+        return `
+            <div class="cbl-repo-browser">
+                <p class="settings-section-description">
+                    Browse ${this.escapeHtml(status.url)}${status.synced ? ` (${status.file_count} files, last synced)` : ' (not yet synced - browsing will clone it)'}.
+                </p>
+                <div class="form-group cbl-repo-search">
+                    <input type="text" id="cbl-repo-query" placeholder="Search (e.g. batman)" value="${this.escapeHtml(this.cblRepoQuery)}">
+                    <button class="btn btn-secondary" id="cbl-repo-browse-btn" ${this.cblRepoLoading ? 'disabled' : ''}>
+                        ${this.cblRepoLoading ? 'Loading…' : 'Browse'}
+                    </button>
+                </div>
+                ${this.cblRepoError ? `<p class="datamanager-errors">${this.escapeHtml(this.cblRepoError)}</p>` : ''}
+                ${this.renderCBLRepoFiles()}
+            </div>
+        `;
+    }
+
+    renderCBLRepoFiles() {
+        if (this.cblRepoFiles === null) return '';
+        if (this.cblRepoFiles.length === 0) {
+            return `<p class="empty-hint">No matching files.</p>`;
+        }
+        return `
+            <ul class="cbl-repo-file-list">
+                ${this.cblRepoFiles.slice(0, 100).map(path => `
+                    <li>
+                        <span class="cbl-repo-file-path">${this.escapeHtml(path)}</span>
+                        <button class="btn btn-primary btn-small cbl-repo-import-btn" data-path="${this.escapeHtml(path)}" ${this.cblRepoImportingPath === path ? 'disabled' : ''}>
+                            ${this.cblRepoImportingPath === path ? 'Importing…' : 'Import'}
+                        </button>
+                    </li>
+                `).join('')}
+            </ul>
+            ${this.cblRepoFiles.length > 100 ? `<p class="empty-hint">${this.cblRepoFiles.length - 100} more not shown - narrow your search.</p>` : ''}
         `;
     }
 
@@ -1022,6 +1143,23 @@ class ScanInfoSettings {
         if (cblImportBtn) {
             cblImportBtn.addEventListener('click', () => this.runCBLImport());
         }
+
+        const cblRepoQueryInput = document.getElementById('cbl-repo-query');
+        if (cblRepoQueryInput) {
+            cblRepoQueryInput.addEventListener('input', (e) => {
+                this.cblRepoQuery = e.target.value;
+            });
+            cblRepoQueryInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') this.runCBLRepoBrowse();
+            });
+        }
+        const cblRepoBrowseBtn = document.getElementById('cbl-repo-browse-btn');
+        if (cblRepoBrowseBtn) {
+            cblRepoBrowseBtn.addEventListener('click', () => this.runCBLRepoBrowse());
+        }
+        document.querySelectorAll('.cbl-repo-import-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.runCBLRepoImport(btn.dataset.path));
+        });
 
         document.querySelectorAll('input[name="theme-default"]').forEach(el => {
             el.addEventListener('change', () => {

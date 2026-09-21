@@ -105,6 +105,11 @@ type ServerConfig struct {
 	// Komga integration
 	Komga KomgaConfig `yaml:"komga,omitempty" toml:"komga,omitempty"`
 
+	// CBLRepo configures browsing/importing CBL reading lists from a
+	// cloned git repository (comic-server-oprf, spec
+	// docs/plans/2026-09-20-cbl-reading-list-import.md §3).
+	CBLRepo CBLRepoConfig `yaml:"cbl_repo,omitempty" toml:"cbl_repo,omitempty"`
+
 	// ScanInfo configures the ScanInformationFromFilename port
 	// (comic-server-pkk.1): detecting a scan-group tag from a comic's
 	// filename and writing it to the book's ScanInformation field.
@@ -219,6 +224,37 @@ type KomgaConfig struct {
 	RemoteRoot string `yaml:"remote_root,omitempty" toml:"remote_root,omitempty"`
 
 	Targets []KomgaTarget `yaml:"targets,omitempty" toml:"targets,omitempty"`
+}
+
+// DefaultCBLRepoURL is DieselTech/CBL-ReadingLists, the community's
+// semi-official collection of CBL reading orders (spec §3). It's the
+// DEFAULT, never hardcoded elsewhere - a single third-party repo can be
+// renamed, moved, forked, or abandoned, so CBLRepoConfig.URL stays a real
+// setting an operator can override.
+const DefaultCBLRepoURL = "https://github.com/DieselTech/CBL-ReadingLists"
+
+// CBLRepoConfig configures the git-hosted CBL repo comic-server clones
+// and browses for reading-list import (comic-server-oprf). PERSONAL USE
+// ONLY (spec §3 license findings: the default repo has no license file,
+// and its own README disclaims ownership of its content) - comic-server
+// clones it for this operator's own browsing/import, never redistributes
+// or bundles its contents.
+type CBLRepoConfig struct {
+	// URL is the repo to clone. Empty means disabled (no default clone
+	// happens automatically - browsing is opt-in, not an unconditional
+	// startup action). Set to DefaultCBLRepoURL to use the DieselTech
+	// repo, or point at a fork/mirror/different collection entirely.
+	URL string `yaml:"url,omitempty" toml:"url,omitempty"`
+
+	// ClonePath overrides where the local clone lives. Empty defaults to
+	// a "cbl-repo" subdirectory of the XDG data directory (persistent,
+	// not cache - re-cloning 1704+ files is costly enough to be worth
+	// surviving restarts, same reasoning as the SQLite database path).
+	// Configurable for the same reason CoverCacheDir/TrashPath are: the
+	// XDG data dir isn't one of the Docker image's declared volumes -
+	// Docker deployments should point this at a mounted volume so the
+	// clone survives container recreates.
+	ClonePath string `yaml:"clone_path,omitempty" toml:"clone_path,omitempty"`
 }
 
 // KomgaTargetType is which kind of Komga entity a smart list syncs into.

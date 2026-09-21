@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/duckpuppy/comic-server/internal/api"
+	"github.com/duckpuppy/comic-server/internal/cblrepo"
 	"github.com/duckpuppy/comic-server/internal/comicvine"
 	"github.com/duckpuppy/comic-server/internal/config"
 	"github.com/duckpuppy/comic-server/internal/configdb"
@@ -492,6 +493,15 @@ func runServer(cmd *cobra.Command, args []string) error {
 	if cfg.Server.Komga.Enabled {
 		komgaStatus = komga.NewStatusStore()
 		apiServer.SetKomgaStatus(komgaStatus)
+	}
+
+	if cfg.Server.CBLRepo.URL != "" {
+		if resolvedClonePath, err := resolveCBLRepoClonePath(cfg.Server.CBLRepo.ClonePath); err != nil {
+			log.Warn().Err(err).Msg("Failed to determine CBL repo clone path; CBL reading-list repo browsing disabled")
+		} else {
+			apiServer.SetCBLRepo(cblrepo.New(cfg.Server.CBLRepo.URL, resolvedClonePath))
+			log.Info().Str("url", cfg.Server.CBLRepo.URL).Str("clone_path", resolvedClonePath).Msg("CBL reading-list repo browsing enabled (not yet cloned - happens on first browse or explicit sync)")
+		}
 	}
 
 	// restartCh carries "restart requested" from the API handler into the main
@@ -1621,6 +1631,23 @@ func resolveCoverCacheDir(configuredDir string) (string, error) {
 		return "", err
 	}
 	return filepath.Join(cacheDir, "covers"), nil
+}
+
+// resolveCBLRepoClonePath returns configuredDir if set, else a
+// "cbl-repo" subdirectory of the XDG DATA directory (persistent, not
+// cache - re-cloning ~1700 files on every restart would be wasteful,
+// same reasoning as the SQLite database path). Configurable for the same
+// reason CoverCacheDir/TrashPath are: Docker deployments should point
+// this at a mounted volume so the clone survives container recreates.
+func resolveCBLRepoClonePath(configuredDir string) (string, error) {
+	if configuredDir != "" {
+		return configuredDir, nil
+	}
+	dataDir, err := config.GetDataDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dataDir, "cbl-repo"), nil
 }
 
 func komgaTargetsFromConfigDB(dbTargets []configdb.KomgaTarget) []komga.Target {

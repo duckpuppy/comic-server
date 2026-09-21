@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/duckpuppy/comic-server/internal/cblrepo"
 	"github.com/duckpuppy/comic-server/internal/comicvine"
 	"github.com/duckpuppy/comic-server/internal/config"
 	"github.com/duckpuppy/comic-server/internal/configdb"
@@ -57,6 +58,10 @@ type Server struct {
 	cvClient *comicvine.Client
 	cvCache  *comicvine.Cache
 	scraper  *comicvine.Scraper
+
+	// cblRepo is the cloned CBL-hosting repo browser (comic-server-oprf),
+	// nil when server.cbl_repo.url isn't configured - see SetCBLRepo.
+	cblRepo *cblrepo.Repo
 
 	// dmJob/dmJobMu track the current (or most recently completed)
 	// whole-library Data Manager preview/apply background job - see
@@ -120,6 +125,15 @@ func (s *Server) SetSyncTrigger(fn func(deviceID string) error) {
 // caching - see comic-server-0y6.2.
 func (s *Server) SetCoverCache(cache *covers.Cache) {
 	s.coverCache = cache
+}
+
+// SetCBLRepo wires a cloned CBL-hosting repo into the API server
+// (comic-server-oprf). Call this once at startup when server.cbl_repo.url
+// is configured; without it, the /api/library/cbl-repo/* endpoints
+// respond 200 with "configured": false (same "normal state is 200, not
+// 5xx" reasoning as comic-server-hono).
+func (s *Server) SetCBLRepo(repo *cblrepo.Repo) {
+	s.cblRepo = repo
 }
 
 // SetKomgaStatus wires Komga sync status reporting into the API server.
@@ -245,6 +259,10 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/library/workflow/new-files/start", s.handleStartProcessingNewFiles)
 	s.mux.HandleFunc("/api/library/workflow/scan-folder", s.handleScanAdHocFolder)
 	s.mux.HandleFunc("/api/library/import-cbl", s.handleImportCBL)
+	s.mux.HandleFunc("/api/library/cbl-repo/status", s.handleCBLRepoStatus)
+	s.mux.HandleFunc("/api/library/cbl-repo/sync", s.handleCBLRepoSync)
+	s.mux.HandleFunc("/api/library/cbl-repo/browse", s.handleCBLRepoBrowse)
+	s.mux.HandleFunc("/api/library/cbl-repo/import", s.handleCBLRepoImport)
 	s.mux.HandleFunc("/api/library/workflow/wanted", s.handleWantedBooks)
 	s.mux.HandleFunc("/api/library/workflow/wanted/link", s.handleLinkWantedBook)
 	s.mux.HandleFunc("/api/library/workflow/", s.handleWorkflowStageSubRouter)
