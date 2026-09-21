@@ -33,6 +33,17 @@ class ScanInfoSettings {
         this.importJob = null;
         this.importError = null;
 
+        // CBL reading-list import (comic-server-zc0g, spec
+        // docs/plans/2026-09-20-cbl-reading-list-import.md §6 phase 1) -
+        // minimal first-slice panel: pick a local .cbl file, upload it,
+        // show the match summary. Local file only for now - fetching from
+        // a git-hosted source (e.g. DieselTech/CBL-ReadingLists) is a
+        // separate, not-yet-built feature (comic-server-oprf).
+        this.cblFile = null;
+        this.cblImporting = false;
+        this.cblResult = null;
+        this.cblError = null;
+
         // Server misc settings (comic-server-wp8k, second slice of the
         // Settings UI push): CBZ Convert enabled + ignore-devices, both
         // live-effect (no restart needed) unlike the still-config.yaml-only
@@ -473,6 +484,32 @@ class ScanInfoSettings {
         }
     }
 
+    async runCBLImport() {
+        if (!this.cblFile) return;
+        this.cblImporting = true;
+        this.cblError = null;
+        this.render();
+        this.attachListeners();
+
+        try {
+            const formData = new FormData();
+            formData.append('file', this.cblFile);
+            const response = await fetch('/api/library/import-cbl', { method: 'POST', body: formData });
+            const text = await response.text();
+            if (!response.ok) throw new Error(friendlyErrorText(response, text));
+            this.cblResult = JSON.parse(text);
+            dialogs.toast(`Reading list "${this.cblResult.name}" imported.`, 'success');
+        } catch (error) {
+            console.error('Failed to import CBL:', error);
+            this.cblError = `Failed: ${error.message}`;
+        } finally {
+            this.cblImporting = false;
+            this.cblFile = null;
+            this.render();
+            this.attachListeners();
+        }
+    }
+
     render() {
         const app = document.getElementById('app');
         app.innerHTML = `
@@ -482,6 +519,7 @@ class ScanInfoSettings {
                 </div>
                 ${this.renderAppearance()}
                 ${this.renderLibraryImport()}
+                ${this.renderCBLImport()}
                 ${this.renderServerMisc()}
                 ${this.renderWatchFolders()}
                 ${this.renderRestartRequired()}
@@ -512,6 +550,54 @@ class ScanInfoSettings {
                 ${this.renderImportResult()}
             </div>
         `;
+    }
+
+    renderCBLImport() {
+        return `
+            <div class="panel scan-info-panel">
+                <div class="settings-section-header">
+                    <h2>Reading List Import (CBL)</h2>
+                    <p class="settings-section-description">Import a ComicRack CBL reading list. Matches each entry against your library (by ComicVine ID when the file has one, otherwise by series/number/year) and creates a new reading list from whatever matched. Unmatched entries are reported below, not added to the list.</p>
+                </div>
+
+                <div class="form-group">
+                    <input type="file" id="cbl-import-file" accept=".cbl">
+                </div>
+
+                <div class="scan-info-actions">
+                    <button class="btn btn-primary" id="cbl-import-btn" ${this.cblImporting || !this.cblFile ? 'disabled' : ''}>
+                        ${this.cblImporting ? 'Uploading and matching…' : 'Import'}
+                    </button>
+                </div>
+
+                ${this.renderCBLImportResult()}
+            </div>
+        `;
+    }
+
+    renderCBLImportResult() {
+        if (this.cblError) {
+            return `<p class="datamanager-errors">${this.escapeHtml(this.cblError)}</p>`;
+        }
+        const r = this.cblResult;
+        if (!r) return '';
+
+        let html = `<p class="datamanager-summary">Imported "${this.escapeHtml(r.name)}" as a new list: ` +
+            `${r.matched_cv_id} matched by ComicVine ID, ${r.matched_series_number} matched by series/number, ` +
+            `${r.unmatched} unmatched.</p>`;
+
+        const unmatched = (r.entries || []).filter(e => e.match_path === 'none');
+        if (unmatched.length > 0) {
+            html += `
+                <details class="cbl-import-unmatched">
+                    <summary>${unmatched.length} unmatched ${unmatched.length === 1 ? 'entry' : 'entries'}</summary>
+                    <ul>
+                        ${unmatched.map(e => `<li>${this.escapeHtml(e.series)} #${this.escapeHtml(e.number)}${e.year ? ` (${e.year})` : ''}</li>`).join('')}
+                    </ul>
+                </details>
+            `;
+        }
+        return html;
     }
 
     renderImportResult() {
@@ -922,6 +1008,19 @@ class ScanInfoSettings {
         const importBtn = document.getElementById('library-import-btn');
         if (importBtn) {
             importBtn.addEventListener('click', () => this.runLibraryImport());
+        }
+
+        const cblFileInput = document.getElementById('cbl-import-file');
+        if (cblFileInput) {
+            cblFileInput.addEventListener('change', (e) => {
+                this.cblFile = e.target.files[0] || null;
+                const btn = document.getElementById('cbl-import-btn');
+                if (btn) btn.disabled = this.cblImporting || !this.cblFile;
+            });
+        }
+        const cblImportBtn = document.getElementById('cbl-import-btn');
+        if (cblImportBtn) {
+            cblImportBtn.addEventListener('click', () => this.runCBLImport());
         }
 
         document.querySelectorAll('input[name="theme-default"]').forEach(el => {
