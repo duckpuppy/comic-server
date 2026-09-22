@@ -191,6 +191,11 @@ devices:
           limit_value: 50
 ```
 
+Want separate libraries (kids/adult, one per household member, test vs.
+production)? See [docs/MULTI_LIBRARY.md](docs/MULTI_LIBRARY.md) - already
+supported today by running separate comic-server processes, no extra
+feature needed.
+
 ### Running as a Service
 
 See [scripts/README.md](scripts/README.md) for detailed installation instructions.

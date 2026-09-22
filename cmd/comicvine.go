@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"path/filepath"
 
 	"github.com/duckpuppy/comic-server/internal/comicvine"
 	"github.com/duckpuppy/comic-server/internal/config"
@@ -28,12 +27,19 @@ func init() {
 }
 
 func runCVStatus(cmd *cobra.Command, args []string) error {
-	dataDir, err := config.GetDataDir()
+	configPath, err := GetConfigPath()
 	if err != nil {
-		return fmt.Errorf("get data directory: %w", err)
+		return fmt.Errorf("get config path: %w", err)
+	}
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
 	}
 
-	cachePath := filepath.Join(dataDir, "comicvine_cache.db")
+	cachePath, err := resolveComicVineCachePath(cfg.Server.ComicVineCachePath)
+	if err != nil {
+		return fmt.Errorf("resolve ComicVine cache path: %w", err)
+	}
 	cache, err := comicvine.OpenCache(cachePath)
 	if err != nil {
 		return fmt.Errorf("open cache: %w", err)

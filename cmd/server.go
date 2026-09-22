@@ -38,6 +38,7 @@ var (
 	libraryPath            string
 	dbPath                 string
 	coverCacheDir          string
+	comicVineCachePath     string
 	ignoreDevices          []string
 	bindAddress            string
 	autoSync               bool
@@ -102,6 +103,9 @@ func runServer(cmd *cobra.Command, args []string) error {
 	}
 	if coverCacheDir != "" {
 		cfg.Server.CoverCacheDir = coverCacheDir
+	}
+	if comicVineCachePath != "" {
+		cfg.Server.ComicVineCachePath = comicVineCachePath
 	}
 	if ignoreDevicesSet {
 		cfg.Server.IgnoreDevices = ignoreDevices
@@ -475,7 +479,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 	})
 
 	if cfg.Server.ComicVineAPIKey != "" {
-		if err := wireScraperAPI(apiServer, cfg.Server.ComicVineAPIKey); err != nil {
+		if err := wireScraperAPI(apiServer, cfg.Server.ComicVineAPIKey, cfg.Server.ComicVineCachePath); err != nil {
 			log.Warn().Err(err).Msg("Failed to enable ComicVine scraper API endpoints")
 		}
 	}
@@ -551,7 +555,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 	cvCtx, cvCancel := context.WithCancel(context.Background())
 	defer cvCancel()
 	if cfg.Server.ComicVineAPIKey != "" {
-		go startComicVineSync(cvCtx, cfg.Server.ComicVineAPIKey, backend)
+		go startComicVineSync(cvCtx, cfg.Server.ComicVineAPIKey, backend, cfg.Server.ComicVineCachePath)
 	}
 
 	// Start Komga collection/read-list sync if enabled
@@ -1471,6 +1475,7 @@ func init() {
 	serverCmd.Flags().StringVarP(&libraryPath, "library", "l", "", "Path to ComicDB.xml file")
 	serverCmd.Flags().StringVar(&dbPath, "db", "", "Path to SQLite database file (experimental, alternative to --library). Combine with --library to also keep the database in sync with that XML file via the file watcher")
 	serverCmd.Flags().StringVar(&coverCacheDir, "cover-cache-dir", "", "Directory to cache resized comic cover thumbnails in (default: XDG cache dir). Set this to a path under a mounted volume in Docker so the cache survives container recreates")
+	serverCmd.Flags().StringVar(&comicVineCachePath, "comicvine-cache-path", "", "Path to the ComicVine enrichment cache file (default: comicvine_cache.db under the XDG data dir). Set this to a distinct path per library profile so multiple comic-server instances on one host don't share a cache (comic-server-7lj)")
 	serverCmd.Flags().StringSliceVarP(&ignoreDevices, "ignore-device", "i", nil, "Devices to ignore (can be IP address, device ID, or device name)")
 	serverCmd.Flags().StringVarP(&bindAddress, "bind", "b", "", "Network interface to bind to (default: all interfaces)")
 	serverCmd.Flags().BoolVar(&autoSync, "auto-sync", false, "Automatically sync devices when they connect")
@@ -1501,17 +1506,36 @@ func init() {
 	}
 }
 
+// resolveComicVineCachePath returns configuredPath if set, else the fixed
+// "comicvine_cache.db" file under the XDG data directory - previously the
+// only option, hardcoded at every call site with no override
+// (comic-server-7lj's multi-library-profiles research note,
+// docs/plans/2026-09-22-multi-library-profiles.md): two comic-server
+// instances run as separate library profiles on one host would otherwise
+// silently share this cache. comicvine.OpenCache creates its own parent
+// directory, so unlike resolveCoverCacheDir this doesn't need to
+// pre-create anything for the override case.
+func resolveComicVineCachePath(configuredPath string) (string, error) {
+	if configuredPath != "" {
+		return configuredPath, nil
+	}
+	dataDir, err := config.EnsureDataDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dataDir, "comicvine_cache.db"), nil
+}
+
 // wireScraperAPI opens a ComicVine client and cache for the lifetime of the
 // server process and wires them into the API server's /api/scrape endpoints.
 // The cache handle is intentionally not closed here; it's released when the
 // process exits.
-func wireScraperAPI(apiServer *api.Server, apiKey string) error {
-	dataDir, err := config.EnsureDataDir()
+func wireScraperAPI(apiServer *api.Server, apiKey, cachePathOverride string) error {
+	cachePath, err := resolveComicVineCachePath(cachePathOverride)
 	if err != nil {
-		return fmt.Errorf("create data directory: %w", err)
+		return fmt.Errorf("resolve ComicVine cache path: %w", err)
 	}
 
-	cachePath := filepath.Join(dataDir, "comicvine_cache.db")
 	cache, err := comicvine.OpenCache(cachePath)
 	if err != nil {
 		return fmt.Errorf("open ComicVine cache: %w", err)
@@ -1522,14 +1546,13 @@ func wireScraperAPI(apiServer *api.Server, apiKey string) error {
 	return nil
 }
 
-func startComicVineSync(ctx context.Context, apiKey string, backend library.Backend) {
-	dataDir, err := config.EnsureDataDir()
+func startComicVineSync(ctx context.Context, apiKey string, backend library.Backend, cachePathOverride string) {
+	cachePath, err := resolveComicVineCachePath(cachePathOverride)
 	if err != nil {
-		log.Error().Err(err).Msg("ComicVine sync: failed to create data directory")
+		log.Error().Err(err).Msg("ComicVine sync: failed to resolve cache path")
 		return
 	}
 
-	cachePath := filepath.Join(dataDir, "comicvine_cache.db")
 	cache, err := comicvine.OpenCache(cachePath)
 	if err != nil {
 		log.Error().Err(err).Msg("ComicVine sync: failed to open cache database")

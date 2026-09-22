@@ -68,6 +68,17 @@ type ServerConfig struct {
 	// path under a mounted volume (e.g. /data/cover-cache).
 	CoverCacheDir string `yaml:"cover_cache_dir,omitempty" toml:"cover_cache_dir,omitempty"`
 
+	// ComicVineCachePath overrides where the ComicVine enrichment cache
+	// (volumes/issues/sync state) is stored. Empty means the fixed
+	// "comicvine_cache.db" file under the XDG data directory
+	// (config.GetDataDir()) - previously hardcoded with no override at
+	// all (comic-server-7lj's multi-library-profiles research note,
+	// docs/plans/2026-09-22-multi-library-profiles.md): two comic-server
+	// instances run as separate library profiles on the same host would
+	// otherwise silently share this file, same reasoning as
+	// CoverCacheDir/TrashPath needing their own override for Docker.
+	ComicVineCachePath string `yaml:"comicvine_cache_path,omitempty" toml:"comicvine_cache_path,omitempty"`
+
 	// WatchFolders are "dump" directories comic files land in before
 	// they're added to the ComicRack library XML at all - e.g. the paths
 	// ComicRack's own "0 Day Folder" smart list pointed at. Paths are on

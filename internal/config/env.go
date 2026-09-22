@@ -25,6 +25,11 @@ func (c *Config) ApplyEnvironment() error {
 		c.Server.CoverCacheDir = val
 	}
 
+	// ComicVine enrichment cache file path
+	if val := os.Getenv("COMIC_SERVER_COMICVINE_CACHE_PATH"); val != "" {
+		c.Server.ComicVineCachePath = val
+	}
+
 	// comic-server's own library file path mapping (see ServerConfig doc)
 	if val := os.Getenv("COMIC_SERVER_LIBRARY_SOURCE_ROOT"); val != "" {
 		c.Server.LibrarySourceRoot = val

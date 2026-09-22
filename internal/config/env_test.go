@@ -19,6 +19,7 @@ func TestApplyEnvironment(t *testing.T) {
 		"COMIC_SERVER_LOG_LEVEL",
 		"COMIC_SERVER_LOG_FORMAT",
 		"COMIC_SERVER_KOMGA_API_KEY",
+		"COMIC_SERVER_COMICVINE_CACHE_PATH",
 	}
 	for _, key := range envVars {
 		originalEnv[key] = os.Getenv(key)
@@ -47,6 +48,20 @@ func TestApplyEnvironment(t *testing.T) {
 
 		if cfg.Server.LibraryPath != "/custom/path/ComicDb.xml" {
 			t.Errorf("LibraryPath = %v, want /custom/path/ComicDb.xml", cfg.Server.LibraryPath)
+		}
+	})
+
+	t.Run("comicvine cache path override", func(t *testing.T) {
+		cleanup()
+		os.Setenv("COMIC_SERVER_COMICVINE_CACHE_PATH", "/data/profiles/kids/comicvine_cache.db")
+
+		cfg := NewConfig()
+		if err := cfg.ApplyEnvironment(); err != nil {
+			t.Fatalf("ApplyEnvironment() error = %v", err)
+		}
+
+		if cfg.Server.ComicVineCachePath != "/data/profiles/kids/comicvine_cache.db" {
+			t.Errorf("ComicVineCachePath = %v, want /data/profiles/kids/comicvine_cache.db", cfg.Server.ComicVineCachePath)
 		}
 	})
 

@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -287,12 +286,11 @@ func openScraperDeps(libraryPathOverride string) (libPath string, backend librar
 		return "", nil, nil, nil, fmt.Errorf("no ComicVine API key configured (server.comicvine_api_key)")
 	}
 
-	dataDir, err := config.GetDataDir()
+	cachePath, err := resolveComicVineCachePath(cfg.Server.ComicVineCachePath)
 	if err != nil {
 		xmlBackend.Close()
-		return "", nil, nil, nil, fmt.Errorf("get data directory: %w", err)
+		return "", nil, nil, nil, fmt.Errorf("resolve ComicVine cache path: %w", err)
 	}
-	cachePath := filepath.Join(dataDir, "comicvine_cache.db")
 	cvCache, err := comicvine.OpenCache(cachePath)
 	if err != nil {
 		xmlBackend.Close()
