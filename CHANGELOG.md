@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.45.0](https://github.com/duckpuppy/comic-server/compare/v1.44.0...v1.45.0) (2026-09-22)
+
+
+### Features
+
+* CLI command for CBL reimport (comic-server-waeu) ([073c56e](https://github.com/duckpuppy/comic-server/commit/073c56e3b86aa0fb00b9e441f37f5be7037ad4a0))
+* configurable ComicVine cache path + multi-library-profiles doc (comic-server-7lj) ([1208c7f](https://github.com/duckpuppy/comic-server/commit/1208c7f3f83ed6606c67d9d9724c115e6b9307fc))
+
+
+### Documentation
+
+* research note on multi-library profiles (comic-server-7lj) ([5bf0ced](https://github.com/duckpuppy/comic-server/commit/5bf0ced5f9a5053763953676f67d87631e60aaef))
+
 ## [1.44.0](https://github.com/duckpuppy/comic-server/compare/v1.43.1...v1.44.0) (2026-09-21)
 
 
