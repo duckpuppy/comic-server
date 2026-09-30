@@ -330,6 +330,10 @@ func runServer(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("configuration validation failed: %w", err)
 	}
 
+	// Virtual tag definitions must be in place before any smart list is
+	// evaluated (comic-server-65u).
+	applyVirtualTags(cfg)
+
 	// Load library using appropriate backend
 	var backend library.Backend
 	if cfg.Server.DatabasePath != "" {
@@ -717,6 +721,11 @@ func runServer(cmd *cobra.Command, args []string) error {
 						Msg("LibraryRoot changed in config - updated running Komga syncer")
 				}
 
+				// Virtual tag definitions are live-reloadable; cached smart
+				// list counts were computed from the old definitions.
+				applyVirtualTags(newCfg)
+				apiServer.InvalidateListCache()
+
 				// Update configuration
 				cfg = newCfg
 				log.Info().Msg("Configuration reloaded successfully")
@@ -972,6 +981,26 @@ func migrateKomgaTargetsToConfigDB(cfg *config.Config, configDB *configdb.DB) (i
 // newCfg) - a SIGHUP reload loads a fresh cfg from the now-cleared
 // config.yaml, so without reapplying this, the in-memory effective values
 // would revert to their zero value on every reload.
+// applyVirtualTags pushes config.yaml's virtual_tags into the library
+// package's tag registry (comic-server-65u). Safe to call repeatedly; each
+// call replaces the previous definitions.
+func applyVirtualTags(cfg *config.Config) {
+	tags := make([]library.VirtualTag, 0, len(cfg.Server.VirtualTags))
+	for _, t := range cfg.Server.VirtualTags {
+		tags = append(tags, library.VirtualTag{
+			ID:            t.ID,
+			Name:          t.Name,
+			Description:   t.Description,
+			CaptionFormat: t.CaptionFormat,
+			Enabled:       t.IsEnabled(),
+		})
+	}
+	library.SetVirtualTags(tags)
+	if len(tags) > 0 {
+		log.Info().Int("count", len(tags)).Msg("Virtual tags configured")
+	}
+}
+
 func applyServerMiscSettings(cfg *config.Config, configDB *configdb.DB, configPath string, ignoreDevicesSet bool, ignoreDevicesFlag []string, autoSyncSet bool, autoSyncFlag bool) error {
 	existing, err := configDB.GetServerMiscSettings()
 	if err != nil {

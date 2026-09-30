@@ -126,7 +126,7 @@ func TestTranslateMatchers_FallsBackOnNegation(t *testing.T) {
 }
 
 func TestTranslateMatchers_FallsBackOnUnsupportedType(t *testing.T) {
-	for _, mt := range []string{"Tags", "CustomValues", "Expression", "ComicBookDuplicateMatcher", "SeriesAllComplete", "CVSeriesComplete", "AllProperties", "Directory"} {
+	for _, mt := range []string{"Tags", "CustomValues", "Expression", "ComicBookDuplicateMatcher", "SeriesAllComplete", "CVSeriesComplete", "AllProperties", "Directory", "VirtualTag1", "ComicBookVirtualTag1Matcher"} {
 		if _, ok := translateMatchers("And", []library.ComicBookMatcher{{Type: mt, MatchOperator: "0", MatchValue: "x"}}); ok {
 			t.Errorf("expected matcher type %q to be untranslatable", mt)
 		}

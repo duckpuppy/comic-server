@@ -441,6 +441,78 @@ settings:
   limit_value: 10
 ```
 
+### Virtual Tags
+
+Virtual tags are user-defined, template-computed text properties that smart
+lists can match on. They are ComicRack's "Virtual Tags" (slots 1-20): define
+a caption template once, then use `Virtual Tag N` as a field in a smart list's
+matchers with the usual string operators (contains, equals, starts with,
+regex, ...).
+
+```yaml
+server:
+  virtual_tags:
+    - id: 1
+      name: Series and volume
+      caption_format: "{Series}[ v{Volume}]"
+    - id: 2
+      name: Decade
+      caption_format: "$substring<{Year},0,3>0s"
+      enabled: true   # optional, defaults to true
+```
+
+| Field | Notes |
+|---|---|
+| `id` | Slot 1-20. Smart lists reference it as `ComicBookVirtualTag<ID>Matcher`, the same XML type ComicRack uses, so the lists stay readable in ComicRack. |
+| `name` | Required for an enabled tag. |
+| `caption_format` | Required for an enabled tag. A ComicRack caption template (below). |
+| `enabled` | Defaults to `true` (unlike ComicRack, where a tag starts off). |
+
+Tag definitions live in `config.yaml` only. ComicRack keeps its own in desktop
+app settings, so a definition made here does not exist in a real ComicRack
+install - a smart list that uses `Virtual Tag 1` will match nothing in ComicRack
+until that slot is defined there too. A list containing a virtual tag matcher is
+always evaluated in memory (never pushed into a SQL query), same as the
+Expression and duplicate matchers.
+
+**Template language** (a port of ComicRack's caption formatter):
+
+- `{Field}` inserts a book field (case-insensitive). Like ComicRack, a field with
+  a display form uses it: `{Number}` is `12 (of 50)`, `{Volume}` is `V2`,
+  `{Rating}` is `4.5` or `None`. `{NumberOnly}` is the bare number.
+  `{FileName}`, `{FileNameWithExtension}`, `{FileDirectory}` are also available.
+- `{Field:format}` applies a .NET numeric format to numeric fields, e.g.
+  `{Year:00000}`.
+- `[ ... ]` is an optional group: if a `{Field}` or `$function<>` directly inside
+  it is empty, the whole group is dropped. `{Series}[ v{Volume}]` shows `X-Men`
+  when there is no volume.
+- `\X` inserts a literal `X`.
+- `$name<arg,arg,...>` calls a function: `if`, `not`, `year`, `month`, `day`,
+  `date`, `int`, `double`, `expr`, `escape`, `substring`, `RegexMatch`,
+  `RegexReplace`.
+
+Gotchas, all inherited from ComicRack's parser:
+
+- Inside a function call, a literal `>`, `[`, `]`, or `$` must be escaped with a
+  backslash (`$if<{PageCount}\>=32,long,short>`). An unescaped `>` ends the
+  call, and `[` opens an optional group.
+- `$month<>` and `$day<>` return a 4-digit zero-padded number (`0003`).
+- `$if<>` and `$expr<>` conditions are C#-style (`&&`, `||`, `==`, integer
+  division). Only literals, arithmetic, comparisons and `?:` are supported, not
+  method calls.
+- `$RegexMatch<>`/`$RegexReplace<>` patterns use Go (RE2) syntax, so lookahead,
+  lookbehind and backreferences are not available. Matching is case-insensitive.
+- A malformed template or failing function produces the text `#ERROR - ...` as
+  the tag's value, as in ComicRack.
+
+Differences from ComicRack: there are no filename-derived "proposed" values, so
+a blank field stays blank; an unset number is `0` here rather than `-1`, so `0`
+counts as unset for year, month, day, count and volume; `{{CustomValue}}`
+lookups and ComicRack's per-book result cache are not implemented. Tags are
+recomputed on demand, so they always reflect the current book data.
+
+Virtual tags reload on SIGHUP.
+
 ## Configuration Reload
 
 The server supports configuration reload without restart using SIGHUP:
@@ -458,6 +530,7 @@ docker kill -s HUP comic-server
 
 **What gets reloaded:**
 - Log level and format
+- Virtual tag definitions
 - Device ignore list
 - Per-device configurations
 - Connection limits

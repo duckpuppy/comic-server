@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/duckpuppy/comic-server/internal/pathmap"
@@ -133,6 +134,12 @@ type ServerConfig struct {
 	// and requires TrashPath to be configured (see comic-server-1up).
 	CBZConvert CBZConvertConfig `yaml:"cbz_convert,omitempty" toml:"cbz_convert,omitempty"`
 
+	// VirtualTags defines template-computed string properties that smart
+	// lists can match on (ComicRackCE's VirtualTag01..20, comic-server-65u).
+	// Config-file only, like ComicRackCE keeps them in app settings rather
+	// than the library XML; see VirtualTagConfig.
+	VirtualTags []VirtualTagConfig `yaml:"virtual_tags,omitempty" toml:"virtual_tags,omitempty"`
+
 	// TrashPath is the quarantine directory used by internal/trash for any
 	// feature that replaces a comic archive file on disk (currently
 	// CBZConvert below). Files being replaced are moved here rather than
@@ -175,6 +182,62 @@ type ScanInfoConfig struct {
 	// Unknown is the tag used when detection fails outright. Empty means
 	// skip the book instead of tagging it Unknown.
 	Unknown string `yaml:"unknown,omitempty" toml:"unknown,omitempty"`
+}
+
+// MaxVirtualTags is the number of virtual tag slots (ComicRack's
+// VirtualTag01..20). Mirrors library.MaxVirtualTags, which this package
+// can't import.
+const MaxVirtualTags = 20
+
+// VirtualTagConfig defines one virtual tag slot. A smart list matches it
+// with a ComicBookVirtualTag<ID>Matcher, using ordinary string operators
+// against the value CaptionFormat expands to for each book.
+type VirtualTagConfig struct {
+	// ID is the slot, 1-20 (the N in ComicBookVirtualTagNMatcher).
+	ID int `yaml:"id" toml:"id"`
+
+	// Name labels the tag. Required for an enabled tag.
+	Name string `yaml:"name" toml:"name"`
+
+	Description string `yaml:"description,omitempty" toml:"description,omitempty"`
+
+	// CaptionFormat is a ComicRack caption template, e.g.
+	// "{Series}[ v{Volume}]". Required for an enabled tag.
+	CaptionFormat string `yaml:"caption_format" toml:"caption_format"`
+
+	// Enabled defaults to true when omitted (unlike ComicRack, where a tag
+	// is off until switched on in the desktop UI - a tag defined in a
+	// config file is presumably wanted).
+	Enabled *bool `yaml:"enabled,omitempty" toml:"enabled,omitempty"`
+}
+
+// IsEnabled reports whether the tag is active (Enabled defaulting to true).
+func (v VirtualTagConfig) IsEnabled() bool {
+	return v.Enabled == nil || *v.Enabled
+}
+
+// ValidateVirtualTags checks slot ids and that enabled tags are complete.
+func ValidateVirtualTags(tags []VirtualTagConfig) error {
+	seen := make(map[int]bool, len(tags))
+	for i, t := range tags {
+		if t.ID < 1 || t.ID > MaxVirtualTags {
+			return fmt.Errorf("virtual_tags[%d]: id must be between 1 and %d, got %d", i, MaxVirtualTags, t.ID)
+		}
+		if seen[t.ID] {
+			return fmt.Errorf("virtual_tags[%d]: duplicate id %d", i, t.ID)
+		}
+		seen[t.ID] = true
+		if !t.IsEnabled() {
+			continue
+		}
+		if strings.TrimSpace(t.Name) == "" {
+			return fmt.Errorf("virtual_tags[%d] (id %d): name is required for an enabled tag", i, t.ID)
+		}
+		if strings.TrimSpace(t.CaptionFormat) == "" {
+			return fmt.Errorf("virtual_tags[%d] (id %d): caption_format is required for an enabled tag", i, t.ID)
+		}
+	}
+	return nil
 }
 
 // CBZConvertConfig configures the Convert-to-CBZ port (comic-server-43b):
@@ -424,6 +487,10 @@ func (c *Config) Validate() error {
 	}
 
 	if err := c.Server.ScanInfo.Validate(); err != nil {
+		return err
+	}
+
+	if err := ValidateVirtualTags(c.Server.VirtualTags); err != nil {
 		return err
 	}
 

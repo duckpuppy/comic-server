@@ -464,6 +464,12 @@ func (m *Matcher) matchInternal(book *ComicBook) bool {
 		return m.matchExpression(book)
 	}
 
+	// VirtualTagN (ComicBookVirtualTagNMatcher) is a plain string matcher
+	// over a template-computed value - see virtualtags.go.
+	if slot, ok := virtualTagSlot(m.Type); ok {
+		return m.matchString(VirtualTagValue(book, slot))
+	}
+
 	// Special handling for CustomValues matcher
 	if m.Type == "CustomValues" {
 		// CustomValuesStore format: ",key1=value1,key2=value2"

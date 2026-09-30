@@ -165,6 +165,27 @@ func TestSQLFastPath_MixedWithUntranslatableTagsMatcherFallsBackCorrectly(t *tes
 	assertSameMatches(t, list, map[string]bool{"book-3": true})
 }
 
+func TestSQLFastPath_VirtualTagMatcherFallsBackCorrectly(t *testing.T) {
+	// A VirtualTag matcher's value is a computed template, so it can never
+	// be pushed into a WHERE clause (comic-server-65u). Mixed with a
+	// translatable Series matcher, the whole list must fall back to full
+	// in-memory evaluation and still produce the right AND result on both
+	// backends.
+	library.SetVirtualTags([]library.VirtualTag{
+		{ID: 1, Name: "Pub/Year", CaptionFormat: "{Publisher}/{Year}", Enabled: true},
+	})
+	t.Cleanup(func() { library.SetVirtualTags(nil) })
+
+	list := &library.ComicListItem{
+		Type: "ComicSmartListItem", MatcherMode: "And",
+		Matchers: []library.ComicBookMatcher{
+			{Type: "Series", MatchOperator: "1", MatchValue: "Batman"},
+			{Type: "VirtualTag1", MatchOperator: "1", MatchValue: "/2015"},
+		},
+	}
+	assertSameMatches(t, list, map[string]bool{"book-3": true})
+}
+
 func TestSQLFastPath_EnumYesNoUnknownAcrossBackends(t *testing.T) {
 	list := &library.ComicListItem{
 		Type: "ComicSmartListItem", MatcherMode: "And",
