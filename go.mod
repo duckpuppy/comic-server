@@ -1,23 +1,23 @@
 module github.com/duckpuppy/comic-server
 
-go 1.25.1
+go 1.26.0
 
 require (
 	github.com/bodgit/sevenzip v1.6.5
 	github.com/dlclark/regexp2 v1.12.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
-	github.com/nwaples/rardecode/v2 v2.3.0
+	github.com/nwaples/rardecode/v2 v2.4.1
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/prometheus/client_golang v1.24.1
-	github.com/prometheus/client_model v0.6.2
+	github.com/prometheus/client_model v0.6.3
 	github.com/rs/zerolog v1.35.1
 	github.com/spf13/cobra v1.10.2
 	go.starlark.net v0.0.0-20260708150628-5395d018f003
-	golang.org/x/image v0.45.0
-	golang.org/x/net v0.58.0
+	golang.org/x/image v0.46.0
+	golang.org/x/net v0.59.0
 	gopkg.in/yaml.v3 v3.0.1
-	modernc.org/sqlite v1.57.0
+	modernc.org/sqlite v1.59.0
 )
 
 require (
@@ -44,10 +44,10 @@ require (
 	github.com/stangelandcl/ppmd v0.1.1 // indirect
 	github.com/ulikunitz/xz v0.5.15 // indirect
 	go4.org v0.0.0-20260112195520-a5071408f32f // indirect
-	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/text v0.41.0 // indirect
-	google.golang.org/protobuf v1.36.11 // indirect
-	modernc.org/libc v1.74.4 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
+	google.golang.org/protobuf v1.36.12 // indirect
+	modernc.org/libc v1.75.7 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
-	modernc.org/memory v1.11.0 // indirect
+	modernc.org/memory v1.12.1 // indirect
 )
