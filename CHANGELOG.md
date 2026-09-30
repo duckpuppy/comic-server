@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.46.0](https://github.com/duckpuppy/comic-server/compare/v1.45.0...v1.46.0) (2026-09-30)
+
+
+### Features
+
+* VirtualTag smart list matchers with caption template engine (comic-server-65u) ([1ebe4c7](https://github.com/duckpuppy/comic-server/commit/1ebe4c7e7d586eacae7865b3e458b105a3a0b5f9))
+
+
+### Bug Fixes
+
+* **deps:** update all non-major dependencies ([c6a1ebb](https://github.com/duckpuppy/comic-server/commit/c6a1ebb53304af5ad0c6773f4e05e7d1251c0384))
+* **deps:** update all non-major dependencies ([bec5406](https://github.com/duckpuppy/comic-server/commit/bec5406eb558924187f80e71cfbc00932eb76e65))
+
 ## [1.45.0](https://github.com/duckpuppy/comic-server/compare/v1.44.0...v1.45.0) (2026-09-22)
 
 
