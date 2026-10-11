@@ -118,6 +118,7 @@ func diffBookColumns(old, live, new *library.ComicBook) []fieldChange {
 	b("checked", old.Checked, live.Checked, new.Checked)
 	b("file_is_missing", old.FileIsMissing, live.FileIsMissing, new.FileIsMissing)
 	b("comic_info_is_dirty", old.ComicInfoIsDirty, live.ComicInfoIsDirty, new.ComicInfoIsDirty)
+	b("comic_book_is_dirty", old.ComicBookIsDirty, live.ComicBookIsDirty, new.ComicBookIsDirty)
 	i("page_count", old.PageCount, live.PageCount, new.PageCount)
 	str("web", old.Web, live.Web, new.Web)
 	str("scan_information", old.ScanInformation, live.ScanInformation, new.ScanInformation)

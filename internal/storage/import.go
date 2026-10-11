@@ -263,7 +263,7 @@ func (db *DB) insertBook(tx *sql.Tx, book *library.ComicBook, hash string) error
 			characters, teams, locations, main_character_or_team,
 			current_page, last_page, last_page_read, open_count, opened_time,
 			rating, community_rating,
-			checked, file_is_missing, comic_info_is_dirty,
+			checked, file_is_missing, comic_info_is_dirty, comic_book_is_dirty,
 			page_count, web, scan_information, series_complete,
 			black_and_white, manga,
 			preferred_front_cover, added_time, released_time,
@@ -282,7 +282,7 @@ func (db *DB) insertBook(tx *sql.Tx, book *library.ComicBook, hash string) error
 			?, ?, ?, ?,
 			?, ?, ?, ?, ?,
 			?, ?,
-			?, ?, ?,
+			?, ?, ?, ?,
 			?, ?, ?, ?,
 			?, ?,
 			?, ?, ?,
@@ -302,7 +302,7 @@ func (db *DB) insertBook(tx *sql.Tx, book *library.ComicBook, hash string) error
 		book.Characters, book.Teams, book.Locations, book.MainCharacterOrTeam,
 		book.CurrentPage, book.LastPage, book.LastPageRead, book.OpenCount, formatTime(book.OpenedTime),
 		book.Rating, book.CommunityRating,
-		boolToInt(book.Checked), boolToInt(book.FileIsMissing), boolToInt(book.ComicInfoIsDirty),
+		boolToInt(book.Checked), boolToInt(book.FileIsMissing), boolToInt(book.ComicInfoIsDirty), boolToInt(book.ComicBookIsDirty),
 		book.PageCount, book.Web, book.ScanInformation, book.SeriesComplete,
 		book.BlackAndWhite, book.Manga,
 		book.PreferredFrontCover, formatTime(book.AddedTime), formatTime(book.ReleasedTime),
@@ -360,7 +360,7 @@ func (db *DB) updateBook(tx *sql.Tx, book *library.ComicBook, hash string) error
 			characters = ?, teams = ?, locations = ?, main_character_or_team = ?,
 			current_page = ?, last_page = ?, last_page_read = ?, open_count = ?, opened_time = ?,
 			rating = ?, community_rating = ?,
-			checked = ?, file_is_missing = ?, comic_info_is_dirty = ?,
+			checked = ?, file_is_missing = ?, comic_info_is_dirty = ?, comic_book_is_dirty = ?,
 			page_count = ?, web = ?, scan_information = ?, series_complete = ?,
 			black_and_white = ?, manga = ?,
 			preferred_front_cover = ?, added_time = ?, released_time = ?,
@@ -380,7 +380,7 @@ func (db *DB) updateBook(tx *sql.Tx, book *library.ComicBook, hash string) error
 		book.Characters, book.Teams, book.Locations, book.MainCharacterOrTeam,
 		book.CurrentPage, book.LastPage, book.LastPageRead, book.OpenCount, formatTime(book.OpenedTime),
 		book.Rating, book.CommunityRating,
-		boolToInt(book.Checked), boolToInt(book.FileIsMissing), boolToInt(book.ComicInfoIsDirty),
+		boolToInt(book.Checked), boolToInt(book.FileIsMissing), boolToInt(book.ComicInfoIsDirty), boolToInt(book.ComicBookIsDirty),
 		book.PageCount, book.Web, book.ScanInformation, book.SeriesComplete,
 		book.BlackAndWhite, book.Manga,
 		book.PreferredFrontCover, formatTime(book.AddedTime), formatTime(book.ReleasedTime),
@@ -732,6 +732,11 @@ func computeBookHash(book *library.ComicBook) string {
 		book.CurrentPage, book.LastPage, book.LastPageRead, book.OpenCount, book.OpenedTime.Time)
 	fmt.Fprintf(h, "%f|%f|%t|%t|%t|",
 		book.Rating, book.CommunityRating, book.Checked, book.FileIsMissing, book.ComicInfoIsDirty)
+	if book.ComicBookIsDirty {
+		// Only hashed when set, so books that predate this flag keep their
+		// existing import_hash instead of all reading as changed.
+		fmt.Fprint(h, "comic_book_is_dirty|")
+	}
 	fmt.Fprintf(h, "%d|%s|%s|%s|%d|%v|%v|",
 		book.PageCount, book.Web, book.ScanInformation, book.SeriesComplete,
 		book.PreferredFrontCover, book.AddedTime.Time, book.ReleasedTime.Time)

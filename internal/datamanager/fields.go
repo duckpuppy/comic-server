@@ -137,10 +137,7 @@ var builtinFields = map[string]FieldDef{
 	"EnableProposed":   {Kind: KindBool, Writable: true, BoolGetter: func(b *library.ComicBook) bool { return b.EnableProposed }},
 	"HasBeenOpened":    {Kind: KindBool, Writable: false, BoolGetter: func(b *library.ComicBook) bool { return b.OpenCount > 0 }},
 	"HasBeenRead":      {Kind: KindBool, Writable: false, BoolGetter: func(b *library.ComicBook) bool { return b.OpenCount > 0 && !b.IsUnread() }},
-	// ComicBookIsDirty describes ComicRack's own internal dirty-tracking
-	// state, not book data - comic-server has no equivalent concept, so
-	// this always reads as false rather than being left unsupported.
-	"ComicBookIsDirty": {Kind: KindBool, Writable: true, BoolGetter: func(*library.ComicBook) bool { return false }},
+	"ComicBookIsDirty": {Kind: KindBool, Writable: true, BoolGetter: func(b *library.ComicBook) bool { return b.ComicBookIsDirty }},
 }
 
 // IsCustomField reports whether name is a custom value (e.g. Concept,

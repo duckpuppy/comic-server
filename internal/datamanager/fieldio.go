@@ -150,7 +150,7 @@ func GetFieldString(book *library.ComicBook, field string) (string, bool) {
 	case "HasBeenRead":
 		return yesNo(book.OpenCount > 0 && !book.IsUnread()), true
 	case "ComicBookIsDirty":
-		return "no", true
+		return yesNo(book.ComicBookIsDirty), true
 	default:
 		return "", false
 	}
@@ -293,6 +293,8 @@ func SetFieldString(book *library.ComicBook, field, value string) error {
 		book.Checked = isYes(value)
 	case "ComicInfoIsDirty":
 		book.ComicInfoIsDirty = isYes(value)
+	case "ComicBookIsDirty":
+		book.ComicBookIsDirty = isYes(value)
 	case "SeriesComplete":
 		book.SeriesComplete = value
 	case "EnableProposed":

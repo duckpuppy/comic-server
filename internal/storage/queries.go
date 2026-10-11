@@ -20,7 +20,7 @@ const booksSelectColumns = `
 	characters, teams, locations, main_character_or_team,
 	current_page, last_page, last_page_read, open_count, opened_time,
 	rating, community_rating,
-	checked, file_is_missing, comic_info_is_dirty,
+	checked, file_is_missing, comic_info_is_dirty, comic_book_is_dirty,
 	page_count, web, scan_information, series_complete,
 	black_and_white, manga,
 	preferred_front_cover, added_time, released_time,
@@ -422,7 +422,7 @@ func scanBook(s scanner) (*library.ComicBook, error) {
 	var openedTime, addedTime, releasedTime sql.NullString
 	var fileModifiedTime, fileCreationTime sql.NullString
 	var pagesJSON string
-	var checked, fileIsMissing, comicInfoIsDirty, enableProposed, enableDynamicUpdate int
+	var checked, fileIsMissing, comicInfoIsDirty, comicBookIsDirty, enableProposed, enableDynamicUpdate int
 
 	err := s.Scan(
 		&book.ID, &book.FilePath, &book.Title, &book.Series, &book.Number, &book.Volume, &book.Year, &book.Month, &book.Day,
@@ -433,7 +433,7 @@ func scanBook(s scanner) (*library.ComicBook, error) {
 		&book.Characters, &book.Teams, &book.Locations, &book.MainCharacterOrTeam,
 		&book.CurrentPage, &book.LastPage, &book.LastPageRead, &book.OpenCount, &openedTime,
 		&book.Rating, &book.CommunityRating,
-		&checked, &fileIsMissing, &comicInfoIsDirty,
+		&checked, &fileIsMissing, &comicInfoIsDirty, &comicBookIsDirty,
 		&book.PageCount, &book.Web, &book.ScanInformation, &book.SeriesComplete,
 		&book.BlackAndWhite, &book.Manga,
 		&book.PreferredFrontCover, &addedTime, &releasedTime,
@@ -452,6 +452,7 @@ func scanBook(s scanner) (*library.ComicBook, error) {
 	book.Checked = checked != 0
 	book.FileIsMissing = fileIsMissing != 0
 	book.ComicInfoIsDirty = comicInfoIsDirty != 0
+	book.ComicBookIsDirty = comicBookIsDirty != 0
 	book.EnableProposed = enableProposed != 0
 	book.EnableDynamicUpdate = enableDynamicUpdate != 0
 
@@ -756,7 +757,7 @@ func (db *DB) UpdateBookFields(book *library.ComicBook) error {
 			characters = ?, teams = ?, locations = ?, main_character_or_team = ?,
 			current_page = ?, last_page = ?, last_page_read = ?, open_count = ?, opened_time = ?,
 			rating = ?, community_rating = ?,
-			checked = ?, file_is_missing = ?, comic_info_is_dirty = ?,
+			checked = ?, file_is_missing = ?, comic_info_is_dirty = ?, comic_book_is_dirty = ?,
 			page_count = ?, web = ?, scan_information = ?, series_complete = ?,
 			black_and_white = ?, manga = ?,
 			preferred_front_cover = ?, added_time = ?, released_time = ?,
@@ -776,7 +777,7 @@ func (db *DB) UpdateBookFields(book *library.ComicBook) error {
 		book.Characters, book.Teams, book.Locations, book.MainCharacterOrTeam,
 		book.CurrentPage, book.LastPage, book.LastPageRead, book.OpenCount, formatComicTime(book.OpenedTime),
 		book.Rating, book.CommunityRating,
-		boolToInt(book.Checked), boolToInt(book.FileIsMissing), boolToInt(book.ComicInfoIsDirty),
+		boolToInt(book.Checked), boolToInt(book.FileIsMissing), boolToInt(book.ComicInfoIsDirty), boolToInt(book.ComicBookIsDirty),
 		book.PageCount, book.Web, book.ScanInformation, book.SeriesComplete,
 		book.BlackAndWhite, book.Manga,
 		book.PreferredFrontCover, formatComicTime(book.AddedTime), formatComicTime(book.ReleasedTime),

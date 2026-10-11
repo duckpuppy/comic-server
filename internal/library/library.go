@@ -148,7 +148,8 @@ type ComicBook struct {
 	Checked             bool   `xml:"Checked,attr,omitempty"` // Book attribute
 	FileIsMissing       bool   `xml:"Missing,omitempty"`      // File cannot be found
 	ComicInfoIsDirty    bool   `xml:"ComicInfoIsDirty,omitempty"`
-	SeriesComplete      string `xml:"SeriesComplete,omitempty"` // "Unknown", "Yes", "No"
+	ComicBookIsDirty    bool   `xml:"ComicBookIsDirty,omitempty"` // library-only data (ComicBook.xml) changed since last write to the file; ComicRackCE 0.9.184+
+	SeriesComplete      string `xml:"SeriesComplete,omitempty"`   // "Unknown", "Yes", "No"
 	EnableProposed      bool   `xml:"EnableProposed,omitempty"`
 	EnableDynamicUpdate bool   `xml:"EnableDynamicUpdate,omitempty"`
 

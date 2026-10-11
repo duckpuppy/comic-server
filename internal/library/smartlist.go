@@ -49,34 +49,37 @@ type MatcherType string
 
 const (
 	// Common matcher types
-	MatcherTypeSeries              MatcherType = "Series"
-	MatcherTypeAlternateSeries     MatcherType = "AlternateSeries"
-	MatcherTypeSeriesGroup         MatcherType = "SeriesGroup"
-	MatcherTypeTitle               MatcherType = "Title"
-	MatcherTypePublisher           MatcherType = "Publisher"
-	MatcherTypeImprint             MatcherType = "Imprint"
-	MatcherTypeWriter              MatcherType = "Writer"
-	MatcherTypeYear                MatcherType = "Year"
-	MatcherTypeMonth               MatcherType = "Month"
-	MatcherTypeGenre               MatcherType = "Genre"
-	MatcherTypeFormat              MatcherType = "Format"
-	MatcherTypeCharacters          MatcherType = "Characters"
-	MatcherTypeTeams               MatcherType = "Teams"
-	MatcherTypeVolume              MatcherType = "Volume"
-	MatcherTypeNumber              MatcherType = "Number"
-	MatcherTypePageCount           MatcherType = "PageCount"
-	MatcherTypeRating              MatcherType = "Rating"
-	MatcherTypeTags                MatcherType = "Tags"
-	MatcherTypeNotes               MatcherType = "Notes"
-	MatcherTypeAddedTime           MatcherType = "Added"
-	MatcherTypeOpenedTime          MatcherType = "Opened"
-	MatcherTypeSeriesComplete      MatcherType = "SeriesComplete"
-	MatcherTypeChecked             MatcherType = "Checked"
-	MatcherTypeBlackAndWhite       MatcherType = "BlackAndWhite"
-	MatcherTypeHasCustomValues     MatcherType = "HasCustomValues"
-	MatcherTypeIsLinked            MatcherType = "IsLinked"
-	MatcherTypeIsMissing           MatcherType = "IsMissing"
-	MatcherTypeModifiedInfo        MatcherType = "ModifiedInfo"
+	MatcherTypeSeries          MatcherType = "Series"
+	MatcherTypeAlternateSeries MatcherType = "AlternateSeries"
+	MatcherTypeSeriesGroup     MatcherType = "SeriesGroup"
+	MatcherTypeTitle           MatcherType = "Title"
+	MatcherTypePublisher       MatcherType = "Publisher"
+	MatcherTypeImprint         MatcherType = "Imprint"
+	MatcherTypeWriter          MatcherType = "Writer"
+	MatcherTypeYear            MatcherType = "Year"
+	MatcherTypeMonth           MatcherType = "Month"
+	MatcherTypeGenre           MatcherType = "Genre"
+	MatcherTypeFormat          MatcherType = "Format"
+	MatcherTypeCharacters      MatcherType = "Characters"
+	MatcherTypeTeams           MatcherType = "Teams"
+	MatcherTypeVolume          MatcherType = "Volume"
+	MatcherTypeNumber          MatcherType = "Number"
+	MatcherTypePageCount       MatcherType = "PageCount"
+	MatcherTypeRating          MatcherType = "Rating"
+	MatcherTypeTags            MatcherType = "Tags"
+	MatcherTypeNotes           MatcherType = "Notes"
+	MatcherTypeAddedTime       MatcherType = "Added"
+	MatcherTypeOpenedTime      MatcherType = "Opened"
+	MatcherTypeSeriesComplete  MatcherType = "SeriesComplete"
+	MatcherTypeChecked         MatcherType = "Checked"
+	MatcherTypeBlackAndWhite   MatcherType = "BlackAndWhite"
+	MatcherTypeHasCustomValues MatcherType = "HasCustomValues"
+	MatcherTypeIsLinked        MatcherType = "IsLinked"
+	MatcherTypeIsMissing       MatcherType = "IsMissing"
+	MatcherTypeModifiedInfo    MatcherType = "ModifiedInfo"
+	// MatcherTypeModifiedLibraryInfo maps to ComicBookModifiedLibraryInfoMatcher
+	// ("Modified Library Info", ComicRackCE 0.9.184+): yes/no on ComicBookIsDirty.
+	MatcherTypeModifiedLibraryInfo MatcherType = "ModifiedLibraryInfo"
 	MatcherTypeColorist            MatcherType = "Colorist"
 	MatcherTypeCoverArtist         MatcherType = "CoverArtist"
 	MatcherTypeEditor              MatcherType = "Editor"
@@ -550,7 +553,8 @@ func (m *Matcher) matchInternal(book *ComicBook) bool {
 		return m.matchDate(value)
 	case MatcherTypeSeriesComplete, MatcherTypeBlackAndWhite,
 		MatcherTypeChecked, MatcherTypeHasCustomValues,
-		MatcherTypeIsLinked, MatcherTypeIsMissing, MatcherTypeModifiedInfo:
+		MatcherTypeIsLinked, MatcherTypeIsMissing, MatcherTypeModifiedInfo,
+		MatcherTypeModifiedLibraryInfo:
 		return m.matchYesNo(value)
 	case MatcherTypeManga:
 		return m.matchManga(value)
@@ -745,6 +749,11 @@ func (m *Matcher) getValue(book *ComicBook) string {
 		return "no"
 	case MatcherTypeModifiedInfo:
 		if book.ComicInfoIsDirty {
+			return "yes"
+		}
+		return "no"
+	case MatcherTypeModifiedLibraryInfo:
+		if book.ComicBookIsDirty {
 			return "yes"
 		}
 		return "no"

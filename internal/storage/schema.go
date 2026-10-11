@@ -3,7 +3,7 @@ package storage
 import "fmt"
 
 // Schema version for migrations
-const schemaVersion = 9
+const schemaVersion = 10
 
 // initSchema creates the database tables if they don't exist.
 func (db *DB) initSchema() error {
@@ -63,6 +63,11 @@ func (db *DB) initSchema() error {
 		if version < 9 {
 			if err := db.migrateV8ToV9(); err != nil {
 				return fmt.Errorf("migrate v8→v9: %w", err)
+			}
+		}
+		if version < 10 {
+			if err := db.migrateV9ToV10(); err != nil {
+				return fmt.Errorf("migrate v9→v10: %w", err)
 			}
 		}
 	}
@@ -340,6 +345,23 @@ func (db *DB) migrateV8ToV9() error {
 	return nil
 }
 
+// migrateV9ToV10 adds books.comic_book_is_dirty, ComicRackCE 0.9.184's
+// "library-only data changed" flag (ComicBook.xml support). Guarded with
+// hasColumn because a fresh database's createTables already includes it.
+func (db *DB) migrateV9ToV10() error {
+	has, err := db.hasColumn("books", "comic_book_is_dirty")
+	if err != nil {
+		return fmt.Errorf("check comic_book_is_dirty column: %w", err)
+	}
+	if has {
+		return nil
+	}
+	if _, err := db.Exec("ALTER TABLE books ADD COLUMN comic_book_is_dirty INTEGER DEFAULT 0"); err != nil {
+		return fmt.Errorf("add comic_book_is_dirty column: %w", err)
+	}
+	return nil
+}
+
 // createCBLImportEntriesTable creates cbl_import_entries if it doesn't
 // exist - shared between the fresh-database path (createTables) and the
 // v5->v6 migration path for existing databases.
@@ -461,6 +483,7 @@ func (db *DB) createTables() error {
 			checked INTEGER DEFAULT 0,
 			file_is_missing INTEGER DEFAULT 0,
 			comic_info_is_dirty INTEGER DEFAULT 0,
+			comic_book_is_dirty INTEGER DEFAULT 0,
 
 			-- Book info
 			page_count INTEGER DEFAULT 0,
