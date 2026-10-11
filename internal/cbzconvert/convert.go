@@ -58,7 +58,7 @@ type Result struct {
 // Convert removes the newly-written file before returning the error, so a
 // partial failure never leaves an orphan file with the library record
 // still unchanged.
-func Convert(book *library.ComicBook, resolvePath func(string) string, tr *trash.Trash) (Result, error) {
+func Convert(book *library.ComicBook, resolvePath func(string) string, tr *trash.Trash, opts Options) (Result, error) {
 	if resolvePath == nil {
 		resolvePath = func(p string) string { return p }
 	}
@@ -80,11 +80,20 @@ func Convert(book *library.ComicBook, resolvePath func(string) string, tr *trash
 		return Result{}, fmt.Errorf("cbzconvert: build ComicInfo.xml: %w", err)
 	}
 
+	metadata := []metadataEntry{{name: comicInfoEntryName, data: comicInfoBytes}}
+	if opts.EmbedComicBook {
+		comicBookBytes, err := BuildComicBookXML(book, len(pages))
+		if err != nil {
+			return Result{}, fmt.Errorf("cbzconvert: build ComicBook.xml: %w", err)
+		}
+		metadata = append(metadata, metadataEntry{name: comicBookEntryName, data: comicBookBytes})
+	}
+
 	rawTarget := changeExt(rawSrc, ".cbz")
 	resolvedTarget := resolvePath(rawTarget)
 
-	write := func(tmpPath string) error { return writeCBZ(tmpPath, pages, comicInfoBytes) }
-	validate := func(tmpPath string) error { return validateCBZ(tmpPath, len(pages)) }
+	write := func(tmpPath string) error { return writeCBZ(tmpPath, pages, metadata) }
+	validate := func(tmpPath string) error { return validateCBZ(tmpPath, len(pages), opts.EmbedComicBook) }
 
 	if filepath.Clean(resolvedTarget) == filepath.Clean(resolvedSrc) {
 		if err := tr.Replace(resolvedTarget, write, validate); err != nil {
@@ -115,15 +124,7 @@ func Convert(book *library.ComicBook, resolvePath func(string) string, tr *trash
 // PackedStorageProvider.OnStore assigns a fresh sequential index (num++)
 // only to pages actually written.
 func dropDeletedPages(pages []comicvine.Page, bookPages []library.ComicPageInfo) []comicvine.Page {
-	if len(bookPages) == 0 {
-		return pages
-	}
-	deleted := make(map[int]bool, len(bookPages))
-	for _, p := range bookPages {
-		if strings.EqualFold(p.Type, library.PageTypeDeleted) {
-			deleted[p.Image] = true
-		}
-	}
+	deleted := deletedPageIndexes(bookPages)
 	if len(deleted) == 0 {
 		return pages
 	}
@@ -136,6 +137,18 @@ func dropDeletedPages(pages []comicvine.Page, bookPages []library.ComicPageInfo)
 		kept = append(kept, p)
 	}
 	return kept
+}
+
+// deletedPageIndexes returns the set of library page indexes marked
+// PageTypeDeleted.
+func deletedPageIndexes(bookPages []library.ComicPageInfo) map[int]bool {
+	deleted := make(map[int]bool)
+	for _, p := range bookPages {
+		if strings.EqualFold(p.Type, library.PageTypeDeleted) {
+			deleted[p.Image] = true
+		}
+	}
+	return deleted
 }
 
 // NeedsConversion reports whether book would actually be touched by
@@ -164,16 +177,22 @@ func changeExt(rawPath, newExt string) string {
 	return strings.TrimSuffix(rawPath, filepath.Ext(rawPath)) + newExt
 }
 
+// metadataEntry is one XML metadata file written into the new archive.
+type metadataEntry struct {
+	name string
+	data []byte
+}
+
 // writeCBZ creates a new zip at tmpPath containing pages (as-is, no
-// re-encoding - matches ComicRack's default repack behavior) plus a
-// ComicInfo.xml entry. Every entry is timestamped with the moment of
+// re-encoding - matches ComicRack's default repack behavior) plus the
+// metadata XML entries (ComicInfo.xml, and ComicBook.xml when embedding). Every entry is timestamped with the moment of
 // conversion, matching ComicRackCE's own CbzStorageProvider.AddEntry -
 // which stamps DateTime.Now on every entry it writes, not the original
 // page's date (confirmed from its real source; a Go zip.FileHeader left
 // without an explicit Modified time defaults to zero, which displays as
 // the nonsensical "1980-00-00" rather than either a real date or
 // ComicRack's own "now" behavior - the bug this fixes).
-func writeCBZ(tmpPath string, pages []comicvine.Page, comicInfoBytes []byte) error {
+func writeCBZ(tmpPath string, pages []comicvine.Page, metadata []metadataEntry) error {
 	f, err := os.Create(tmpPath)
 	if err != nil {
 		return err
@@ -201,18 +220,20 @@ func writeCBZ(tmpPath string, pages []comicvine.Page, comicInfoBytes []byte) err
 		}
 	}
 
-	ciw, err := zw.CreateHeader(&zip.FileHeader{
-		Name:     comicInfoEntryName,
-		Method:   zip.Deflate,
-		Modified: now,
-	})
-	if err != nil {
-		zw.Close()
-		return err
-	}
-	if _, err := ciw.Write(comicInfoBytes); err != nil {
-		zw.Close()
-		return err
+	for _, entry := range metadata {
+		mw, err := zw.CreateHeader(&zip.FileHeader{
+			Name:     entry.name,
+			Method:   zip.Deflate,
+			Modified: now,
+		})
+		if err != nil {
+			zw.Close()
+			return err
+		}
+		if _, err := mw.Write(entry.data); err != nil {
+			zw.Close()
+			return err
+		}
 	}
 
 	if err := zw.Close(); err != nil {
@@ -224,8 +245,8 @@ func writeCBZ(tmpPath string, pages []comicvine.Page, comicInfoBytes []byte) err
 // validateCBZ sanity-checks a just-written CBZ before internal/trash is
 // allowed to let it replace anything: it must open as a valid zip, contain
 // exactly wantPages image entries, and have a well-formed ComicInfo.xml
-// entry.
-func validateCBZ(path string, wantPages int) error {
+// entry (plus a well-formed ComicBook.xml when wantComicBook).
+func validateCBZ(path string, wantPages int, wantComicBook bool) error {
 	zr, err := zip.OpenReader(path)
 	if err != nil {
 		return fmt.Errorf("open written zip: %w", err)
@@ -234,22 +255,20 @@ func validateCBZ(path string, wantPages int) error {
 
 	imageCount := 0
 	haveComicInfo := false
+	haveComicBook := false
 	for _, f := range zr.File {
-		if strings.EqualFold(f.Name, comicInfoEntryName) {
-			rc, err := f.Open()
-			if err != nil {
-				return fmt.Errorf("open %s: %w", comicInfoEntryName, err)
-			}
-			var ci comicInfoXML
-			decErr := xml.NewDecoder(rc).Decode(&ci)
-			rc.Close()
-			if decErr != nil {
-				return fmt.Errorf("%s is not well-formed: %w", comicInfoEntryName, decErr)
+		switch {
+		case strings.EqualFold(f.Name, comicInfoEntryName):
+			if err := checkWellFormedXML(f, new(comicInfoXML)); err != nil {
+				return err
 			}
 			haveComicInfo = true
-			continue
-		}
-		if imageExtensions[strings.ToLower(filepath.Ext(f.Name))] {
+		case strings.EqualFold(f.Name, comicBookEntryName):
+			if err := checkWellFormedXML(f, new(library.ComicBook)); err != nil {
+				return err
+			}
+			haveComicBook = true
+		case imageExtensions[strings.ToLower(filepath.Ext(f.Name))]:
 			imageCount++
 		}
 	}
@@ -257,8 +276,23 @@ func validateCBZ(path string, wantPages int) error {
 	if !haveComicInfo {
 		return fmt.Errorf("%s missing from written zip", comicInfoEntryName)
 	}
+	if wantComicBook && !haveComicBook {
+		return fmt.Errorf("%s missing from written zip", comicBookEntryName)
+	}
 	if imageCount != wantPages {
 		return fmt.Errorf("written zip has %d image pages, want %d", imageCount, wantPages)
+	}
+	return nil
+}
+
+func checkWellFormedXML(f *zip.File, into any) error {
+	rc, err := f.Open()
+	if err != nil {
+		return fmt.Errorf("open %s: %w", f.Name, err)
+	}
+	defer rc.Close()
+	if err := xml.NewDecoder(rc).Decode(into); err != nil {
+		return fmt.Errorf("%s is not well-formed: %w", f.Name, err)
 	}
 	return nil
 }

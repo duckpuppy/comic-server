@@ -75,8 +75,12 @@ func (s *Server) runCBZConvertOverBooks(books []*library.ComicBook, tr *trash.Tr
 	var toUpdate []*library.ComicBook
 	rulesets := s.loadWorkflowRulesets()
 
+	s.configMu.RLock()
+	embedComicBook := s.config != nil && s.config.Server.CBZConvert.EmbedComicBook
+	s.configMu.RUnlock()
+
 	for _, book := range books {
-		converted, err := cbzconvert.Convert(book, s.resolveBookFilePath, tr)
+		converted, err := cbzconvert.Convert(book, s.resolveBookFilePath, tr, cbzconvert.Options{EmbedComicBook: embedComicBook})
 		if err != nil {
 			log.Error().Err(err).Str("book_id", book.ID).Str("file_path", book.FilePath).Msg("cbz-convert failed for book")
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", book.ID, err))

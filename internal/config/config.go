@@ -245,6 +245,12 @@ func ValidateVirtualTags(tags []VirtualTagConfig) error {
 // ComicInfo.xml.
 type CBZConvertConfig struct {
 	Enabled bool `yaml:"enabled,omitempty" toml:"enabled,omitempty"`
+
+	// EmbedComicBook also writes ComicRackCE's ComicBook.xml (the full
+	// library record: read progress, custom values, catalog fields, page
+	// info) into each converted CBZ, next to ComicInfo.xml. Off by default,
+	// matching ComicRack's own "Embed Library Info" export setting.
+	EmbedComicBook bool `yaml:"embed_comic_book,omitempty" toml:"embed_comic_book,omitempty"`
 }
 
 // Validate checks CBZConvertConfig against the rest of ServerConfig -

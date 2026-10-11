@@ -84,7 +84,7 @@ func TestConvert_RepacksPagesByteIdenticalAndEmbedsComicInfo(t *testing.T) {
 	}
 
 	tr := &trash.Trash{Root: trashDir, RetentionDays: 30}
-	result, err := Convert(book, nil, tr)
+	result, err := Convert(book, nil, tr, Options{})
 	if err != nil {
 		t.Fatalf("Convert failed: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestConvert_EntryTimestampsAreConversionTimeNotZero(t *testing.T) {
 	before := time.Now().Add(-time.Minute)
 	book := &library.ComicBook{FilePath: src}
 	tr := &trash.Trash{Root: trashDir, RetentionDays: 30}
-	if _, err := Convert(book, nil, tr); err != nil {
+	if _, err := Convert(book, nil, tr, Options{}); err != nil {
 		t.Fatalf("Convert failed: %v", err)
 	}
 	after := time.Now().Add(time.Minute)
@@ -161,7 +161,7 @@ func TestConvert_QuarantinesOriginalNotDeletes(t *testing.T) {
 	book := &library.ComicBook{FilePath: src, Title: "X"}
 	tr := &trash.Trash{Root: trashDir, RetentionDays: 30}
 
-	if _, err := Convert(book, nil, tr); err != nil {
+	if _, err := Convert(book, nil, tr, Options{}); err != nil {
 		t.Fatalf("Convert failed: %v", err)
 	}
 
@@ -213,7 +213,7 @@ func TestConvert_DifferentExtension_WriteNewThenQuarantine(t *testing.T) {
 	book := &library.ComicBook{FilePath: rawSrc, Title: "Y"}
 	tr := &trash.Trash{Root: trashDir, RetentionDays: 30}
 
-	result, err := Convert(book, resolvePath, tr)
+	result, err := Convert(book, resolvePath, tr, Options{})
 	if err != nil {
 		t.Fatalf("Convert failed: %v", err)
 	}
@@ -242,7 +242,7 @@ func TestConvert_NoImagesInSource(t *testing.T) {
 	book := &library.ComicBook{FilePath: src}
 	tr := &trash.Trash{Root: trashDir, RetentionDays: 30}
 
-	if _, err := Convert(book, nil, tr); err == nil {
+	if _, err := Convert(book, nil, tr, Options{}); err == nil {
 		t.Fatal("expected error for source archive with no image pages")
 	}
 
@@ -258,7 +258,7 @@ func TestConvert_SourceFileNotFound(t *testing.T) {
 	book := &library.ComicBook{FilePath: filepath.Join(libDir, "missing.cbz")}
 	tr := &trash.Trash{Root: trashDir, RetentionDays: 30}
 
-	if _, err := Convert(book, nil, tr); err == nil {
+	if _, err := Convert(book, nil, tr, Options{}); err == nil {
 		t.Fatal("expected error for missing source file")
 	}
 }
@@ -286,7 +286,7 @@ func TestConvert_DropsDeletedPages(t *testing.T) {
 	}
 	tr := &trash.Trash{Root: trashDir, RetentionDays: 30}
 
-	result, err := Convert(book, nil, tr)
+	result, err := Convert(book, nil, tr, Options{})
 	if err != nil {
 		t.Fatalf("Convert failed: %v", err)
 	}
@@ -327,7 +327,7 @@ func TestConvert_AllPagesDeletedIsAnError(t *testing.T) {
 	}
 	tr := &trash.Trash{Root: trashDir, RetentionDays: 30}
 
-	if _, err := Convert(book, nil, tr); err == nil {
+	if _, err := Convert(book, nil, tr, Options{}); err == nil {
 		t.Fatal("expected error when every page is marked Deleted")
 	}
 }

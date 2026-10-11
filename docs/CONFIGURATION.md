@@ -441,6 +441,25 @@ settings:
   limit_value: 10
 ```
 
+### CBZ Conversion
+
+```yaml
+server:
+  trash_path: /var/lib/comic-server/trash   # required when cbz_convert is enabled
+  cbz_convert:
+    enabled: true
+    embed_comic_book: false   # optional, default false
+```
+
+Converting a book repacks its pages into a CBZ with a `ComicInfo.xml` built from
+the library record. With `embed_comic_book: true` it also writes
+`ComicBook.xml`, ComicRack Community Edition's superset of `ComicInfo.xml`
+(since build 0.9.184). It carries library-only data that `ComicInfo.xml`
+cannot: read progress, custom values, catalog fields (price, store, ISBN, ...)
+and page info. When both files exist, ComicRack takes the shared fields from
+`ComicInfo.xml`. Page numbers in `ComicBook.xml` are adjusted for any pages
+dropped during conversion. Leave it off if you don't use ComicRack CE.
+
 ### Virtual Tags
 
 Virtual tags are user-defined, template-computed text properties that smart
