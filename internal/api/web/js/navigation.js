@@ -54,6 +54,10 @@ class Navigation {
                     <span class="nav-icon">👯</span>
                     <span class="nav-label">Duplicates</span>
                 </a>
+                <a href="/history" class="nav-tab" data-tab="history">
+                    <span class="nav-icon">📜</span>
+                    <span class="nav-label">History</span>
+                </a>
                 <a href="/trash" class="nav-tab" data-tab="trash">
                     <span class="nav-icon">🗑️</span>
                     <span class="nav-label">Trash</span>

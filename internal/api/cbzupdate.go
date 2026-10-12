@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"github.com/duckpuppy/comic-server/internal/audit"
 	"net/http"
 
 	"github.com/duckpuppy/comic-server/internal/cbzconvert"
@@ -112,7 +113,7 @@ func (s *Server) handleWriteMetadata(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(toUpdate) > 0 {
-		if err := s.backend.UpdateBooks(toUpdate); err != nil {
+		if err := s.audited(audit.ActionWriteMetadata).UpdateBooks(toUpdate); err != nil {
 			log.Error().Err(err).Msg("Failed to save write-metadata updates")
 			result.Errors = append(result.Errors, err.Error())
 		}

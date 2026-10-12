@@ -59,3 +59,14 @@ func joinCustomValues(pairs []string) string {
 	}
 	return "," + strings.Join(pairs, ",")
 }
+
+// CustomValuesMap parses a CustomValuesStore string into a key -> value map.
+func CustomValuesMap(store string) map[string]string {
+	out := map[string]string{}
+	for _, p := range splitCustomValues(store) {
+		if k, v, ok := strings.Cut(p, "="); ok {
+			out[k] = v
+		}
+	}
+	return out
+}

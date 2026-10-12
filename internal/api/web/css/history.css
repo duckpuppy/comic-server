@@ -1,0 +1,22 @@
+/* History page (comic-server-vqsj) */
+.history-page { padding: 1rem; max-width: 1200px; margin: 0 auto; }
+.history-header h1 { margin: 0 0 0.5rem 0; color: var(--text-primary); }
+.history-subtitle { color: var(--text-secondary); margin: 0 0 1rem 0; }
+.history-filters { display: flex; gap: 0.75rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; }
+.history-table-wrap { overflow-x: auto; }
+.history-table { width: 100%; border-collapse: collapse; }
+.history-table th,
+.history-table td {
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid var(--border-color);
+}
+.history-table th { color: var(--text-secondary); font-weight: 500; }
+.history-when { white-space: nowrap; color: var(--text-secondary); }
+.history-action { font-family: monospace; font-size: 0.85rem; }
+.history-changes { list-style: none; margin: 0; padding: 0; font-size: 0.85rem; }
+.history-field { font-weight: 600; margin-right: 0.35rem; }
+.history-old { color: var(--text-secondary); text-decoration: line-through; }
+.history-new { color: var(--success-color); }
+.history-pager { display: flex; gap: 1rem; align-items: center; justify-content: center; margin-top: 1rem; }

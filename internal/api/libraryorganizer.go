@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/duckpuppy/comic-server/internal/audit"
 	"net/http"
 	"os"
 	"strings"
@@ -208,7 +209,7 @@ func (s *Server) handleOrganizeApply(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(toUpdate) > 0 {
-		if err := s.backend.UpdateBooks(toUpdate); err != nil {
+		if err := s.audited(audit.ActionOrganize).UpdateBooks(toUpdate); err != nil {
 			log.Error().Err(err).Msg("Failed to save library-organizer updates")
 			result.Errors = append(result.Errors, err.Error())
 		}

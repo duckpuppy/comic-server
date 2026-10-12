@@ -820,6 +820,16 @@ See issues #15, #16, #17 for:
 
 `internal/attention` (comic-server-z77p) derives named, severity-ranked flags from each book record alone: `is_pdf`, `is_zip`, `needs_conversion`, `cover_only`, `no_series`, `low_page_count`, `unknown_publisher`, `missing_format`, `missing_count`. Computed in the same pass as the workflow stage cache (`workflowCacheEntry.booksByFlag`), so it shares `InvalidateWorkflowCache`. `GET /api/library/attention` returns flags ranked severity > count; `GET /api/library/attention/:flag/books` pages the matching books. Shown as a "Needs attention" panel on the workflow page. Idea from ComicManager (ideas only, AGPL). Not yet implemented: flags needing disk access (`file_missing`, `corrupted_archive`), the ComicVine cache (`count_mismatch`, `cv_volume_conflict`, `metadata_mismatch`), sibling comparison, or scrape results.
 
+## Audit Log and Rollback
+
+`internal/audit` (comic-server-vqsj) records what each pipeline action changed. One wrapper, `audit.Backend` (`s.audited(action)` in `internal/api/audit.go`), sits around `library.Backend`: every `UpdateBook(s)` through it diffs the incoming book against the stored one (scalar fields by value, custom values per key, slice fields as a count; the workflow stage is reported as `stage_before`/`stage_after`) and appends rows to the `audit_log` table in config.db (lazy `CREATE TABLE IF NOT EXISTS`, no schema bump). Entries are written only after the update succeeds; a log failure never fails the action.
+
+- **Wrapped paths**: convert_cbz, write_metadata, scan_info, data_manager, organize, scrape (via `SetScraper`), link_wanted, rollback; duplicate trashing adds an entry with `audit.Record`. **Not** wrapped: device reverse sync (reading progress changes constantly and is not a pipeline action) and the CLI `scrape`/`workflow backfill` commands.
+- **`audit.Backend.GetBook` returns a copy.** The XML backend's `GetBook` returns a pointer into the live library, so a caller editing it in place would hide its own diff. Anything that read-modify-writes a book should read through the wrapper.
+- **Retention**: `audit.Retention` = 180 days, pruned at most hourly on reads of the list endpoint.
+- **API**: `GET /api/library/audit?book_id=&action=&limit=&offset=`; `POST /api/library/audit/rollback {book_id, stage}`. History page at `/history`.
+- **Rollback is stage-only and backwards-only.** It resets the stage via `workflow.RegressToStageIfPast` so the pipeline re-runs the book; it does not restore field values (the old values are in the entry's diff) and does not move files back. It is itself logged.
+
 ## ComicVine Enrichment
 
 Background sync pipeline that fetches series/issue data from the ComicVine API to enable series completeness checking and missing issue detection.

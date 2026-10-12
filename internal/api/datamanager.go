@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/duckpuppy/comic-server/internal/audit"
 	"io"
 	"net/http"
 	"strconv"
@@ -361,7 +362,7 @@ func (s *Server) runDataManagerOverBooks(candidates []*library.ComicBook, rulese
 	}
 
 	if len(toUpdate) > 0 {
-		if err := s.backend.UpdateBooks(toUpdate); err != nil {
+		if err := s.audited(audit.ActionDataManager).UpdateBooks(toUpdate); err != nil {
 			log.Error().Err(err).Msg("Failed to save Data Manager rule run")
 			result.Errors = append(result.Errors, err.Error())
 		}

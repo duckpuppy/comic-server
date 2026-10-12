@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"github.com/duckpuppy/comic-server/internal/audit"
 	"net/http"
 
 	"github.com/duckpuppy/comic-server/internal/cbzconvert"
@@ -59,7 +60,7 @@ func (s *Server) handleRunCBZConvertWorkflow(w http.ResponseWriter, r *http.Requ
 	result, toUpdate := s.runCBZConvertOverBooks(books, tr)
 
 	if len(toUpdate) > 0 {
-		if err := s.backend.UpdateBooks(toUpdate); err != nil {
+		if err := s.audited(audit.ActionConvertCBZ).UpdateBooks(toUpdate); err != nil {
 			log.Error().Err(err).Msg("Failed to save cbz-convert updates")
 			result.Errors = append(result.Errors, err.Error())
 		}

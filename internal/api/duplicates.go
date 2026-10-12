@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/duckpuppy/comic-server/internal/audit"
+	"github.com/duckpuppy/comic-server/internal/configdb"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -285,6 +287,14 @@ func (s *Server) handleResolveDuplicate(w http.ResponseWriter, r *http.Request) 
 			if err := s.configDB.MarkDuplicateBookResolved(b.ID, keeper.ID); err != nil {
 				result.Errors = append(result.Errors, fmt.Sprintf("%s: file quarantined but decision not recorded: %v", b.ID, err))
 			}
+			changes, _ := json.Marshal([]audit.Change{
+				{Field: "file", Old: b.FilePath, New: "(quarantined)"},
+				{Field: "duplicate_of", Old: "", New: keeper.ID},
+			})
+			audit.Record(s.configDB, configdb.AuditRow{
+				BookID: b.ID, Action: audit.ActionDuplicateTrash, Series: b.Series, Number: b.Number,
+				Changes: string(changes),
+			})
 			result.Trashed = append(result.Trashed, b.ID)
 		}
 		s.InvalidateWorkflowCache()

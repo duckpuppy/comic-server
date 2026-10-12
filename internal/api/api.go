@@ -4,6 +4,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"github.com/duckpuppy/comic-server/internal/audit"
 	"io"
 	"io/fs"
 	"net/http"
@@ -159,7 +160,7 @@ func (s *Server) InvalidateListCache() {
 func (s *Server) SetScraper(client *comicvine.Client, cache *comicvine.Cache) {
 	s.cvClient = client
 	s.cvCache = cache
-	s.scraper = comicvine.NewScraper(client, cache, s.backend, comicvine.DefaultScraperConfig())
+	s.scraper = comicvine.NewScraper(client, cache, s.audited(audit.ActionScrape), comicvine.DefaultScraperConfig())
 }
 
 // NewServer creates a new API server with version information
@@ -270,6 +271,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/library/workflow/wanted/link", s.handleLinkWantedBook)
 	s.mux.HandleFunc("/api/library/workflow/wanted/from-cbl-import", s.handleAddCBLUnmatchedToWanted)
 	s.mux.HandleFunc("/api/library/workflow/", s.handleWorkflowStageSubRouter)
+	s.mux.HandleFunc("/api/library/audit", s.handleAuditList)
+	s.mux.HandleFunc("/api/library/audit/rollback", s.handleAuditRollback)
 	s.mux.HandleFunc("/api/library/attention", s.handleAttentionSummary)
 	s.mux.HandleFunc("/api/library/attention/", s.handleAttentionFlagBooks)
 

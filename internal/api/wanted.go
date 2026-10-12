@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"github.com/duckpuppy/comic-server/internal/audit"
 	"net/http"
 	"os"
 	"strings"
@@ -180,7 +181,8 @@ func (s *Server) handleLinkWantedBook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	book, err := s.backend.GetBook(req.BookID)
+	linkBackend := s.audited(audit.ActionLinkWanted)
+	book, err := linkBackend.GetBook(req.BookID)
 	if err != nil {
 		http.Error(w, "Failed to load book: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -206,7 +208,7 @@ func (s *Server) handleLinkWantedBook(w http.ResponseWriter, r *http.Request) {
 	rulesets := s.loadWorkflowRulesets()
 	workflow.SetStage(book, workflow.InferStage(book, rulesets))
 
-	if err := s.backend.UpdateBooks([]*library.ComicBook{book}); err != nil {
+	if err := linkBackend.UpdateBooks([]*library.ComicBook{book}); err != nil {
 		log.Error().Err(err).Str("book_id", book.ID).Msg("Failed to save linked wanted book")
 		http.Error(w, "Failed to save book", http.StatusInternalServerError)
 		return

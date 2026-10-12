@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"github.com/duckpuppy/comic-server/internal/audit"
 	"net/http"
 	"reflect"
 
@@ -62,7 +63,7 @@ func (s *Server) handleRunScanInfoWorkflow(w http.ResponseWriter, r *http.Reques
 	result, toUpdate := s.runScanInfoOverBooks(books, detector)
 
 	if len(toUpdate) > 0 {
-		if err := s.backend.UpdateBooks(toUpdate); err != nil {
+		if err := s.audited(audit.ActionScanInfo).UpdateBooks(toUpdate); err != nil {
 			log.Error().Err(err).Msg("Failed to save scan-info updates")
 			result.Errors = append(result.Errors, err.Error())
 		}
