@@ -47,6 +47,7 @@ class WorkflowPage {
         // from there too even with nothing wanted yet.
         this.wanted = { total: 0, comics: [] };
         this.staleWrites = { enabled: false, stale: 0 };
+        this.attention = []; // severity-ranked flags with counts (comic-server-z77p)
         this.wantedDrillIn = false;
         this.showNewWantedForm = false;
         this.newWantedForm = { series: '', number: '', volume: 0, year: 0, publisher: '' };
@@ -79,6 +80,17 @@ class WorkflowPage {
         await this.loadNewFiles();
         await this.loadWanted();
         await this.loadStaleWrites();
+        await this.loadAttention();
+    }
+
+    async loadAttention() {
+        try {
+            const response = await fetch('/api/library/attention');
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            this.attention = (await response.json()).flags || [];
+        } catch (error) {
+            console.error('Failed to load attention flags:', error);
+        }
     }
 
     async loadStaleWrites() {
@@ -155,7 +167,8 @@ class WorkflowPage {
             data_manager: 'Run Data Manager',
         };
 
-        let html = '<div class="workflow-cards">';
+        let html = this.renderAttention();
+        html += '<div class="workflow-cards">';
         html += `
             <div class="panel workflow-card">
                 <h2>New Files</h2>
@@ -228,6 +241,23 @@ class WorkflowPage {
         }
 
         return html;
+    }
+
+    renderAttention() {
+        if (!this.attention.length) return '';
+        const rows = this.attention.map(f => `
+            <li class="attention-row attention-${this.escapeAttr(f.severity)}">
+                <span class="attention-chip">${this.escapeHtml(f.severity)}</span>
+                <span class="attention-label">${this.escapeHtml(f.label)}</span>
+                <span class="attention-count">${f.count}</span>
+                <span class="attention-hint empty-message">${this.escapeHtml(f.hint)}</span>
+                <button class="btn btn-secondary attention-view-btn" data-flag="${this.escapeAttr(f.flag)}" data-label="${this.escapeAttr(f.label)}">View</button>
+            </li>`).join('');
+        return `
+            <div class="panel attention-panel">
+                <h2>Needs attention</h2>
+                <ul class="attention-list">${rows}</ul>
+            </div>`;
     }
 
     renderDrillIn() {
@@ -440,6 +470,12 @@ class WorkflowPage {
         const startBtn = document.getElementById('workflow-start-processing-btn');
         if (startBtn) startBtn.addEventListener('click', () => this.startProcessing());
 
+        document.querySelectorAll('.attention-view-btn').forEach(el => {
+            el.addEventListener('click', () => this.openDrillIn(
+                `flag:${el.dataset.flag}`, el.dataset.label,
+                `/api/library/attention/${encodeURIComponent(el.dataset.flag)}/books`));
+        });
+
         document.querySelectorAll('.workflow-view-btn').forEach(el => {
             el.addEventListener('click', () => this.openDrillIn(el.dataset.stage, el.dataset.label));
         });
@@ -511,8 +547,8 @@ class WorkflowPage {
         if (organizeBtn) organizeBtn.addEventListener('click', () => router.navigate('/organize'));
     }
 
-    async openDrillIn(stage, label) {
-        this.drillIn = { stage, label, comics: [], total: 0, limit: 20, offset: 0, hasMore: false };
+    async openDrillIn(stage, label, baseUrl) {
+        this.drillIn = { stage, label, baseUrl: baseUrl || `/api/library/workflow/${stage}/books`, comics: [], total: 0, limit: 20, offset: 0, hasMore: false };
         this.render();
         this.attachListeners();
         await this.loadDrillInPage(true);
@@ -533,7 +569,7 @@ class WorkflowPage {
 
         try {
             const offset = reset ? 0 : d.offset;
-            const url = `/api/library/workflow/${d.stage}/books?limit=${d.limit}&offset=${offset}`;
+            const url = `${d.baseUrl}?limit=${d.limit}&offset=${offset}`;
             const response = await fetch(url);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json();

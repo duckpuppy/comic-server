@@ -812,6 +812,10 @@ See issues #15, #16, #17 for:
 - CLI/API for configuration management
 - Advanced matchers (nested groups, file path matching, etc.)
 
+## Needs Attention Flags
+
+`internal/attention` (comic-server-z77p) derives named, severity-ranked flags from each book record alone: `is_pdf`, `is_zip`, `needs_conversion`, `cover_only`, `no_series`, `low_page_count`, `unknown_publisher`, `missing_format`, `missing_count`. Computed in the same pass as the workflow stage cache (`workflowCacheEntry.booksByFlag`), so it shares `InvalidateWorkflowCache`. `GET /api/library/attention` returns flags ranked severity > count; `GET /api/library/attention/:flag/books` pages the matching books. Shown as a "Needs attention" panel on the workflow page. Idea from ComicManager (ideas only, AGPL). Not yet implemented: flags needing disk access (`file_missing`, `corrupted_archive`), the ComicVine cache (`count_mismatch`, `cv_volume_conflict`, `metadata_mismatch`), sibling comparison, or scrape results.
+
 ## ComicVine Enrichment
 
 Background sync pipeline that fetches series/issue data from the ComicVine API to enable series completeness checking and missing issue detection.

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"github.com/duckpuppy/comic-server/internal/attention"
 	"time"
 
 	"github.com/duckpuppy/comic-server/internal/library"
@@ -27,6 +28,9 @@ type workflowCacheEntry struct {
 	computedAt   time.Time
 	booksByStage map[workflow.Stage][]*library.ComicBook
 	cvdbSkip     int
+	// booksByFlag holds every book with each attention flag (comic-server-z77p),
+	// computed in the same pass as booksByStage.
+	booksByFlag map[attention.Flag][]*library.ComicBook
 }
 
 // getOrBuildWorkflowCache returns the current cached snapshot, building a
@@ -47,11 +51,15 @@ func (s *Server) getOrBuildWorkflowCache() (*workflowCacheEntry, error) {
 	built := &workflowCacheEntry{
 		computedAt:   time.Now(),
 		booksByStage: make(map[workflow.Stage][]*library.ComicBook, len(workflow.Stages)+1),
+		booksByFlag:  make(map[attention.Flag][]*library.ComicBook),
 	}
 	for i := range allBooks {
 		book := &allBooks[i]
 		st := workflow.GetStage(book)
 		built.booksByStage[st] = append(built.booksByStage[st], book)
+		for _, f := range attention.FlagsFor(book) {
+			built.booksByFlag[f] = append(built.booksByFlag[f], book)
+		}
 		if workflow.IsCVDBSkip(book) {
 			built.cvdbSkip++
 		}
