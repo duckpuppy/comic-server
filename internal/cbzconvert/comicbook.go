@@ -38,9 +38,19 @@ type Options struct {
 // and CurrentPage/LastPageRead/PreferredFrontCover are shifted the same way
 // (clamped into range, as ComicRack's SetInfo does).
 func BuildComicBookXML(book *library.ComicBook, pageCount int) ([]byte, error) {
+	return buildComicBookXML(book, pageCount, true)
+}
+
+// buildComicBookXML is BuildComicBookXML with control over whether Deleted
+// pages are dropped. Conversion drops them from the archive, so the record is
+// re-based; an in-place metadata update keeps every page, so it must not be.
+func buildComicBookXML(book *library.ComicBook, pageCount int, dropDeleted bool) ([]byte, error) {
 	cb := *book
 
-	deleted := deletedPageIndexes(book.Pages)
+	deleted := map[int]bool{}
+	if dropDeleted {
+		deleted = deletedPageIndexes(book.Pages)
+	}
 	remap := func(old int) int {
 		n := old
 		for d := range deleted {

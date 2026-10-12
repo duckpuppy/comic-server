@@ -46,6 +46,7 @@ class WorkflowPage {
         // card's View is never disabled at 0, since Create is reachable
         // from there too even with nothing wanted yet.
         this.wanted = { total: 0, comics: [] };
+        this.staleWrites = { enabled: false, stale: 0 };
         this.wantedDrillIn = false;
         this.showNewWantedForm = false;
         this.newWantedForm = { series: '', number: '', volume: 0, year: 0, publisher: '' };
@@ -77,6 +78,17 @@ class WorkflowPage {
         }
         await this.loadNewFiles();
         await this.loadWanted();
+        await this.loadStaleWrites();
+    }
+
+    async loadStaleWrites() {
+        try {
+            const response = await fetch('/api/library/workflow/stale-writes');
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            this.staleWrites = await response.json();
+        } catch (error) {
+            console.error('Failed to load stale write count:', error);
+        }
     }
 
     async loadNewFiles() {
@@ -185,6 +197,21 @@ class WorkflowPage {
                         </button>` : ''}
                     </div>
                 </div>
+            `;
+        }
+        if (this.staleWrites.enabled) {
+            const writing = this.running === 'write_metadata';
+            html += `
+            <div class="panel workflow-card">
+                <h2>Out-of-date Files</h2>
+                <p class="workflow-card-count">${this.staleWrites.stale}</p>
+                <p class="empty-message">CBZ files whose embedded ComicInfo.xml no longer matches the library. Writing replaces the file; the old copy goes to the trash folder.</p>
+                <div class="workflow-card-actions">
+                    <button class="btn btn-primary" id="run-workflow-write-metadata" ${writing || this.staleWrites.stale === 0 ? 'disabled' : ''}>
+                        ${writing ? 'Running…' : 'Write Metadata'}
+                    </button>
+                </div>
+            </div>
             `;
         }
         html += `
@@ -465,6 +492,9 @@ class WorkflowPage {
 
         const cbzBtn = document.getElementById('run-workflow-convert-cbz');
         if (cbzBtn) cbzBtn.addEventListener('click', () => this.runAction('convert_cbz', '/api/library/workflow/convert-cbz', r => `Converted ${r.converted} of ${r.processed} books.`));
+
+        const writeBtn = document.getElementById('run-workflow-write-metadata');
+        if (writeBtn) writeBtn.addEventListener('click', () => this.runAction('write_metadata', '/api/library/workflow/write-metadata', r => `Wrote metadata to ${r.written} of ${r.processed} files.${r.errors && r.errors.length ? ` ${r.errors.length} failed.` : ''}`));
 
         const scanInfoBtn = document.getElementById('run-workflow-scan-info');
         if (scanInfoBtn) scanInfoBtn.addEventListener('click', () => this.runAction('scan_info', '/api/library/workflow/scan-info', r => `Updated ${r.updated} of ${r.processed} books.`));

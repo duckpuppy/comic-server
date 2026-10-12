@@ -248,6 +248,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/library/workflow", s.handleGetWorkflowSummary)
 	s.mux.HandleFunc("/api/library/workflow/scan-info", s.handleRunScanInfoWorkflow)
 	s.mux.HandleFunc("/api/library/workflow/convert-cbz", s.handleRunCBZConvertWorkflow)
+	s.mux.HandleFunc("/api/library/workflow/stale-writes", s.handleStaleWrites)
+	s.mux.HandleFunc("/api/library/workflow/write-metadata", s.handleWriteMetadata)
 	s.mux.HandleFunc("/api/library/workflow/organize-preview", s.handleOrganizePreview)
 	s.mux.HandleFunc("/api/library/workflow/organize-apply", s.handleOrganizeApply)
 	s.mux.HandleFunc("/api/library/organize-profiles", s.handleLOProfilesCollection)

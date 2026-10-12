@@ -460,6 +460,21 @@ and page info. When both files exist, ComicRack takes the shared fields from
 `ComicInfo.xml`. Page numbers in `ComicBook.xml` are adjusted for any pages
 dropped during conversion. Leave it off if you don't use ComicRack CE.
 
+#### Writing edited metadata back
+
+When you edit a book's metadata after it was written into its archive, the
+embedded `ComicInfo.xml` goes out of date. The Workflow page then shows an
+**Out-of-date Files** card with a **Write Metadata** button. It rewrites only
+the metadata entry (or entries) in each CBZ. Page images are copied
+byte-for-byte, and the previous file goes to `trash_path` like any other
+replace. The card appears only when `cbz_convert.enabled` is true.
+
+A book counts as out of date when ComicRack's own "info is dirty" flag is set,
+or when its metadata no longer matches what comic-server last wrote. A book
+comic-server never wrote has nothing to compare against, so it is left alone
+until it is converted or flagged. Only `.cbz`/`.zip` files are rewritten.
+Reading progress does not make a book out of date.
+
 ### Virtual Tags
 
 Virtual tags are user-defined, template-computed text properties that smart
