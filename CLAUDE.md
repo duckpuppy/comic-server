@@ -822,11 +822,12 @@ See issues #15, #16, #17 for:
 
 ## Format Detection
 
-comic-server-izc7. `internal/formatdetect` proposes a `Format` from the book record: ordered rules, first match wins (Omnibus: keyword or 500+ pages; TPB: keyword, or 80+ pages with "Collects"/"#1-5" in the summary; Director's Cut; Annual; Preview; Black and White; then by issue `Count`: 1 One-Shot, 2-15 Limited Series, over 15 Series; no count = no match, so `missing_format` stays). Chosen over Data Manager rules because it needs state DM rules cannot hold (our own last write, the count it was based on) and ships defaults (DM rulesets are user data). Hardcover/Absolute/Graphic Novel are manual-only.
+comic-server-izc7. `internal/formatdetect` proposes a `Format` from the book record: ordered rules, first match wins, order taken from ComicManager's formatting guide (ideas only): Director's Cut and Black & White (series/title), Omnibus and TPB (series/title/summary), 80+ pages with "Collects"/"#1-5" in the summary is TPB, 500+ pages is Omnibus, Annual, Preview(s), then by `Count`: none = no match (so `missing_format` stays), over 15 = Series, **issue number over 15 = Series even with a small count (continuation / renumbered series)**, 2-15 Limited Series, 1 One-Shot. Chosen over Data Manager rules because it needs state DM rules cannot hold (our own last write, the count it was based on) and ships defaults (DM rulesets are user data). Hardcover/Absolute/Graphic Novel are manual-only.
 
 - **Never overwrites a manual choice**: only an empty `Format`, or one still equal to `comic_server_format_auto` (what detection last wrote), is touched. `comic_server_format_locked=1` skips a book outright. A count change re-detects books whose Format is still ours.
 - **API**: `GET /api/library/workflow/format-detect` previews (total, per-format counts, first 100 rows) and writes nothing; `POST` applies, audited as `format_detect`. Wanted placeholders (no FilePath) are skipped.
-- Not done: UI card, "continuation overrides" rule from ComicManager (never read), feeding Format into organizer folder structure.
+- Known risk: a regular issue whose summary mentions "omnibus"/"TPB" (e.g. "collected in the TPB") is classified by that keyword, as in ComicManager. Check the preview before applying.
+- Not done: UI card, feeding Format into organizer folder structure.
 
 ## Workflow Hero
 

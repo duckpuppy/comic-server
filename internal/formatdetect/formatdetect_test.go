@@ -27,7 +27,19 @@ func TestClassify(t *testing.T) {
 		{"limited low", library.ComicBook{Series: "X", Count: 2}, FormatLimited},
 		{"limited high", library.ComicBook{Series: "X", Count: 15}, FormatLimited},
 		{"series", library.ComicBook{Series: "X", Count: 16}, FormatSeries},
+		{"continuation beats small count", library.ComicBook{Series: "X", Number: "40", Count: 12}, FormatSeries},
+		{"continuation number with suffix", library.ComicBook{Series: "X", Number: "16a", Count: 4}, FormatSeries},
+		{"issue 15 stays limited", library.ComicBook{Series: "X", Number: "15", Count: 15}, FormatLimited},
+		{"one-shot with high number is series", library.ComicBook{Series: "X", Number: "40", Count: 1}, FormatSeries},
+		{"one-shot low number", library.ComicBook{Series: "X", Number: "1", Count: 1}, FormatOneShot},
+		{"omnibus in summary", library.ComicBook{Series: "X", Summary: "Now in an omnibus edition", Count: 4}, FormatOmnibus},
+		{"tpb in summary", library.ComicBook{Series: "X", Summary: "Also available as a TPB", Count: 4}, FormatTPB},
+		{"directors cut beats omnibus", library.ComicBook{Series: "X Omnibus Director's Cut", Count: 1}, FormatDirectorsCut},
+		{"b&w short form", library.ComicBook{Series: "X B&W", Count: 4}, FormatBlackAndWhite},
+		{"previews plural", library.ComicBook{Series: "Previews", Count: 1}, FormatPreview},
+		{"500 pages after tpb rules", library.ComicBook{Series: "X", PageCount: 520, Summary: "Collects #1-5", Count: 5}, FormatTPB},
 		{"no count", library.ComicBook{Series: "X"}, ""},
+		{"no count even with high number", library.ComicBook{Series: "X", Number: "40"}, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

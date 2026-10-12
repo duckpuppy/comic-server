@@ -51,8 +51,8 @@ var (
 	tpbRe        = regexp.MustCompile(`(?i)\b(tpb|trade paperback|collected edition)\b`)
 	directorsRe  = regexp.MustCompile(`(?i)\bdirector'?s cut\b`)
 	annualRe     = regexp.MustCompile(`(?i)\bannual\b`)
-	previewRe    = regexp.MustCompile(`(?i)\bpreview\b`)
-	blackWhiteRe = regexp.MustCompile(`(?i)\bblack (and|&) white\b`)
+	previewRe    = regexp.MustCompile(`(?i)\bpreviews?\b`)
+	blackWhiteRe = regexp.MustCompile(`(?i)\b(black\s*(and|&)\s*white|b\s*&\s*w)\b`)
 	collectsRe   = regexp.MustCompile(`(?i)\bcollects?\b`)
 	issueRangeRe = regexp.MustCompile(`#\s*\d+\s*[-\x{2013}\x{2014}]\s*#?\s*\d+`)
 )
@@ -66,32 +66,52 @@ type Result struct {
 // Classify applies the ordered rules to book. First match wins.
 func Classify(book *library.ComicBook) Result {
 	names := book.Series + " " + book.Title
+	withSummary := names + " " + book.Summary
 	switch {
-	case omnibusRe.MatchString(names):
-		return Result{FormatOmnibus, "name says omnibus"}
-	case book.PageCount >= omnibusPages:
-		return Result{FormatOmnibus, "500+ pages"}
-	case tpbRe.MatchString(names):
-		return Result{FormatTPB, "name says TPB"}
+	case directorsRe.MatchString(names):
+		return Result{FormatDirectorsCut, "name says director's cut"}
+	case blackWhiteRe.MatchString(names):
+		return Result{FormatBlackAndWhite, "name says black and white"}
+	case omnibusRe.MatchString(withSummary):
+		return Result{FormatOmnibus, "omnibus in name or summary"}
+	case tpbRe.MatchString(withSummary):
+		return Result{FormatTPB, "TPB in name or summary"}
 	case book.PageCount >= tpbPages &&
 		(collectsRe.MatchString(book.Summary) || issueRangeRe.MatchString(book.Summary)):
 		return Result{FormatTPB, "80+ pages and summary lists collected issues"}
-	case directorsRe.MatchString(names):
-		return Result{FormatDirectorsCut, "name says director's cut"}
+	case book.PageCount >= omnibusPages:
+		return Result{FormatOmnibus, "500+ pages"}
 	case annualRe.MatchString(names):
 		return Result{FormatAnnual, "name says annual"}
 	case previewRe.MatchString(names):
 		return Result{FormatPreview, "name says preview"}
-	case blackWhiteRe.MatchString(names):
-		return Result{FormatBlackAndWhite, "name says black and white"}
-	case book.Count == 1:
-		return Result{FormatOneShot, "issue count is 1"}
-	case book.Count >= 2 && book.Count <= limitedMax:
-		return Result{FormatLimited, "issue count is 2-15"}
+	case book.Count <= 0:
+		return Result{} // no count: stays missing_format
 	case book.Count > limitedMax:
 		return Result{FormatSeries, "issue count is over 15"}
+	case issueNumber(book.Number) > limitedMax:
+		// Continuation / renumbered series: a high issue number beats a
+		// small count.
+		return Result{FormatSeries, "issue number is over 15 (continuation)"}
+	case book.Count >= 2:
+		return Result{FormatLimited, "issue count is 2-15"}
 	}
-	return Result{}
+	return Result{FormatOneShot, "issue count is 1"}
+}
+
+// issueNumber returns the leading integer of an issue number ("16", "16.1",
+// "16a"), or 0 when there is none.
+func issueNumber(s string) int {
+	s = strings.TrimSpace(s)
+	end := 0
+	for end < len(s) && s[end] >= '0' && s[end] <= '9' {
+		end++
+	}
+	n, err := strconv.Atoi(s[:end])
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 // Decision says what to do with one book.
