@@ -11,7 +11,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var workflowBackfillLibraryPath string
+var (
+	workflowBackfillLibraryPath string
+	workflowBackfillDBPath      string
+)
 
 var workflowBackfillCmd = &cobra.Command{
 	Use:   "backfill",
@@ -26,7 +29,8 @@ untouched.`,
 }
 
 func init() {
-	workflowBackfillCmd.Flags().StringVar(&workflowBackfillLibraryPath, "library", "", "path to ComicDb.xml (default: server.library_path from config)")
+	workflowBackfillCmd.Flags().StringVar(&workflowBackfillLibraryPath, "library", "", "path to ComicDb.xml (XML backend only; default: server.library_path from config)")
+	workflowBackfillCmd.Flags().StringVar(&workflowBackfillDBPath, "db", "", "path to the SQLite database (default: server.database_path from config; the server's own --db flag is not read from config)")
 	workflowCmd.AddCommand(workflowBackfillCmd)
 }
 
@@ -40,12 +44,19 @@ func runWorkflowBackfill(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
+	if workflowBackfillDBPath != "" {
+		cfg.Server.DatabasePath = workflowBackfillDBPath
+	}
+
 	libPath := workflowBackfillLibraryPath
 	if libPath == "" {
 		libPath = cfg.Server.LibraryPath
 	}
-	if libPath == "" {
-		return fmt.Errorf("no library path: pass --library or set server.library_path in config")
+	// The XML path is only the file the XML backend loads (and writes back
+	// to). With a SQLite database it is just a re-import source that the
+	// backfill never reads, so it is not required there.
+	if libPath == "" && cfg.Server.DatabasePath == "" {
+		return fmt.Errorf("no library or database: pass --db (SQLite) or --library (ComicDb.xml), or set server.database_path / server.library_path in config")
 	}
 
 	var backend library.Backend
