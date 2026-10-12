@@ -2,7 +2,10 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+
+	"github.com/duckpuppy/comic-server/internal/library"
 )
 
 // MatcherTypeInfo describes a single matcher type for the UI.
@@ -80,6 +83,18 @@ func getListSchema() *ListSchema {
 			// parseOperator() as every plain string field. Kept as its own
 			// schema key (not aliased to "string") only so the editor can
 			// tell fieldType apart for the two-input rendering below.
+			// duplicate: ComicBookDuplicateMatcher - operator 0 = On
+			// (only duplicates), 1 = Off (all books); no value input.
+			"duplicate": {
+				{"0", "On (only duplicates)", false, false},
+				{"1", "Off (all books)", false, false},
+			},
+			// expression: ComicBookExpressionMatcher - MatchValue is a raw
+			// expression; operator 0 = is true, 1 = is false.
+			"expression": {
+				{"0", "is true", true, false},
+				{"1", "is false", true, false},
+			},
 			"customvalue": {
 				{"0", "equals", true, false},
 				{"1", "contains", true, false},
@@ -175,6 +190,13 @@ func getListSchema() *ListSchema {
 			{ID: "ComicBookBookNotesMatcher", Label: "Book Notes", Category: "Catalog", FieldType: "string"},
 			{ID: "ComicBookBookLocationMatcher", Label: "Location", Category: "Catalog", FieldType: "string"},
 			{ID: "ComicBookBookPriceMatcher", Label: "Price", Category: "Catalog", FieldType: "numeric"},
+			// Advanced
+			{ID: "ComicBookDuplicateMatcher", Label: "Duplicates", Category: "Advanced", FieldType: "duplicate"},
+			{ID: "ComicBookExpressionMatcher", Label: "Expression", Category: "Advanced", FieldType: "expression"},
+			// ComicVine enrichment (comic-server only; dropped on export to ComicRackCE)
+			{ID: "ComicServerCVSeriesCompleteMatcher", Label: "ComicVine: Series Complete", Category: "ComicVine", FieldType: "yesno"},
+			{ID: "ComicServerCVMissingCountMatcher", Label: "ComicVine: Missing Issue Count", Category: "ComicVine", FieldType: "numeric"},
+			{ID: "ComicServerCVPercentOwnedMatcher", Label: "ComicVine: Percent Owned", Category: "ComicVine", FieldType: "numeric"},
 		},
 	}
 	return listSchemaCache
@@ -187,5 +209,28 @@ func (s *Server) handleGetListSchema(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(getListSchema())
+	json.NewEncoder(w).Encode(listSchemaWithVirtualTags())
+}
+
+// listSchemaWithVirtualTags returns the static schema plus one string matcher
+// per currently configured virtual tag (comic-server-65u). Computed per
+// request because tags are config-defined and reload on SIGHUP; the cached
+// static schema is never mutated.
+func listSchemaWithVirtualTags() *ListSchema {
+	base := getListSchema()
+	tags := library.ActiveVirtualTags()
+	if len(tags) == 0 {
+		return base
+	}
+	out := *base
+	out.MatcherTypes = append([]MatcherTypeInfo(nil), base.MatcherTypes...)
+	for _, t := range tags {
+		out.MatcherTypes = append(out.MatcherTypes, MatcherTypeInfo{
+			ID:        fmt.Sprintf("ComicBookVirtualTag%dMatcher", t.ID),
+			Label:     t.Name,
+			Category:  "Virtual Tags",
+			FieldType: "string",
+		})
+	}
+	return &out
 }
