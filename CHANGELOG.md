@@ -1,5 +1,39 @@
 # Changelog
 
+## [1.46.0](https://github.com/duckpuppy/comic-server/compare/v1.45.0...v1.46.0) (2026-10-12)
+
+
+### Features
+
+* audit log with per-book history and stage rollback (comic-server-vqsj) ([1b8aa7b](https://github.com/duckpuppy/comic-server/commit/1b8aa7bc91c78579516cff37e346bd2acbdb49cc))
+* Browse quick search tokens and sort with empty values last (comic-server-mzkf) ([783c3a2](https://github.com/duckpuppy/comic-server/commit/783c3a2235906aaf6ac11f12917a40521e51aa13))
+* connected pipeline strip and start-here banner on workflow page (comic-server-engs) ([b8d68cf](https://github.com/duckpuppy/comic-server/commit/b8d68cf2970233d3521184e26688caeb1bb5fddc))
+* duplicate review page to detect and resolve duplicate books (comic-server-as8l) ([e6f59a3](https://github.com/duckpuppy/comic-server/commit/e6f59a371f357511f21e057ab1e6953d2b549831))
+* file_missing attention flag from a background disk pass (comic-server-4q1z) ([c81b081](https://github.com/duckpuppy/comic-server/commit/c81b081a7061b682acc740ea73f948a208388283))
+* format detection continuation override and ComicManager rule order (comic-server-izc7) ([7a253ce](https://github.com/duckpuppy/comic-server/commit/7a253ce18555f2f39ca50c0ee1c0ee8e44adfa7e))
+* format detection with dry-run preview and lock (comic-server-izc7) ([a936fc5](https://github.com/duckpuppy/comic-server/commit/a936fc577b353a365b46259795e91d4315dbc0ee))
+* list editor offers Duplicate, Expression, VirtualTag and CV matchers (comic-server-0elp) ([20447f8](https://github.com/duckpuppy/comic-server/commit/20447f8e587defbfdab77d26b23b09f87e97e7ac))
+* Missing Issues page - owned vs missing per ComicVine volume (comic-server-buhs) ([c42d4dd](https://github.com/duckpuppy/comic-server/commit/c42d4dd7484adf4ebc10d1933d21489a4bf59245))
+* Needs attention flags panel on the workflow page (comic-server-z77p) ([ee32c83](https://github.com/duckpuppy/comic-server/commit/ee32c83a834ce724c068796f030054efda7a1640))
+* optionally embed ComicBook.xml in converted CBZs (comic-server-80tr) ([3dd3bfb](https://github.com/duckpuppy/comic-server/commit/3dd3bfbae09f6d8eab2affa1c35edffb9ee3355f))
+* remove a trashed duplicate's library record (comic-server-36qq) ([a892ccc](https://github.com/duckpuppy/comic-server/commit/a892cccea2348a01a26a120d387f43ffdb6f16ae))
+* sniff real archive container and flag misnamed archives (comic-server-0ebv) ([5cf3f43](https://github.com/duckpuppy/comic-server/commit/5cf3f439804ca80ac01858ba2e080bfa70b5927e))
+* variant covers - preview ComicVine images and add chosen ones to the CBZ (comic-server-0u48) ([f007f75](https://github.com/duckpuppy/comic-server/commit/f007f75b131c18e04d12131a194fab1077cff8b5))
+* VirtualTag smart list matchers with caption template engine (comic-server-65u) ([1ebe4c7](https://github.com/duckpuppy/comic-server/commit/1ebe4c7e7d586eacae7865b3e458b105a3a0b5f9))
+* web UI page for the ComicVine scrape review queue (comic-server-0nhp) ([f598d05](https://github.com/duckpuppy/comic-server/commit/f598d058c471df95a5b455f04c4f9530d7de247c))
+* workflow hero with percent clean, throughput sparkline, recent covers (comic-server-p7ti) ([fd5c030](https://github.com/duckpuppy/comic-server/commit/fd5c030b24e497660cfd46abe94c334204148769))
+* write stale metadata back into CBZ files (comic-server-os6x) ([f3cbe50](https://github.com/duckpuppy/comic-server/commit/f3cbe50ef502bb259457a76caeea87cd9c6b11eb))
+
+
+### Bug Fixes
+
+* **deps:** update all non-major dependencies ([c6a1ebb](https://github.com/duckpuppy/comic-server/commit/c6a1ebb53304af5ad0c6773f4e05e7d1251c0384))
+* **deps:** update all non-major dependencies ([bec5406](https://github.com/duckpuppy/comic-server/commit/bec5406eb558924187f80e71cfbc00932eb76e65))
+* make the file_missing disk pass stat-only, daily and configurable (comic-server-4q1z) ([5f30f49](https://github.com/duckpuppy/comic-server/commit/5f30f49bf3b2e035bb9cce261bddfadcf1d2bd23))
+* restore index.html emptied by the as8l merge; add embedded-asset guard test ([7413b93](https://github.com/duckpuppy/comic-server/commit/7413b93e9fe7e0d9983dc456812fb570deeec738))
+* round-trip ComicBookIsDirty and support the Modified Library Info matcher (comic-server-8fqm) ([b58d9e9](https://github.com/duckpuppy/comic-server/commit/b58d9e95f4a63e30a7a166ec886daa83af25e4b1))
+* unbreak attention catalog string literal from 0ebv ([17898a5](https://github.com/duckpuppy/comic-server/commit/17898a53ee2670af3adf178a587f11d3e810277e))
+
 ## [1.45.0](https://github.com/duckpuppy/comic-server/compare/v1.44.0...v1.45.0) (2026-09-22)
 
 
