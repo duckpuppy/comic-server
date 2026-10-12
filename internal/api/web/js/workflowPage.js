@@ -129,7 +129,7 @@ class WorkflowPage {
             <div class="workflow-page">
                 <div class="workflow-page-header">
                     <h1>Workflow</h1>
-                    <p class="empty-message">Tracks every book's progress through comic-server's native ingest pipeline, replacing the manual "0 Day Folder" / "01 Convert to CBZ" / ... smart lists.</p>
+                    <p class="workflow-status-line" id="workflow-status-line">${this.escapeHtml(this.statusLine())}</p>
                 </div>
                 ${this.renderBody()}
             </div>
@@ -166,40 +166,48 @@ class WorkflowPage {
             scan_info: 'Run Scan Info',
             data_manager: 'Run Data Manager',
         };
+        const descFor = {
+            convert_cbz: 'Repack into CBZ',
+            scrape: 'Fetch ComicVine tags',
+            scan_info: 'Read scan credits',
+            data_manager: 'Apply cleanup rules',
+            to_move: 'Waiting to be filed',
+            organized: 'Filed and done',
+        };
 
-        let html = this.renderAttention();
-        html += '<div class="workflow-cards">';
+        let html = this.renderStartHere(actionFor, labelFor);
+        html += '<div class="workflow-pipeline" role="list">';
+
+        // Stage 0: New Files.
+        const nfCount = this.newFiles.total;
         html += `
-            <div class="panel workflow-card">
-                <h2>New Files</h2>
-                <p class="workflow-card-count">${this.newFiles.total}</p>
-                <p class="empty-message">Comic files sitting in a watch folder that aren't in the library yet.</p>
+            <div class="workflow-stage ${nfCount > 0 ? 'is-active' : 'is-empty'}" role="listitem">
+                <div class="workflow-stage-step">1</div>
+                <h2 class="workflow-stage-name">New Files</h2>
+                <p class="workflow-stage-desc">Not in the library yet</p>
+                <p class="workflow-stage-count">${nfCount}</p>
                 <div class="workflow-card-actions">
-                    <button class="btn btn-secondary" id="workflow-view-new-files-btn" ${this.newFiles.total === 0 ? 'disabled' : ''}>View</button>
+                    <button class="btn btn-secondary" id="workflow-view-new-files-btn" ${nfCount === 0 ? 'disabled' : ''}>View</button>
                     <button class="btn btn-secondary" id="workflow-process-folder-btn" ${this.processingFolder ? 'disabled' : ''}>
                         ${this.processingFolder ? 'Scanning…' : 'Process a Folder…'}
                     </button>
                 </div>
             </div>
         `;
-        html += `
-            <div class="panel workflow-card">
-                <h2>Wanted</h2>
-                <p class="workflow-card-count">${this.wanted.total}</p>
-                <p class="empty-message">Issues you don't own a file for yet - link one in when you get it.</p>
-                <div class="workflow-card-actions">
-                    <button class="btn btn-secondary" id="workflow-view-wanted-btn">View</button>
-                </div>
-            </div>
-        `;
+        let step = 1;
         for (const s of this.summary.stages) {
+            step++;
             const btnId = actionFor[s.stage];
             const running = this.running === s.stage;
             const isToMove = s.stage === 'to_move';
+            const terminal = s.stage === 'organized';
+            const cls = terminal ? 'is-terminal' : (s.count > 0 ? 'is-active' : 'is-empty');
             html += `
-                <div class="panel workflow-card">
-                    <h2>${this.escapeHtml(s.label)}</h2>
-                    <p class="workflow-card-count">${s.count}</p>
+                <div class="workflow-stage ${cls}" role="listitem" data-stage-cell="${this.escapeAttr(s.stage)}">
+                    <div class="workflow-stage-step">${step}</div>
+                    <h2 class="workflow-stage-name">${this.escapeHtml(s.label)}</h2>
+                    <p class="workflow-stage-desc">${this.escapeHtml(descFor[s.stage] || '')}</p>
+                    <p class="workflow-stage-count">${s.count}</p>
                     <div class="workflow-card-actions">
                         <button class="btn btn-secondary workflow-view-btn" data-stage="${s.stage}" data-label="${this.escapeAttr(s.label)}" ${s.count === 0 ? 'disabled' : ''}>View</button>
                         ${isToMove ? `
@@ -212,6 +220,26 @@ class WorkflowPage {
                 </div>
             `;
         }
+        html += '</div>';
+
+        if (this.lastResult) {
+            html += `<div class="panel workflow-result"><p>${this.escapeHtml(this.lastResult)}</p></div>`;
+        }
+
+        html += this.renderAttention();
+
+        // Side queues: not steps of the linear pipeline.
+        html += '<div class="workflow-cards">';
+        html += `
+            <div class="panel workflow-card">
+                <h2>Wanted</h2>
+                <p class="workflow-card-count">${this.wanted.total}</p>
+                <p class="empty-message">Issues you don't own a file for yet - link one in when you get it.</p>
+                <div class="workflow-card-actions">
+                    <button class="btn btn-secondary" id="workflow-view-wanted-btn">View</button>
+                </div>
+            </div>
+        `;
         if (this.staleWrites.enabled) {
             const writing = this.running === 'write_metadata';
             html += `
@@ -236,11 +264,46 @@ class WorkflowPage {
         `;
         html += '</div>';
 
-        if (this.lastResult) {
-            html += `<div class="panel"><p>${this.escapeHtml(this.lastResult)}</p></div>`;
-        }
-
         return html;
+    }
+
+    // statusLine is the one-line replacement for the old intro paragraph.
+    statusLine() {
+        if (!this.summary) return '';
+        const stages = this.summary.stages || [];
+        const org = stages.find(s => s.stage === 'organized');
+        const inFlight = stages.filter(s => s.stage !== 'organized').reduce((n, s) => n + s.count, 0);
+        const parts = [`${inFlight} in the pipeline`];
+        if (this.newFiles.total > 0) parts.push(`${this.newFiles.total} new file${this.newFiles.total === 1 ? '' : 's'} waiting`);
+        if (org) parts.push(`${org.count} organized`);
+        return parts.join(' · ');
+    }
+
+    // renderStartHere picks the bottleneck: the non-terminal stage with the
+    // largest backlog (New Files included) and offers its action in one click.
+    renderStartHere(actionFor, labelFor) {
+        let best = null;
+        if (this.newFiles.total > 0) {
+            best = { key: 'new_files', label: 'New Files', count: this.newFiles.total, target: 'workflow-view-new-files-btn', verb: 'View new files' };
+        }
+        for (const s of this.summary.stages) {
+            if (s.stage === 'organized' || s.count <= 0) continue;
+            if (best && s.count <= best.count) continue;
+            let target = actionFor[s.stage];
+            let verb = labelFor[s.stage];
+            if (s.stage === 'to_move') { target = 'workflow-organize-btn'; verb = 'Organize'; }
+            best = { key: s.stage, label: s.label, count: s.count, target, verb };
+        }
+        if (!best) {
+            return `<div class="workflow-start-here is-clear"><span class="workflow-start-here-text">Nothing waiting - every book has made it through the pipeline.</span></div>`;
+        }
+        const busy = this.running === best.key;
+        return `
+            <div class="workflow-start-here">
+                <span class="workflow-start-here-tag">Start here</span>
+                <span class="workflow-start-here-text"><strong>${this.escapeHtml(best.label)}</strong> has the biggest backlog: ${best.count} book${best.count === 1 ? '' : 's'}.</span>
+                <button class="btn btn-primary" id="workflow-start-here-btn" data-target="${this.escapeAttr(best.target)}" ${busy ? 'disabled' : ''}>${busy ? 'Running…' : this.escapeHtml(best.verb)}</button>
+            </div>`;
     }
 
     renderAttention() {
@@ -542,6 +605,12 @@ class WorkflowPage {
         if (scrapeBtn) {
             scrapeBtn.addEventListener('click', () => this.runAction('scrape', '/api/scrape', () => 'Scrape job started - see Dashboard for progress.'));
         }
+
+        const startHereBtn = document.getElementById('workflow-start-here-btn');
+        if (startHereBtn) startHereBtn.addEventListener('click', () => {
+            const target = document.getElementById(startHereBtn.dataset.target);
+            if (target && !target.disabled) target.click();
+        });
 
         const organizeBtn = document.getElementById('workflow-organize-btn');
         if (organizeBtn) organizeBtn.addEventListener('click', () => router.navigate('/organize'));
