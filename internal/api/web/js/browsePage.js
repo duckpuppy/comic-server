@@ -32,6 +32,9 @@ class BrowsePage {
         this.matcherMode = 'And';
         this.matchers = [];
         this.showAll = false;
+        this.query = '';      // quick search: words plus #N, (YYYY), VN tokens (comic-server-mzkf)
+        this.sortField = '';  // '' = library order
+        this.sortDesc = false;
         this.results = [];
         this.total = 0;
         this.limit = 20;
@@ -80,6 +83,12 @@ class BrowsePage {
 
     render() {
         const app = document.getElementById('app');
+        // The page re-renders wholesale after every search; remember which
+        // text input had focus (and the caret) so typing in the quick search
+        // is not interrupted.
+        const active = document.activeElement;
+        const focusId = active && active.id && app.contains(active) ? active.id : null;
+        const caret = focusId && typeof active.selectionStart === 'number' ? active.selectionStart : null;
         app.innerHTML = `
             <div class="datamanager-page">
                 <div class="datamanager-page-header">
@@ -111,11 +120,31 @@ class BrowsePage {
                     </div>
                 </div>
                 <div class="panel">
+                    <div class="browse-search-row">
+                        <input type="text" id="browse-query" class="browse-query-input"
+                               value="${this.escapeHtml(this.query)}"
+                               placeholder="Quick search, e.g. Batman V2017 #15 (2016)">
+                        <select id="browse-sort" title="Sort results">
+                            ${[['', 'Library order'], ['series', 'Series'], ['number', 'Issue number'], ['title', 'Title'],
+                               ['publisher', 'Publisher'], ['year', 'Year'], ['volume', 'Volume'], ['pages', 'Page count']]
+                                .map(([v, l]) => `<option value="${v}" ${this.sortField === v ? 'selected' : ''}>${l}</option>`).join('')}
+                        </select>
+                        <label class="browse-sort-desc"><input type="checkbox" id="browse-sort-desc" ${this.sortDesc ? 'checked' : ''}> Descending</label>
+                    </div>
                     ${this.renderResults()}
                 </div>
                 ${this.renderDataManagerPanel()}
             </div>
         `;
+        if (focusId) {
+            const el = document.getElementById(focusId);
+            if (el) {
+                el.focus();
+                if (caret !== null && el.setSelectionRange) {
+                    try { el.setSelectionRange(caret, caret); } catch (e) { /* not a text input */ }
+                }
+            }
+        }
     }
 
     renderMatcherEditor(matcher, index) {
@@ -202,9 +231,9 @@ class BrowsePage {
             return html;
         }
 
-        html += '<table class="datamanager-diff-table"><thead><tr><th>Series</th><th>Number</th><th>Title</th><th>Publisher</th><th>Year</th></tr></thead><tbody>';
+        html += '<table class="datamanager-diff-table"><thead><tr><th>Series</th><th>Number</th><th>Title</th><th>Publisher</th><th>Year</th><th>Pages</th></tr></thead><tbody>';
         for (const c of this.results) {
-            html += `<tr><td>${this.escapeHtml(c.series)}</td><td>${this.escapeHtml(c.number)}</td><td>${this.escapeHtml(c.title)}</td><td>${this.escapeHtml(c.publisher)}</td><td>${c.year || ''}</td></tr>`;
+            html += `<tr><td>${this.escapeHtml(c.series)}</td><td>${this.escapeHtml(c.number)}</td><td>${this.escapeHtml(c.title)}</td><td>${this.escapeHtml(c.publisher)}</td><td>${c.year || ''}</td><td>${c.page_count || ''}</td></tr>`;
         }
         html += '</tbody></table>';
 
@@ -224,6 +253,22 @@ class BrowsePage {
         const showAllCheck = document.getElementById('browse-show-all');
         if (showAllCheck) showAllCheck.addEventListener('change', () => {
             this.showAll = showAllCheck.checked;
+            this.search(true);
+        });
+
+        const queryInput = document.getElementById('browse-query');
+        if (queryInput) queryInput.addEventListener('input', () => {
+            this.query = queryInput.value;
+            this.debouncedSearch();
+        });
+        const sortSel = document.getElementById('browse-sort');
+        if (sortSel) sortSel.addEventListener('change', () => {
+            this.sortField = sortSel.value;
+            this.search(true);
+        });
+        const sortDesc = document.getElementById('browse-sort-desc');
+        if (sortDesc) sortDesc.addEventListener('change', () => {
+            this.sortDesc = sortDesc.checked;
             this.search(true);
         });
 
@@ -338,7 +383,7 @@ class BrowsePage {
             const response = await fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ matcher_mode: this.matcherMode, matchers: this.matchers, show_all: this.showAll }),
+                body: JSON.stringify({ matcher_mode: this.matcherMode, matchers: this.matchers, show_all: this.showAll, query: this.query, sort: this.sortField, sort_desc: this.sortDesc }),
             });
             const text = await response.text();
             if (!response.ok) {
@@ -557,7 +602,7 @@ class BrowsePage {
     // Browse-scoped Data Manager request sends, so the run always matches
     // exactly what the browse table above is currently showing.
     dmScopeBody() {
-        return { matcher_mode: this.matcherMode, matchers: this.matchers, show_all: this.showAll };
+        return { matcher_mode: this.matcherMode, matchers: this.matchers, show_all: this.showAll, query: this.query };
     }
 
     async dmPreview(reset) {

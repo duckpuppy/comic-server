@@ -1417,3 +1417,8 @@
     margin-left: auto;
     flex-shrink: 0;
 }
+
+/* Browse quick search + sort (comic-server-mzkf) */
+.browse-search-row { display: flex; gap: 0.75rem; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; }
+.browse-query-input { flex: 1 1 18rem; min-width: 12rem; }
+.browse-sort-desc { white-space: nowrap; color: var(--text-secondary); }

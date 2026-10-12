@@ -20,6 +20,7 @@ type BrowseDataManagerRequest struct {
 	MatcherMode string                     `json:"matcher_mode"`
 	Matchers    []library.ComicBookMatcher `json:"matchers"`
 	ShowAll     bool                       `json:"show_all,omitempty"`
+	Query       string                     `json:"query,omitempty"` // quick search, comic-server-mzkf
 	BookIDs     []string                   `json:"book_ids,omitempty"`
 	Fields      []DMFieldSelector          `json:"fields,omitempty"`
 }
@@ -102,6 +103,7 @@ func (s *Server) handleBrowseDataManagerJobStart(w http.ResponseWriter, r *http.
 			MatcherMode: req.MatcherMode,
 			Matchers:    req.Matchers,
 			ShowAll:     req.ShowAll,
+			Query:       req.Query,
 		})
 		if err != nil {
 			log.Error().Err(err).Msg("Failed to evaluate ad-hoc browse filter for Data Manager")

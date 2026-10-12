@@ -160,3 +160,68 @@ func TestHandleBrowse_MethodNotAllowed(t *testing.T) {
 		t.Fatalf("expected 405, got %d: %s", w.Code, w.Body.String())
 	}
 }
+
+func browseTitles(t *testing.T, s *Server, body string) []string {
+	t.Helper()
+	w := httptest.NewRecorder()
+	s.handleBrowse(w, httptest.NewRequest(http.MethodPost, "/api/library/browse", bytes.NewReader([]byte(body))))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", w.Code, w.Body.String())
+	}
+	var res struct {
+		Comics []struct {
+			ID string `json:"id"`
+		} `json:"comics"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&res); err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, c := range res.Comics {
+		ids = append(ids, c.ID)
+	}
+	return ids
+}
+
+func TestHandleBrowse_QueryTokensNarrowShowAll(t *testing.T) {
+	s := newBrowseTestServer(t, []library.ComicBook{
+		{ID: "a", Series: "Batman", Number: "15", Year: 2016, Volume: 2017},
+		{ID: "b", Series: "Batman", Number: "16", Year: 2016, Volume: 2017},
+		{ID: "c", Series: "Batman", Number: "15", Year: 1990, Volume: 1},
+		{ID: "d", Series: "Superman", Number: "15", Year: 2016, Volume: 2017},
+	})
+	got := browseTitles(t, s, `{"show_all":true,"query":"Batman V2017 #15 (2016)"}`)
+	if len(got) != 1 || got[0] != "a" {
+		t.Errorf("ids = %v, want [a]", got)
+	}
+	// A query never widens: no matchers and no show_all is still empty.
+	if got := browseTitles(t, s, `{"query":"Batman"}`); len(got) != 0 {
+		t.Errorf("query alone returned %v, want none", got)
+	}
+}
+
+func TestHandleBrowse_SortEmptyPageCountsLastBothDirections(t *testing.T) {
+	s := newBrowseTestServer(t, []library.ComicBook{
+		{ID: "none", Series: "A", PageCount: 0},
+		{ID: "big", Series: "B", PageCount: 200},
+		{ID: "small", Series: "C", PageCount: 20},
+	})
+	asc := browseTitles(t, s, `{"show_all":true,"sort":"pages"}`)
+	desc := browseTitles(t, s, `{"show_all":true,"sort":"pages","sort_desc":true}`)
+	if len(asc) != 3 || asc[0] != "small" || asc[1] != "big" || asc[2] != "none" {
+		t.Errorf("asc = %v, want [small big none]", asc)
+	}
+	if len(desc) != 3 || desc[0] != "big" || desc[1] != "small" || desc[2] != "none" {
+		t.Errorf("desc = %v, want [big small none]", desc)
+	}
+}
+
+func TestHandleBrowse_SortIssueNumbersNumerically(t *testing.T) {
+	s := newBrowseTestServer(t, []library.ComicBook{
+		{ID: "10", Number: "10"}, {ID: "2", Number: "2"}, {ID: "1", Number: "1"},
+	})
+	got := browseTitles(t, s, `{"show_all":true,"sort":"number"}`)
+	if len(got) != 3 || got[0] != "1" || got[1] != "2" || got[2] != "10" {
+		t.Errorf("ids = %v, want [1 2 10]", got)
+	}
+}

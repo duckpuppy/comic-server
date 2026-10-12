@@ -479,7 +479,9 @@ type ComicPreview struct {
 	Volume    int    `json:"volume"`
 	Publisher string `json:"publisher"`
 	Year      int    `json:"year"`
-	Unread    bool   `json:"unread"`
+	// PageCount is only filled by ad-hoc browse (0 elsewhere, omitted).
+	PageCount int  `json:"page_count,omitempty"`
+	Unread    bool `json:"unread"`
 
 	// CurrentPath/TargetPath are only populated for the Workflow
 	// dashboard's "To Move" stage drill-in (handleGetWorkflowStageBooks) -
