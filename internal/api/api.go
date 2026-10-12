@@ -273,6 +273,10 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/library/attention", s.handleAttentionSummary)
 	s.mux.HandleFunc("/api/library/attention/", s.handleAttentionFlagBooks)
 
+	// Duplicate review (comic-server-as8l)
+	s.mux.HandleFunc("/api/library/duplicates", s.handleListDuplicates)
+	s.mux.HandleFunc("/api/library/duplicates/resolve", s.handleResolveDuplicate)
+
 	// Trash browser endpoints (comic-server-tfs)
 	s.mux.HandleFunc("/api/trash", s.handleListTrash)
 	s.mux.HandleFunc("/api/trash/restore", s.handlePostTrashRestore)

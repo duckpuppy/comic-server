@@ -111,6 +111,7 @@ let syncHistoryBrowser = null;
 let komgaStatus = null;
 let trashBrowser = null;
 let scrapeReviewPage = null;
+let duplicatesPage = null;
 let scanInfoSettings = null;
 let dataManagerPage = null;
 let dataManagerRulesPage = null;
@@ -311,6 +312,15 @@ document.addEventListener('DOMContentLoaded', () => {
             scrapeReviewPage = new ScrapeReviewPage();
         }
         await scrapeReviewPage.init(ctx);
+    });
+
+    router.register('/duplicates', async (params, ctx) => {
+        navigation.setActive('duplicates');
+        dashboard.hide();
+        if (!duplicatesPage) {
+            duplicatesPage = new DuplicatesPage();
+        }
+        await duplicatesPage.init(ctx);
     });
 
     router.register('/trash', async (params, ctx) => {

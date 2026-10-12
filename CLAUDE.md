@@ -340,6 +340,10 @@ Port of ComicRack's native "Convert to CBZ" feature (comic-server-43b, researche
 **Configuration** (`ServerConfig.CBZConvert`):
 - `cbz_convert.enabled` - off by default, same precedent as `scan_info.enabled`. `Config.Validate` rejects `enabled: true` without `server.trash_path` also set - this feature cannot run without a quarantine directory.
 
+### Duplicate Review (internal/duplicates/)
+
+comic-server-as8l. `/duplicates` page + `GET /api/library/duplicates` (`?covers=1` adds the slower within-series cover-dHash signal) and `POST /api/library/duplicates/resolve` (`keep` | `keep_trash` | `keep_all`). Detection (`duplicates.Detect`, pure) groups by ComicVine issue ID, series+number+volume+format (reuses `library.CompressedSeriesName`), cover dHash (anchor-based, Hamming <= 5), and copy-style filenames; groups spanning > 3x page count are dropped. `keep_trash` quarantines losers via `internal/trash` (never `os.Remove`) and refuses to trash a file shared with the keeper. Decisions live in config.db (`duplicate_keep_all` keyed by hash of member IDs, `duplicate_resolved_books`; tables created lazily, no schema bump). Trashed losers keep their library record (no delete in `library.Backend`) and are just excluded from detection.
+
 ### Configuration Management (internal/config/)
 
 **XDG-Compliant Configuration**:
