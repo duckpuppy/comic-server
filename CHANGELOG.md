@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.46.1](https://github.com/duckpuppy/comic-server/compare/v1.46.0...v1.46.1) (2026-10-12)
+
+
+### Bug Fixes
+
+* **deps:** update all non-major dependencies ([#151](https://github.com/duckpuppy/comic-server/issues/151)) ([bda3395](https://github.com/duckpuppy/comic-server/commit/bda33955e6407c42a493eac83eb633ffa74dee16))
+* **deps:** update go.starlark.net digest to bcb1a1a ([#104](https://github.com/duckpuppy/comic-server/issues/104)) ([801ce9a](https://github.com/duckpuppy/comic-server/commit/801ce9abbb8e1d64d779901f58efe9e8a4a1b109))
+* **deps:** update module github.com/dlclark/regexp2 to v2 ([#79](https://github.com/duckpuppy/comic-server/issues/79)) ([6665969](https://github.com/duckpuppy/comic-server/commit/666596932f9792bebe7d663a8c921ca999370a9c))
+
 ## [1.46.0](https://github.com/duckpuppy/comic-server/compare/v1.45.0...v1.46.0) (2026-10-12)
 
 
