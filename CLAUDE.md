@@ -820,6 +820,14 @@ See issues #15, #16, #17 for:
 
 `internal/attention` (comic-server-z77p) derives named, severity-ranked flags from each book record alone: `is_pdf`, `is_zip`, `needs_conversion`, `cover_only`, `no_series`, `low_page_count`, `unknown_publisher`, `missing_format`, `missing_count`. Computed in the same pass as the workflow stage cache (`workflowCacheEntry.booksByFlag`), so it shares `InvalidateWorkflowCache`. `GET /api/library/attention` returns flags ranked severity > count; `GET /api/library/attention/:flag/books` pages the matching books. Shown as a "Needs attention" panel on the workflow page. Idea from ComicManager (ideas only, AGPL). Not yet implemented: flags needing disk access (`file_missing`, `corrupted_archive`), the ComicVine cache (`count_mismatch`, `cv_volume_conflict`, `metadata_mismatch`), sibling comparison, or scrape results.
 
+## Format Detection
+
+comic-server-izc7. `internal/formatdetect` proposes a `Format` from the book record: ordered rules, first match wins (Omnibus: keyword or 500+ pages; TPB: keyword, or 80+ pages with "Collects"/"#1-5" in the summary; Director's Cut; Annual; Preview; Black and White; then by issue `Count`: 1 One-Shot, 2-15 Limited Series, over 15 Series; no count = no match, so `missing_format` stays). Chosen over Data Manager rules because it needs state DM rules cannot hold (our own last write, the count it was based on) and ships defaults (DM rulesets are user data). Hardcover/Absolute/Graphic Novel are manual-only.
+
+- **Never overwrites a manual choice**: only an empty `Format`, or one still equal to `comic_server_format_auto` (what detection last wrote), is touched. `comic_server_format_locked=1` skips a book outright. A count change re-detects books whose Format is still ours.
+- **API**: `GET /api/library/workflow/format-detect` previews (total, per-format counts, first 100 rows) and writes nothing; `POST` applies, audited as `format_detect`. Wanted placeholders (no FilePath) are skipped.
+- Not done: UI card, "continuation overrides" rule from ComicManager (never read), feeding Format into organizer folder structure.
+
 ## Missing Issues
 
 comic-server-buhs. `/missing-issues` page: per ComicVine volume, which issues the library owns and which it does not. `GET /api/library/series-completeness` (ranked volume rollup, `q`, `only_missing`, paged; memoized 2 min on the Server) and `GET /api/library/series-completeness/:volumeId` (every issue, numerically ordered, with owned / wanted / missing state and the matching book id), both from `comicvine.BuildVolumeSummaries` / `BuildSeriesCompleteness` over the same cache `BuildCompletenessMap` uses. `POST .../:volumeId/wanted {issue_ids}` creates Wanted placeholders (no `FilePath`) carrying `comicvine_volume`/`comicvine_issue`, skipping owned or already-wanted issues; audited as `wanted_from_missing`.

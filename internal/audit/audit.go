@@ -42,6 +42,7 @@ const (
 	ActionDuplicateTrash    = "duplicate_trash"
 	ActionVariantCovers     = "variant_covers"
 	ActionWantedFromMissing = "wanted_from_missing"
+	ActionFormatDetect      = "format_detect"
 )
 
 // Change is one field's before/after.
