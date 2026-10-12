@@ -447,6 +447,12 @@ class ListDetail {
             if (!groups[t.category]) groups[t.category] = [];
             groups[t.category].push(t);
         }
+        // A matcher whose type isn't offered (e.g. a virtual tag no longer
+        // configured) keeps its own entry instead of silently showing the
+        // first option.
+        if (selectedType && !schema.matcherTypes.some(t => t.id === selectedType)) {
+            groups['Unavailable'] = [{ id: selectedType, label: selectedType }];
+        }
         return Object.entries(groups).map(([cat, types]) => `
             <optgroup label="${this.escapeHtml(cat)}">
                 ${types.map(t =>

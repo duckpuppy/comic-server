@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -53,6 +54,20 @@ func SetVirtualTags(tags []VirtualTag) {
 	virtualTags.Lock()
 	virtualTags.byID = active
 	virtualTags.Unlock()
+}
+
+// ActiveVirtualTags returns the currently active (enabled, named, formatted)
+// tag definitions ordered by slot id. Used by the list editor schema so it
+// only offers virtual tag matchers for configured tags.
+func ActiveVirtualTags() []VirtualTag {
+	virtualTags.RLock()
+	out := make([]VirtualTag, 0, len(virtualTags.byID))
+	for _, t := range virtualTags.byID {
+		out = append(out, t)
+	}
+	virtualTags.RUnlock()
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
 }
 
 // VirtualTagValue expands virtual tag slot id against a book. Inactive or
