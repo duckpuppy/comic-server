@@ -1,0 +1,105 @@
+/* Duplicate Review Page (comic-server-as8l) */
+.duplicates-page {
+    padding: 1rem;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.duplicates-header h1 {
+    margin: 0 0 0.5rem 0;
+    color: var(--text-primary);
+}
+
+.duplicates-subtitle {
+    color: var(--text-secondary);
+    margin: 0 0 0.75rem 0;
+}
+
+.duplicates-covers-toggle {
+    color: var(--text-secondary);
+    margin-right: 1rem;
+}
+
+.duplicates-count {
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.dup-group {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    padding: 1rem;
+    margin: 1rem 0;
+}
+
+.dup-group-header {
+    margin-bottom: 0.75rem;
+}
+
+.dup-reason {
+    display: inline-block;
+    padding: 0.125rem 0.5rem;
+    margin-right: 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+}
+
+.dup-books {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.dup-book {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+    flex: 1 1 320px;
+    max-width: 480px;
+    padding: 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    cursor: pointer;
+    color: var(--text-primary);
+}
+
+.dup-cover {
+    width: 90px;
+    height: 135px;
+    object-fit: cover;
+    border-radius: 0.25rem;
+    background: var(--bg-primary);
+    flex: none;
+}
+
+.dup-meta {
+    min-width: 0;
+}
+
+.dup-title {
+    font-weight: 600;
+}
+
+.dup-sub {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+.dup-path {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 260px;
+}
+
+.dup-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+}
