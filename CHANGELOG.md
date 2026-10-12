@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.46.2](https://github.com/duckpuppy/comic-server/compare/v1.46.1...v1.46.2) (2026-10-12)
+
+
+### Bug Fixes
+
+* speed up /workflow - patch flag cache in place, parallel secondary loads ([69b890c](https://github.com/duckpuppy/comic-server/commit/69b890ccac6e8d18cfc7fe14992c57e7e4ffef3b))
+* workflow backfill gets --db and no longer demands an XML path with SQLite ([1037a82](https://github.com/duckpuppy/comic-server/commit/1037a8298a325cd5bdff81802a1842e146e5e374))
+* workflow hero counts unstaged books and says so ([adbd038](https://github.com/duckpuppy/comic-server/commit/adbd038d6fbfe94fa1488f8a0dafdc5bba33ac16))
+
 ## [1.46.1](https://github.com/duckpuppy/comic-server/compare/v1.46.0...v1.46.1) (2026-10-12)
 
 
