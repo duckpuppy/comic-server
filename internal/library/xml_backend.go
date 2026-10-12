@@ -290,6 +290,26 @@ func (b *XMLBackend) CreateBook(book *ComicBook) error {
 	return nil
 }
 
+// DeleteBook removes a book from the library.
+func (b *XMLBackend) DeleteBook(id string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	for i := range b.library.Books {
+		if b.library.Books[i].ID != id {
+			continue
+		}
+		b.library.Books = append(b.library.Books[:i], b.library.Books[i+1:]...)
+		if b.cache != nil {
+			b.cache.MarkDirty(id)
+		} else {
+			b.dirty = true
+		}
+		return nil
+	}
+	return fmt.Errorf("book not found: %s", id)
+}
+
 // UpdateBooks updates multiple books in the library.
 func (b *XMLBackend) UpdateBooks(books []*ComicBook) error {
 	b.mu.Lock()

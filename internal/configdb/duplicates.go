@@ -15,8 +15,10 @@ import (
 //     IDs) the user marked as "not really duplicates". If a new book later
 //     joins the group its hash changes and it is re-flagged.
 //   - duplicate_resolved_books: a loser whose file was quarantined by
-//     "keep and trash the rest". The library record stays (there is no
-//     book-delete in library.Backend), so detection must skip it.
+//     "keep and trash the rest". The library record is removed with
+//     Backend.DeleteBook (comic-server-36qq); this table is the safety net
+//     that keeps detection from re-flagging it if a re-import brings the
+//     record back (e.g. the XML still lists it).
 
 func (db *DB) ensureDuplicateTables() error {
 	stmts := []string{

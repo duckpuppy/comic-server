@@ -36,6 +36,15 @@ type Backend interface {
 	// trackable book. Errors if book.ID already exists.
 	CreateBook(book *ComicBook) error
 
+	// DeleteBook removes a book record (comic-server-36qq: the duplicate
+	// review trashes a loser's file, so its record must go too or it shows
+	// up as a missing file in lists and sync). The XML backend drops it
+	// from the library; SQLite soft-deletes it (deleted_at), the same way
+	// an import treats a book that vanished from the XML. Errors if the
+	// book does not exist. The book is NOT removed from reading lists'
+	// explicit member lists; unresolvable members are ignored on read.
+	DeleteBook(id string) error
+
 	// Lifecycle
 	MarkDirty(bookID string)
 	MarkManyDirty(bookIDs []string)

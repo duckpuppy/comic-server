@@ -158,6 +158,24 @@ func (a *Backend) GetBook(id string) (*library.ComicBook, error) {
 	return &cp, nil
 }
 
+// DeleteBook removes the record and logs that it happened.
+func (a *Backend) DeleteBook(id string) error {
+	old, _ := a.Backend.GetBook(id)
+	if err := a.Backend.DeleteBook(id); err != nil {
+		return err
+	}
+	row := configdb.AuditRow{
+		At: time.Now(), BookID: id, Action: a.Action,
+		Changes: `[{"field":"record","old":"present","new":"deleted"}]`,
+	}
+	if old != nil {
+		row.Series, row.Number = old.Series, old.Number
+		row.StageBefore = workflow.GetStage(old).String()
+	}
+	Record(a.Sink, row)
+	return nil
+}
+
 // UpdateBook logs then applies a single update.
 func (a *Backend) UpdateBook(book *library.ComicBook) error {
 	return a.UpdateBooks([]*library.ComicBook{book})

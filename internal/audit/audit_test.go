@@ -113,3 +113,18 @@ func TestWrap_NilSinkReturnsBackendUnchanged(t *testing.T) {
 		t.Error("nil sink should not wrap")
 	}
 }
+
+func TestBackend_DeleteBookIsLogged(t *testing.T) {
+	inner, db := newBackend(t, library.ComicBook{ID: "1", Series: "S", Number: "4", FilePath: "a.cbz"})
+	b := Wrap(inner, ActionDuplicateTrash, db)
+	if err := b.DeleteBook("1"); err != nil {
+		t.Fatal(err)
+	}
+	rows, total, _ := db.ListAudit(configdb.AuditFilter{BookID: "1"})
+	if total != 1 || rows[0].Action != ActionDuplicateTrash || rows[0].Series != "S" {
+		t.Fatalf("rows = %+v", rows)
+	}
+	if got, _ := inner.GetBook("1"); got != nil {
+		t.Error("book still present")
+	}
+}

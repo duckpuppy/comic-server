@@ -449,6 +449,16 @@ func (b *SQLiteBackend) CreateBook(book *library.ComicBook) error {
 	return b.db.InsertBook(book)
 }
 
+// DeleteBook soft-deletes a book (sets deleted_at), matching how import
+// retires a book that disappeared from the XML.
+func (b *SQLiteBackend) DeleteBook(id string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.libCache = nil
+
+	return b.db.SoftDeleteBook(id)
+}
+
 // UpdateBooks updates multiple books in the database.
 func (b *SQLiteBackend) UpdateBooks(books []*library.ComicBook) error {
 	b.mu.Lock()

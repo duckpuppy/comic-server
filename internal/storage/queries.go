@@ -867,3 +867,15 @@ func trimSpace(s string) string {
 	}
 	return s[start:end]
 }
+
+// SoftDeleteBook marks a live book deleted. Errors if no live book has id.
+func (db *DB) SoftDeleteBook(id string) error {
+	res, err := db.Exec("UPDATE books SET deleted_at = datetime('now') WHERE id = ? AND deleted_at IS NULL", id)
+	if err != nil {
+		return fmt.Errorf("soft delete book %s: %w", id, err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("book not found: %s", id)
+	}
+	return nil
+}

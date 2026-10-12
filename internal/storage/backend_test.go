@@ -574,3 +574,45 @@ func TestSQLiteBackend_CreateBookInsertsAndIsRetrievable(t *testing.T) {
 		t.Error("expected CreateBook to reject a duplicate ID, got nil error")
 	}
 }
+
+func TestSQLiteBackend_DeleteBook(t *testing.T) {
+	dir := t.TempDir()
+	xmlPath := filepath.Join(dir, "ComicDb.xml")
+	if err := library.SaveLibrary(xmlPath, &library.ComicLibrary{
+		ID: "test-library",
+		Books: []library.ComicBook{
+			{ID: "book-1", FilePath: "/comics/book1.cbz", Title: "One"},
+			{ID: "book-2", FilePath: "/comics/book2.cbz", Title: "Two"},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	backend, err := NewSQLiteBackend(filepath.Join(dir, "test.db"), xmlPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer backend.Close()
+	if err := backend.Reload(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := backend.DeleteBook("book-1"); err != nil {
+		t.Fatalf("DeleteBook: %v", err)
+	}
+	if got := backend.BookCount(); got != 1 {
+		t.Errorf("BookCount = %d, want 1", got)
+	}
+	if b, _ := backend.GetBook("book-1"); b != nil {
+		t.Error("deleted book is still returned by GetBook")
+	}
+	all, _ := backend.GetAllBooks()
+	if len(all) != 1 || all[0].ID != "book-2" {
+		t.Errorf("GetAllBooks = %+v", all)
+	}
+	if err := backend.DeleteBook("book-1"); err == nil {
+		t.Error("deleting an already-deleted book should error")
+	}
+	if err := backend.DeleteBook("nope"); err == nil {
+		t.Error("deleting an unknown book should error")
+	}
+}

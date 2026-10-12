@@ -295,6 +295,13 @@ func (s *Server) handleResolveDuplicate(w http.ResponseWriter, r *http.Request) 
 				BookID: b.ID, Action: audit.ActionDuplicateTrash, Series: b.Series, Number: b.Number,
 				Changes: string(changes),
 			})
+			// Drop the record too: the file is gone, and a record that
+			// points at a quarantined file shows up as missing in lists
+			// and sync (comic-server-36qq).
+			if err := s.backend.DeleteBook(b.ID); err != nil {
+				log.Error().Err(err).Str("book_id", b.ID).Msg("Failed to remove trashed duplicate's record")
+				result.Errors = append(result.Errors, fmt.Sprintf("%s: file quarantined but record not removed: %v", b.ID, err))
+			}
 			result.Trashed = append(result.Trashed, b.ID)
 		}
 		s.InvalidateWorkflowCache()

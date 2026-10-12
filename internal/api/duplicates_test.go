@@ -81,6 +81,14 @@ func TestDuplicates_KeepTrashQuarantinesLosersAndRemembers(t *testing.T) {
 	if w.Code != http.StatusOK || len(res.Errors) != 0 || len(res.Trashed) != 1 || res.Trashed[0] != "2" {
 		t.Fatalf("resolve = %d %+v", w.Code, res)
 	}
+	// The loser's record goes with its file (comic-server-36qq); the kept
+	// book is untouched.
+	if got, _ := s.backend.GetBook("2"); got != nil {
+		t.Error("trashed loser's library record should be removed")
+	}
+	if got, _ := s.backend.GetBook("1"); got == nil {
+		t.Error("kept book's record must remain")
+	}
 	if _, err := os.Stat(a); err != nil {
 		t.Errorf("kept file missing: %v", err)
 	}
