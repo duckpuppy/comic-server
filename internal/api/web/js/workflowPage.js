@@ -63,10 +63,16 @@ class WorkflowPage {
         // full-library GetAllBooks() scan on the server, which takes
         // multiple seconds on a large library, so without this the tab
         // just sits blank until the fetch resolves.
+        // Every render is followed by attachListeners: the page object is a
+        // singleton, so coming back to /workflow renders the cached state
+        // (buttons and all) immediately, and without listeners those
+        // buttons were dead until the whole reload below finished.
         this.render();
+        this.attachListeners();
         await this.loadSummary();
         if (ctx && ctx.aborted) return;
         this.render(); // pipeline shows as soon as the summary is in
+        this.attachListeners();
         await this.loadSecondary();
         if (ctx && ctx.aborted) return;
         this.render();
