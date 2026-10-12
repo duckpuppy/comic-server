@@ -50,6 +50,14 @@ func (c *Config) ApplyEnvironment() error {
 		c.Server.TrashRetentionDays = days
 	}
 
+	if val := os.Getenv("COMIC_SERVER_DISK_CHECK_INTERVAL_HOURS"); val != "" {
+		hours, err := strconv.Atoi(val)
+		if err != nil {
+			return err
+		}
+		c.Server.DiskCheckIntervalHours = hours
+	}
+
 	// Network settings
 	if val := os.Getenv("COMIC_SERVER_PORT"); val != "" {
 		port, err := strconv.Atoi(val)

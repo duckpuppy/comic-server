@@ -156,6 +156,13 @@ type ServerConfig struct {
 	// TrashRetentionDays is how long a quarantined file is kept before
 	// being permanently deleted. Default: 30 (see comic-server-1up).
 	TrashRetentionDays int `yaml:"trash_retention_days,omitempty" toml:"trash_retention_days,omitempty"`
+
+	// DiskCheckIntervalHours is how often the background pass stats every
+	// book's file to raise the file_missing flag (comic-server-4q1z). It only
+	// reads file metadata, but on a big library on shared spinning disks
+	// even that adds up, so it is slow by default. Default: 24. -1 turns it
+	// off.
+	DiskCheckIntervalHours int `yaml:"disk_check_interval_hours,omitempty" toml:"disk_check_interval_hours,omitempty"`
 }
 
 // ScanInfoConfig holds the reference data and settings for scan-tag
@@ -450,6 +457,9 @@ func (c *Config) ApplyDefaults() {
 	if c.Server.TrashRetentionDays == 0 {
 		c.Server.TrashRetentionDays = 30
 	}
+	if c.Server.DiskCheckIntervalHours == 0 {
+		c.Server.DiskCheckIntervalHours = 24
+	}
 }
 
 // Validate checks the configuration for errors
@@ -500,6 +510,9 @@ func (c *Config) Validate() error {
 		return err
 	}
 
+	if c.Server.DiskCheckIntervalHours < -1 {
+		return fmt.Errorf("disk_check_interval_hours must be >= -1 (-1 disables), got %d", c.Server.DiskCheckIntervalHours)
+	}
 	if c.Server.TrashRetentionDays < 0 {
 		return fmt.Errorf("trash_retention_days must be >= 0, got %d", c.Server.TrashRetentionDays)
 	}

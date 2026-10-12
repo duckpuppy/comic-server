@@ -5,9 +5,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/duckpuppy/comic-server/internal/comicvine"
 	"github.com/duckpuppy/comic-server/internal/log"
 )
+
+// diskCheckPause is the breather taken every 500 books during a pass.
+const diskCheckPause = 10 * time.Millisecond
 
 // diskCheck holds the result of the background file-existence pass
 // (comic-server-4q1z). The pass stats every book's archive, which is far too
@@ -16,7 +18,6 @@ import (
 type diskCheck struct {
 	mu        sync.Mutex
 	missing   map[string]bool // book id -> file not found
-	misnamed  map[string]bool // book id -> real container differs from extension
 	checkedAt time.Time
 	running   bool
 	interval  time.Duration // 0 disables the pass
@@ -33,22 +34,21 @@ func (s *Server) SetDiskCheckInterval(d time.Duration) {
 // missingFiles returns the last pass's missing book ids (nil before the
 // first finishes) and starts a new pass when none has run or the last one
 // is older than the interval.
-func (s *Server) missingFiles() (missing, misnamed map[string]bool) {
+func (s *Server) missingFiles() map[string]bool {
 	s.disk.mu.Lock()
 	defer s.disk.mu.Unlock()
 	if s.disk.interval <= 0 {
-		return nil, nil
+		return nil
 	}
 	if !s.disk.running && time.Since(s.disk.checkedAt) >= s.disk.interval {
 		s.disk.running = true
 		go s.runDiskCheck()
 	}
-	return s.disk.missing, s.disk.misnamed
+	return s.disk.missing
 }
 
 func (s *Server) runDiskCheck() {
 	missing := map[string]bool{}
-	misnamed := map[string]bool{}
 	if s.backend != nil {
 		books, err := s.backend.GetAllBooks()
 		if err != nil {
@@ -59,25 +59,21 @@ func (s *Server) runDiskCheck() {
 			if b.FilePath == "" { // wanted placeholder: nothing to find
 				continue
 			}
-			path := s.resolveBookFilePath(b.FilePath)
-			if _, err := os.Stat(path); os.IsNotExist(err) {
+			if _, err := os.Stat(s.resolveBookFilePath(b.FilePath)); os.IsNotExist(err) {
 				missing[b.ID] = true
-				continue
 			}
-			// A RAR named .cbz etc. (comic-server-0ebv): content decides.
-			if want := comicvine.ExtKind(path); want != comicvine.KindUnknown {
-				if got, err := comicvine.SniffArchive(path); err == nil && got != comicvine.KindUnknown && got != want {
-					misnamed[b.ID] = true
-				}
+			// Metadata only, but be gentle: the disks are shared with
+			// media that may be streaming.
+			if i%500 == 499 {
+				time.Sleep(diskCheckPause)
 			}
 		}
 	}
 	s.disk.mu.Lock()
 	s.disk.missing = missing
-	s.disk.misnamed = misnamed
 	s.disk.checkedAt = time.Now()
 	s.disk.running = false
 	s.disk.mu.Unlock()
-	log.Info().Int("missing", len(missing)).Int("misnamed", len(misnamed)).Msg("Disk check finished")
+	log.Info().Int("missing", len(missing)).Msg("Disk check finished")
 	s.InvalidateWorkflowCache() // rebuild with the new flags
 }
