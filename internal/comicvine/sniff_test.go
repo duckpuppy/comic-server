@@ -18,6 +18,9 @@ func TestSniffArchiveAndDispatch(t *testing.T) {
 	rar := write("really-rar.cbz", []byte("Rar!\x1a\x07\x01\x00rest"))
 	zip := write("really-zip.cbr", []byte("PK\x03\x04rest"))
 	sz := write("really-7z.cbz", []byte("7z\xbc\xaf\x27\x1crest"))
+	cbwZip := write("webcomic.cbw", []byte("PK\x03\x04rest"))
+	cbw7z := write("webcomic2.cbw", []byte("7z\xbc\xaf\x27\x1crest"))
+	oddJunk := write("notes.txt", []byte("hello"))
 	junk := write("junk.cbz", []byte("hello"))
 	empty := write("empty.cbz", nil)
 
@@ -29,7 +32,10 @@ func TestSniffArchiveAndDispatch(t *testing.T) {
 		{rar, KindRAR, ".cbr"},
 		{zip, KindZIP, ".cbz"},
 		{sz, Kind7Z, ".cb7"},
-		{junk, KindUnknown, ".cbz"}, // unknown content: fall back to extension
+		{cbwZip, KindZIP, ".cbz"},
+		{cbw7z, Kind7Z, ".cb7"},
+		{oddJunk, KindUnknown, ".txt"}, // unknown ext, unknown content: unsupported
+		{junk, KindUnknown, ".cbz"},    // unknown content: fall back to extension
 		{empty, KindUnknown, ".cbz"},
 	}
 	for _, tt := range tests {

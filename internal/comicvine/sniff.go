@@ -65,12 +65,10 @@ func ExtKind(path string) ArchiveKind {
 // dispatchExt is the extension the format switches should use: the real
 // container's canonical extension when the content is recognisable,
 // otherwise the file's own lower-cased extension. A misnamed archive is
-// thus read as what it really is.
+// thus read as what it really is, including one with an extension we do
+// not know at all (.cbw and friends are just renamed cbz/cbr/cb7).
 func dispatchExt(path string) string {
 	ext := strings.ToLower(filepath.Ext(path))
-	if ExtKind(path) == KindUnknown {
-		return ext // not an archive extension we handle; keep the error path
-	}
 	kind, err := SniffArchive(path)
 	if err != nil {
 		return ext
