@@ -154,3 +154,41 @@ func (db *DB) PruneAudit(cutoff time.Time) (int64, error) {
 	}
 	return res.RowsAffected()
 }
+
+// StageMove is one audit row where a book's workflow stage changed.
+type StageMove struct {
+	At          time.Time
+	BookID      string
+	Series      string
+	Number      string
+	StageBefore string
+	StageAfter  string
+}
+
+// ListStageMoves returns audit rows since `since` whose stage changed, newest
+// first (comic-server-p7ti). Direction (advance vs rollback) is the caller's
+// call - this only filters on stage_before != stage_after.
+func (db *DB) ListStageMoves(since time.Time) ([]StageMove, error) {
+	if err := db.ensureAuditTable(); err != nil {
+		return nil, err
+	}
+	rows, err := db.Query(`SELECT at, book_id, series, number, stage_before, stage_after
+		FROM audit_log
+		WHERE at >= ? AND stage_before != stage_after AND stage_before != '' AND stage_after != ''
+		ORDER BY id DESC`, since.UTC().Format(time.RFC3339))
+	if err != nil {
+		return nil, fmt.Errorf("list stage moves: %w", err)
+	}
+	defer rows.Close()
+	var out []StageMove
+	for rows.Next() {
+		var m StageMove
+		var at string
+		if err := rows.Scan(&at, &m.BookID, &m.Series, &m.Number, &m.StageBefore, &m.StageAfter); err != nil {
+			return nil, fmt.Errorf("scan stage move: %w", err)
+		}
+		m.At, _ = time.Parse(time.RFC3339, at)
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}

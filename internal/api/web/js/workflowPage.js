@@ -49,6 +49,7 @@ class WorkflowPage {
         this.staleWrites = { enabled: false, stale: 0 };
         this.attention = []; // severity-ranked flags with counts (comic-server-z77p)
         this.scrapeReview = { available: false, pending: 0 }; // comic-server-0nhp
+        this.throughput = null; // 14-day stage advances (comic-server-p7ti)
         this.wantedDrillIn = false;
         this.showNewWantedForm = false;
         this.newWantedForm = { series: '', number: '', volume: 0, year: 0, publisher: '' };
@@ -83,6 +84,54 @@ class WorkflowPage {
         await this.loadStaleWrites();
         await this.loadAttention();
         await this.loadScrapeReview();
+        await this.loadThroughput();
+    }
+
+    async loadThroughput() {
+        try {
+            const response = await fetch('/api/library/workflow/throughput');
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            this.throughput = await response.json();
+        } catch (error) {
+            console.error('Failed to load throughput:', error);
+        }
+    }
+
+    // renderHero: percent clean (organized / every staged book), the 14-day
+    // sparkline with this-week vs last-week, and recently advanced covers.
+    renderHero() {
+        const stages = this.summary.stages || [];
+        const total = stages.reduce((n, s) => n + s.count, 0);
+        if (total === 0) return '';
+        const org = (stages.find(s => s.stage === 'organized') || { count: 0 }).count;
+        const pct = Math.floor((org / total) * 100);
+        let html = `<div class="workflow-hero">
+            <div class="workflow-hero-clean">
+                <span class="workflow-hero-pct">${pct}%</span>
+                <span class="workflow-hero-sub">clean &middot; ${org.toLocaleString()} of ${total.toLocaleString()} books organized</span>
+            </div>`;
+        const t = this.throughput;
+        if (t && t.days && t.days.length) {
+            const max = Math.max(1, ...t.days.map(d => d.count));
+            const w = 140, h = 36, step = w / (t.days.length - 1);
+            const pts = t.days.map((d, i) => `${(i * step).toFixed(1)},${(h - 2 - (d.count / max) * (h - 4)).toFixed(1)}`).join(' ');
+            const delta = t.this_week - t.last_week;
+            const sign = delta > 0 ? '+' : '';
+            const cls = delta > 0 ? 'is-up' : (delta < 0 ? 'is-down' : '');
+            html += `
+            <div class="workflow-hero-spark">
+                <svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" aria-label="Stage advances per day, last 14 days">
+                    <polyline fill="none" stroke="currentColor" stroke-width="2" points="${pts}"></polyline>
+                </svg>
+                <span class="workflow-hero-sub">${t.this_week} stage advance${t.this_week === 1 ? '' : 's'} this week
+                    <span class="workflow-hero-delta ${cls}">${sign}${delta} vs last week (${t.last_week})</span></span>
+            </div>`;
+            if (t.recent && t.recent.length) {
+                html += '<div class="workflow-hero-covers">' + t.recent.map(r => `
+                    <img src="/api/library/books/${encodeURIComponent(r.book_id)}/cover" alt="${this.escapeAttr(r.series + ' #' + r.number)}" title="${this.escapeAttr(r.series + ' #' + r.number)}" loading="lazy">`).join('') + '</div>';
+            }
+        }
+        return html + '</div>';
     }
 
     async loadScrapeReview() {
@@ -192,7 +241,8 @@ class WorkflowPage {
             organized: 'Filed and done',
         };
 
-        let html = this.renderStartHere(actionFor, labelFor);
+        let html = this.renderHero();
+        html += this.renderStartHere(actionFor, labelFor);
         html += '<div class="workflow-pipeline" role="list">';
 
         // Stage 0: New Files.

@@ -164,3 +164,24 @@
     .workflow-stage.is-active { border-left: 3px solid var(--primary-color); }
     .workflow-stage.is-terminal { border-left: 3px solid var(--success-color); }
 }
+
+/* Hero: percent clean, throughput sparkline, recent covers (comic-server-p7ti) */
+.workflow-hero {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem 2rem;
+    padding: 0.9rem 1.1rem;
+    margin-bottom: 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+}
+.workflow-hero-clean, .workflow-hero-spark { display: flex; flex-direction: column; gap: 0.25rem; }
+.workflow-hero-pct { font-size: 2.2rem; font-weight: 700; line-height: 1; color: var(--text-primary); }
+.workflow-hero-sub { font-size: 0.85rem; color: var(--text-secondary); }
+.workflow-hero-spark svg { color: var(--primary-color); max-width: 100%; }
+.workflow-hero-delta.is-up { color: var(--success-color); }
+.workflow-hero-delta.is-down { color: var(--danger-color, #c0392b); }
+.workflow-hero-covers { display: flex; gap: 0.35rem; margin-left: auto; overflow: hidden; }
+.workflow-hero-covers img { height: 56px; width: auto; border-radius: 3px; border: 1px solid var(--border-color); }

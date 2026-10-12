@@ -828,6 +828,10 @@ comic-server-izc7. `internal/formatdetect` proposes a `Format` from the book rec
 - **API**: `GET /api/library/workflow/format-detect` previews (total, per-format counts, first 100 rows) and writes nothing; `POST` applies, audited as `format_detect`. Wanted placeholders (no FilePath) are skipped.
 - Not done: UI card, "continuation overrides" rule from ComicManager (never read), feeding Format into organizer folder structure.
 
+## Workflow Hero
+
+comic-server-p7ti. Top of the workflow page: percent clean (Organized / every staged book; hidden when no book is staged), a 14-day sparkline of stage advances with this-week vs last-week delta, and a cover strip of the most recently advanced books. No new table: `GET /api/library/workflow/throughput` folds `audit_log` rows whose stage moved forward (`configdb.ListStageMoves`, `buildThroughput` in `internal/api/throughput.go`). A book moving two stages counts twice; rollbacks count nothing. History is only as old as the audit log (180 days, and it only exists from vqsj onward), so a fresh install shows zeros. Reverse sync and CLI scrape/backfill are not audited, so they do not appear.
+
 ## Missing Issues
 
 comic-server-buhs. `/missing-issues` page: per ComicVine volume, which issues the library owns and which it does not. `GET /api/library/series-completeness` (ranked volume rollup, `q`, `only_missing`, paged; memoized 2 min on the Server) and `GET /api/library/series-completeness/:volumeId` (every issue, numerically ordered, with owned / wanted / missing state and the matching book id), both from `comicvine.BuildVolumeSummaries` / `BuildSeriesCompleteness` over the same cache `BuildCompletenessMap` uses. `POST .../:volumeId/wanted {issue_ids}` creates Wanted placeholders (no `FilePath`) carrying `comicvine_volume`/`comicvine_issue`, skipping owned or already-wanted issues; audited as `wanted_from_missing`.

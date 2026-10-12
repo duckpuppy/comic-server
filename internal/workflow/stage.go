@@ -102,6 +102,10 @@ func (s Stage) Label() string {
 	}
 }
 
+// ParseStage converts a stored stage string (Stage.String) back to a Stage,
+// or StageUnknown if it is not a real stage.
+func ParseStage(s string) Stage { return parseStage(s) }
+
 func parseStage(s string) Stage {
 	for _, st := range Stages {
 		if st.String() == s {
