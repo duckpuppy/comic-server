@@ -1,0 +1,24 @@
+/* Missing Issues page (comic-server-buhs) */
+.missing-page { padding: 1rem; max-width: 1200px; margin: 0 auto; }
+.missing-header h1 { margin: 0 0 0.5rem 0; color: var(--text-primary); }
+.missing-subtitle { color: var(--text-secondary); margin: 0 0 1rem 0; }
+.missing-filters { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; margin-bottom: 1rem; }
+.missing-table td { vertical-align: middle; }
+.missing-num { white-space: nowrap; text-align: right; }
+.missing-bar {
+    display: inline-block; width: 8rem; height: 0.6rem; border-radius: 0.3rem;
+    background: var(--border-color); overflow: hidden; vertical-align: middle;
+}
+.missing-bar-fill { display: block; height: 100%; background: var(--success-color); }
+.missing-pager { display: flex; gap: 1rem; align-items: center; justify-content: center; margin-top: 1rem; }
+.missing-summary { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.missing-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr)); gap: 0.5rem; margin-top: 1rem; }
+.missing-issue {
+    display: flex; flex-direction: column; align-items: center; gap: 0.15rem;
+    border: 1px solid var(--border-color); border-radius: 0.4rem; padding: 0.4rem 0.25rem;
+    background: var(--bg-secondary); font-size: 0.9rem;
+}
+.missing-issue-owned { opacity: 0.55; }
+.missing-issue-wanted { border-style: dashed; }
+.missing-issue-missing { cursor: pointer; border-color: var(--warning-color, #d29922); }
+.missing-issue-state { font-size: 0.75rem; color: var(--text-secondary); min-height: 1em; }

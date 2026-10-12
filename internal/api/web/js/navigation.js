@@ -54,6 +54,10 @@ class Navigation {
                     <span class="nav-icon">👯</span>
                     <span class="nav-label">Duplicates</span>
                 </a>
+                <a href="/missing-issues" class="nav-tab" data-tab="missing-issues">
+                    <span class="nav-icon">🕳️</span>
+                    <span class="nav-label">Missing Issues</span>
+                </a>
                 <a href="/variant-covers" class="nav-tab" data-tab="variant-covers">
                     <span class="nav-icon">🖼️</span>
                     <span class="nav-label">Variant Covers</span>

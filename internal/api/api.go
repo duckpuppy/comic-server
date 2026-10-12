@@ -57,6 +57,11 @@ type Server struct {
 	mu                sync.RWMutex    // Protects registeredDevices
 
 	cvClient *comicvine.Client
+
+	// Memoized per-volume completeness rollup (comic-server-buhs).
+	volSummaryMu      sync.Mutex
+	volSummaryAt      time.Time
+	volSummaryEntries []comicvine.VolumeSummary
 	// cvImageAnyHost lets tests download variant covers from a local
 	// httptest server; production always enforces the ComicVine CDN allowlist.
 	cvImageAnyHost bool
@@ -275,6 +280,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/library/workflow/wanted/from-cbl-import", s.handleAddCBLUnmatchedToWanted)
 	s.mux.HandleFunc("/api/library/workflow/", s.handleWorkflowStageSubRouter)
 	s.mux.HandleFunc("/api/library/variant-covers/", s.handleVariantCovers)
+	s.mux.HandleFunc("/api/library/series-completeness", s.handleSeriesCompleteness)
+	s.mux.HandleFunc("/api/library/series-completeness/", s.handleSeriesCompletenessDetail)
 	s.mux.HandleFunc("/api/library/audit", s.handleAuditList)
 	s.mux.HandleFunc("/api/library/audit/rollback", s.handleAuditRollback)
 	s.mux.HandleFunc("/api/library/attention", s.handleAttentionSummary)

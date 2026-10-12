@@ -25,11 +25,11 @@ func TestBuildCompletenessMap(t *testing.T) {
 
 	// Library books: own issues 1, 2, 3 of volume 100
 	books := []library.ComicBook{
-		{ID: "book-1", CustomValuesStore: ",comicvine_volume=100,comicvine_issue=1001"},
-		{ID: "book-2", CustomValuesStore: ",comicvine_volume=100,comicvine_issue=1002"},
-		{ID: "book-3", CustomValuesStore: ",comicvine_volume=100,comicvine_issue=1003"},
-		{ID: "book-4", CustomValuesStore: ""},                                           // no CV data
-		{ID: "book-5", CustomValuesStore: ",comicvine_volume=999,comicvine_issue=9999"}, // unknown volume
+		{ID: "book-1", FilePath: "/comics/book-1.cbz", CustomValuesStore: ",comicvine_volume=100,comicvine_issue=1001"},
+		{ID: "book-2", FilePath: "/comics/book-2.cbz", CustomValuesStore: ",comicvine_volume=100,comicvine_issue=1002"},
+		{ID: "book-3", FilePath: "/comics/book-3.cbz", CustomValuesStore: ",comicvine_volume=100,comicvine_issue=1003"},
+		{ID: "book-4", CustomValuesStore: ""}, // no CV data
+		{ID: "book-5", FilePath: "/comics/book-5.cbz", CustomValuesStore: ",comicvine_volume=999,comicvine_issue=9999"}, // unknown volume
 	}
 
 	result, err := BuildCompletenessMap(books, c)
@@ -82,8 +82,8 @@ func TestBuildCompletenessMap_FullyOwned(t *testing.T) {
 	})
 
 	books := []library.ComicBook{
-		{ID: "a", CustomValuesStore: ",comicvine_volume=200,comicvine_issue=2001"},
-		{ID: "b", CustomValuesStore: ",comicvine_volume=200,comicvine_issue=2002"},
+		{ID: "a", FilePath: "/comics/a.cbz", CustomValuesStore: ",comicvine_volume=200,comicvine_issue=2001"},
+		{ID: "b", FilePath: "/comics/b.cbz", CustomValuesStore: ",comicvine_volume=200,comicvine_issue=2002"},
 	}
 
 	result, _ := BuildCompletenessMap(books, c)

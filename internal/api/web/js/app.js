@@ -114,6 +114,7 @@ let scrapeReviewPage = null;
 let duplicatesPage = null;
 let historyPage = null;
 let variantCoversPage = null;
+let missingIssuesPage = null;
 let scanInfoSettings = null;
 let dataManagerPage = null;
 let dataManagerRulesPage = null;
@@ -314,6 +315,15 @@ document.addEventListener('DOMContentLoaded', () => {
             scrapeReviewPage = new ScrapeReviewPage();
         }
         await scrapeReviewPage.init(ctx);
+    });
+
+    router.register('/missing-issues', async (params, ctx) => {
+        navigation.setActive('missing-issues');
+        dashboard.hide();
+        if (!missingIssuesPage) {
+            missingIssuesPage = new MissingIssuesPage();
+        }
+        await missingIssuesPage.init(ctx);
     });
 
     router.register('/variant-covers', async (params, ctx) => {

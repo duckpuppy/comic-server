@@ -31,16 +31,17 @@ const Retention = 180 * 24 * time.Hour
 
 // Action names recorded in the log.
 const (
-	ActionConvertCBZ     = "convert_cbz"
-	ActionWriteMetadata  = "write_metadata"
-	ActionScanInfo       = "scan_info"
-	ActionDataManager    = "data_manager"
-	ActionOrganize       = "organize"
-	ActionScrape         = "scrape"
-	ActionLinkWanted     = "link_wanted"
-	ActionRollback       = "rollback"
-	ActionDuplicateTrash = "duplicate_trash"
-	ActionVariantCovers  = "variant_covers"
+	ActionConvertCBZ        = "convert_cbz"
+	ActionWriteMetadata     = "write_metadata"
+	ActionScanInfo          = "scan_info"
+	ActionDataManager       = "data_manager"
+	ActionOrganize          = "organize"
+	ActionScrape            = "scrape"
+	ActionLinkWanted        = "link_wanted"
+	ActionRollback          = "rollback"
+	ActionDuplicateTrash    = "duplicate_trash"
+	ActionVariantCovers     = "variant_covers"
+	ActionWantedFromMissing = "wanted_from_missing"
 )
 
 // Change is one field's before/after.
