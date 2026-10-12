@@ -64,13 +64,34 @@ class WorkflowPage {
         // multiple seconds on a large library, so without this the tab
         // just sits blank until the fetch resolves.
         this.render();
-        await this.load();
+        await this.loadSummary();
+        if (ctx && ctx.aborted) return;
+        this.render(); // pipeline shows as soon as the summary is in
+        await this.loadSecondary();
         if (ctx && ctx.aborted) return;
         this.render();
         this.attachListeners();
     }
 
     async load() {
+        await this.loadSummary();
+        await this.loadSecondary();
+    }
+
+    // loadSecondary fetches everything besides the summary in parallel: each
+    // is its own server request and several scan the whole library.
+    async loadSecondary() {
+        await Promise.all([
+            this.loadNewFiles(),
+            this.loadWanted(),
+            this.loadStaleWrites(),
+            this.loadAttention(),
+            this.loadScrapeReview(),
+            this.loadThroughput(),
+        ]);
+    }
+
+    async loadSummary() {
         try {
             const response = await fetch('/api/library/workflow');
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -79,12 +100,6 @@ class WorkflowPage {
             console.error('Failed to load workflow summary:', error);
             this.error = 'Failed to load workflow summary. Please try again.';
         }
-        await this.loadNewFiles();
-        await this.loadWanted();
-        await this.loadStaleWrites();
-        await this.loadAttention();
-        await this.loadScrapeReview();
-        await this.loadThroughput();
     }
 
     async loadThroughput() {
