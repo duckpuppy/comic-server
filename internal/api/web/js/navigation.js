@@ -45,6 +45,11 @@ class Navigation {
                     <span class="nav-icon">🧭</span>
                     <span class="nav-label">Workflow</span>
                 </a>
+                <a href="/scrape-review" class="nav-tab" data-tab="scrape-review">
+                    <span class="nav-icon">🧩</span>
+                    <span class="nav-label">Scrape Review</span>
+                    <span class="nav-badge" id="scrape-review-count">0</span>
+                </a>
                 <a href="/trash" class="nav-tab" data-tab="trash">
                     <span class="nav-icon">🗑️</span>
                     <span class="nav-label">Trash</span>

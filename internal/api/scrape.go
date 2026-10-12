@@ -183,6 +183,11 @@ func (s *Server) handleScrapeReviewList(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "Failed to load pending reviews", http.StatusInternalServerError)
 		return
 	}
+	if pending == nil {
+		// Encode "none pending" as [] rather than null so web clients can
+		// iterate without a special case (comic-server-0nhp).
+		pending = []*comicvine.BookScrapeResult{}
+	}
 	s.writeJSON(w, http.StatusOK, pending)
 }
 
