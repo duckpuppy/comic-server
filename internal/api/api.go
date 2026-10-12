@@ -57,8 +57,11 @@ type Server struct {
 	mu                sync.RWMutex    // Protects registeredDevices
 
 	cvClient *comicvine.Client
-	cvCache  *comicvine.Cache
-	scraper  *comicvine.Scraper
+	// cvImageAnyHost lets tests download variant covers from a local
+	// httptest server; production always enforces the ComicVine CDN allowlist.
+	cvImageAnyHost bool
+	cvCache        *comicvine.Cache
+	scraper        *comicvine.Scraper
 
 	// cblRepo is the cloned CBL-hosting repo browser (comic-server-oprf),
 	// nil when server.cbl_repo.url isn't configured - see SetCBLRepo.
@@ -271,6 +274,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/library/workflow/wanted/link", s.handleLinkWantedBook)
 	s.mux.HandleFunc("/api/library/workflow/wanted/from-cbl-import", s.handleAddCBLUnmatchedToWanted)
 	s.mux.HandleFunc("/api/library/workflow/", s.handleWorkflowStageSubRouter)
+	s.mux.HandleFunc("/api/library/variant-covers/", s.handleVariantCovers)
 	s.mux.HandleFunc("/api/library/audit", s.handleAuditList)
 	s.mux.HandleFunc("/api/library/audit/rollback", s.handleAuditRollback)
 	s.mux.HandleFunc("/api/library/attention", s.handleAttentionSummary)

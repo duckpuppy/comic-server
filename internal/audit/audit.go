@@ -40,6 +40,7 @@ const (
 	ActionLinkWanted     = "link_wanted"
 	ActionRollback       = "rollback"
 	ActionDuplicateTrash = "duplicate_trash"
+	ActionVariantCovers  = "variant_covers"
 )
 
 // Change is one field's before/after.

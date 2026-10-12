@@ -1,0 +1,19 @@
+/* Variant Covers page (comic-server-0u48) */
+.variant-covers-page { padding: 1rem; max-width: 1200px; margin: 0 auto; }
+.variant-covers-header h1 { margin: 0 0 0.5rem 0; color: var(--text-primary); }
+.variant-covers-subtitle { color: var(--text-secondary); margin: 0 0 1rem 0; }
+.variant-query-input { width: 100%; box-sizing: border-box; margin-bottom: 0.75rem; }
+.variant-book-list { list-style: none; margin: 0; padding: 0; }
+.variant-book-row {
+    display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+    padding: 0.4rem 0; border-bottom: 1px solid var(--border-color);
+}
+.variant-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem; margin: 1rem 0; }
+.variant-card {
+    display: flex; flex-direction: column; gap: 0.5rem; cursor: pointer;
+    border: 1px solid var(--border-color); border-radius: 0.5rem; padding: 0.5rem;
+    background: var(--bg-secondary);
+}
+.variant-card img { width: 100%; height: auto; max-height: 260px; object-fit: contain; border-radius: 0.25rem; }
+.variant-card-added { opacity: 0.6; }
+.variant-card-meta { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; }

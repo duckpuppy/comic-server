@@ -113,6 +113,7 @@ let trashBrowser = null;
 let scrapeReviewPage = null;
 let duplicatesPage = null;
 let historyPage = null;
+let variantCoversPage = null;
 let scanInfoSettings = null;
 let dataManagerPage = null;
 let dataManagerRulesPage = null;
@@ -313,6 +314,15 @@ document.addEventListener('DOMContentLoaded', () => {
             scrapeReviewPage = new ScrapeReviewPage();
         }
         await scrapeReviewPage.init(ctx);
+    });
+
+    router.register('/variant-covers', async (params, ctx) => {
+        navigation.setActive('variant-covers');
+        dashboard.hide();
+        if (!variantCoversPage) {
+            variantCoversPage = new VariantCoversPage();
+        }
+        await variantCoversPage.init(ctx);
     });
 
     router.register('/history', async (params, ctx) => {

@@ -89,6 +89,13 @@ type comicInfoPageXML struct {
 // pageCount/pages by dropDeletedPages before this is called - see
 // convert.go.
 func BuildComicInfoXML(book *library.ComicBook, pageCount int) ([]byte, error) {
+	return buildComicInfoXML(book, pageCount, nil)
+}
+
+// buildComicInfoXML is BuildComicInfoXML plus extra FrontCover page indexes
+// (comic-server-0u48's appended variant covers) written into the Pages block
+// after the usual page-0 cover.
+func buildComicInfoXML(book *library.ComicBook, pageCount int, extraFrontCovers []int) ([]byte, error) {
 	ci := comicInfoXML{
 		Title:           book.Title,
 		Series:          book.Series,
@@ -142,6 +149,9 @@ func BuildComicInfoXML(book *library.ComicBook, pageCount int) ([]byte, error) {
 
 	if pageCount > 0 {
 		ci.Pages.Page = []comicInfoPageXML{{Image: 0, Type: library.PageTypeFrontCover}}
+		for _, idx := range extraFrontCovers {
+			ci.Pages.Page = append(ci.Pages.Page, comicInfoPageXML{Image: idx, Type: library.PageTypeFrontCover})
+		}
 	}
 
 	out, err := xml.MarshalIndent(ci, "", "  ")

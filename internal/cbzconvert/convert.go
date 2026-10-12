@@ -179,8 +179,9 @@ func changeExt(rawPath, newExt string) string {
 
 // metadataEntry is one XML metadata file written into the new archive.
 type metadataEntry struct {
-	name string
-	data []byte
+	name  string
+	data  []byte
+	store bool // write uncompressed (image data)
 }
 
 // writeCBZ creates a new zip at tmpPath containing pages (as-is, no

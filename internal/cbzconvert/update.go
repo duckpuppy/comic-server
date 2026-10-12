@@ -196,7 +196,11 @@ func copyZipWithMetadata(src, dst string, replace map[string]bool, metadata []me
 
 	now := time.Now()
 	for _, m := range metadata {
-		w, err := zw.CreateHeader(&zip.FileHeader{Name: m.name, Method: zip.Deflate, Modified: now})
+		method := zip.Deflate
+		if m.store {
+			method = zip.Store // already-compressed image data
+		}
+		w, err := zw.CreateHeader(&zip.FileHeader{Name: m.name, Method: method, Modified: now})
 		if err != nil {
 			zw.Close()
 			return err
@@ -211,3 +215,5 @@ func copyZipWithMetadata(src, dst string, replace map[string]bool, metadata []me
 	}
 	return out.Close()
 }
+
+func openZip(p string) (*zip.ReadCloser, error) { return zip.OpenReader(p) }
