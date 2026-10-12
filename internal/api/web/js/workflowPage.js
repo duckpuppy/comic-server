@@ -48,6 +48,7 @@ class WorkflowPage {
         this.wanted = { total: 0, comics: [] };
         this.staleWrites = { enabled: false, stale: 0 };
         this.attention = []; // severity-ranked flags with counts (comic-server-z77p)
+        this.scrapeReview = { available: false, pending: 0 }; // comic-server-0nhp
         this.wantedDrillIn = false;
         this.showNewWantedForm = false;
         this.newWantedForm = { series: '', number: '', volume: 0, year: 0, publisher: '' };
@@ -81,6 +82,22 @@ class WorkflowPage {
         await this.loadWanted();
         await this.loadStaleWrites();
         await this.loadAttention();
+        await this.loadScrapeReview();
+    }
+
+    async loadScrapeReview() {
+        // 503 means the ComicVine scraper isn't configured: hide the card.
+        try {
+            const response = await fetch('/api/scrape/review');
+            if (!response.ok) {
+                this.scrapeReview = { available: false, pending: 0 };
+                return;
+            }
+            const pending = await response.json();
+            this.scrapeReview = { available: true, pending: Array.isArray(pending) ? pending.length : 0 };
+        } catch (error) {
+            console.error('Failed to load scrape review count:', error);
+        }
     }
 
     async loadAttention() {
@@ -240,6 +257,18 @@ class WorkflowPage {
                 </div>
             </div>
         `;
+        if (this.scrapeReview.available) {
+            html += `
+            <div class="panel workflow-card">
+                <h2>Scrape Review</h2>
+                <p class="workflow-card-count">${this.scrapeReview.pending}</p>
+                <p class="empty-message">Books the ComicVine scraper could not match on its own. Pick the right volume for each.</p>
+                <div class="workflow-card-actions">
+                    <button class="btn btn-secondary" id="workflow-view-scrape-review-btn" ${this.scrapeReview.pending === 0 ? 'disabled' : ''}>Review</button>
+                </div>
+            </div>
+            `;
+        }
         if (this.staleWrites.enabled) {
             const writing = this.running === 'write_metadata';
             html += `
@@ -542,6 +571,9 @@ class WorkflowPage {
         document.querySelectorAll('.workflow-view-btn').forEach(el => {
             el.addEventListener('click', () => this.openDrillIn(el.dataset.stage, el.dataset.label));
         });
+
+        const scrapeReviewBtn = document.getElementById('workflow-view-scrape-review-btn');
+        if (scrapeReviewBtn) scrapeReviewBtn.addEventListener('click', () => router.navigate('/scrape-review'));
 
         const viewWantedBtn = document.getElementById('workflow-view-wanted-btn');
         if (viewWantedBtn) viewWantedBtn.addEventListener('click', () => {
