@@ -75,7 +75,7 @@ type Info struct {
 // Catalog lists every flag. Order is the tie-break when severity and count
 // are equal.
 var Catalog = []Info{
-	{FlagMisnamedArchive, "Misnamed archive", "File content is a different archive type than its extension (e.g. a RAR named .cbz). Use "Convert this list" on a list containing it: conversion repacks by real content.", SeverityWarn},
+	{FlagMisnamedArchive, "Misnamed archive", "File content is a different archive type than its extension (e.g. a RAR named .cbz). Use Convert this list on a list containing it: conversion repacks by real content.", SeverityWarn},
 	{FlagFileMissing, "File missing", "The archive is not on disk where the library says. If many books show here, check the path mapping first.", SeverityError},
 	{FlagNoSeries, "No series", "Book has no series name. Scrape it or set one by hand.", SeverityWarn},
 	{FlagIsPDF, "PDF files", "PDFs cannot be converted to CBZ or read by all devices.", SeverityWarn},
