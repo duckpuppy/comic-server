@@ -77,6 +77,14 @@ class Dashboard {
             navigation.updateBadge('devices', stats.registered_devices ?? 0);
 
             navigation.updateBadge('trash', (trashData.entries ?? []).length);
+
+            // Pending ComicVine scrape reviews (comic-server-0nhp); 503
+            // when the scraper isn't configured, which just means 0.
+            try {
+                const reviewRes = await fetch('/api/scrape/review');
+                const pending = reviewRes.ok ? await reviewRes.json() : [];
+                navigation.updateBadge('scrape-review', (pending || []).length);
+            } catch (e) { /* badge stays hidden */ }
         } catch (error) {
             console.error('Failed to update stats:', error);
         }
@@ -102,6 +110,7 @@ let devicesBrowser = null;
 let syncHistoryBrowser = null;
 let komgaStatus = null;
 let trashBrowser = null;
+let scrapeReviewPage = null;
 let scanInfoSettings = null;
 let dataManagerPage = null;
 let dataManagerRulesPage = null;
@@ -293,6 +302,15 @@ document.addEventListener('DOMContentLoaded', () => {
             scanInfoSettings = new ScanInfoSettings();
         }
         await scanInfoSettings.init(ctx);
+    });
+
+    router.register('/scrape-review', async (params, ctx) => {
+        navigation.setActive('scrape-review');
+        dashboard.hide();
+        if (!scrapeReviewPage) {
+            scrapeReviewPage = new ScrapeReviewPage();
+        }
+        await scrapeReviewPage.init(ctx);
     });
 
     router.register('/trash', async (params, ctx) => {

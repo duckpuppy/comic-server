@@ -242,6 +242,21 @@ func TestHandleScrapeReviewList_AndResolve(t *testing.T) {
 	}
 }
 
+// An empty queue must serialize as [] (not null) so the web UI can iterate
+// without a special case (comic-server-0nhp).
+func TestHandleScrapeReviewList_EmptyIsArray(t *testing.T) {
+	srv := newScrapeAPITestServer(t, nil, &scrapeAPIFixture{})
+	req := httptest.NewRequest(http.MethodGet, "/api/scrape/review", nil)
+	w := httptest.NewRecorder()
+	srv.handleScrapeReviewList(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d", w.Code)
+	}
+	if got := strings.TrimSpace(w.Body.String()); got != "[]" {
+		t.Errorf("body = %q, want []", got)
+	}
+}
+
 func TestHandleScrapeReviewResolve_MissingVolumeID(t *testing.T) {
 	srv := newScrapeAPITestServer(t, nil, &scrapeAPIFixture{})
 	req := httptest.NewRequest(http.MethodPost, "/api/scrape/review/book-1", strings.NewReader(`{}`))
