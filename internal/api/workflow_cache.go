@@ -28,6 +28,7 @@ type workflowCacheEntry struct {
 	computedAt   time.Time
 	booksByStage map[workflow.Stage][]*library.ComicBook
 	cvdbSkip     int
+	unstaged     int // books with a file but no stored stage
 	// booksByFlag holds every book with each attention flag (comic-server-z77p),
 	// computed in the same pass as booksByStage.
 	booksByFlag map[attention.Flag][]*library.ComicBook
@@ -63,6 +64,9 @@ func (s *Server) getOrBuildWorkflowCache() (*workflowCacheEntry, error) {
 		}
 		if missing[book.ID] {
 			built.booksByFlag[attention.FlagFileMissing] = append(built.booksByFlag[attention.FlagFileMissing], book)
+		}
+		if st == workflow.StageUnknown && book.FilePath != "" {
+			built.unstaged++
 		}
 		if workflow.IsCVDBSkip(book) {
 			built.cvdbSkip++

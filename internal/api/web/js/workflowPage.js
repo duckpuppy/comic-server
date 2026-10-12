@@ -116,7 +116,9 @@ class WorkflowPage {
     // sparkline with this-week vs last-week, and recently advanced covers.
     renderHero() {
         const stages = this.summary.stages || [];
-        const total = stages.reduce((n, s) => n + s.count, 0);
+        const unstaged = this.summary.unstaged || 0;
+        const staged = stages.reduce((n, s) => n + s.count, 0);
+        const total = staged + unstaged;
         if (total === 0) return '';
         const org = (stages.find(s => s.stage === 'organized') || { count: 0 }).count;
         const pct = Math.floor((org / total) * 100);
@@ -124,6 +126,7 @@ class WorkflowPage {
             <div class="workflow-hero-clean">
                 <span class="workflow-hero-pct">${pct}%</span>
                 <span class="workflow-hero-sub">clean &middot; ${org.toLocaleString()} of ${total.toLocaleString()} books organized</span>
+                ${unstaged > 0 ? `<span class="workflow-hero-sub workflow-hero-warn">${unstaged.toLocaleString()} book${unstaged === 1 ? '' : 's'} not in the pipeline yet (no stage). Run <code>comic-server workflow backfill</code>.</span>` : ''}
             </div>`;
         const t = this.throughput;
         if (t && t.days && t.days.length) {

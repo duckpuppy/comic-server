@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/duckpuppy/comic-server/internal/config"
 	"github.com/duckpuppy/comic-server/internal/configdb"
 	"github.com/duckpuppy/comic-server/internal/library"
 	"github.com/duckpuppy/comic-server/internal/workflow"
@@ -276,5 +277,22 @@ func TestHandleGetWorkflowSummary_MethodNotAllowed(t *testing.T) {
 	s.handleGetWorkflowSummary(w, req)
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Errorf("expected 405, got %d", w.Code)
+	}
+}
+
+func TestWorkflowSummary_CountsUnstagedBooks(t *testing.T) {
+	s := newCBZConvertTestServer(t, config.CBZConvertConfig{}, t.TempDir(), []library.ComicBook{
+		{ID: "1", Series: "A", FilePath: "a.cbz"}, // never staged
+		{ID: "2", Series: "B", FilePath: "b.cbz"}, // never staged
+		{ID: "3", Series: "W"},                    // wanted placeholder: not counted
+	})
+	w := httptest.NewRecorder()
+	s.handleGetWorkflowSummary(w, httptest.NewRequest(http.MethodGet, "/api/library/workflow", nil))
+	var got WorkflowSummary
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Unstaged != 2 {
+		t.Errorf("unstaged = %d, want 2", got.Unstaged)
 	}
 }

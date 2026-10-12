@@ -185,3 +185,4 @@
 .workflow-hero-delta.is-down { color: var(--danger-color, #c0392b); }
 .workflow-hero-covers { display: flex; gap: 0.35rem; margin-left: auto; overflow: hidden; }
 .workflow-hero-covers img { height: 56px; width: auto; border-radius: 3px; border: 1px solid var(--border-color); }
+.workflow-hero-warn { color: var(--warning-color, #d4a017); }

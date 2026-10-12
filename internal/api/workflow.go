@@ -23,6 +23,9 @@ type WorkflowStageSummary struct {
 type WorkflowSummary struct {
 	Stages   []WorkflowStageSummary `json:"stages"`
 	CVDBSkip int                    `json:"cvdb_skip"` // informational only, never advances - see comic-server-3x3
+	// Unstaged is books that have a file but no stored workflow stage (not
+	// backfilled yet). They are in no stage count above.
+	Unstaged int `json:"unstaged"`
 }
 
 // handleGetWorkflowSummary returns a live count of books at each pipeline
@@ -43,7 +46,7 @@ func (s *Server) handleGetWorkflowSummary(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	summary := WorkflowSummary{CVDBSkip: entry.cvdbSkip}
+	summary := WorkflowSummary{CVDBSkip: entry.cvdbSkip, Unstaged: entry.unstaged}
 	for _, st := range workflow.Stages {
 		summary.Stages = append(summary.Stages, WorkflowStageSummary{
 			Stage: st.String(),
