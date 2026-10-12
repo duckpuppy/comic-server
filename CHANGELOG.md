@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.46.3](https://github.com/duckpuppy/comic-server/compare/v1.46.2...v1.46.3) (2026-10-12)
+
+
+### Bug Fixes
+
+* sniff content for unknown archive extensions (.cbw) so they read and convert ([0973a11](https://github.com/duckpuppy/comic-server/commit/0973a11f6bd5fe652b2a5cab36017ee97f39dc8b))
+* workflow page buttons dead after navigating back to it ([9a142c1](https://github.com/duckpuppy/comic-server/commit/9a142c1b8abc97994ef5d90f1ea7447cfb2ffc74))
+
 ## [1.46.2](https://github.com/duckpuppy/comic-server/compare/v1.46.1...v1.46.2) (2026-10-12)
 
 
