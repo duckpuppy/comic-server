@@ -108,7 +108,7 @@ var imageExtensions = map[string]bool{
 // first image file in alphabetical order. Supports CBZ (zip), CBR (RAR), and
 // CB7 (7-Zip) archives, dispatched by file extension.
 func ExtractCover(path string) ([]byte, error) {
-	switch strings.ToLower(filepath.Ext(path)) {
+	switch dispatchExt(path) {
 	case ".cbz", ".zip":
 		return ExtractCoverFromCBZ(path)
 	case ".cbr", ".rar":
@@ -128,7 +128,7 @@ func ExtractCover(path string) ([]byte, error) {
 // filename-only guess (comicvine.ParseFilename) only for whatever a
 // missing or incomplete ComicInfo.xml doesn't provide.
 func ReadComicInfoXMLBytes(path string) ([]byte, bool) {
-	switch strings.ToLower(filepath.Ext(path)) {
+	switch dispatchExt(path) {
 	case ".cbz", ".zip":
 		return readComicInfoFromCBZ(path)
 	case ".cbr", ".rar":
@@ -198,7 +198,7 @@ type Page struct {
 // skipped. Used by internal/cbzconvert (comic-server-43b) to repack an
 // archive's pages into a new CBZ.
 func ReadAllPages(path string) ([]Page, error) {
-	switch strings.ToLower(filepath.Ext(path)) {
+	switch dispatchExt(path) {
 	case ".cbz", ".zip":
 		return readAllPagesFromCBZ(path)
 	case ".cbr", ".rar":

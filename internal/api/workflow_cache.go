@@ -53,7 +53,7 @@ func (s *Server) getOrBuildWorkflowCache() (*workflowCacheEntry, error) {
 		booksByStage: make(map[workflow.Stage][]*library.ComicBook, len(workflow.Stages)+1),
 		booksByFlag:  make(map[attention.Flag][]*library.ComicBook),
 	}
-	missing := s.missingFiles()
+	missing, misnamed := s.missingFiles()
 	for i := range allBooks {
 		book := &allBooks[i]
 		st := workflow.GetStage(book)
@@ -63,6 +63,9 @@ func (s *Server) getOrBuildWorkflowCache() (*workflowCacheEntry, error) {
 		}
 		if missing[book.ID] {
 			built.booksByFlag[attention.FlagFileMissing] = append(built.booksByFlag[attention.FlagFileMissing], book)
+		}
+		if misnamed[book.ID] {
+			built.booksByFlag[attention.FlagMisnamedArchive] = append(built.booksByFlag[attention.FlagMisnamedArchive], book)
 		}
 		if workflow.IsCVDBSkip(book) {
 			built.cvdbSkip++
