@@ -48,6 +48,9 @@ const (
 	FlagUnknownPublisher Flag = "unknown_publisher"
 	FlagMissingFormat    Flag = "missing_format"
 	FlagMissingCount     Flag = "missing_count"
+	// FlagFileMissing needs a disk check, so FlagsFor never returns it; the
+	// API layer adds it from its background pass (comic-server-4q1z).
+	FlagFileMissing Flag = "file_missing"
 )
 
 // LowPageCountThreshold: books with fewer pages than this (but more than 0,
@@ -69,6 +72,7 @@ type Info struct {
 // Catalog lists every flag. Order is the tie-break when severity and count
 // are equal.
 var Catalog = []Info{
+	{FlagFileMissing, "File missing", "The archive is not on disk where the library says. If many books show here, check the path mapping first.", SeverityError},
 	{FlagNoSeries, "No series", "Book has no series name. Scrape it or set one by hand.", SeverityWarn},
 	{FlagIsPDF, "PDF files", "PDFs cannot be converted to CBZ or read by all devices.", SeverityWarn},
 	{FlagNeedsConversion, "Needs conversion", "Archive is not a CBZ (CBR, CB7, CBT...). Convert it.", SeverityWarn},

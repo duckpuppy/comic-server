@@ -497,6 +497,10 @@ func runServer(cmd *cobra.Command, args []string) error {
 		log.Info().Str("dir", resolvedCoverCacheDir).Msg("Cover thumbnail cache enabled")
 	}
 
+	// Hourly background pass that flags books whose archive is gone from
+	// disk (comic-server-4q1z).
+	apiServer.SetDiskCheckInterval(time.Hour)
+
 	var komgaStatus *komga.StatusStore
 	if cfg.Server.Komga.Enabled {
 		komgaStatus = komga.NewStatusStore()

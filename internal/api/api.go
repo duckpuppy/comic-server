@@ -92,6 +92,9 @@ type Server struct {
 	workflowCache   *workflowCacheEntry
 	workflowCacheMu sync.RWMutex
 
+	// disk is the background file_missing pass (comic-server-4q1z).
+	disk diskCheck
+
 	komgaStatus *komga.StatusStore
 	komgaSyncer *komga.Syncer
 
