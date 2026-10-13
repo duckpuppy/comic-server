@@ -827,7 +827,7 @@ comic-server-izc7. `internal/formatdetect` proposes a `Format` from the book rec
 - **Never overwrites a manual choice**: only an empty `Format`, or one still equal to `comic_server_format_auto` (what detection last wrote), is touched. `comic_server_format_locked=1` skips a book outright. A count change re-detects books whose Format is still ours.
 - **API**: `GET /api/library/workflow/format-detect` previews (total, per-format counts, first 100 rows) and writes nothing; `POST` applies, audited as `format_detect`. Wanted placeholders (no FilePath) are skipped.
 - Known risk: a regular issue whose summary mentions "omnibus"/"TPB" (e.g. "collected in the TPB") is classified by that keyword, as in ComicManager. Check the preview before applying.
-- Not done: UI card, feeding Format into organizer folder structure.
+- UI: "Detect Format" card on the workflow page (comic-server-6y63). Not done: feeding Format into organizer folder structure.
 
 ## Count Fill
 
@@ -835,7 +835,7 @@ comic-server-08jr. `internal/countfill` fills `Count` from the ComicVine cache (
 
 - **API**: `GET /api/library/workflow/count-fill` previews (total, volumes, waiting, first 100 rows); `POST` applies, audited as `count_fill`. 503 without a ComicVine cache.
 - **Files**: filled counts are normal metadata and go into ComicInfo.xml on the next comic-server write. Only books comic-server already wrote (they have `comic_server_written_hash`) show as stale afterwards; nothing sets ComicRack's dirty flags. Decided 2026-10-13 over keeping CV counts out of files.
-- Run count fill before format detection. Not done: UI card.
+- Run count fill before format detection. UI: "Fill Issue Counts" and "Detect Format" cards on the workflow page (comic-server-6y63); preview loads only on click (each GET scans the library), Apply behind a confirm.
 
 ## Workflow Hero
 

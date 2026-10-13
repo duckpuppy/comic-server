@@ -55,6 +55,9 @@ class WorkflowPage {
         this.newWantedForm = { series: '', number: '', volume: 0, year: 0, publisher: '' };
         this.savingWanted = false;
         this.linkingWantedId = null; // wanted book id currently mid-link, or null
+        // Count fill / format detection preview (comic-server-6y63). Loaded
+        // only on click: each GET scans the whole library.
+        this.toolPreview = null; // { kind, data, error, loading, applying } or null
     }
 
     async init(ctx) {
@@ -234,6 +237,9 @@ class WorkflowPage {
             return `<div class="panel"><p class="empty-message">Loading…</p></div>`;
         }
 
+        if (this.toolPreview) {
+            return this.renderToolPreview();
+        }
         if (this.newFilesDrillIn) {
             return this.renderNewFilesDrillIn();
         }
@@ -354,6 +360,18 @@ class WorkflowPage {
                     <button class="btn btn-primary" id="run-workflow-write-metadata" ${writing || this.staleWrites.stale === 0 ? 'disabled' : ''}>
                         ${writing ? 'Running…' : 'Write Metadata'}
                     </button>
+                </div>
+            </div>
+            `;
+        }
+        for (const kind of ['count_fill', 'format_detect']) {
+            const t = WorkflowPage.TOOLS[kind];
+            html += `
+            <div class="panel workflow-card">
+                <h2>${t.title}</h2>
+                <p class="empty-message">${t.card}</p>
+                <div class="workflow-card-actions">
+                    <button class="btn btn-secondary workflow-tool-preview-btn" data-kind="${kind}">Preview</button>
                 </div>
             </div>
             `;
@@ -479,6 +497,110 @@ class WorkflowPage {
         }
         html += '</div>';
         return html;
+    }
+
+    // renderToolPreview shows a count fill or format detection preview with
+    // its Apply button. Nothing is written until Apply is confirmed.
+    renderToolPreview() {
+        const p = this.toolPreview;
+        const t = WorkflowPage.TOOLS[p.kind];
+        let html = `
+            <div class="panel">
+                <div class="datamanager-page-header">
+                    <button class="btn btn-secondary" id="workflow-back-btn">&larr; Back</button>
+                    <h2>${t.title}${p.data ? ` (${p.data.total})` : ''}</h2>
+                </div>
+                <p>${t.desc}</p>
+        `;
+        if (p.loading) return html + '<p class="empty-message">Loading preview…</p></div>';
+        if (p.error) return html + `<p class="datamanager-errors">${this.escapeHtml(p.error)}</p></div>`;
+
+        const d = p.data;
+        if (p.kind === 'count_fill') {
+            html += `<p>${d.total} book${d.total === 1 ? '' : 's'} in ${d.volumes} volume${d.volumes === 1 ? '' : 's'} would get a Count.`;
+            if (d.waiting > 0) html += ` ${d.waiting} more wait for their ComicVine volume to sync.`;
+            html += '</p>';
+        } else {
+            const parts = Object.entries(d.by_format || {}).sort((a, b) => b[1] - a[1])
+                .map(([f, n]) => `${this.escapeHtml(f)}: ${n}`);
+            html += `<p>${d.total} book${d.total === 1 ? '' : 's'} would get a Format${parts.length ? ` (${parts.join(', ')})` : ''}.</p>`;
+        }
+        if (d.total === 0) return html + '<p class="empty-message">Nothing to change.</p></div>';
+
+        const sample = d.sample || [];
+        if (sample.length < d.total) html += `<p class="empty-message">Showing the first ${sample.length}.</p>`;
+        html += '<table class="datamanager-diff-table"><thead><tr><th>Series</th><th>Number</th>';
+        html += p.kind === 'count_fill'
+            ? '<th>Count now</th><th>New Count</th></tr></thead><tbody>'
+            : '<th>Format now</th><th>New Format</th><th>Reason</th></tr></thead><tbody>';
+        for (const r of sample) {
+            html += `<tr><td>${this.escapeHtml(r.series)}</td><td>${this.escapeHtml(r.number)}</td>`;
+            html += p.kind === 'count_fill'
+                ? `<td>${r.old || '—'}</td><td>${r.new}</td></tr>`
+                : `<td>${this.escapeHtml(r.old) || '—'}</td><td>${this.escapeHtml(r.new)}</td><td>${this.escapeHtml(r.reason)}</td></tr>`;
+        }
+        html += `</tbody></table>
+                <div class="workflow-card-actions" style="margin-top:1rem;">
+                    <button class="btn btn-primary" id="workflow-tool-apply-btn" ${p.applying ? 'disabled' : ''}>
+                        ${p.applying ? 'Applying…' : `Apply to ${d.total} book${d.total === 1 ? '' : 's'}`}
+                    </button>
+                </div>
+            </div>`;
+        return html;
+    }
+
+    async openToolPreview(kind) {
+        const p = { kind, data: null, error: null, loading: true, applying: false };
+        this.toolPreview = p;
+        this.render();
+        this.attachListeners();
+        try {
+            const response = await fetch(WorkflowPage.TOOLS[kind].url);
+            const text = await response.text();
+            if (!response.ok) throw new Error(friendlyErrorText(response, text, 'Failed to load preview'));
+            p.data = JSON.parse(text);
+        } catch (error) {
+            console.error(`Failed to load ${kind} preview:`, error);
+            p.error = error.message;
+        } finally {
+            p.loading = false;
+            if (this.toolPreview === p) { // not if the user went back meanwhile
+                this.render();
+                this.attachListeners();
+            }
+        }
+    }
+
+    async applyTool() {
+        const p = this.toolPreview;
+        if (!p || !p.data) return;
+        const t = WorkflowPage.TOOLS[p.kind];
+        const ok = await dialogs.confirm({
+            title: t.title,
+            message: `${t.confirm} About ${p.data.total} book${p.data.total === 1 ? '' : 's'} will change. Each change goes to the History page.`,
+            confirmLabel: 'Apply',
+        });
+        if (!ok) return;
+
+        p.applying = true;
+        this.render();
+        this.attachListeners();
+        try {
+            const response = await fetch(t.url, { method: 'POST' });
+            const text = await response.text();
+            if (!response.ok) throw new Error(friendlyErrorText(response, text, `Failed to apply ${t.title}`));
+            const result = text ? JSON.parse(text) : {};
+            this.lastResult = t.done(result.applied || 0);
+            this.toolPreview = null;
+            await this.load();
+        } catch (error) {
+            console.error(`Failed to apply ${p.kind}:`, error);
+            p.applying = false;
+            dialogs.toast(error.message, 'error');
+        } finally {
+            this.render();
+            this.attachListeners();
+        }
     }
 
     renderNewFilesDrillIn() {
@@ -682,8 +804,16 @@ class WorkflowPage {
             el.addEventListener('click', () => this.linkWantedBook(el.dataset.id));
         });
 
+        document.querySelectorAll('.workflow-tool-preview-btn').forEach(el => {
+            el.addEventListener('click', () => this.openToolPreview(el.dataset.kind));
+        });
+
+        const toolApplyBtn = document.getElementById('workflow-tool-apply-btn');
+        if (toolApplyBtn) toolApplyBtn.addEventListener('click', () => this.applyTool());
+
         const backBtn = document.getElementById('workflow-back-btn');
         if (backBtn) backBtn.addEventListener('click', () => {
+            this.toolPreview = null;
             this.drillIn = null;
             this.newFilesDrillIn = false;
             this.wantedDrillIn = false;
@@ -973,5 +1103,26 @@ class WorkflowPage {
         return this.escapeHtml(text).replace(/"/g, '&quot;');
     }
 }
+
+// Preview-then-apply library tools (comic-server-6y63). Count fill comes
+// first: format detection needs a Count for most of its rules.
+WorkflowPage.TOOLS = {
+    count_fill: {
+        title: 'Fill Issue Counts',
+        url: '/api/library/workflow/count-fill',
+        card: 'Fill empty issue counts from ComicVine. Run before Detect Format.',
+        desc: 'Fill an empty Count from the ComicVine volume cache. A Count set by hand is never changed. Run this before Detect Format.',
+        confirm: 'Write Count from ComicVine to every book in the preview?',
+        done: n => `Filled Count on ${n} book${n === 1 ? '' : 's'}. Run Detect Format next.`,
+    },
+    format_detect: {
+        title: 'Detect Format',
+        url: '/api/library/workflow/format-detect',
+        card: 'Propose a Format from each book\'s own data.',
+        desc: 'Propose a Format (Series, Limited Series, One-Shot, TPB...) from each book\'s own data. A Format set by hand is never changed. Check the reasons: a summary that mentions "TPB" or "omnibus" wins.',
+        confirm: 'Write the proposed Format to every book in the preview?',
+        done: n => `Set Format on ${n} book${n === 1 ? '' : 's'}.`,
+    },
+};
 
 window.WorkflowPage = WorkflowPage;
