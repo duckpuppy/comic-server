@@ -20,3 +20,7 @@
 .history-old { color: var(--text-secondary); text-decoration: line-through; }
 .history-new { color: var(--success-color); }
 .history-pager { display: flex; gap: 1rem; align-items: center; justify-content: center; margin-top: 1rem; }
+
+/* Book links used the browser default blue, unreadable on the dark theme. */
+.history-book-link { color: var(--primary-color); text-decoration: none; }
+.history-book-link:hover { text-decoration: underline; }
