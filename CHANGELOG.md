@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.46.4](https://github.com/duckpuppy/comic-server/compare/v1.46.3...v1.46.4) (2026-10-13)
+
+
+### Bug Fixes
+
+* .cbw web-comic pointers are not archives and are never converted ([6f88188](https://github.com/duckpuppy/comic-server/commit/6f881886bef1efd3084ce7e126aea5fef0e2c854))
+
 ## [1.46.3](https://github.com/duckpuppy/comic-server/compare/v1.46.2...v1.46.3) (2026-10-12)
 
 
