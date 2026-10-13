@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.47.1](https://github.com/duckpuppy/comic-server/compare/v1.47.0...v1.47.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* keep ComicVine cache and CBL clone on the /data volume in Docker ([607abcc](https://github.com/duckpuppy/comic-server/commit/607abcc69065738da99c0de35cdfb9f325be5285))
+
 ## [1.47.0](https://github.com/duckpuppy/comic-server/compare/v1.46.4...v1.47.0) (2026-10-13)
 
 
