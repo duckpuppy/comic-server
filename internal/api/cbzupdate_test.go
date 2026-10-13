@@ -10,6 +10,7 @@ import (
 	"github.com/duckpuppy/comic-server/internal/cbzconvert"
 	"github.com/duckpuppy/comic-server/internal/config"
 	"github.com/duckpuppy/comic-server/internal/library"
+	"github.com/duckpuppy/comic-server/internal/workflow"
 )
 
 func TestStaleWrites_DisabledReportsNothing(t *testing.T) {
@@ -81,5 +82,32 @@ func TestWriteMetadata_RequiresEnabled(t *testing.T) {
 	s.handleWriteMetadata(w, httptest.NewRequest(http.MethodPost, "/", nil))
 	if w.Code != http.StatusServiceUnavailable {
 		t.Errorf("status = %d, want 503", w.Code)
+	}
+}
+
+func TestCBZConvert_WebComicPointerIsAdvancedNotFailed(t *testing.T) {
+	b := library.ComicBook{ID: "w1", Series: "Web", FilePath: "/comics/Web Comic/Web #1.cbw"}
+	workflow.SetStage(&b, workflow.StageConvertToCBZ)
+	s := newCBZConvertTestServer(t, config.CBZConvertConfig{Enabled: true}, t.TempDir(), []library.ComicBook{b})
+
+	w := httptest.NewRecorder()
+	s.handleRunCBZConvertWorkflow(w, httptest.NewRequest(http.MethodPost, "/", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", w.Code, w.Body.String())
+	}
+	var res CBZConvertResult
+	_ = json.NewDecoder(w.Body).Decode(&res)
+	if res.Converted != 0 || res.Skipped != 1 || len(res.Errors) != 0 {
+		t.Fatalf("result = %+v", res)
+	}
+	got, err := s.backend.GetBook("w1")
+	if err != nil || got == nil {
+		t.Fatalf("GetBook: %v", err)
+	}
+	if st := workflow.GetStage(got); st == workflow.StageConvertToCBZ {
+		t.Errorf("stage still %v, want advanced", st)
+	}
+	if got.FilePath != b.FilePath {
+		t.Errorf("file path changed to %q", got.FilePath)
 	}
 }

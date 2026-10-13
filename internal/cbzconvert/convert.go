@@ -161,11 +161,19 @@ func deletedPageIndexes(bookPages []library.ComicPageInfo) map[int]bool {
 // without a real file" case) never need conversion; Convert itself would
 // just fail reading them anyway.
 func NeedsConversion(book *library.ComicBook) bool {
-	if book.FilePath == "" {
+	if book.FilePath == "" || IsWebComicPointer(book.FilePath) {
 		return false
 	}
 	ext := strings.ToLower(filepath.Ext(book.FilePath))
 	return ext != ".cbz" && ext != ".zip"
+}
+
+// IsWebComicPointer reports whether path is a ComicRack web-comic file
+// (.cbw): a small XML list of remote page URLs, not an archive. There are no
+// pages to repack, so it is never converted (and its stage is not
+// convert_cbz). internal/workflow mirrors this check.
+func IsWebComicPointer(path string) bool {
+	return strings.EqualFold(filepath.Ext(strings.ReplaceAll(path, "\\", "/")), ".cbw")
 }
 
 // changeExt returns rawPath with its extension replaced by newExt.

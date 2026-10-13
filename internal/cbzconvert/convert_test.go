@@ -390,3 +390,17 @@ func TestChangeExt(t *testing.T) {
 		}
 	}
 }
+
+func TestWebComicPointerNeverNeedsConversion(t *testing.T) {
+	for _, p := range []string{"/c/Web #1.cbw", `G:\Comics\Web #1.CBW`} {
+		if !IsWebComicPointer(p) {
+			t.Errorf("IsWebComicPointer(%q) = false", p)
+		}
+		if NeedsConversion(&library.ComicBook{FilePath: p}) {
+			t.Errorf("NeedsConversion(%q) = true", p)
+		}
+	}
+	if IsWebComicPointer("/c/a.cbr") || !NeedsConversion(&library.ComicBook{FilePath: "/c/a.cbr"}) {
+		t.Error("a real CBR must still need conversion")
+	}
+}

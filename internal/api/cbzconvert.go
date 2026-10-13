@@ -16,6 +16,7 @@ import (
 type CBZConvertResult struct {
 	Processed int      `json:"processed"`
 	Converted int      `json:"converted"`
+	Skipped   int      `json:"skipped,omitempty"` // web-comic pointers (.cbw): nothing to convert
 	Errors    []string `json:"errors,omitempty"`
 }
 
@@ -81,6 +82,16 @@ func (s *Server) runCBZConvertOverBooks(books []*library.ComicBook, tr *trash.Tr
 	s.configMu.RUnlock()
 
 	for _, book := range books {
+		// A web-comic pointer (.cbw) has no pages to repack. It may already
+		// be staged at convert_cbz from before it was excluded, so move it
+		// on instead of failing on it every run.
+		if cbzconvert.IsWebComicPointer(book.FilePath) {
+			if workflow.AdvanceIfAtOrBefore(book, workflow.StageConvertToCBZ, rulesets) {
+				toUpdate = append(toUpdate, book)
+			}
+			result.Skipped++
+			continue
+		}
 		converted, err := cbzconvert.Convert(book, s.resolveBookFilePath, tr, cbzconvert.Options{EmbedComicBook: embedComicBook})
 		if err != nil {
 			log.Error().Err(err).Str("book_id", book.ID).Str("file_path", book.FilePath).Msg("cbz-convert failed for book")

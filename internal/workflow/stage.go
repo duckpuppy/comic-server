@@ -228,7 +228,9 @@ func needsConvertToCBZ(filePath string) bool {
 		return false
 	}
 	ext := strings.ToLower(extOf(filePath))
-	return ext != ".cbz" && ext != ".zip"
+	// .cbw is a web-comic pointer (XML list of URLs), not an archive:
+	// nothing to repack. Mirrors cbzconvert.IsWebComicPointer.
+	return ext != ".cbz" && ext != ".zip" && ext != ".cbw"
 }
 
 func extOf(path string) string {
