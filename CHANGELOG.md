@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.47.0](https://github.com/duckpuppy/comic-server/compare/v1.46.4...v1.47.0) (2026-10-13)
+
+
+### Features
+
+* fill missing issue Count from the ComicVine volume cache ([ff5f57b](https://github.com/duckpuppy/comic-server/commit/ff5f57b68c44db430aac5bb5705277f0cc29dc51))
+* workflow page cards for count fill and format detection ([58921c9](https://github.com/duckpuppy/comic-server/commit/58921c9581b0e1855b1efe8157f974122ca9cc74))
+
+
+### Bug Fixes
+
+* readable book links on the history page in dark mode ([c28e15c](https://github.com/duckpuppy/comic-server/commit/c28e15cac4cbe30181ca912606f204bd0cae6bd8))
+
 ## [1.46.4](https://github.com/duckpuppy/comic-server/compare/v1.46.3...v1.46.4) (2026-10-13)
 
 
