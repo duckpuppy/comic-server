@@ -62,8 +62,12 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD ["/usr/local/bin/comic-server", "version"]
 
 # Set default environment variables
+# XDG_DATA_HOME=/data keeps default data (ComicVine cache, scrape jobs, CBL
+# repo clone) on the /data volume. Without it they lived in the container's
+# home directory and were lost on every container recreate (comic-server-wffl).
 ENV COMIC_SERVER_LOG_LEVEL=info \
-    COMIC_SERVER_LOG_FORMAT=json
+    COMIC_SERVER_LOG_FORMAT=json \
+    XDG_DATA_HOME=/data
 
 # Volume for config and data
 VOLUME ["/config", "/data", "/comics"]

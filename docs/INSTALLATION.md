@@ -280,6 +280,12 @@ docker run -d \
 
 Note: `--network host` is required for multicast discovery to work properly.
 
+The image sets `XDG_DATA_HOME=/data`, so comic-server's own data (the
+ComicVine cache, scrape jobs, the CBL repo clone) goes to
+`/data/comic-server/`. Mount `/data` as a directory (not only the
+`ComicDb.xml` file) to keep that data when the container is recreated;
+otherwise the ComicVine sync starts over after every upgrade.
+
 ## Verifying Installation
 
 After installation, verify the server is working:
