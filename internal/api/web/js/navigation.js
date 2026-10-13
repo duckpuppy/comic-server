@@ -13,94 +13,83 @@ class Navigation {
         const nav = document.getElementById('main-nav');
         if (!nav) return;
 
-        nav.innerHTML = `
-            <div class="nav-tabs">
-                <a href="/" class="nav-tab" data-tab="dashboard">
-                    <span class="nav-icon">📊</span>
-                    <span class="nav-label">Dashboard</span>
-                </a>
-                <a href="/lists" class="nav-tab" data-tab="lists">
-                    <span class="nav-icon">📚</span>
-                    <span class="nav-label">Lists</span>
-                    <span class="nav-badge" id="lists-count">0</span>
-                </a>
-                <a href="/browse" class="nav-tab" data-tab="browse">
-                    <span class="nav-icon">🔍</span>
-                    <span class="nav-label">Browse</span>
-                </a>
-                <a href="/devices" class="nav-tab" data-tab="devices">
-                    <span class="nav-icon">📱</span>
-                    <span class="nav-label">Devices</span>
-                    <span class="nav-badge" id="devices-count">0</span>
-                </a>
-                <a href="/sync" class="nav-tab" data-tab="sync">
-                    <span class="nav-icon">🔄</span>
-                    <span class="nav-label">Sync History</span>
-                </a>
-                <a href="/datamanager" class="nav-tab" data-tab="datamanager">
-                    <span class="nav-icon">🛠️</span>
-                    <span class="nav-label">Data Manager</span>
-                </a>
-                <a href="/workflow" class="nav-tab" data-tab="workflow">
-                    <span class="nav-icon">🧭</span>
-                    <span class="nav-label">Workflow</span>
-                </a>
-                <a href="/scrape-review" class="nav-tab" data-tab="scrape-review">
-                    <span class="nav-icon">🧩</span>
-                    <span class="nav-label">Scrape Review</span>
-                    <span class="nav-badge" id="scrape-review-count">0</span>
-                </a>
-                <a href="/duplicates" class="nav-tab" data-tab="duplicates">
-                    <span class="nav-icon">👯</span>
-                    <span class="nav-label">Duplicates</span>
-                </a>
-                <a href="/missing-issues" class="nav-tab" data-tab="missing-issues">
-                    <span class="nav-icon">🕳️</span>
-                    <span class="nav-label">Missing Issues</span>
-                </a>
-                <a href="/variant-covers" class="nav-tab" data-tab="variant-covers">
-                    <span class="nav-icon">🖼️</span>
-                    <span class="nav-label">Variant Covers</span>
-                </a>
-                <a href="/history" class="nav-tab" data-tab="history">
-                    <span class="nav-icon">📜</span>
-                    <span class="nav-label">History</span>
-                </a>
-                <a href="/trash" class="nav-tab" data-tab="trash">
-                    <span class="nav-icon">🗑️</span>
-                    <span class="nav-label">Trash</span>
-                    <span class="nav-badge" id="trash-count">0</span>
-                </a>
-                <a href="/settings" class="nav-tab" data-tab="settings">
-                    <span class="nav-icon">⚙️</span>
-                    <span class="nav-label">Settings</span>
-                </a>
-            </div>
-        `;
+        nav.innerHTML = `<div class="nav-tabs">${Navigation.ENTRIES.map(e => e.items ? this.renderGroup(e) : this.renderTab(e, 'nav-tab')).join('')}</div>`;
+    }
+
+    renderTab(t, cls) {
+        const badge = t.badge ? `<span class="nav-badge" id="${t.tab}-count">0</span>` : '';
+        const role = cls === 'nav-item' ? ' role="menuitem"' : '';
+        const alert = t.alert ? ' data-alert' : '';
+        return `
+                <a href="${t.href}" class="${cls}" data-tab="${t.tab}"${role}${alert}>
+                    <span class="nav-icon">${t.icon}</span>
+                    <span class="nav-label">${t.label}</span>
+                    ${badge}
+                </a>`;
+    }
+
+    // renderGroup draws one dropdown (comic-server-gkzt). The group badge
+    // sums its items' alert badges (Scrape Review, Trash) so a hidden count
+    // still shows on the bar.
+    renderGroup(g) {
+        return `
+                <div class="nav-group" data-group="${g.group}">
+                    <button type="button" class="nav-tab nav-group-btn" aria-haspopup="menu" aria-expanded="false">
+                        <span class="nav-icon">${g.icon}</span>
+                        <span class="nav-label">${g.label}</span>
+                        <span class="nav-badge nav-group-badge"></span>
+                        <span class="nav-caret" aria-hidden="true">▾</span>
+                    </button>
+                    <div class="nav-menu" role="menu" hidden>
+                        ${g.items.map(t => this.renderTab(t, 'nav-item')).join('')}
+                    </div>
+                </div>`;
+    }
+
+    closeMenus(except) {
+        document.querySelectorAll('.nav-group').forEach(g => {
+            if (g === except) return;
+            g.querySelector('.nav-menu').hidden = true;
+            g.querySelector('.nav-group-btn').setAttribute('aria-expanded', 'false');
+        });
     }
 
     attachListeners() {
-        const tabs = document.querySelectorAll('.nav-tab');
-        tabs.forEach(tab => {
+        document.querySelectorAll('#main-nav a[data-tab]').forEach(tab => {
             tab.addEventListener('click', (e) => {
                 e.preventDefault();
-                const path = tab.getAttribute('href');
-                router.navigate(path);
+                this.closeMenus();
+                router.navigate(tab.getAttribute('href'));
                 this.setActive(tab.dataset.tab);
             });
+        });
+        document.querySelectorAll('.nav-group').forEach(g => {
+            const btn = g.querySelector('.nav-group-btn');
+            const menu = g.querySelector('.nav-menu');
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const open = menu.hidden;
+                this.closeMenus(g);
+                menu.hidden = !open;
+                btn.setAttribute('aria-expanded', String(open));
+            });
+        });
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.nav-group')) this.closeMenus();
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') this.closeMenus();
         });
     }
 
     setActive(tabName) {
         this.currentTab = tabName;
 
-        // Update active state
-        document.querySelectorAll('.nav-tab').forEach(tab => {
-            if (tab.dataset.tab === tabName) {
-                tab.classList.add('active');
-            } else {
-                tab.classList.remove('active');
-            }
+        document.querySelectorAll('#main-nav a[data-tab]').forEach(tab => {
+            tab.classList.toggle('active', tab.dataset.tab === tabName);
+        });
+        document.querySelectorAll('.nav-group').forEach(g => {
+            g.querySelector('.nav-group-btn').classList.toggle('active', !!g.querySelector(`a[data-tab="${tabName}"]`));
         });
     }
 
@@ -110,8 +99,41 @@ class Navigation {
             badge.textContent = count;
             badge.style.display = count > 0 ? 'inline-block' : 'none';
         }
+        document.querySelectorAll('.nav-group').forEach(g => {
+            let sum = 0;
+            g.querySelectorAll('a[data-alert] .nav-badge').forEach(b => { sum += parseInt(b.textContent, 10) || 0; });
+            const gb = g.querySelector('.nav-group-badge');
+            gb.textContent = sum;
+            gb.style.display = sum > 0 ? 'inline-block' : 'none';
+        });
     }
 }
 
 // Global navigation instance
+// Top-level nav (comic-server-gkzt): five entries instead of fourteen
+// tabs, so the bar fits without scrolling. alert: the item's badge also
+// counts toward its group's badge.
+Navigation.ENTRIES = [
+    { tab: 'dashboard', href: '/', icon: '📊', label: 'Dashboard' },
+    { group: 'library', icon: '📚', label: 'Library', items: [
+        { tab: 'lists', href: '/lists', icon: '📚', label: 'Lists', badge: true },
+        { tab: 'browse', href: '/browse', icon: '🔍', label: 'Browse' },
+        { tab: 'missing-issues', href: '/missing-issues', icon: '🕳️', label: 'Missing Issues' },
+        { tab: 'variant-covers', href: '/variant-covers', icon: '🖼️', label: 'Variant Covers' },
+        { tab: 'duplicates', href: '/duplicates', icon: '👯', label: 'Duplicates' },
+    ] },
+    { group: 'pipeline', icon: '🧭', label: 'Pipeline', items: [
+        { tab: 'workflow', href: '/workflow', icon: '🧭', label: 'Workflow' },
+        { tab: 'datamanager', href: '/datamanager', icon: '🛠️', label: 'Data Manager' },
+        { tab: 'scrape-review', href: '/scrape-review', icon: '🧩', label: 'Scrape Review', badge: true, alert: true },
+        { tab: 'history', href: '/history', icon: '📜', label: 'History' },
+        { tab: 'trash', href: '/trash', icon: '🗑️', label: 'Trash', badge: true, alert: true },
+    ] },
+    { group: 'devices', icon: '📱', label: 'Devices', items: [
+        { tab: 'devices', href: '/devices', icon: '📱', label: 'Devices', badge: true },
+        { tab: 'sync', href: '/sync', icon: '🔄', label: 'Sync History' },
+    ] },
+    { tab: 'settings', href: '/settings', icon: '⚙️', label: 'Settings' },
+];
+
 const navigation = new Navigation();

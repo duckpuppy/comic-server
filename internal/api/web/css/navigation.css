@@ -6,13 +6,8 @@
     padding: 0 1rem;
     background: var(--bg-secondary);
     border-bottom: 1px solid var(--border-color);
-    /* More tabs than fit at any given width scroll horizontally instead
-       of wrapping or overflowing the viewport - the tab bar has grown
-       past a single row's worth of space (Workflow, Komga, Data Manager,
-       etc. added over time) and will likely keep growing. */
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: thin;
+    /* No overflow scrolling: pages are grouped into dropdowns so the bar
+       fits (comic-server-gkzt), and overflow:auto would clip the menus. */
 }
 
 .nav-tab {
@@ -27,8 +22,7 @@
     transition: all 0.2s;
     position: relative;
     /* Never shrink or wrap text - a squeezed tab wrapping its label onto
-       two lines (e.g. "Sync History") looks broken; scrolling the whole
-       bar is the intended overflow behavior instead. */
+       two lines looks broken. */
     flex-shrink: 0;
     white-space: nowrap;
 }
@@ -63,9 +57,80 @@
     text-align: center;
 }
 
+/* Dropdown groups (comic-server-gkzt). */
+.nav-group {
+    position: relative;
+    display: flex;
+}
+
+.nav-group-btn {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    font: inherit;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.nav-group-btn.active {
+    color: var(--primary-color);
+    border-bottom-color: var(--primary-color);
+}
+
+.nav-caret {
+    font-size: 0.75rem;
+}
+
+.nav-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 100;
+    min-width: 200px;
+    padding: 0.25rem 0;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+.nav-menu[hidden] {
+    display: none;
+}
+
+.nav-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 1rem;
+    text-decoration: none;
+    color: var(--text-secondary);
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.nav-item:hover {
+    color: var(--text-primary);
+    background: var(--bg-primary);
+}
+
+.nav-item.active {
+    color: var(--primary-color);
+}
+
+.nav-item .nav-badge {
+    margin-left: auto;
+}
+
 @media (max-width: 768px) {
-    .nav-label {
+    .nav-tab .nav-label {
         display: none;
+    }
+
+    /* The last group may sit near the right edge on a phone. */
+    .nav-group:last-of-type .nav-menu {
+        left: auto;
+        right: 0;
     }
 
     .nav-tab {

@@ -45,20 +45,104 @@
     background: var(--bg-secondary, #f7f7f8);
 }
 
+/* The rules editor uses the full content width, not the 1000px cap the
+   other Data Manager pages share (comic-server-gkzt). */
+.datamanager-page.dmr-page {
+    max-width: none;
+}
+
+/* One uniform line per tree row: name and summary shrink with an ellipsis,
+   controls never wrap. Secondary actions live in the row's "⋯" menu. */
 .dmr-node-row {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    min-height: 2rem;
+}
+
+.dmr-node-row > * {
+    flex-shrink: 0;
 }
 
 .dmr-node-name {
     font-weight: 600;
+    min-width: 0;
+    flex-shrink: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .dmr-ruleset-summary {
     color: var(--text-secondary, #666);
     font-size: 0.9em;
+    min-width: 0;
+    flex-shrink: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.dmr-folder-node > .dmr-node-row > .dmr-menu {
+    margin-left: auto;
+}
+
+.dmr-menu {
+    position: relative;
+}
+
+.dmr-menu-list {
+    position: absolute;
+    right: 0;
+    top: 100%;
+    z-index: 50;
+    min-width: 170px;
+    padding: 0.25rem 0;
+    background: var(--bg-secondary, #fff);
+    border: 1px solid var(--border-color, #ddd);
+    border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+.dmr-menu-list[hidden] {
+    display: none;
+}
+
+.dmr-menu-item {
+    display: block;
+    width: 100%;
+    padding: 0.5rem 0.9rem;
+    background: none;
+    border: none;
+    text-align: left;
+    font: inherit;
+    color: var(--text-primary, #222);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.dmr-menu-item:hover,
+.dmr-menu-item:focus-visible {
+    background: var(--bg-primary, #f3f3f5);
+}
+
+.dmr-menu-item.dmr-menu-danger {
+    color: var(--danger-color, #c0392b);
+}
+
+@media (max-width: 640px) {
+    .datamanager-page.dmr-page {
+        padding: 1rem;
+    }
+
+    .dmr-ruleset-summary {
+        display: none;
+    }
+
+    .dmr-mode-select {
+        max-width: 7.5rem;
+    }
 }
 
 .dmr-disabled-toggle {

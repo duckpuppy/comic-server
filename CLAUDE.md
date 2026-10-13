@@ -1258,9 +1258,8 @@ The UI now features multi-page navigation with the following routes:
 
 **Features**:
 - **Real-time Dashboard** - Live server statistics (devices, syncs, uptime, WebSocket clients)
-- **Navigation Tabs** - Top-level navigation with active state indicators
-  - Badge counts for lists and devices
-  - Responsive design (icons only on mobile)
+- **Navigation** - five top entries (comic-server-gkzt): Dashboard, Library ▾, Pipeline ▾, Devices ▾, Settings. Groups are defined in `Navigation.ENTRIES` (`js/navigation.js`); a group button is active when one of its pages is, and its badge sums the items marked `alert` (Scrape Review, Trash). Icons only on mobile. The bar does not scroll (overflow would clip the menus) - add a page to a group, not a new top entry.
+  - Data Manager rules editor (`/datamanager/rules`) is full width; each tree row is one line, with Rename/Move/Delete (and New ruleset/subfolder on folders) in a "⋯" row menu
 - **Device Sidebar** - Shows all discovered devices with status indicators:
   - Connected (< 2 min since last_seen)
   - Idle (2-30 min)

@@ -89,7 +89,7 @@ class DataManagerRulesPage {
     render() {
         const app = document.getElementById('app');
         app.innerHTML = `
-            <div class="datamanager-page">
+            <div class="datamanager-page dmr-page">
                 <div class="datamanager-page-header">
                     <h1>Data Manager Rules</h1>
                     <p class="empty-message">Create and organize the rulesets Data Manager's Preview/Apply run against the whole library. Each ruleset is a list of conditions (AND/OR) plus a list of actions applied when they match.</p>
@@ -128,11 +128,12 @@ class DataManagerRulesPage {
                     <button class="btn btn-small dmr-toggle-folder-btn" data-id="${this.escapeAttr(node.id)}">${expanded ? '▾' : '▸'}</button>
                     <span class="dmr-folder-icon">${expanded ? '📂' : '📁'}</span>
                     <span class="dmr-node-name">${this.escapeHtml(node.name)}</span>
-                    <button class="btn btn-small dmr-new-ruleset-here-btn" data-parent="${this.escapeAttr(node.id)}" title="New ruleset in this folder">+ Ruleset</button>
-                    <button class="btn btn-small dmr-new-folder-here-btn" data-parent="${this.escapeAttr(node.id)}" title="New subfolder">+ Folder</button>
-                    <button class="btn btn-small dmr-rename-folder-btn" data-id="${this.escapeAttr(node.id)}">Rename</button>
-                    <button class="btn btn-small dmr-move-folder-btn" data-id="${this.escapeAttr(node.id)}" data-name="${this.escapeAttr(node.name)}">Move</button>
-                    <button class="btn btn-small btn-danger dmr-delete-folder-btn" data-id="${this.escapeAttr(node.id)}" data-name="${this.escapeAttr(node.name)}">Delete</button>
+                    ${this.renderRowMenu(`
+                        <button class="dmr-menu-item dmr-new-ruleset-here-btn" role="menuitem" data-parent="${this.escapeAttr(node.id)}">New ruleset here</button>
+                        <button class="dmr-menu-item dmr-new-folder-here-btn" role="menuitem" data-parent="${this.escapeAttr(node.id)}">New subfolder</button>
+                        <button class="dmr-menu-item dmr-rename-folder-btn" role="menuitem" data-id="${this.escapeAttr(node.id)}">Rename</button>
+                        <button class="dmr-menu-item dmr-move-folder-btn" role="menuitem" data-id="${this.escapeAttr(node.id)}" data-name="${this.escapeAttr(node.name)}">Move</button>
+                        <button class="dmr-menu-item dmr-menu-danger dmr-delete-folder-btn" role="menuitem" data-id="${this.escapeAttr(node.id)}" data-name="${this.escapeAttr(node.name)}">Delete</button>`)}
                 </div>
                 ${expanded && node.children && node.children.length ? `<ul class="dmr-tree">${node.children.map(c => this.renderNode(c, level + 1)).join('')}</ul>` : ''}
             </li>
@@ -153,17 +154,38 @@ class DataManagerRulesPage {
                     <label class="dmr-disabled-toggle">
                         <input type="checkbox" class="dmr-ruleset-disabled-check" data-id="${this.escapeAttr(rs.id)}" ${rs.disabled ? 'checked' : ''}> Disabled
                     </label>
-                    <button class="btn btn-small dmr-rename-btn" data-id="${this.escapeAttr(rs.id)}">Rename</button>
                     <select class="dmr-mode-select" data-id="${this.escapeAttr(rs.id)}">
                         <option value="And" ${rs.mode === 'And' ? 'selected' : ''}>Match ALL (AND)</option>
                         <option value="Or" ${rs.mode === 'Or' ? 'selected' : ''}>Match ANY (OR)</option>
                     </select>
-                    <button class="btn btn-small dmr-move-ruleset-btn" data-id="${this.escapeAttr(rs.id)}" data-name="${this.escapeAttr(rs.name)}">Move</button>
-                    <button class="btn btn-small btn-danger dmr-delete-ruleset-btn" data-id="${this.escapeAttr(rs.id)}">Delete</button>
+                    ${this.renderRowMenu(`
+                        <button class="dmr-menu-item dmr-rename-btn" role="menuitem" data-id="${this.escapeAttr(rs.id)}">Rename</button>
+                        <button class="dmr-menu-item dmr-move-ruleset-btn" role="menuitem" data-id="${this.escapeAttr(rs.id)}" data-name="${this.escapeAttr(rs.name)}">Move</button>
+                        <button class="dmr-menu-item dmr-menu-danger dmr-delete-ruleset-btn" role="menuitem" data-id="${this.escapeAttr(rs.id)}">Delete</button>`)}
                 </div>
                 ${expanded ? this.renderRulesetDetail(rs) : ''}
             </li>
         `;
+    }
+
+    // renderRowMenu wraps a row's secondary actions in one "⋯" menu
+    // (comic-server-gkzt) so every tree row stays one line. The items keep
+    // their original classes, so attachListeners binds them unchanged.
+    renderRowMenu(items) {
+        return `
+                    <div class="dmr-menu">
+                        <button type="button" class="btn btn-small dmr-menu-btn" aria-haspopup="menu" aria-expanded="false" title="More actions" aria-label="More actions">⋯</button>
+                        <div class="dmr-menu-list" role="menu" hidden>${items}
+                        </div>
+                    </div>`;
+    }
+
+    closeRowMenus(except) {
+        document.querySelectorAll('.dmr-menu').forEach(m => {
+            if (m === except) return;
+            m.querySelector('.dmr-menu-list').hidden = true;
+            m.querySelector('.dmr-menu-btn').setAttribute('aria-expanded', 'false');
+        });
     }
 
     renderRulesetDetail(rs) {
@@ -281,6 +303,29 @@ class DataManagerRulesPage {
     }
 
     attachListeners() {
+        document.querySelectorAll('.dmr-menu').forEach(m => {
+            const btn = m.querySelector('.dmr-menu-btn');
+            const list = m.querySelector('.dmr-menu-list');
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const open = list.hidden;
+                this.closeRowMenus(m);
+                list.hidden = !open;
+                btn.setAttribute('aria-expanded', String(open));
+            });
+            list.addEventListener('click', () => this.closeRowMenus());
+        });
+        if (!this.rowMenuDocListeners) {
+            // Once per page object: it is a singleton and re-renders often.
+            this.rowMenuDocListeners = true;
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('.dmr-menu')) this.closeRowMenus();
+            });
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') this.closeRowMenus();
+            });
+        }
+
         document.querySelectorAll('#dmr-new-ruleset-btn, .dmr-new-ruleset-here-btn').forEach(btn => {
             btn.addEventListener('click', () => this.createRuleset(btn.dataset.parent));
         });
