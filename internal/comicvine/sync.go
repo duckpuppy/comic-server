@@ -196,6 +196,12 @@ func HasComicVineTag(store string) bool {
 	return extractCVVolumeID(store) > 0
 }
 
+// VolumeIDFromStore returns the comicvine_volume ID in a CustomValuesStore
+// string, or 0 when the book is not tagged.
+func VolumeIDFromStore(store string) int {
+	return extractCVVolumeID(store)
+}
+
 // extractCVVolumeID parses comicvine_volume=NNNN from a CustomValuesStore string.
 func extractCVVolumeID(store string) int {
 	for _, pair := range strings.Split(store, ",") {

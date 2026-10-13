@@ -829,6 +829,14 @@ comic-server-izc7. `internal/formatdetect` proposes a `Format` from the book rec
 - Known risk: a regular issue whose summary mentions "omnibus"/"TPB" (e.g. "collected in the TPB") is classified by that keyword, as in ComicManager. Check the preview before applying.
 - Not done: UI card, feeding Format into organizer folder structure.
 
+## Count Fill
+
+comic-server-08jr. `internal/countfill` fills `Count` from the ComicVine cache (`cv_volumes.issue_count` via `Cache.SyncedIssueCounts`), so format detection has a count to work with. Only a `Count` of 0, or one still equal to `comic_server_count_auto` (what this last wrote), is touched; that lets a re-run follow a growing ongoing series without overwriting hand-set counts. Untagged books and volumes not yet synced are skipped (unknown is not zero; the preview reports them as `waiting`). Wanted placeholders are included (Count is metadata, no file I/O).
+
+- **API**: `GET /api/library/workflow/count-fill` previews (total, volumes, waiting, first 100 rows); `POST` applies, audited as `count_fill`. 503 without a ComicVine cache.
+- **Files**: filled counts are normal metadata and go into ComicInfo.xml on the next comic-server write. Only books comic-server already wrote (they have `comic_server_written_hash`) show as stale afterwards; nothing sets ComicRack's dirty flags. Decided 2026-10-13 over keeping CV counts out of files.
+- Run count fill before format detection. Not done: UI card.
+
 ## Workflow Hero
 
 comic-server-p7ti. Top of the workflow page: percent clean (Organized / every staged book; hidden when no book is staged), a 14-day sparkline of stage advances with this-week vs last-week delta, and a cover strip of the most recently advanced books. No new table: `GET /api/library/workflow/throughput` folds `audit_log` rows whose stage moved forward (`configdb.ListStageMoves`, `buildThroughput` in `internal/api/throughput.go`). A book moving two stages counts twice; rollbacks count nothing. History is only as old as the audit log (180 days, and it only exists from vqsj onward), so a fresh install shows zeros. Reverse sync and CLI scrape/backfill are not audited, so they do not appear.

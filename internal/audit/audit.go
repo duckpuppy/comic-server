@@ -43,6 +43,7 @@ const (
 	ActionVariantCovers     = "variant_covers"
 	ActionWantedFromMissing = "wanted_from_missing"
 	ActionFormatDetect      = "format_detect"
+	ActionCountFill         = "count_fill"
 )
 
 // Change is one field's before/after.

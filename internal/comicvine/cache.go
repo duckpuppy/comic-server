@@ -249,6 +249,26 @@ func (c *Cache) PendingVolumeIDs(owned map[int]int) ([]int, error) {
 	return ids, nil
 }
 
+// SyncedIssueCounts returns cv_id -> issue_count for every volume whose
+// metadata is synced and whose issue count is known (> 0). A pending or
+// failed volume is left out: its count is unknown, not zero.
+func (c *Cache) SyncedIssueCounts() (map[int]int, error) {
+	rows, err := c.db.Query(`SELECT cv_id, issue_count FROM cv_volumes WHERE sync_status = 'synced' AND issue_count > 0`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	counts := map[int]int{}
+	for rows.Next() {
+		var id, n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, err
+		}
+		counts[id] = n
+	}
+	return counts, rows.Err()
+}
+
 // EnsureVolumesExist creates pending records for volume IDs not yet in the cache.
 func (c *Cache) EnsureVolumesExist(cvIDs []int) error {
 	tx, err := c.db.Begin()

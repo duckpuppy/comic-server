@@ -263,6 +263,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/library/workflow/stale-writes", s.handleStaleWrites)
 	s.mux.HandleFunc("/api/library/workflow/write-metadata", s.handleWriteMetadata)
 	s.mux.HandleFunc("/api/library/workflow/format-detect", s.handleFormatDetect)
+	s.mux.HandleFunc("/api/library/workflow/count-fill", s.handleCountFill)
 	s.mux.HandleFunc("/api/library/workflow/throughput", s.handleThroughput)
 	s.mux.HandleFunc("/api/library/workflow/organize-preview", s.handleOrganizePreview)
 	s.mux.HandleFunc("/api/library/workflow/organize-apply", s.handleOrganizeApply)
