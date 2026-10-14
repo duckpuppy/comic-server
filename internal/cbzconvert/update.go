@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/duckpuppy/comic-server/internal/comicvine"
 	"github.com/duckpuppy/comic-server/internal/library"
 	"github.com/duckpuppy/comic-server/internal/trash"
 )
@@ -132,7 +133,8 @@ func UpdateMetadata(book *library.ComicBook, resolvePath func(string) string, tr
 		pageCount = imageCount
 	}
 
-	comicInfo, err := BuildComicInfoXML(book, pageCount)
+	existingInfo, _ := comicvine.ReadComicInfoXMLBytes(target)
+	comicInfo, err := BuildComicInfoXMLKeeping(book, pageCount, existingInfo)
 	if err != nil {
 		return Result{}, fmt.Errorf("cbzconvert: build ComicInfo.xml: %w", err)
 	}

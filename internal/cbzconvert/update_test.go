@@ -144,3 +144,21 @@ func TestMarkWritten_ClearsDirtyFlags(t *testing.T) {
 		t.Error("with embed ComicBookIsDirty should clear")
 	}
 }
+
+func TestUpdateMetadata_KeepsUnknownComicInfoElements(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "book.cbz")
+	writeTestCBZ(t, src, map[string][]byte{
+		"001.jpg":       []byte("page"),
+		"ComicInfo.xml": []byte("<ComicInfo><Series>Old</Series><writer>W</writer></ComicInfo>"),
+	})
+	book := &library.ComicBook{FilePath: src, Series: "New", PageCount: 1}
+	tr := &trash.Trash{Root: t.TempDir(), RetentionDays: 30}
+	if _, err := UpdateMetadata(book, nil, tr, Options{}); err != nil {
+		t.Fatalf("UpdateMetadata: %v", err)
+	}
+	ci := string(readZipEntries(t, src)[comicInfoEntryName])
+	if !bytes.Contains([]byte(ci), []byte("<writer>W</writer>")) || !bytes.Contains([]byte(ci), []byte("<Series>New</Series>")) {
+		t.Errorf("ComicInfo.xml = %s", ci)
+	}
+}

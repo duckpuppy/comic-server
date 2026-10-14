@@ -125,3 +125,49 @@ func TestParseComicInfoXML_InvalidDataReturnsNotOK(t *testing.T) {
 		t.Error("expected ok=false for invalid XML")
 	}
 }
+
+func TestBuildComicInfoXMLKeeping_CarriesUnknownElements(t *testing.T) {
+	existing := []byte(`<?xml version="1.0"?>
+<ComicInfo>
+  <Series>Old</Series>
+  <Summary>file-only summary</Summary>
+  <Issue>3</Issue>
+  <writer>Mairghread Scott</writer>
+  <penciller>Someone</penciller>
+  <HasBeenRead>True</HasBeenRead>
+  <Custom attr="x"><Inner>v</Inner></Custom>
+</ComicInfo>`)
+	book := &library.ComicBook{Series: "New", Penciller: "Library Artist"}
+
+	data, err := BuildComicInfoXMLKeeping(book, 2, existing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := string(data)
+	for _, want := range []string{"<Issue>3</Issue>", "<writer>Mairghread Scott</writer>", "<HasBeenRead>True</HasBeenRead>", `<Custom attr="x"><Inner>v</Inner></Custom>`, "<Series>New</Series>", "<Penciller>Library Artist</Penciller>"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %s in:\n%s", want, out)
+		}
+	}
+	// Schema fields come from the library: an empty one is not kept from the
+	// file, and a case-twin of a written field is dropped.
+	for _, gone := range []string{"file-only summary", "<penciller>"} {
+		if strings.Contains(out, gone) {
+			t.Errorf("should not contain %s:\n%s", gone, out)
+		}
+	}
+	if _, ok := ParseComicInfoXML(data); !ok {
+		t.Error("output is not valid ComicInfo.xml")
+	}
+}
+
+func TestBuildComicInfoXMLKeeping_BadOrEmptyExisting(t *testing.T) {
+	book := &library.ComicBook{Series: "S"}
+	plain, _ := BuildComicInfoXML(book, 1)
+	for _, existing := range [][]byte{nil, []byte("<not xml")} {
+		got, err := BuildComicInfoXMLKeeping(book, 1, existing)
+		if err != nil || string(got) != string(plain) {
+			t.Errorf("existing %q: got %s, err %v", existing, got, err)
+		}
+	}
+}

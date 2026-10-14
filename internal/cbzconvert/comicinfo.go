@@ -2,6 +2,8 @@ package cbzconvert
 
 import (
 	"encoding/xml"
+	"reflect"
+	"strings"
 
 	"github.com/duckpuppy/comic-server/internal/library"
 )
@@ -69,6 +71,19 @@ type comicInfoXML struct {
 	Pages struct {
 		Page []comicInfoPageXML `xml:"Page"`
 	} `xml:"Pages"`
+
+	// Extra holds elements outside the schema above (e.g. a tagger's
+	// lowercase <writer> or <HasBeenRead>). The library cannot store them,
+	// so a write copies them over from the file's existing ComicInfo.xml
+	// instead of dropping them (comic-server-y95y).
+	Extra []extraElement `xml:",any"`
+}
+
+// extraElement is one unknown ComicInfo.xml element, kept verbatim.
+type extraElement struct {
+	XMLName xml.Name
+	Attrs   []xml.Attr `xml:",any,attr"`
+	Inner   string     `xml:",innerxml"`
 }
 
 type comicInfoPageXML struct {
@@ -89,13 +104,24 @@ type comicInfoPageXML struct {
 // pageCount/pages by dropDeletedPages before this is called - see
 // convert.go.
 func BuildComicInfoXML(book *library.ComicBook, pageCount int) ([]byte, error) {
-	return buildComicInfoXML(book, pageCount, nil)
+	return buildComicInfoXML(book, pageCount, nil, nil)
 }
 
-// buildComicInfoXML is BuildComicInfoXML plus extra FrontCover page indexes
-// (comic-server-0u48's appended variant covers) written into the Pages block
-// after the usual page-0 cover.
-func buildComicInfoXML(book *library.ComicBook, pageCount int, extraFrontCovers []int) ([]byte, error) {
+// BuildComicInfoXMLKeeping is BuildComicInfoXML for a file that already has a
+// ComicInfo.xml (existing): elements outside the schema are carried over, so
+// a write never drops data the library cannot hold. Schema fields always come
+// from the library, so a field cleared in the library is cleared in the file.
+// An unknown element whose name matches a written schema field apart from
+// case (<writer> next to <Writer>) is dropped, so readers never see two
+// conflicting values. existing may be nil or invalid XML; nothing is kept then.
+func BuildComicInfoXMLKeeping(book *library.ComicBook, pageCount int, existing []byte) ([]byte, error) {
+	return buildComicInfoXML(book, pageCount, nil, existing)
+}
+
+// buildComicInfoXML is BuildComicInfoXMLKeeping plus extra FrontCover page
+// indexes (comic-server-0u48's appended variant covers) written into the Pages
+// block after the usual page-0 cover.
+func buildComicInfoXML(book *library.ComicBook, pageCount int, extraFrontCovers []int, existing []byte) ([]byte, error) {
 	ci := comicInfoXML{
 		Title:           book.Title,
 		Series:          book.Series,
@@ -153,12 +179,42 @@ func buildComicInfoXML(book *library.ComicBook, pageCount int, extraFrontCovers 
 			ci.Pages.Page = append(ci.Pages.Page, comicInfoPageXML{Image: idx, Type: library.PageTypeFrontCover})
 		}
 	}
+	ci.Extra = keptExtras(&ci, existing)
 
 	out, err := xml.MarshalIndent(ci, "", "  ")
 	if err != nil {
 		return nil, err
 	}
 	return append([]byte(xml.Header), out...), nil
+}
+
+// keptExtras returns existing's unknown elements, minus any whose name equals
+// a schema field ci writes, ignoring case.
+func keptExtras(ci *comicInfoXML, existing []byte) []extraElement {
+	if len(existing) == 0 {
+		return nil
+	}
+	var old comicInfoXML
+	if err := xml.Unmarshal(existing, &old); err != nil || len(old.Extra) == 0 {
+		return nil
+	}
+	written := map[string]bool{}
+	v := reflect.ValueOf(*ci)
+	t := v.Type()
+	for i := 0; i < t.NumField(); i++ {
+		name, _, _ := strings.Cut(t.Field(i).Tag.Get("xml"), ",")
+		if name == "" || name == "-" || v.Field(i).IsZero() {
+			continue
+		}
+		written[strings.ToLower(name)] = true
+	}
+	var out []extraElement
+	for _, e := range old.Extra {
+		if !written[strings.ToLower(e.XMLName.Local)] {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 // ParseComicInfoXML is BuildComicInfoXML's inverse: unmarshals an archive's

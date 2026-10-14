@@ -284,7 +284,7 @@ func (s *Server) handleBookComicInfo(w http.ResponseWriter, r *http.Request) {
 		res.Raw = string(raw)
 	}
 
-	want, err := cbzconvert.BuildComicInfoXML(book, book.PageCount)
+	want, err := cbzconvert.BuildComicInfoXMLKeeping(book, book.PageCount, raw)
 	if err != nil {
 		res.Error = "Could not build the library's ComicInfo.xml: " + err.Error()
 		s.writeJSON(w, http.StatusOK, res)

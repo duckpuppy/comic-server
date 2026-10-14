@@ -7,6 +7,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/duckpuppy/comic-server/internal/comicvine"
 	"github.com/duckpuppy/comic-server/internal/library"
 	"github.com/duckpuppy/comic-server/internal/trash"
 )
@@ -97,7 +98,8 @@ func AddVariantCovers(book *library.ComicBook, resolvePath func(string) string, 
 	for _, p := range res.NewPages {
 		frontCovers = append(frontCovers, p.Image)
 	}
-	comicInfo, err := buildComicInfoXML(book, res.PageCount, frontCovers)
+	existingInfo, _ := comicvine.ReadComicInfoXMLBytes(target)
+	comicInfo, err := buildComicInfoXML(book, res.PageCount, frontCovers, existingInfo)
 	if err != nil {
 		return CoversResult{}, fmt.Errorf("cbzconvert: build ComicInfo.xml: %w", err)
 	}

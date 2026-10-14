@@ -75,7 +75,8 @@ func Convert(book *library.ComicBook, resolvePath func(string) string, tr *trash
 		return Result{}, fmt.Errorf("cbzconvert: no image pages found in %s", resolvedSrc)
 	}
 
-	comicInfoBytes, err := BuildComicInfoXML(book, len(pages))
+	existingInfo, _ := comicvine.ReadComicInfoXMLBytes(resolvedSrc)
+	comicInfoBytes, err := BuildComicInfoXMLKeeping(book, len(pages), existingInfo)
 	if err != nil {
 		return Result{}, fmt.Errorf("cbzconvert: build ComicInfo.xml: %w", err)
 	}
