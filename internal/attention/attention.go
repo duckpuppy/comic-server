@@ -74,7 +74,7 @@ type Info struct {
 var Catalog = []Info{
 	{FlagFileMissing, "File missing", "The archive is not on disk where the library says. If many books show here, check the path mapping first.", SeverityError},
 	{FlagMetadataMismatch, "Wrong ComicVine issue?", "The tagged ComicVine issue has a different number, or belongs to a different volume than the book's comicvine_volume. Re-scrape the book, or fix its number.", SeverityWarn},
-	{FlagCVVolumeConflict, "ComicVine volume conflict", "Books with the same series, volume and format are tagged with different ComicVine volumes. The ones listed disagree with most of their siblings. Re-scrape them.", SeverityWarn},
+	{FlagCVVolumeConflict, "ComicVine volume conflict", "Books with the same series, volume and format are tagged with different ComicVine volumes. The ones listed disagree with most of their siblings. Re-scrape them, or Accept the flag if both volumes are real (e.g. a publisher started two volumes of one series in the same year).", SeverityWarn},
 	{FlagNoSeries, "No series", "Book has no series name. Scrape it or set one by hand.", SeverityWarn},
 	{FlagIsPDF, "PDF files", "PDFs cannot be converted to CBZ or read by all devices.", SeverityWarn},
 	{FlagNeedsConversion, "Needs conversion", "Archive is not a CBZ (CBR, CB7, CBT...). Convert it.", SeverityWarn},
