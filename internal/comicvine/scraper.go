@@ -30,6 +30,33 @@ const (
 // ErrScrapeInProgress is returned by Scrape when another job is already running.
 var ErrScrapeInProgress = errors.New("a scrape job is already in progress")
 
+// Errors recorded for outcomes a retry cannot change by itself.
+const (
+	errNoCandidates  = "no candidate volumes found"
+	errIssueNotFound = "no matching issue number found in selected volume"
+)
+
+// HeldBackReason says why a book's last scrape outcome means a
+// whole-library scrape should not try it again (comic-server-fohc), or ""
+// when it should. Only outcomes that need the user are held back: waiting
+// in Scrape Review, no match on ComicVine, or the issue number missing
+// from the matched volume. API errors and timeouts are transient and are
+// retried. Scraping the book explicitly (by ID) ignores this.
+func HeldBackReason(r *BookScrapeResult) string {
+	if r == nil {
+		return ""
+	}
+	switch {
+	case r.Status == BookStatusPendingReview:
+		return "awaiting Scrape Review"
+	case r.Status == BookStatusFailed && r.Error == errNoCandidates:
+		return "no match on ComicVine"
+	case r.Status == BookStatusFailed && r.Error == errIssueNotFound:
+		return "issue number not in the matched volume"
+	}
+	return ""
+}
+
 // reviewCandidatesLimit caps how many candidates are stored for manual review.
 const reviewCandidatesLimit = 3
 
@@ -244,7 +271,7 @@ func (s *Scraper) AcceptReview(ctx context.Context, jobID, bookID string, volume
 	issue := SelectIssue(parsed.IssueNumber, issues)
 	if issue == nil {
 		result := &BookScrapeResult{BookID: bookID, Filename: book.FilePath, Series: parsed.Series,
-			Status: BookStatusFailed, VolumeID: volumeCVID, Error: "no matching issue number found in selected volume"}
+			Status: BookStatusFailed, VolumeID: volumeCVID, Error: errIssueNotFound}
 		s.cache.UpsertScrapeJobBook(jobID, result)
 		return result, nil
 	}
@@ -302,7 +329,7 @@ func (s *Scraper) scrapeOneBook(ctx context.Context, book *library.ComicBook, ca
 	}
 	if len(candidates) == 0 {
 		result.Status = BookStatusFailed
-		result.Error = "no candidate volumes found"
+		result.Error = errNoCandidates
 		return result
 	}
 
@@ -339,7 +366,7 @@ func (s *Scraper) scrapeOneBook(ctx context.Context, book *library.ComicBook, ca
 	if issue == nil {
 		result.Status = BookStatusFailed
 		result.VolumeID = best.Volume.ID
-		result.Error = "no matching issue number found in selected volume"
+		result.Error = errIssueNotFound
 		return result
 	}
 

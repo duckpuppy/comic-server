@@ -851,7 +851,16 @@ class WorkflowPage {
 
         const scrapeBtn = document.getElementById('run-workflow-scrape');
         if (scrapeBtn) {
-            scrapeBtn.addEventListener('click', () => this.runAction('scrape', '/api/scrape', () => 'Scrape job started - see Dashboard for progress.'));
+            // Books whose last outcome needs you (no match, waiting in Scrape
+            // Review) or tagged CVDBSKIP are held back (comic-server-fohc).
+            // Re-scrape one from its book page to retry it.
+            scrapeBtn.addEventListener('click', () => this.runAction('scrape', '/api/scrape', (r) => {
+                const held = Object.entries(r.held_back || {});
+                const heldText = held.length
+                    ? ` Held back: ${held.map(([why, n]) => `${n} ${why}`).join(', ')}. Use Re-scrape on a book's page to retry one.`
+                    : '';
+                return `Scrape job started for ${r.total_books || 0} book(s) - see Dashboard for progress.${heldText}`;
+            }));
         }
 
         const startHereBtn = document.getElementById('workflow-start-here-btn');

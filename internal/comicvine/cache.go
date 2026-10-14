@@ -508,6 +508,28 @@ func (c *Cache) GetPendingReviewBooks(jobID string) ([]*BookScrapeResult, error)
 	return results, rows.Err()
 }
 
+// LatestScrapeResults returns each book's most recent scrape outcome across
+// every job (status and error only; candidates are not decoded). Jobs are
+// ordered by start time, rows within a job by insertion.
+func (c *Cache) LatestScrapeResults() (map[string]*BookScrapeResult, error) {
+	rows, err := c.db.Query(`SELECT b.book_id, b.status, COALESCE(b.error,'')
+		FROM scrape_job_books b JOIN scrape_jobs j ON j.job_id = b.job_id
+		ORDER BY j.started_at, b.rowid`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]*BookScrapeResult{}
+	for rows.Next() {
+		r := &BookScrapeResult{}
+		if err := rows.Scan(&r.BookID, &r.Status, &r.Error); err != nil {
+			return nil, err
+		}
+		out[r.BookID] = r
+	}
+	return out, rows.Err()
+}
+
 func scanScrapeJobBookRow(rows *sql.Rows) (*BookScrapeResult, string, error) {
 	var r BookScrapeResult
 	var candidatesJSON string

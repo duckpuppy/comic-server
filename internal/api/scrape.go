@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/duckpuppy/comic-server/internal/comicvine"
 	"github.com/duckpuppy/comic-server/internal/library"
 	"github.com/duckpuppy/comic-server/internal/log"
 	ws "github.com/duckpuppy/comic-server/internal/websocket"
+	"github.com/duckpuppy/comic-server/internal/workflow"
 )
 
 // scrapeRequest is the POST /api/scrape body.
@@ -26,6 +29,9 @@ type scrapeRequestOptions struct {
 	DryRun      bool `json:"dry_run"`
 	BatchSize   int  `json:"batch_size"`
 	CoverVerify bool `json:"cover_verify"`
+	// RetryHeldBack includes, in a whole-library scrape, books held back
+	// for a past outcome (comic-server-fohc). CVDBSKIP books stay out.
+	RetryHeldBack bool `json:"retry_held_back"`
 }
 
 type scrapeReviewResolveRequest struct {
@@ -62,8 +68,16 @@ func (s *Server) handleScrapeStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	books := selectScrapeBooks(allBooks, req.BookIDs, req.Options.Rescrape)
+	var heldBack map[string]int
+	if len(req.BookIDs) == 0 {
+		books, heldBack = s.filterHeldBack(books, req.Options.RetryHeldBack)
+	}
 	if len(books) == 0 {
-		http.Error(w, "No books to scrape", http.StatusBadRequest)
+		msg := "No books to scrape"
+		if n := sumCounts(heldBack); n > 0 {
+			msg = fmt.Sprintf("No books to scrape (%d held back: %s)", n, describeCounts(heldBack))
+		}
+		http.Error(w, msg, http.StatusBadRequest)
 		return
 	}
 
@@ -83,7 +97,65 @@ func (s *Server) handleScrapeStart(w http.ResponseWriter, r *http.Request) {
 
 	go s.runScrapeJob(jobID, books, opts)
 
-	s.writeJSON(w, http.StatusAccepted, map[string]string{"job_id": jobID})
+	s.writeJSON(w, http.StatusAccepted, map[string]any{"job_id": jobID, "total_books": len(books), "held_back": heldBack})
+}
+
+// filterHeldBack drops, from a whole-library scrape, books a retry would
+// not help (comic-server-fohc): tagged CVDBSKIP by the user (always), or
+// whose last scrape outcome needs the user (comicvine.HeldBackReason;
+// skipped when retry is set). Returns the kept books and a count per
+// reason. Without a cache only CVDBSKIP applies.
+func (s *Server) filterHeldBack(books []*library.ComicBook, retry bool) ([]*library.ComicBook, map[string]int) {
+	var latest map[string]*comicvine.BookScrapeResult
+	if s.cvCache != nil && !retry {
+		var err error
+		if latest, err = s.cvCache.LatestScrapeResults(); err != nil {
+			log.Warn().Err(err).Msg("Scrape: could not read past outcomes; not holding any back")
+		}
+	}
+	counts := map[string]int{}
+	kept := books[:0:0]
+	for _, b := range books {
+		reason := ""
+		if workflow.IsCVDBSkip(b) {
+			reason = "tagged CVDBSKIP"
+		} else {
+			reason = comicvine.HeldBackReason(latest[b.ID])
+		}
+		if reason != "" {
+			counts[reason]++
+			continue
+		}
+		kept = append(kept, b)
+	}
+	return kept, counts
+}
+
+func sumCounts(m map[string]int) int {
+	n := 0
+	for _, v := range m {
+		n += v
+	}
+	return n
+}
+
+// describeCounts renders {"a": 2, "b": 1} as "2 a, 1 b", largest first.
+func describeCounts(m map[string]int) string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if m[keys[i]] != m[keys[j]] {
+			return m[keys[i]] > m[keys[j]]
+		}
+		return keys[i] < keys[j]
+	})
+	parts := make([]string, len(keys))
+	for i, k := range keys {
+		parts[i] = fmt.Sprintf("%d %s", m[k], k)
+	}
+	return strings.Join(parts, ", ")
 }
 
 // runScrapeJob runs a scrape job to completion, broadcasting WebSocket

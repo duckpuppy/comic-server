@@ -146,11 +146,11 @@ func TestHandleScrapeStart_HighConfidence(t *testing.T) {
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
 	}
-	var resp map[string]string
+	var resp map[string]any
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
-	if resp["job_id"] == "" {
+	if resp["job_id"] == "" || resp["job_id"] == nil {
 		t.Error("expected non-empty job_id")
 	}
 
@@ -285,4 +285,71 @@ func waitUntil(t *testing.T, cond func() bool) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatal("timed out waiting for condition")
+}
+
+func TestHandleScrapeStart_WholeLibraryHoldsBackKnownProblems(t *testing.T) {
+	books := []library.ComicBook{
+		{ID: "new", FilePath: "Foo 001.cbz"},
+		{ID: "skip", FilePath: "Foo 002.cbz", Tags: "CVDBSKIP"},
+		{ID: "review", FilePath: "Foo 003.cbz"},
+		{ID: "nomatch", FilePath: "Foo 004.cbz"},
+		{ID: "transient", FilePath: "Foo 005.cbz"},
+		{ID: "later-ok", FilePath: "Foo 006.cbz"},
+	}
+	srv := newScrapeAPITestServer(t, books, &scrapeAPIFixture{})
+	old := &comicvine.ScrapeJob{ID: "old", Status: comicvine.JobStatusComplete, StartedAt: time.Now().Add(-2 * time.Hour), UpdatedAt: time.Now()}
+	newer := &comicvine.ScrapeJob{ID: "newer", Status: comicvine.JobStatusComplete, StartedAt: time.Now().Add(-time.Hour), UpdatedAt: time.Now()}
+	for _, j := range []*comicvine.ScrapeJob{old, newer} {
+		if err := srv.cvCache.SaveScrapeJobMeta(j); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, r := range []struct {
+		job string
+		res comicvine.BookScrapeResult
+	}{
+		{"old", comicvine.BookScrapeResult{BookID: "review", Status: comicvine.BookStatusPendingReview}},
+		{"old", comicvine.BookScrapeResult{BookID: "nomatch", Status: comicvine.BookStatusFailed, Error: "no candidate volumes found"}},
+		{"old", comicvine.BookScrapeResult{BookID: "transient", Status: comicvine.BookStatusFailed, Error: "search volumes: timeout"}},
+		// Held back in an old job, but the newer job's outcome is what counts.
+		{"old", comicvine.BookScrapeResult{BookID: "later-ok", Status: comicvine.BookStatusPendingReview}},
+		{"newer", comicvine.BookScrapeResult{BookID: "later-ok", Status: comicvine.BookStatusFailed, Error: "fetch issues: 502"}},
+	} {
+		res := r.res
+		if err := srv.cvCache.UpsertScrapeJobBook(r.job, &res); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	w := httptest.NewRecorder()
+	srv.handleScrapeStart(w, httptest.NewRequest(http.MethodPost, "/api/scrape", nil))
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		TotalBooks int            `json:"total_books"`
+		HeldBack   map[string]int `json:"held_back"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]int{"tagged CVDBSKIP": 1, "awaiting Scrape Review": 1, "no match on ComicVine": 1}
+	if resp.TotalBooks != 3 || len(resp.HeldBack) != len(want) {
+		t.Fatalf("resp = %+v", resp)
+	}
+	for k, v := range want {
+		if resp.HeldBack[k] != v {
+			t.Errorf("held_back[%q] = %d, want %d", k, resp.HeldBack[k], v)
+		}
+	}
+	waitForJobStatus(t, srv, comicvine.JobStatusComplete)
+
+	// retry_held_back brings back the past-outcome books, never CVDBSKIP.
+	w = httptest.NewRecorder()
+	srv.handleScrapeStart(w, httptest.NewRequest(http.MethodPost, "/api/scrape", strings.NewReader(`{"options":{"retry_held_back":true}}`)))
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if w.Code != http.StatusAccepted || resp.TotalBooks != 5 || resp.HeldBack["tagged CVDBSKIP"] != 1 {
+		t.Fatalf("retry: status %d resp %+v", w.Code, resp)
+	}
+	waitForJobStatus(t, srv, comicvine.JobStatusComplete)
 }
