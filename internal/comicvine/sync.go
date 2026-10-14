@@ -202,6 +202,12 @@ func VolumeIDFromStore(store string) int {
 	return extractCVVolumeID(store)
 }
 
+// IssueIDFromStore returns the comicvine_issue ID in a CustomValuesStore,
+// or 0 when the book has none.
+func IssueIDFromStore(store string) int {
+	return extractCVIssueID(store)
+}
+
 // extractCVVolumeID parses comicvine_volume=NNNN from a CustomValuesStore string.
 func extractCVVolumeID(store string) int {
 	for _, pair := range strings.Split(store, ",") {

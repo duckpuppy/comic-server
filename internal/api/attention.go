@@ -3,9 +3,11 @@ package api
 import (
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/duckpuppy/comic-server/internal/attention"
 	"github.com/duckpuppy/comic-server/internal/library"
+	"github.com/duckpuppy/comic-server/internal/log"
 )
 
 // AttentionFlagSummary is one flag's entry in GET /api/library/attention.
@@ -49,6 +51,52 @@ func (s *Server) handleAttentionSummary(w http.ResponseWriter, r *http.Request) 
 		})
 	}
 	s.writeJSON(w, http.StatusOK, map[string]any{"flags": flags})
+}
+
+// cvAttentionTTL bounds how stale the ComicVine side of the attention flags
+// can be. The CV sync moves slowly (weeks for a full library), so a few
+// minutes of lag costs nothing and keeps the chunked issue lookup off most
+// workflow-cache rebuilds.
+const cvAttentionTTL = 10 * time.Minute
+
+// cvAttentionData returns the ComicVine cache slice the attention flags
+// read, or nil without a cache or on error (the CV flags then just do not
+// show). Issue rows are looked up only for issue IDs the library uses. A
+// book tagged after the snapshot was taken is unknown until the next one.
+func (s *Server) cvAttentionData(books []library.ComicBook) *attention.CVData {
+	if s.cvCache == nil {
+		return nil
+	}
+	s.cvAttentionMu.Lock()
+	defer s.cvAttentionMu.Unlock()
+	if s.cvAttention != nil && time.Since(s.cvAttentionAt) < cvAttentionTTL {
+		return s.cvAttention
+	}
+	counts, err := s.cvCache.SyncedIssueCounts()
+	if err != nil {
+		log.Warn().Err(err).Msg("Attention: failed to read ComicVine issue counts")
+		return nil
+	}
+	seen := map[int]bool{}
+	var ids []int
+	for i := range books {
+		if _, iss := attention.BookCVIDs(&books[i]); iss > 0 && !seen[iss] {
+			seen[iss] = true
+			ids = append(ids, iss)
+		}
+	}
+	refs, err := s.cvCache.IssueRefs(ids)
+	if err != nil {
+		log.Warn().Err(err).Msg("Attention: failed to read ComicVine issues")
+		return nil
+	}
+	issues := make(map[int]attention.CVIssue, len(refs))
+	for id, r := range refs {
+		issues[id] = attention.CVIssue{Volume: r.Volume, Number: r.Number}
+	}
+	s.cvAttention = &attention.CVData{Counts: counts, Issues: issues}
+	s.cvAttentionAt = time.Now()
+	return s.cvAttention
 }
 
 // handleAttentionFlagBooks returns a page of the books carrying one flag.

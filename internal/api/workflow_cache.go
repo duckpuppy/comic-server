@@ -55,12 +55,24 @@ func (s *Server) getOrBuildWorkflowCache() (*workflowCacheEntry, error) {
 		booksByFlag:  make(map[attention.Flag][]*library.ComicBook),
 	}
 	missing := s.missingFiles()
+	cv := s.cvAttentionData(allBooks)
+	ptrs := make([]*library.ComicBook, len(allBooks))
+	for i := range allBooks {
+		ptrs[i] = &allBooks[i]
+	}
+	conflicts := attention.VolumeConflicts(ptrs)
 	for i := range allBooks {
 		book := &allBooks[i]
 		st := workflow.GetStage(book)
 		built.booksByStage[st] = append(built.booksByStage[st], book)
 		for _, f := range attention.FlagsFor(book) {
 			built.booksByFlag[f] = append(built.booksByFlag[f], book)
+		}
+		for _, f := range attention.CVFlagsFor(book, cv) {
+			built.booksByFlag[f] = append(built.booksByFlag[f], book)
+		}
+		if conflicts[book.ID] {
+			built.booksByFlag[attention.FlagCVVolumeConflict] = append(built.booksByFlag[attention.FlagCVVolumeConflict], book)
 		}
 		if missing[book.ID] {
 			built.booksByFlag[attention.FlagFileMissing] = append(built.booksByFlag[attention.FlagFileMissing], book)

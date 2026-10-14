@@ -385,3 +385,30 @@ func TestCache_CoverHashes(t *testing.T) {
 		t.Errorf("volume hash was clobbered by issue hash: %x", volHash)
 	}
 }
+
+func TestCache_IssueRefsChunksAndSkipsUnknown(t *testing.T) {
+	c := testCache(t)
+	c.UpsertVolume(&CachedVolume{CVID: 100, Name: "Test", SyncStatus: SyncStatusSynced})
+	var issues []CachedIssue
+	var ids []int
+	for i := 1; i <= 1200; i++ { // more than one 500-id chunk
+		issues = append(issues, CachedIssue{CVID: i, VolumeCVID: 100, Number: "n"})
+		ids = append(ids, i)
+	}
+	if err := c.UpsertIssues(issues); err != nil {
+		t.Fatal(err)
+	}
+	refs, err := c.IssueRefs(append(ids, 99999))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(refs) != 1200 || refs[1200].Volume != 100 || refs[1200].Number != "n" {
+		t.Fatalf("got %d refs, refs[1200] = %+v", len(refs), refs[1200])
+	}
+	if _, ok := refs[99999]; ok {
+		t.Error("unknown id returned")
+	}
+	if refs, err := c.IssueRefs(nil); err != nil || len(refs) != 0 {
+		t.Errorf("empty ids = %v, %v", refs, err)
+	}
+}

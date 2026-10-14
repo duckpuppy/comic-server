@@ -4,6 +4,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"github.com/duckpuppy/comic-server/internal/attention"
 	"github.com/duckpuppy/comic-server/internal/audit"
 	"io"
 	"io/fs"
@@ -91,6 +92,11 @@ type Server struct {
 	// each independently scan the whole library - see workflow_cache.go.
 	workflowCache   *workflowCacheEntry
 	workflowCacheMu sync.RWMutex
+	// cvAttention memoises the ComicVine cache slice the attention flags
+	// read (comic-server-8fee); see cvAttentionData.
+	cvAttention   *attention.CVData
+	cvAttentionAt time.Time
+	cvAttentionMu sync.Mutex
 
 	// disk is the background file_missing pass (comic-server-4q1z).
 	disk diskCheck

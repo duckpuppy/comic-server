@@ -2,9 +2,9 @@
 // (comic-server-z77p): named, severity-ranked problems such as a missing
 // series name or a file that still needs converting to CBZ.
 //
-// Every flag here is derived from the book record alone, so computing the
-// whole library is a single cheap pass. Flags that need other data (file
-// existence on disk, ComicVine cache, sibling books) are left for later.
+// FlagsFor derives flags from the book record alone. Flags that need other
+// data live elsewhere: file_missing comes from the API's disk pass, and the
+// ComicVine-cache and sibling flags are in crosscheck.go.
 package attention
 
 import (
@@ -73,6 +73,8 @@ type Info struct {
 // are equal.
 var Catalog = []Info{
 	{FlagFileMissing, "File missing", "The archive is not on disk where the library says. If many books show here, check the path mapping first.", SeverityError},
+	{FlagMetadataMismatch, "Wrong ComicVine issue?", "The tagged ComicVine issue has a different number, or belongs to a different volume than the book's comicvine_volume. Re-scrape the book, or fix its number.", SeverityWarn},
+	{FlagCVVolumeConflict, "ComicVine volume conflict", "Books with the same series, volume and format are tagged with different ComicVine volumes. The ones listed disagree with most of their siblings. Re-scrape them.", SeverityWarn},
 	{FlagNoSeries, "No series", "Book has no series name. Scrape it or set one by hand.", SeverityWarn},
 	{FlagIsPDF, "PDF files", "PDFs cannot be converted to CBZ or read by all devices.", SeverityWarn},
 	{FlagNeedsConversion, "Needs conversion", "Archive is not a CBZ (CBR, CB7, CBT...). Convert it.", SeverityWarn},
@@ -82,6 +84,7 @@ var Catalog = []Info{
 	{FlagUnknownPublisher, "Unknown publisher", "Publisher is empty.", SeverityInfo},
 	{FlagMissingFormat, "Missing format", "Format (Series, Annual, One-Shot...) is empty.", SeverityInfo},
 	{FlagMissingCount, "Missing issue count", "Series has no total issue count.", SeverityInfo},
+	{FlagCountMismatch, "Count differs from ComicVine", "Issue count is not ComicVine's. Fill Issue Counts updates counts it set itself; a count you set by hand is yours to check.", SeverityInfo},
 }
 
 var infoByFlag = func() map[Flag]Info {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -267,6 +268,48 @@ func (c *Cache) SyncedIssueCounts() (map[int]int, error) {
 		counts[id] = n
 	}
 	return counts, rows.Err()
+}
+
+// IssueRef is where a cached issue belongs and its number.
+type IssueRef struct {
+	Volume int
+	Number string
+}
+
+// IssueRefs returns the cached volume and number for each of ids that is
+// in cv_issues. Ids not cached yet are left out (unknown, not wrong).
+// Queried in chunks so a whole library's ids never load every cached
+// issue into memory.
+func (c *Cache) IssueRefs(ids []int) (map[int]IssueRef, error) {
+	const chunk = 500
+	out := make(map[int]IssueRef, len(ids))
+	for start := 0; start < len(ids); start += chunk {
+		part := ids[start:min(start+chunk, len(ids))]
+		args := make([]any, len(part))
+		for i, id := range part {
+			args[i] = id
+		}
+		q := `SELECT cv_id, volume_cv_id, number FROM cv_issues WHERE cv_id IN (?` + strings.Repeat(",?", len(part)-1) + `)`
+		rows, err := c.db.Query(q, args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var id int
+			var ref IssueRef
+			if err := rows.Scan(&id, &ref.Volume, &ref.Number); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			out[id] = ref
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 // EnsureVolumesExist creates pending records for volume IDs not yet in the cache.
