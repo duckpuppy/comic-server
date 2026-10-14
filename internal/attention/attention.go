@@ -84,6 +84,7 @@ var Catalog = []Info{
 	{FlagUnknownPublisher, "Unknown publisher", "Publisher is empty.", SeverityInfo},
 	{FlagMissingFormat, "Missing format", "Format (Series, Annual, One-Shot...) is empty.", SeverityInfo},
 	{FlagMissingCount, "Missing issue count", "Series has no total issue count.", SeverityInfo},
+	{FlagFormatMismatch, "Format differs in volume", "Most books of this ComicVine volume have another Format. Fix the one listed, or Accept it if the difference is real (e.g. a one-shot special inside a run).", SeverityInfo},
 	{FlagCountMismatch, "Count differs from ComicVine", "Issue count is not ComicVine's. Fill Issue Counts updates counts it set itself; a count you set by hand is yours to check.", SeverityInfo},
 }
 

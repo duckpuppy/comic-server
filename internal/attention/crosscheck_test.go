@@ -92,3 +92,29 @@ func TestAccepted(t *testing.T) {
 		t.Error("other custom values changed")
 	}
 }
+
+func TestFormatMismatches(t *testing.T) {
+	fb := func(id, cv, format string) *library.ComicBook {
+		return &library.ComicBook{ID: id, Format: format, CustomValuesStore: "comicvine_volume=" + cv}
+	}
+	books := []*library.ComicBook{
+		fb("a1", "100", "Series"),
+		fb("a2", "100", "series "), // case and space ignored
+		fb("a3", "100", "Limited Series"),
+		fb("a4", "100", ""), // empty: missing_format's job
+		fb("b1", "200", "One-Shot"),
+		fb("t1", "300", "Series"),
+		fb("t2", "300", "TPB"),
+		{ID: "u1", Format: "TPB"}, // untagged
+	}
+	got := FormatMismatches(books)
+	want := map[string]bool{"a3": true, "t1": true, "t2": true}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for id := range want {
+		if !got[id] {
+			t.Errorf("missing %s in %v", id, got)
+		}
+	}
+}

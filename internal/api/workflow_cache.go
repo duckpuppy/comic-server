@@ -61,6 +61,7 @@ func (s *Server) getOrBuildWorkflowCache() (*workflowCacheEntry, error) {
 		ptrs[i] = &allBooks[i]
 	}
 	conflicts := attention.VolumeConflicts(ptrs)
+	formatOdd := attention.FormatMismatches(ptrs)
 	for i := range allBooks {
 		book := &allBooks[i]
 		st := workflow.GetStage(book)
@@ -80,6 +81,9 @@ func (s *Server) getOrBuildWorkflowCache() (*workflowCacheEntry, error) {
 		}
 		if conflicts[book.ID] {
 			add(attention.FlagCVVolumeConflict)
+		}
+		if formatOdd[book.ID] {
+			add(attention.FlagFormatMismatch)
 		}
 		if missing[book.ID] {
 			add(attention.FlagFileMissing)

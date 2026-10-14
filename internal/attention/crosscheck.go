@@ -14,6 +14,7 @@ const (
 	FlagCountMismatch    Flag = "count_mismatch"
 	FlagMetadataMismatch Flag = "metadata_mismatch"
 	FlagCVVolumeConflict Flag = "cv_volume_conflict"
+	FlagFormatMismatch   Flag = "format_mismatch_in_volume"
 )
 
 // CVIssue is what the ComicVine cache knows about one issue.
@@ -73,11 +74,7 @@ func CVFlagsFor(b *library.ComicBook, cv *CVData) []Flag {
 // legitimately span several ComicVine volumes. On a tie every tagged
 // sibling is returned, because there is no majority to trust.
 func VolumeConflicts(books []*library.ComicBook) map[string]bool {
-	type sib struct {
-		id  string
-		vol int
-	}
-	groups := map[string][]sib{}
+	groups := map[string][]member{}
 	for _, b := range books {
 		vol, _ := BookCVIDs(b)
 		if vol == 0 || b.Volume <= 0 {
@@ -88,18 +85,50 @@ func VolumeConflicts(books []*library.ComicBook) map[string]bool {
 			continue
 		}
 		key := series + "\x00" + strconv.Itoa(b.Volume) + "\x00" + strings.ToLower(strings.TrimSpace(b.Format))
-		groups[key] = append(groups[key], sib{b.ID, vol})
+		groups[key] = append(groups[key], member{b.ID, strconv.Itoa(vol)})
 	}
+	return minorities(groups)
+}
+
+// FormatMismatches returns the IDs of books whose Format differs from the
+// one most books of the same ComicVine volume use (comic-server-0vu9),
+// e.g. one issue marked "Limited Series" in a run marked "Series". An
+// empty Format is missing_format's job and is not compared. Ties return
+// every book with a Format.
+func FormatMismatches(books []*library.ComicBook) map[string]bool {
+	groups := map[string][]member{}
+	for _, b := range books {
+		vol, _ := BookCVIDs(b)
+		format := strings.ToLower(strings.TrimSpace(b.Format))
+		if vol == 0 || format == "" {
+			continue
+		}
+		key := strconv.Itoa(vol)
+		groups[key] = append(groups[key], member{b.ID, format})
+	}
+	return minorities(groups)
+}
+
+// member is one book in a sibling group and the value being compared.
+type member struct {
+	id    string
+	value string
+}
+
+// minorities returns the IDs of members whose value is not their group's
+// majority value. A group with one value contributes nothing; a tie for
+// the majority contributes every member.
+func minorities(groups map[string][]member) map[string]bool {
 	out := map[string]bool{}
-	for _, sibs := range groups {
-		counts := map[int]int{}
-		for _, s := range sibs {
-			counts[s.vol]++
+	for _, ms := range groups {
+		counts := map[string]int{}
+		for _, m := range ms {
+			counts[m.value]++
 		}
 		if len(counts) < 2 {
 			continue
 		}
-		best, bestN, tie := 0, 0, false
+		best, bestN, tie := "", 0, false
 		for v, n := range counts {
 			switch {
 			case n > bestN:
@@ -108,9 +137,9 @@ func VolumeConflicts(books []*library.ComicBook) map[string]bool {
 				tie = true
 			}
 		}
-		for _, s := range sibs {
-			if tie || s.vol != best {
-				out[s.id] = true
+		for _, m := range ms {
+			if tie || m.value != best {
+				out[m.id] = true
 			}
 		}
 	}
