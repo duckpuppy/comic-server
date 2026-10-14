@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.50.0](https://github.com/duckpuppy/comic-server/compare/v1.49.0...v1.50.0) (2026-10-14)
+
+
+### Features
+
+* Browse filter rail and grid/table/compact views ([18c20dd](https://github.com/duckpuppy/comic-server/commit/18c20dd385dcba406408d73f7587e7692a053f2e))
+* paper copies - add form, CSV import, Physical badge ([758666d](https://github.com/duckpuppy/comic-server/commit/758666d82403da2ce1aac8c53da784a1c518b5e1))
+
+
+### Bug Fixes
+
+* keep unknown ComicInfo.xml elements when writing metadata ([7e35355](https://github.com/duckpuppy/comic-server/commit/7e353555f8dcfede31afcd11a4177273fc7dc4ad))
+
+
+### Documentation
+
+* cv_volume_conflict hint suggests Accept for real same-year volumes ([9b6631a](https://github.com/duckpuppy/comic-server/commit/9b6631a2cb535b5f32c675b85c57436340392539))
+
 ## [1.49.0](https://github.com/duckpuppy/comic-server/compare/v1.48.0...v1.49.0) (2026-10-14)
 
 
