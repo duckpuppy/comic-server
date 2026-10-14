@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.49.0](https://github.com/duckpuppy/comic-server/compare/v1.48.0...v1.49.0) (2026-10-14)
+
+
+### Features
+
+* accept (hide) an attention flag on one book ([2d74177](https://github.com/duckpuppy/comic-server/commit/2d74177d4558776e0a0fea3bad538b0755e67d42))
+* actions on the book detail page ([47c96c6](https://github.com/duckpuppy/comic-server/commit/47c96c64d574b6b2fd446825b763d5aaee7d1a62))
+* book detail page ([1b6748e](https://github.com/duckpuppy/comic-server/commit/1b6748eb97c20f362271c302965788a81fde99b3))
+* duplicate review re-scrape option and physical-vs-digital guard ([986daad](https://github.com/duckpuppy/comic-server/commit/986daad84752239e1d7f2dfa7896dc2711a8073b))
+* format_mismatch_in_volume attention flag ([f236f2d](https://github.com/duckpuppy/comic-server/commit/f236f2dd4b96763ca6763661fdfb0ea0f5a55427))
+* needs-attention flags for ComicVine count, issue and volume mismatches ([723fec5](https://github.com/duckpuppy/comic-server/commit/723fec5de27808ffea15e7a8ecde4ae47dc47517))
+* whole-library scrape holds back books a retry cannot fix ([2362cae](https://github.com/duckpuppy/comic-server/commit/2362cae30960aee3de42f17d9304ba7d44a30811))
+
 ## [1.48.0](https://github.com/duckpuppy/comic-server/compare/v1.47.1...v1.48.0) (2026-10-13)
 
 
