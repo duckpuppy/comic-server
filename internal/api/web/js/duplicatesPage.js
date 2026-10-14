@@ -106,7 +106,7 @@ class DuplicatesPage {
                 <input type="radio" name="keep-${this.escapeHtml(g.key)}" value="${this.escapeHtml(b.id)}" ${b.id === keeper ? 'checked' : ''}>
                 <img class="dup-cover" loading="lazy" src="${this.escapeHtml(b.cover_url)}" alt="">
                 <div class="dup-meta">
-                    <div class="dup-title">${this.escapeHtml(b.series)} #${this.escapeHtml(b.number)}${b.volume ? ` (vol ${b.volume})` : ''}</div>
+                    <div class="dup-title"><a class="book-link" href="/books/${encodeURIComponent(b.id)}" data-route>${this.escapeHtml(b.series)} #${this.escapeHtml(b.number)}${b.volume ? ` (vol ${b.volume})` : ''}</a></div>
                     <div>${this.escapeHtml(b.title)}</div>
                     <div class="dup-sub">${b.page_count} pages &middot; ${this.formatSize(b.file_size)}${b.year ? ` &middot; ${b.year}` : ''}</div>
                     <div class="dup-path" title="${this.escapeHtml(b.file_path)}">${this.escapeHtml(b.file_path)}</div>

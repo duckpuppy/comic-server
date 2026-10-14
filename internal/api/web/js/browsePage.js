@@ -233,7 +233,7 @@ class BrowsePage {
 
         html += '<table class="datamanager-diff-table"><thead><tr><th>Series</th><th>Number</th><th>Title</th><th>Publisher</th><th>Year</th><th>Pages</th></tr></thead><tbody>';
         for (const c of this.results) {
-            html += `<tr><td>${this.escapeHtml(c.series)}</td><td>${this.escapeHtml(c.number)}</td><td>${this.escapeHtml(c.title)}</td><td>${this.escapeHtml(c.publisher)}</td><td>${c.year || ''}</td><td>${c.page_count || ''}</td></tr>`;
+            html += `<tr><td><a class="book-link" href="/books/${encodeURIComponent(c.id)}" data-route>${this.escapeHtml(c.series)}</a></td><td>${this.escapeHtml(c.number)}</td><td>${this.escapeHtml(c.title)}</td><td>${this.escapeHtml(c.publisher)}</td><td>${c.year || ''}</td><td>${c.page_count || ''}</td></tr>`;
         }
         html += '</tbody></table>';
 

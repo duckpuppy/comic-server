@@ -21,6 +21,14 @@ func (s *Server) handleBooksRouter(w http.ResponseWriter, r *http.Request) {
 		s.handleGetBookCover(w, r)
 		return
 	}
+	if strings.HasSuffix(suffix, "/comicinfo") {
+		s.handleBookComicInfo(w, r)
+		return
+	}
+	if suffix != "" && !strings.Contains(strings.TrimSuffix(suffix, "/"), "/") {
+		s.handleBookDetail(w, r)
+		return
+	}
 
 	http.NotFound(w, r)
 }

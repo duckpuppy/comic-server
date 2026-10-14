@@ -1215,6 +1215,7 @@ The UI now features multi-page navigation with the following routes:
 - `/devices` - Devices browser page with filtering and search
 - `/devices/:deviceId` - Device detail page with sync history
 - `/sync` - Sync history browser with pagination
+- `/books/:bookId` - Book detail page (comic-server-br14): record, file, stage, attention flags, ComicVine links, this book's audit history, and an on-demand compare of the file's ComicInfo.xml with what Write Metadata would write (`GET /api/library/books/:id` and `/:id/comicinfo`; `Pages` skipped, empty == absent). View-only; actions are comic-server-2s4f. In-app links use `<a href=... data-route>` (one delegated click handler in app.js); Browse, list cards, workflow drill-ins, Duplicates and History link here.
 
 **Routing Features**:
 - Browser back/forward button support (popstate events)

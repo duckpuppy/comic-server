@@ -595,7 +595,7 @@ class ListDetail {
                          onerror="this.style.display='none';">
                 </div>
                 <div class="comic-info">
-                    <div class="comic-series">${this.escapeHtml(comic.series)}</div>
+                    <div class="comic-series"><a class="book-link" href="/books/${encodeURIComponent(comic.id)}" data-route>${this.escapeHtml(comic.series)}</a></div>
                     <div class="comic-number">#${this.escapeHtml(comic.number)}</div>
                     ${comic.title ? `<div class="comic-title">${this.escapeHtml(comic.title)}</div>` : ''}
                 </div>

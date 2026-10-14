@@ -14,6 +14,12 @@ class HistoryPage {
     }
 
     async init(ctx) {
+        // ?book_id= (from the book detail page's "All history" link).
+        const fromUrl = new URLSearchParams(window.location.search).get('book_id');
+        if (fromUrl) {
+            this.bookId = fromUrl;
+            this.offset = 0;
+        }
         this.loading = true;
         this.render();
         await this.load();
@@ -72,7 +78,7 @@ class HistoryPage {
             <tr>
                 <td class="history-when" title="${this.escapeAttr(e.at)}">${this.escapeHtml(when.toLocaleString())}</td>
                 <td><span class="history-action">${this.escapeHtml(e.action)}</span></td>
-                <td><a href="#" class="history-book-link" data-book="${this.escapeAttr(e.book_id)}">${this.escapeHtml(e.series || e.book_id)} ${this.escapeHtml(e.number ? '#' + e.number : '')}</a></td>
+                <td><a href="#" class="history-book-link" data-book="${this.escapeAttr(e.book_id)}">${this.escapeHtml(e.series || e.book_id)} ${this.escapeHtml(e.number ? '#' + e.number : '')}</a> <a class="book-link" title="Book details" href="/books/${encodeURIComponent(e.book_id)}" data-route>&#8599;</a></td>
                 <td>${stage}</td>
                 <td>${this.renderChanges(e.changes)}</td>
                 <td>${canRollBack ? `<button class="btn btn-secondary history-rollback-btn" data-book="${this.escapeAttr(e.book_id)}" data-stage="${this.escapeAttr(e.stage_before)}">Roll back to ${this.escapeHtml(e.stage_before)}</button>` : ''}</td>

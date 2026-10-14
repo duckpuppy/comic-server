@@ -112,6 +112,7 @@ let komgaStatus = null;
 let trashBrowser = null;
 let scrapeReviewPage = null;
 let duplicatesPage = null;
+let bookDetailPage = null;
 let historyPage = null;
 let variantCoversPage = null;
 let missingIssuesPage = null;
@@ -351,6 +352,24 @@ document.addEventListener('DOMContentLoaded', () => {
             duplicatesPage = new DuplicatesPage();
         }
         await duplicatesPage.init(ctx);
+    });
+
+    router.register('/books/:bookId', async (params, ctx) => {
+        navigation.setActive('browse');
+        dashboard.hide();
+        if (!bookDetailPage) {
+            bookDetailPage = new BookDetailPage();
+        }
+        await bookDetailPage.init(ctx, params.bookId);
+    });
+
+    // In-app links (<a href="/books/..." data-route>) navigate without a
+    // page load; modifier clicks still open a new tab.
+    document.addEventListener('click', (e) => {
+        const a = e.target.closest('a[data-route]');
+        if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        e.preventDefault();
+        router.navigate(a.getAttribute('href'));
     });
 
     router.register('/trash', async (params, ctx) => {
