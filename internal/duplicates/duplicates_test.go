@@ -45,6 +45,23 @@ func TestDetect_DifferentVolumeOrFormatNotDuplicate(t *testing.T) {
 	}
 }
 
+func TestDetect_FilelessNeverGroupsWithFile(t *testing.T) {
+	digital := bk("d", "Batman", "1", "/d.cbz", 22)
+	digital.CustomValuesStore = ",comicvine_issue=555"
+	physical := bk("p", "Batman", "1", "", 0)
+	physical.CustomValuesStore = ",comicvine_issue=555"
+	if g := Detect([]*library.ComicBook{digital, physical}, Options{}); len(g) != 0 {
+		t.Fatalf("physical + digital grouped: %+v", g)
+	}
+
+	// Two fileless entries for one issue are still duplicates of each other.
+	physical2 := bk("p2", "Batman", "001", "", 0)
+	g := Detect([]*library.ComicBook{digital, physical, physical2}, Options{})
+	if len(g) != 1 || len(g[0].Books) != 2 || g[0].Books[0].FilePath != "" || g[0].Books[1].FilePath != "" {
+		t.Fatalf("groups = %+v", g)
+	}
+}
+
 func TestDetect_ComicVineIssue(t *testing.T) {
 	a := bk("a", "Foo", "1", "/a.cbz", 20)
 	a.CustomValuesStore = ",comicvine_issue=555"

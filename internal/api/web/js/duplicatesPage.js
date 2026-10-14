@@ -118,6 +118,9 @@ class DuplicatesPage {
                 <div class="dup-group-header">${reasons}</div>
                 <div class="dup-books">${books}</div>
                 <div class="dup-actions">
+                    <label class="dup-rescrape" title="Start a ComicVine scrape for the kept book after Keep. A wrong ComicVine tag is a common cause of duplicates.">
+                        <input type="checkbox" class="dup-rescrape-input"> Re-scrape the kept book
+                    </label>
                     <button class="btn btn-secondary" data-act="keep">Keep selected</button>
                     <button class="btn btn-danger" data-act="keep_trash">Keep selected and trash the rest</button>
                     <button class="btn btn-secondary" data-act="keep_all">Keep all (not duplicates)</button>
@@ -149,6 +152,8 @@ class DuplicatesPage {
         const key = groupEl.dataset.key;
         const checked = groupEl.querySelector('input[type=radio]:checked');
         const keepId = checked ? checked.value : '';
+        const rescrapeBox = groupEl.querySelector('.dup-rescrape-input');
+        const rescrape = action !== 'keep_all' && rescrapeBox && rescrapeBox.checked;
         if (action === 'keep_trash') {
             const ok = await dialogs.confirm({
                 title: 'Trash duplicates',
@@ -172,10 +177,34 @@ class DuplicatesPage {
             } else if (action === 'keep_trash') {
                 dialogs.toast(`Trashed ${(result.trashed || []).length} file(s)`, 'success');
             }
+            if (rescrape) await this.rescrape(keepId);
         } catch (e) {
             dialogs.toast(`Failed to resolve: ${e.message || e}`, 'error', 6000);
         }
         await this.load();
         this.render();
+    }
+
+    // Full search, not the fast rescrape: the existing ComicVine tag may be
+    // the wrong one. A low-confidence match goes to Scrape Review.
+    async rescrape(bookId) {
+        try {
+            const res = await fetch('/api/scrape', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ book_ids: [bookId] }),
+            });
+            if (res.status === 409) {
+                dialogs.toast('Kept. A scrape is already running - re-scrape this book later.', 'error', 8000);
+            } else if (res.status === 503) {
+                dialogs.toast('Kept. The ComicVine scraper is not configured, so no re-scrape.', 'error', 8000);
+            } else if (!res.ok) {
+                throw new Error(await res.text());
+            } else {
+                dialogs.toast('Kept. Re-scrape started - see Dashboard for progress.', 'success');
+            }
+        } catch (e) {
+            dialogs.toast(`Kept, but the re-scrape failed to start: ${e.message || e}`, 'error', 8000);
+        }
     }
 }

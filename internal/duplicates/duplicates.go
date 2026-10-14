@@ -11,8 +11,11 @@
 //     so matches do not chain), only within one series
 //  4. OS-style copy filenames: "Comic (1).cbz", "Comic - Copy.cbz"
 //
-// Guard: a group whose largest page count is more than 3x its smallest is
-// dropped (protects a TPB from being flagged against a single issue).
+// Guards: a group whose largest page count is more than 3x its smallest is
+// dropped (protects a TPB from being flagged against a single issue). A
+// fileless book (ComicRack's physical-copy catalog entry, or a Wanted
+// placeholder) never groups with a book that has a file: owning the
+// physical and the digital copy is not a duplicate.
 package duplicates
 
 import (
@@ -124,7 +127,8 @@ func Detect(books []*library.ComicBook, opt Options) []Group {
 	cv := map[string][]int{}
 	for i, b := range books {
 		if id, ok := library.GetCustomValue(b.CustomValuesStore, "comicvine_issue"); ok && id != "" && id != "0" {
-			cv[id] = append(cv[id], i)
+			key := kind(b) + id
+			cv[key] = append(cv[key], i)
 		}
 	}
 	flush(cv, ReasonComicVineIssue)
@@ -142,7 +146,7 @@ func Detect(books []*library.ComicBook, opt Options) []Group {
 		if num == "" {
 			continue
 		}
-		key := series + "\x00" + num + "\x00" + itoa(b.Volume) + "\x00" + strings.ToLower(b.Format)
+		key := kind(b) + series + "\x00" + num + "\x00" + itoa(b.Volume) + "\x00" + strings.ToLower(b.Format)
 		sn[key] = append(sn[key], i)
 	}
 	flush(sn, ReasonSeriesNumber)
@@ -270,6 +274,16 @@ func Detect(books []*library.ComicBook, opt Options) []Group {
 		return out[i].Key < out[j].Key
 	})
 	return out
+}
+
+// kind prefixes a bucket key so fileless and file-backed books never share
+// a bucket. The cover and filename signals need a file, so they cannot
+// mix the two kinds anyway.
+func kind(b *library.ComicBook) string {
+	if b.FilePath == "" {
+		return "p\x00"
+	}
+	return "f\x00"
 }
 
 func itoa(n int) string {
