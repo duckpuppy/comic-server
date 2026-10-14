@@ -28,6 +28,9 @@ const internalKeyPrefix = "comic_server_"
 // those can be updated in place.
 var ErrNotCBZ = errors.New("cbzconvert: file is not a CBZ/ZIP archive")
 
+// IsZipPath reports whether p has an extension UpdateMetadata can rewrite.
+func IsZipPath(p string) bool { return isZipFile(p) }
+
 func isZipFile(p string) bool {
 	switch strings.ToLower(filepath.Ext(p)) {
 	case ".cbz", ".zip":

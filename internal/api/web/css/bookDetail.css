@@ -152,6 +152,29 @@
     border-radius: 4px;
 }
 
+.bd-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.bd-rollback {
+    display: inline-flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.bd-rollback select {
+    max-width: 12rem;
+}
+
+.bd-action-notes {
+    text-align: left;
+    margin: 0.75rem 0 0;
+    padding: 0;
+}
+
 /* Links into this page from lists and tables. */
 a.book-link {
     color: inherit;

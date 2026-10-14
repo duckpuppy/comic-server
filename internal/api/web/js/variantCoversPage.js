@@ -19,6 +19,9 @@ class VariantCoversPage {
 
     async init() {
         this.render();
+        // ?book= comes from the book detail page (comic-server-2s4f).
+        const bookId = new URLSearchParams(window.location.search).get('book');
+        if (bookId) await this.pick(bookId);
     }
 
     escapeHtml(text) {

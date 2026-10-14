@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/duckpuppy/comic-server/internal/cbzconvert"
@@ -109,5 +110,29 @@ func TestCBZConvert_WebComicPointerIsAdvancedNotFailed(t *testing.T) {
 	}
 	if got.FilePath != b.FilePath {
 		t.Errorf("file path changed to %q", got.FilePath)
+	}
+}
+
+func TestWriteMetadata_BookIDsWritesThoseBooksEvenIfNotStale(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "clean.cbz")
+	writeTestCBZFixture(t, src)
+	books := []library.ComicBook{
+		{ID: "1", Series: "Batman", FilePath: src},
+		{ID: "2", Series: "Batman", FilePath: filepath.Join(dir, "b.cbr")},
+		{ID: "3", Series: "Batman"},
+	}
+	s := newCBZConvertTestServer(t, config.CBZConvertConfig{Enabled: true}, t.TempDir(), books)
+
+	w := httptest.NewRecorder()
+	s.handleWriteMetadata(w, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"book_ids":["1","2","3","nope"]}`)))
+	var res WriteMetadataResult
+	_ = json.NewDecoder(w.Body).Decode(&res)
+	if w.Code != http.StatusOK || res.Processed != 1 || res.Written != 1 || len(res.Errors) != 3 {
+		t.Fatalf("status %d result = %+v", w.Code, res)
+	}
+	b, _ := s.backend.GetBook("1")
+	if _, ok := library.GetCustomValue(b.CustomValuesStore, cbzconvert.WrittenHashKey); !ok {
+		t.Error("written book has no written hash")
 	}
 }

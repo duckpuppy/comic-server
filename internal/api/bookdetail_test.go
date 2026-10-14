@@ -5,10 +5,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/duckpuppy/comic-server/internal/config"
 	"github.com/duckpuppy/comic-server/internal/library"
+	"github.com/duckpuppy/comic-server/internal/workflow"
 )
 
 func getJSON(t *testing.T, s *Server, path string, out any) int {
@@ -43,6 +45,10 @@ func TestBookDetail(t *testing.T) {
 	}
 	if d.ComicVine == nil || d.ComicVine.VolumeID != 42 || d.ComicVine.IssueURL != "https://comicvine.gamespot.com/issue/4000-7/" {
 		t.Fatalf("comicvine = %+v", d.ComicVine)
+	}
+	// cbz_convert is off and no scraper: actions say why they cannot run.
+	if d.Actions.WriteMetadataBlocker == "" || d.Actions.ScrapeBlocker == "" || d.Actions.VariantCoversBlocker == "" {
+		t.Errorf("actions = %+v", d.Actions)
 	}
 	if d.CustomValues["comicvine_volume"] != "42" {
 		t.Errorf("custom values = %v", d.CustomValues)
@@ -95,5 +101,34 @@ func TestBookDetail(t *testing.T) {
 	}
 	if code := getJSON(t, s, "/api/library/books/b1/other", nil); code != http.StatusNotFound {
 		t.Errorf("unknown suffix status %d", code)
+	}
+}
+
+func TestBookDetail_ActionsWhenEnabled(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "a.cbz")
+	writeTestCBZFixture(t, p)
+	b := library.ComicBook{ID: "b1", Series: "Batman", FilePath: p}
+	workflow.SetStage(&b, workflow.StageDataManager)
+	s := newDuplicatesTestServer(t, t.TempDir(), []library.ComicBook{b})
+	s.config.Server.CBZConvert.Enabled = true
+
+	var d BookDetail
+	if code := getJSON(t, s, "/api/library/books/b1", &d); code != http.StatusOK {
+		t.Fatalf("status %d", code)
+	}
+	if d.Actions.WriteMetadataBlocker != "" {
+		t.Errorf("write blocked: %q", d.Actions.WriteMetadataBlocker)
+	}
+	// No CV client and no issue tag: variant covers still blocked.
+	if d.Actions.VariantCoversBlocker == "" {
+		t.Error("variant covers should be blocked without a ComicVine client")
+	}
+	var got []string
+	for _, st := range d.Actions.RollbackStages {
+		got = append(got, st.Value)
+	}
+	if strings.Join(got, ",") != "convert_cbz,scrape,scan_info" {
+		t.Errorf("rollback stages = %v", got)
 	}
 }

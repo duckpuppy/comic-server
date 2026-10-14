@@ -1215,7 +1215,7 @@ The UI now features multi-page navigation with the following routes:
 - `/devices` - Devices browser page with filtering and search
 - `/devices/:deviceId` - Device detail page with sync history
 - `/sync` - Sync history browser with pagination
-- `/books/:bookId` - Book detail page (comic-server-br14): record, file, stage, attention flags, ComicVine links, this book's audit history, and an on-demand compare of the file's ComicInfo.xml with what Write Metadata would write (`GET /api/library/books/:id` and `/:id/comicinfo`; `Pages` skipped, empty == absent). View-only; actions are comic-server-2s4f. In-app links use `<a href=... data-route>` (one delegated click handler in app.js); Browse, list cards, workflow drill-ins, Duplicates and History link here.
+- `/books/:bookId` - Book detail page (comic-server-br14): record, file, stage, attention flags, ComicVine links, this book's audit history, and an on-demand compare of the file's ComicInfo.xml with what Write Metadata would write (`GET /api/library/books/:id` and `/:id/comicinfo`; `Pages` skipped, empty == absent). Actions (comic-server-2s4f): Re-scrape (`POST /api/scrape {book_ids}`), Write metadata to file (`POST .../workflow/write-metadata {book_ids}` writes those CBZs even when not stale; no body = every stale book), Variant covers (`/variant-covers?book=`), stage rollback (stages before the current one). `BookDetail.actions` carries a `*_blocker` reason per action so a disabled button says why. In-app links use `<a href=... data-route>` (one delegated click handler in app.js); Browse, list cards, workflow drill-ins, Duplicates and History link here.
 
 **Routing Features**:
 - Browser back/forward button support (popstate events)

@@ -58,6 +58,24 @@ type BookDetail struct {
 	File         *BookDetailFile      `json:"file,omitempty"` // nil for a fileless book
 	ComicVine    *BookDetailComicVine `json:"comicvine,omitempty"`
 	CoverURL     string               `json:"cover_url"`
+	Actions      BookDetailActions    `json:"actions"`
+}
+
+// BookDetailStage is one stage a book can be rolled back to.
+type BookDetailStage struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+// BookDetailActions says which detail-page actions can run for this book
+// (comic-server-2s4f). A *Blocker string is "" when the action can run,
+// otherwise the reason it cannot.
+type BookDetailActions struct {
+	WriteMetadataBlocker string            `json:"write_metadata_blocker"`
+	Stale                bool              `json:"stale"`
+	ScrapeBlocker        string            `json:"scrape_blocker"`
+	VariantCoversBlocker string            `json:"variant_covers_blocker"`
+	RollbackStages       []BookDetailStage `json:"rollback_stages"`
 }
 
 // ComicInfoField is one ComicInfo.xml element that differs between the
@@ -170,7 +188,51 @@ func (s *Server) handleBookDetail(w http.ResponseWriter, r *http.Request) {
 		}
 		d.ComicVine = cv
 	}
+	d.Actions = s.bookDetailActions(book, iss)
 	s.writeJSON(w, http.StatusOK, d)
+}
+
+func (s *Server) bookDetailActions(book *library.ComicBook, issueID int) BookDetailActions {
+	a := BookDetailActions{RollbackStages: []BookDetailStage{}}
+	s.configMu.RLock()
+	cfg := s.config
+	s.configMu.RUnlock()
+
+	if book.FilePath == "" {
+		a.WriteMetadataBlocker = "this book has no file"
+		a.VariantCoversBlocker = "this book has no file"
+	} else {
+		a.WriteMetadataBlocker = s.variantApplyBlocker(book)
+		a.VariantCoversBlocker = a.WriteMetadataBlocker
+		if cfg != nil {
+			a.Stale = cbzconvert.IsStale(book, cfg.Server.CBZConvert.EmbedComicBook)
+		}
+	}
+	switch {
+	case a.VariantCoversBlocker != "":
+	case s.cvClient == nil:
+		a.VariantCoversBlocker = "no ComicVine API key is configured"
+	case issueID == 0:
+		a.VariantCoversBlocker = "the book has no ComicVine issue tag; scrape it first"
+	}
+
+	switch {
+	case s.scraper == nil:
+		a.ScrapeBlocker = "the ComicVine scraper is not configured"
+	case book.FilePath == "":
+		a.ScrapeBlocker = "the scraper matches by file name; this book has no file"
+	}
+
+	// Rollback only moves backwards, and needs the audit log (config.db).
+	if cur := workflow.GetStage(book); cur != workflow.StageUnknown && s.configDB != nil {
+		for _, st := range workflow.Stages {
+			if st >= cur {
+				break
+			}
+			a.RollbackStages = append(a.RollbackStages, BookDetailStage{st.String(), st.Label()})
+		}
+	}
+	return a
 }
 
 // attentionRank orders flags like the Needs attention panel: severity

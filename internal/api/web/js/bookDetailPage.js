@@ -21,6 +21,7 @@ class BookDetailPage {
         this.error = null;
         this.loading = true;
         this.openSections = {};
+        this.busy = false;
         this.render();
         await Promise.all([this.loadDetail(), this.loadHistory()]);
         if (ctx && ctx.aborted) return;
@@ -148,6 +149,7 @@ class BookDetailPage {
                         ${this.renderComicVine(d.comicvine)}
                     </div>
                 </div>
+                ${this.renderActions(d)}
                 ${this.renderFlags(d.flags)}
                 ${this.section('File', this.renderFile(d))}
                 ${this.section('Credits', this.renderGrid([
@@ -185,6 +187,121 @@ class BookDetailPage {
         if (cv.volume_url) links.push(`<a href="${this.escapeHtml(cv.volume_url)}" target="_blank" rel="noopener">ComicVine volume ${cv.volume_id}</a>`);
         if (cv.issue_url) links.push(`<a href="${this.escapeHtml(cv.issue_url)}" target="_blank" rel="noopener">ComicVine issue ${cv.issue_id}</a>`);
         return `<p class="bd-links">${links.join(' &middot; ')}</p>`;
+    }
+
+    // Actions (comic-server-2s4f). A blocked action stays visible but
+    // disabled, with the reason, so the user knows what to set up.
+    renderActions(d) {
+        const a = d.actions || {};
+        const btn = (id, label, blocker, cls = 'btn-secondary') =>
+            `<button class="btn ${cls}" id="${id}" ${blocker || this.busy ? 'disabled' : ''} title="${this.escapeHtml(blocker || '')}">${label}</button>`;
+        const notes = [];
+        if (a.scrape_blocker) notes.push(`Re-scrape: ${a.scrape_blocker}.`);
+        if (a.write_metadata_blocker) notes.push(`Write metadata: ${a.write_metadata_blocker}.`);
+        if (a.variant_covers_blocker) notes.push(`Variant covers: ${a.variant_covers_blocker}.`);
+        const stages = a.rollback_stages || [];
+        const rollback = stages.length ? `
+            <span class="bd-rollback">
+                <select id="bd-rollback-stage" aria-label="Stage to roll back to">
+                    ${stages.map(s => `<option value="${this.escapeHtml(s.value)}">${this.escapeHtml(s.label)}</option>`).join('')}
+                </select>
+                ${btn('bd-rollback-btn', 'Roll back stage', '')}
+            </span>` : '';
+        return `
+            <div class="panel bd-actions-panel">
+                <div class="bd-actions">
+                    ${btn('bd-scrape-btn', 'Re-scrape', a.scrape_blocker)}
+                    ${btn('bd-write-btn', a.stale ? 'Write metadata to file (out of date)' : 'Write metadata to file', a.write_metadata_blocker)}
+                    ${btn('bd-variants-btn', 'Variant covers…', a.variant_covers_blocker)}
+                    ${rollback}
+                </div>
+                ${notes.length ? `<p class="empty-message bd-action-notes">${notes.map(n => this.escapeHtml(n)).join('<br>')}</p>` : ''}
+            </div>`;
+    }
+
+    async runAction(fn) {
+        if (this.busy) return;
+        this.busy = true;
+        this.render();
+        try {
+            await fn();
+        } finally {
+            this.busy = false;
+            await Promise.all([this.loadDetail(), this.loadHistory()]);
+            if (this.comicInfo && this.comicInfo !== 'loading') this.comicInfo = null; // file may have changed
+            this.render();
+        }
+    }
+
+    async postJSON(url, body) {
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const text = await res.text();
+        if (!res.ok) {
+            const err = new Error(text.trim() || res.statusText);
+            err.status = res.status;
+            throw err;
+        }
+        return text ? JSON.parse(text) : {};
+    }
+
+    async rescrape() {
+        const ok = await dialogs.confirm({
+            title: 'Re-scrape this book',
+            message: 'Search ComicVine again for this book. A confident match replaces its ComicVine tags and metadata; an unsure match goes to Scrape Review.',
+            confirmLabel: 'Re-scrape',
+        });
+        if (!ok) return;
+        await this.runAction(async () => {
+            try {
+                await this.postJSON('/api/scrape', { book_ids: [this.bookId] });
+                dialogs.toast('Re-scrape started - see Dashboard for progress. Reload this page when it finishes.', 'success', 6000);
+            } catch (e) {
+                dialogs.toast(e.status === 409 ? 'A scrape is already running. Try again when it finishes.' : `Re-scrape failed: ${e.message}`, 'error', 8000);
+            }
+        });
+    }
+
+    async writeMetadata() {
+        const ok = await dialogs.confirm({
+            title: 'Write metadata to file',
+            message: 'Replace the ComicInfo.xml inside this CBZ with the library\'s metadata. Fields that are only in the file (not in the library) are removed - use "Compare with file" below to check first. The old file goes to Trash.',
+            confirmLabel: 'Write to file',
+            danger: true,
+        });
+        if (!ok) return;
+        await this.runAction(async () => {
+            try {
+                const res = await this.postJSON('/api/library/workflow/write-metadata', { book_ids: [this.bookId] });
+                if (res.errors && res.errors.length) dialogs.toast(`Write failed: ${res.errors.join('; ')}`, 'error', 8000);
+                else dialogs.toast('Metadata written to the file.', 'success');
+            } catch (e) {
+                dialogs.toast(`Write failed: ${e.message}`, 'error', 8000);
+            }
+        });
+    }
+
+    async rollback() {
+        const sel = document.getElementById('bd-rollback-stage');
+        if (!sel) return;
+        const label = sel.options[sel.selectedIndex].text;
+        const ok = await dialogs.confirm({
+            title: 'Roll back stage',
+            message: `Move this book back to "${label}" so the pipeline runs it again from there. Field values and files are not changed.`,
+            confirmLabel: 'Roll back',
+        });
+        if (!ok) return;
+        await this.runAction(async () => {
+            try {
+                await this.postJSON('/api/library/audit/rollback', { book_id: this.bookId, stage: sel.value });
+                dialogs.toast(`Moved back to ${label}.`, 'success');
+            } catch (e) {
+                dialogs.toast(`Rollback failed: ${e.message}`, 'error', 8000);
+            }
+        });
     }
 
     renderFlags(flags) {
@@ -272,6 +389,14 @@ class BookDetailPage {
             if (window.history.length > 1) window.history.back();
             else router.navigate('/browse');
         });
+        const on = (id, fn) => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('click', fn);
+        };
+        on('bd-scrape-btn', () => this.rescrape());
+        on('bd-write-btn', () => this.writeMetadata());
+        on('bd-rollback-btn', () => this.rollback());
+        on('bd-variants-btn', () => router.navigate(`/variant-covers?book=${encodeURIComponent(this.bookId)}`));
         const ciBtn = document.getElementById('bd-comicinfo-btn');
         if (ciBtn) ciBtn.addEventListener('click', () => this.loadComicInfo());
         document.querySelectorAll('.bd-section').forEach(el => el.addEventListener('toggle', () => {
