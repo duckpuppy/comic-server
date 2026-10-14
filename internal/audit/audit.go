@@ -44,6 +44,7 @@ const (
 	ActionWantedFromMissing = "wanted_from_missing"
 	ActionFormatDetect      = "format_detect"
 	ActionCountFill         = "count_fill"
+	ActionAcceptFlag        = "accept_flag"
 )
 
 // Change is one field's before/after.

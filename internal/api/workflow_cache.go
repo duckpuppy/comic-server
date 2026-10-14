@@ -65,17 +65,24 @@ func (s *Server) getOrBuildWorkflowCache() (*workflowCacheEntry, error) {
 		book := &allBooks[i]
 		st := workflow.GetStage(book)
 		built.booksByStage[st] = append(built.booksByStage[st], book)
+		// Flags the user accepted on this book are left out (comic-server-x7rd).
+		accepted := attention.Accepted(book)
+		add := func(f attention.Flag) {
+			if !accepted[f] {
+				built.booksByFlag[f] = append(built.booksByFlag[f], book)
+			}
+		}
 		for _, f := range attention.FlagsFor(book) {
-			built.booksByFlag[f] = append(built.booksByFlag[f], book)
+			add(f)
 		}
 		for _, f := range attention.CVFlagsFor(book, cv) {
-			built.booksByFlag[f] = append(built.booksByFlag[f], book)
+			add(f)
 		}
 		if conflicts[book.ID] {
-			built.booksByFlag[attention.FlagCVVolumeConflict] = append(built.booksByFlag[attention.FlagCVVolumeConflict], book)
+			add(attention.FlagCVVolumeConflict)
 		}
 		if missing[book.ID] {
-			built.booksByFlag[attention.FlagFileMissing] = append(built.booksByFlag[attention.FlagFileMissing], book)
+			add(attention.FlagFileMissing)
 		}
 		if st == workflow.StageUnknown && book.FilePath != "" {
 			built.unstaged++

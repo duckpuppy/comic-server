@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/duckpuppy/comic-server/internal/config"
+	"github.com/duckpuppy/comic-server/internal/configdb"
 	"github.com/duckpuppy/comic-server/internal/library"
 	"github.com/duckpuppy/comic-server/internal/workflow"
 )
@@ -130,5 +131,60 @@ func TestBookDetail_ActionsWhenEnabled(t *testing.T) {
 	}
 	if strings.Join(got, ",") != "convert_cbz,scrape,scan_info" {
 		t.Errorf("rollback stages = %v", got)
+	}
+}
+
+func TestAcceptFlag_HidesFlagAndCanUndo(t *testing.T) {
+	books := []library.ComicBook{
+		{ID: "b1", Series: "Batman", FilePath: "a.cbz"}, // missing_format, missing_count, unknown_publisher
+		{ID: "b2", Series: "Batman", FilePath: "b.cbz"},
+	}
+	s := newDuplicatesTestServer(t, t.TempDir(), books)
+	count := func() int {
+		w := httptest.NewRecorder()
+		s.handleAttentionSummary(w, httptest.NewRequest(http.MethodGet, "/", nil))
+		var resp struct{ Flags []AttentionFlagSummary }
+		_ = json.NewDecoder(w.Body).Decode(&resp)
+		for _, f := range resp.Flags {
+			if f.Flag == "missing_format" {
+				return f.Count
+			}
+		}
+		return 0
+	}
+	post := func(body string) int {
+		w := httptest.NewRecorder()
+		s.handleBooksRouter(w, httptest.NewRequest(http.MethodPost, "/api/library/books/b1/accept-flag", strings.NewReader(body)))
+		return w.Code
+	}
+	if count() != 2 {
+		t.Fatalf("before: %d", count())
+	}
+	if code := post(`{"flag":"missing_format","accepted":true}`); code != http.StatusOK {
+		t.Fatalf("accept status %d", code)
+	}
+	if count() != 1 {
+		t.Fatalf("after accept: %d", count())
+	}
+	var d BookDetail
+	getJSON(t, s, "/api/library/books/b1", &d)
+	if len(d.Accepted) != 1 || d.Accepted[0].Flag != "missing_format" {
+		t.Errorf("accepted = %+v", d.Accepted)
+	}
+	for _, f := range d.Flags {
+		if f.Flag == "missing_format" {
+			t.Error("accepted flag still listed as active")
+		}
+	}
+	// Audited.
+	rows, _, _ := s.configDB.ListAudit(configdb.AuditFilter{BookID: "b1", Limit: 10})
+	if len(rows) != 1 || rows[0].Action != "accept_flag" {
+		t.Errorf("audit rows = %+v", rows)
+	}
+	if code := post(`{"flag":"missing_format","accepted":false}`); code != http.StatusOK || count() != 2 {
+		t.Fatalf("undo: status %d count %d", code, count())
+	}
+	if code := post(`{"flag":"bogus","accepted":true}`); code != http.StatusBadRequest {
+		t.Errorf("unknown flag status %d", code)
 	}
 }

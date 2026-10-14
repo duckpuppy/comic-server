@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"encoding/json"
 	"encoding/xml"
 	"io"
 	"net/http"
@@ -12,9 +13,11 @@ import (
 	"strings"
 
 	"github.com/duckpuppy/comic-server/internal/attention"
+	"github.com/duckpuppy/comic-server/internal/audit"
 	"github.com/duckpuppy/comic-server/internal/cbzconvert"
 	"github.com/duckpuppy/comic-server/internal/comicvine"
 	"github.com/duckpuppy/comic-server/internal/library"
+	"github.com/duckpuppy/comic-server/internal/log"
 	"github.com/duckpuppy/comic-server/internal/workflow"
 )
 
@@ -55,6 +58,7 @@ type BookDetail struct {
 	Stage        string               `json:"stage,omitempty"`
 	StageLabel   string               `json:"stage_label,omitempty"`
 	Flags        []BookDetailFlag     `json:"flags"`
+	Accepted     []BookDetailFlag     `json:"accepted_flags"` // flags the user hid on this book
 	File         *BookDetailFile      `json:"file,omitempty"` // nil for a fileless book
 	ComicVine    *BookDetailComicVine `json:"comicvine,omitempty"`
 	CoverURL     string               `json:"cover_url"`
@@ -145,6 +149,7 @@ func (s *Server) handleBookDetail(w http.ResponseWriter, r *http.Request) {
 		Book:         *book,
 		CustomValues: library.CustomValuesMap(book.CustomValuesStore),
 		Flags:        []BookDetailFlag{},
+		Accepted:     []BookDetailFlag{},
 		CoverURL:     "/api/library/books/" + book.ID + "/cover",
 	}
 	if st := workflow.GetStage(book); st != workflow.StageUnknown {
@@ -167,6 +172,13 @@ func (s *Server) handleBookDetail(w http.ResponseWriter, r *http.Request) {
 		}
 		sort.Slice(d.Flags, func(i, j int) bool { return attentionRank(d.Flags[i]) < attentionRank(d.Flags[j]) })
 	}
+
+	for f := range attention.Accepted(book) {
+		if info, ok := attention.Lookup(f); ok {
+			d.Accepted = append(d.Accepted, BookDetailFlag{string(f), info.Label, info.Hint, info.Severity.String()})
+		}
+	}
+	sort.Slice(d.Accepted, func(i, j int) bool { return attentionRank(d.Accepted[i]) < attentionRank(d.Accepted[j]) })
 
 	if book.FilePath != "" {
 		f := &BookDetailFile{Path: book.FilePath, ResolvedPath: s.resolveBookFilePath(book.FilePath)}
@@ -345,4 +357,50 @@ func flattenComicInfo(data []byte) (map[string]string, error) {
 			depth--
 		}
 	}
+}
+
+// AcceptFlagRequest is the body of POST /api/library/books/:id/accept-flag.
+type AcceptFlagRequest struct {
+	Flag     string `json:"flag"`
+	Accepted bool   `json:"accepted"` // false un-accepts
+}
+
+// handleAcceptFlag hides (or shows again) one attention flag on one book
+// (comic-server-x7rd). Stored on the book as a comic_server_ custom value
+// and audited, so History shows who hid what.
+// POST /api/library/books/:id/accept-flag
+func (s *Server) handleAcceptFlag(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.backend == nil {
+		http.Error(w, "Library not available", http.StatusServiceUnavailable)
+		return
+	}
+	id := bookDetailID(r.URL.Path, "/accept-flag")
+	var req AcceptFlagRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	if _, ok := attention.Lookup(attention.Flag(req.Flag)); !ok {
+		http.Error(w, "Unknown flag", http.StatusBadRequest)
+		return
+	}
+	backend := s.audited(audit.ActionAcceptFlag)
+	book, err := backend.GetBook(id)
+	if err != nil || book == nil {
+		http.Error(w, "Book not found", http.StatusNotFound)
+		return
+	}
+	if attention.SetAccepted(book, attention.Flag(req.Flag), req.Accepted) {
+		if err := backend.UpdateBooks([]*library.ComicBook{book}); err != nil {
+			log.Error().Err(err).Str("book_id", id).Msg("Failed to save accepted flag")
+			http.Error(w, "Failed to save book", http.StatusInternalServerError)
+			return
+		}
+		s.InvalidateWorkflowCache()
+	}
+	s.writeJSON(w, http.StatusOK, map[string]any{"book_id": id, "flag": req.Flag, "accepted": req.Accepted})
 }

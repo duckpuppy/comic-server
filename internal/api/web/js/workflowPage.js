@@ -485,9 +485,12 @@ class WorkflowPage {
                 }
                 html += '</tbody></table>';
             } else {
-                html += '<table class="datamanager-diff-table"><thead><tr><th>Series</th><th>Number</th><th>Title</th><th>Publisher</th><th>Year</th></tr></thead><tbody>';
+                // A flag list gets an Accept button per book (comic-server-x7rd).
+                const flag = d.stage.startsWith('flag:') ? d.stage.slice(5) : '';
+                html += `<table class="datamanager-diff-table"><thead><tr><th>Series</th><th>Number</th><th>Title</th><th>Publisher</th><th>Year</th>${flag ? '<th></th>' : ''}</tr></thead><tbody>`;
                 for (const c of d.comics) {
-                    html += `<tr><td><a class="book-link" href="/books/${encodeURIComponent(c.id)}" data-route>${this.escapeHtml(c.series)}</a></td><td>${this.escapeHtml(c.number)}</td><td>${this.escapeHtml(c.title)}</td><td>${this.escapeHtml(c.publisher)}</td><td>${c.year || ''}</td></tr>`;
+                    const accept = flag ? `<td><button class="btn btn-secondary drill-accept-btn" data-book="${this.escapeAttr(c.id)}" data-flag="${this.escapeAttr(flag)}" title="Hide this flag on this book">Accept</button></td>` : '';
+                    html += `<tr><td><a class="book-link" href="/books/${encodeURIComponent(c.id)}" data-route>${this.escapeHtml(c.series)}</a></td><td>${this.escapeHtml(c.number)}</td><td>${this.escapeHtml(c.title)}</td><td>${this.escapeHtml(c.publisher)}</td><td>${c.year || ''}</td>${accept}</tr>`;
                 }
                 html += '</tbody></table>';
             }
@@ -764,6 +767,10 @@ class WorkflowPage {
                 `/api/library/attention/${encodeURIComponent(el.dataset.flag)}/books`));
         });
 
+        document.querySelectorAll('.drill-accept-btn').forEach(el => {
+            el.addEventListener('click', () => this.acceptFlag(el.dataset.book, el.dataset.flag, el));
+        });
+
         document.querySelectorAll('.workflow-view-btn').forEach(el => {
             el.addEventListener('click', () => this.openDrillIn(el.dataset.stage, el.dataset.label));
         });
@@ -812,7 +819,12 @@ class WorkflowPage {
         if (toolApplyBtn) toolApplyBtn.addEventListener('click', () => this.applyTool());
 
         const backBtn = document.getElementById('workflow-back-btn');
-        if (backBtn) backBtn.addEventListener('click', () => {
+        if (backBtn) backBtn.addEventListener('click', async () => {
+            // Accepting flags changed the panel's counts.
+            if (this.attentionDirty) {
+                this.attentionDirty = false;
+                await this.loadAttention();
+            }
             this.toolPreview = null;
             this.drillIn = null;
             this.newFilesDrillIn = false;
@@ -850,6 +862,31 @@ class WorkflowPage {
 
         const organizeBtn = document.getElementById('workflow-organize-btn');
         if (organizeBtn) organizeBtn.addEventListener('click', () => router.navigate('/organize'));
+    }
+
+    // Hide one flag on one book and drop it from the open list.
+    async acceptFlag(bookId, flag, btn) {
+        btn.disabled = true;
+        try {
+            const res = await fetch(`/api/library/books/${encodeURIComponent(bookId)}/accept-flag`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ flag, accepted: true }),
+            });
+            if (!res.ok) throw new Error(await res.text());
+            const d = this.drillIn;
+            if (d) {
+                d.comics = d.comics.filter(c => c.id !== bookId);
+                d.total = Math.max(0, d.total - 1);
+                d.offset = Math.max(0, d.offset - 1); // the next page shifted up by one
+            }
+            this.attentionDirty = true;
+            this.render();
+            this.attachListeners();
+        } catch (e) {
+            btn.disabled = false;
+            dialogs.toast(`Could not accept the flag: ${e.message || e}`, 'error', 6000);
+        }
     }
 
     async openDrillIn(stage, label, baseUrl) {

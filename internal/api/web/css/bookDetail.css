@@ -175,6 +175,31 @@
     padding: 0;
 }
 
+.book-detail-page .attention-row {
+    grid-template-columns: 4.5rem 12rem 1fr auto;
+}
+
+.book-detail-page .attention-hint {
+    text-align: left;
+    padding: 0;
+}
+
+.bd-accepted {
+    text-align: left;
+    padding: 0;
+    margin: 0.75rem 0 0;
+}
+
+.bd-unaccept-btn {
+    border: none;
+    background: none;
+    cursor: pointer;
+    color: inherit;
+    padding: 0 0 0 0.25rem;
+    font-size: 1rem;
+    line-height: 1;
+}
+
 /* Links into this page from lists and tables. */
 a.book-link {
     color: inherit;
@@ -201,5 +226,9 @@ a.book-link {
 
     .bd-section {
         overflow-x: auto;
+    }
+
+    .book-detail-page .attention-row {
+        grid-template-columns: 4.5rem 1fr auto;
     }
 }

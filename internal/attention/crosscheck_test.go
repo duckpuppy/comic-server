@@ -68,3 +68,27 @@ func TestVolumeConflicts(t *testing.T) {
 		}
 	}
 }
+
+func TestAccepted(t *testing.T) {
+	b := &library.ComicBook{CustomValuesStore: "comicvine_volume=1"}
+	if Accepted(b) != nil {
+		t.Fatal("new book has accepted flags")
+	}
+	if !SetAccepted(b, FlagCountMismatch, true) || !SetAccepted(b, FlagCVVolumeConflict, true) {
+		t.Fatal("accept reported no change")
+	}
+	if SetAccepted(b, FlagCountMismatch, true) {
+		t.Error("re-accept reported a change")
+	}
+	if v, _ := library.GetCustomValue(b.CustomValuesStore, KeyAccepted); v != "count_mismatch+cv_volume_conflict" {
+		t.Errorf("stored %q", v)
+	}
+	SetAccepted(b, FlagCountMismatch, false)
+	SetAccepted(b, FlagCVVolumeConflict, false)
+	if len(Accepted(b)) != 0 {
+		t.Errorf("accepted = %v", Accepted(b))
+	}
+	if v, _ := library.GetCustomValue(b.CustomValuesStore, "comicvine_volume"); v != "1" {
+		t.Error("other custom values changed")
+	}
+}

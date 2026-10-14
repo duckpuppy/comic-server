@@ -305,14 +305,32 @@ class BookDetailPage {
     }
 
     renderFlags(flags) {
-        if (!flags || !flags.length) return '';
+        const accepted = (this.detail && this.detail.accepted_flags) || [];
+        if (!flags.length && !accepted.length) return '';
         const rows = flags.map(f => `
             <li class="attention-row attention-${this.escapeHtml(f.severity)}">
                 <span class="attention-chip">${this.escapeHtml(f.severity)}</span>
                 <span class="attention-label">${this.escapeHtml(f.label)}</span>
                 <span class="attention-hint empty-message">${this.escapeHtml(f.hint)}</span>
+                <button class="btn btn-secondary bd-accept-btn" data-flag="${this.escapeHtml(f.flag)}" data-accept="1"
+                        title="Hide this flag on this book. It stays hidden until you show it again.">Accept</button>
             </li>`).join('');
-        return `<div class="panel attention-panel"><h2>Needs attention</h2><ul class="attention-list">${rows}</ul></div>`;
+        const hidden = accepted.length ? `
+            <p class="empty-message bd-accepted">Accepted (hidden) on this book:
+                ${accepted.map(f => `<span class="bd-badge">${this.escapeHtml(f.label)}
+                    <button class="bd-unaccept-btn bd-accept-btn" data-flag="${this.escapeHtml(f.flag)}" data-accept="0" title="Show this flag again">&times;</button></span>`).join(' ')}
+            </p>` : '';
+        return `<div class="panel attention-panel"><h2>Needs attention</h2>${rows ? `<ul class="attention-list">${rows}</ul>` : ''}${hidden}</div>`;
+    }
+
+    async setAccepted(flag, accepted) {
+        await this.runAction(async () => {
+            try {
+                await this.postJSON(`/api/library/books/${encodeURIComponent(this.bookId)}/accept-flag`, { flag, accepted });
+            } catch (e) {
+                dialogs.toast(`Could not update the flag: ${e.message}`, 'error', 6000);
+            }
+        });
     }
 
     renderFile(d) {
@@ -394,6 +412,8 @@ class BookDetailPage {
             if (el) el.addEventListener('click', fn);
         };
         on('bd-scrape-btn', () => this.rescrape());
+        document.querySelectorAll('.bd-accept-btn').forEach(el => el.addEventListener('click', () =>
+            this.setAccepted(el.dataset.flag, el.dataset.accept === '1')));
         on('bd-write-btn', () => this.writeMetadata());
         on('bd-rollback-btn', () => this.rollback());
         on('bd-variants-btn', () => router.navigate(`/variant-covers?book=${encodeURIComponent(this.bookId)}`));

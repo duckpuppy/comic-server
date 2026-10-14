@@ -21,6 +21,10 @@ func (s *Server) handleBooksRouter(w http.ResponseWriter, r *http.Request) {
 		s.handleGetBookCover(w, r)
 		return
 	}
+	if strings.HasSuffix(suffix, "/accept-flag") {
+		s.handleAcceptFlag(w, r)
+		return
+	}
 	if strings.HasSuffix(suffix, "/comicinfo") {
 		s.handleBookComicInfo(w, r)
 		return
