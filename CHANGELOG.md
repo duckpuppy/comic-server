@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.48.0](https://github.com/duckpuppy/comic-server/compare/v1.47.1...v1.48.0) (2026-10-13)
+
+
+### Features
+
+* group the top nav into dropdowns and widen the rules editor ([f17f8a9](https://github.com/duckpuppy/comic-server/commit/f17f8a931319b0a1a81bf8842fac32339dbc1202))
+
 ## [1.47.1](https://github.com/duckpuppy/comic-server/compare/v1.47.0...v1.47.1) (2026-10-13)
 
 
