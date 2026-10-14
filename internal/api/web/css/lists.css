@@ -847,6 +847,7 @@
 /* Data Manager Panel */
 .datamanager-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.75rem;
     margin-bottom: 1rem;
 }
@@ -1422,3 +1423,30 @@
 .browse-search-row { display: flex; gap: 0.75rem; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; }
 .browse-query-input { flex: 1 1 18rem; min-width: 12rem; }
 .browse-sort-desc { white-space: nowrap; color: var(--text-secondary); }
+
+/* Browse filter rail and views (comic-server-j6lk) */
+.browse-results-panel { display: flex; gap: 1.25rem; align-items: flex-start; }
+.browse-main { flex: 1; min-width: 0; }
+.browse-rail { flex: 0 0 15rem; max-width: 15rem; }
+.browse-rail-toggle { cursor: pointer; font-weight: 600; margin-bottom: 0.5rem; }
+.browse-facet { border-top: 1px solid var(--border-color); padding: 0.5rem 0; }
+.browse-facet > summary { cursor: pointer; font-weight: 600; font-size: 0.9rem; }
+.browse-facet-filter { width: 100%; margin: 0.4rem 0; box-sizing: border-box; }
+.browse-facet-options { max-height: 14rem; overflow-y: auto; margin-top: 0.3rem; }
+.browse-facet-option { display: flex; align-items: center; gap: 0.4rem; padding: 0.15rem 0; font-size: 0.9rem; cursor: pointer; }
+.browse-facet-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.browse-facet-count { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.browse-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin-bottom: 0.75rem; }
+.browse-chip { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.15rem 0.3rem 0.15rem 0.6rem; border-radius: 999px; border: 1px solid var(--border-color); background: var(--bg-secondary); font-size: 0.85rem; }
+.browse-chip-remove { border: none; background: none; cursor: pointer; color: inherit; font-size: 1rem; line-height: 1; padding: 0 0.2rem; }
+.browse-view-toggle { display: inline-flex; gap: 0.25rem; }
+.browse-grid { margin-top: 0.5rem; }
+.browse-table-wrap { overflow-x: auto; }
+.browse-compact { list-style: none; margin: 0; padding: 0; columns: 2 22rem; column-gap: 2rem; }
+.browse-compact li { padding: 0.2rem 0; break-inside: avoid; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.browse-compact-meta { color: var(--text-secondary); font-size: 0.85rem; }
+@media (max-width: 760px) {
+    .browse-results-panel { flex-direction: column; align-items: stretch; }
+    .browse-rail { flex: none; max-width: none; width: 100%; }
+    .browse-compact { columns: 1; }
+}

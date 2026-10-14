@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/duckpuppy/comic-server/internal/attention"
 	"github.com/duckpuppy/comic-server/internal/library"
 	"github.com/duckpuppy/comic-server/internal/log"
 )
@@ -45,6 +46,9 @@ type BrowseRequest struct {
 	// (no page count, no year, ...) always sort last, in both directions.
 	Sort     string `json:"sort,omitempty"`
 	SortDesc bool   `json:"sort_desc,omitempty"`
+
+	// Facets narrows further by publisher/format/stage/flag (comic-server-j6lk).
+	Facets BrowseFacets `json:"facets,omitempty"`
 }
 
 // handleBrowse evaluates an ad-hoc matcher set against the WHOLE library
@@ -76,12 +80,20 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 
 	limit, offset := parseLimitOffset(r, 20, 100)
 
-	matches, err := s.resolveBrowseCandidates(req)
+	base, err := s.resolveBrowseBase(req)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to evaluate ad-hoc browse filter")
 		http.Error(w, "Failed to evaluate filter", http.StatusInternalServerError)
 		return
 	}
+	// The flag index costs a pass over the workflow cache; only build it
+	// when a flag facet is set or the rail's counts are being sent.
+	var flags map[string][]attention.Flag
+	withFacets := offset == 0
+	if withFacets || len(req.Facets.Flags) > 0 {
+		flags = s.bookFlagIndex()
+	}
+	matches := applyFacets(base, req.Facets, flags)
 
 	sortBrowseResults(matches, req.Sort, req.SortDesc)
 
@@ -105,13 +117,19 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	s.writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"comics":   previews,
 		"total":    total,
 		"limit":    limit,
 		"offset":   offset,
 		"has_more": end < total,
-	})
+	}
+	// The rail's option counts come with the first page only; later pages
+	// (Load More) do not change them.
+	if withFacets {
+		resp["facets"] = countFacets(base, flags)
+	}
+	s.writeJSON(w, http.StatusOK, resp)
 }
 
 // resolveBrowseCandidates resolves a BrowseRequest into the actual books
@@ -122,6 +140,20 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 // separate opt-in - see BrowseRequest.ShowAll's doc comment); otherwise
 // zero matchers still means zero results (comic-server-haz).
 func (s *Server) resolveBrowseCandidates(req BrowseRequest) ([]*library.ComicBook, error) {
+	books, err := s.resolveBrowseBase(req)
+	if err != nil || req.Facets.empty() {
+		return books, err
+	}
+	var flags map[string][]attention.Flag
+	if len(req.Facets.Flags) > 0 {
+		flags = s.bookFlagIndex()
+	}
+	return applyFacets(books, req.Facets, flags), nil
+}
+
+// resolveBrowseBase is resolveBrowseCandidates before facets: matchers (or
+// show_all) narrowed by the quick search. The rail counts over this set.
+func (s *Server) resolveBrowseBase(req BrowseRequest) ([]*library.ComicBook, error) {
 	books, err := s.resolveBrowseMatchers(req)
 	if err != nil || strings.TrimSpace(req.Query) == "" {
 		return books, err

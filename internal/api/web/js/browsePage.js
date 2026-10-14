@@ -35,6 +35,12 @@ class BrowsePage {
         this.query = '';      // quick search: words plus #N, (YYYY), VN tokens (comic-server-mzkf)
         this.sortField = '';  // '' = library order
         this.sortDesc = false;
+        // Filter rail (comic-server-j6lk): selected values per facet, the
+        // server's option counts, and the result view.
+        this.facets = { publishers: [], formats: [], stages: [], flags: [] };
+        this.facetCounts = null;
+        this.view = 'table';
+        try { this.view = localStorage.getItem('browse-view') || 'table'; } catch (e) { /* storage blocked */ }
         this.results = [];
         this.total = 0;
         this.limit = 20;
@@ -66,9 +72,52 @@ class BrowsePage {
     async init(ctx) {
         await this.loadSchema();
         if (ctx && ctx.aborted) return;
+        const fromUrl = this.readUrl();
         this.render();
         this.attachListeners();
+        if (fromUrl) this.search(true);
+        else this.writeUrl(); // reached via the nav: show the kept filter in the URL
         await this.resumeDMJobIfAny(ctx);
+    }
+
+    // The filter lives in the URL (comic-server-j6lk) so Back from a book
+    // page, a reload or a bookmark returns to the same results. Returns
+    // whether the URL carried a filter.
+    readUrl() {
+        const p = new URLSearchParams(window.location.search);
+        if (![...p.keys()].length) return false;
+        this.showAll = p.get('all') === '1';
+        this.query = p.get('q') || '';
+        this.sortField = p.get('sort') || '';
+        this.sortDesc = p.get('desc') === '1';
+        this.matcherMode = p.get('mode') === 'Or' ? 'Or' : 'And';
+        try { this.matchers = JSON.parse(p.get('m') || '[]'); } catch (e) { this.matchers = []; }
+        if (!Array.isArray(this.matchers)) this.matchers = [];
+        this.facets = {
+            publishers: p.getAll('pub'), formats: p.getAll('fmt'),
+            stages: p.getAll('stage'), flags: p.getAll('flag'),
+        };
+        return true;
+    }
+
+    writeUrl() {
+        if (window.location.pathname !== '/browse') return; // navigated away mid-search
+        const p = new URLSearchParams();
+        if (this.showAll) p.set('all', '1');
+        if (this.matchers.length) p.set('m', JSON.stringify(this.matchers));
+        if (this.matcherMode === 'Or') p.set('mode', 'Or');
+        if (this.query) p.set('q', this.query);
+        if (this.sortField) p.set('sort', this.sortField);
+        if (this.sortDesc) p.set('desc', '1');
+        for (const [key, facet] of [['pub', 'publishers'], ['fmt', 'formats'], ['stage', 'stages'], ['flag', 'flags']]) {
+            for (const v of this.facets[facet]) p.append(key, v);
+        }
+        const qs = p.toString();
+        const url = '/browse' + (qs ? '?' + qs : '');
+        if (url !== window.location.pathname + window.location.search) {
+            window.history.replaceState({}, '', url);
+            if (typeof router !== 'undefined') router.currentPath = '/browse';
+        }
     }
 
     async loadSchema() {
@@ -119,7 +168,9 @@ class BrowsePage {
                         <button id="browse-save-as-list-btn" class="btn btn-primary" ${this.matchers.length === 0 || this.showAll ? 'disabled' : ''}>Save as Smart List</button>
                     </div>
                 </div>
-                <div class="panel">
+                <div class="panel browse-results-panel">
+                  ${this.renderRail()}
+                  <div class="browse-main">
                     <div class="browse-search-row">
                         <input type="text" id="browse-query" class="browse-query-input"
                                value="${this.escapeHtml(this.query)}"
@@ -130,8 +181,14 @@ class BrowsePage {
                                 .map(([v, l]) => `<option value="${v}" ${this.sortField === v ? 'selected' : ''}>${l}</option>`).join('')}
                         </select>
                         <label class="browse-sort-desc"><input type="checkbox" id="browse-sort-desc" ${this.sortDesc ? 'checked' : ''}> Descending</label>
+                        <div class="browse-view-toggle" role="group" aria-label="View">
+                            ${[['table', 'Table'], ['grid', 'Grid'], ['compact', 'Compact']].map(([v, l]) =>
+                                `<button class="btn btn-small ${this.view === v ? 'btn-primary' : 'btn-secondary'} browse-view-btn" data-view="${v}" aria-pressed="${this.view === v}">${l}</button>`).join('')}
+                        </div>
                     </div>
+                    ${this.renderChips()}
                     ${this.renderResults()}
+                  </div>
                 </div>
                 ${this.renderDataManagerPanel()}
             </div>
@@ -145,6 +202,81 @@ class BrowsePage {
                 }
             }
         }
+    }
+
+    static FACETS = [
+        ['publishers', 'Publisher'],
+        ['formats', 'Format'],
+        ['stages', 'Stage'],
+        ['flags', 'Needs attention'],
+    ];
+
+    facetLabel(facet, value) {
+        const opt = this.facetCounts && (this.facetCounts[facet] || []).find(o => o.value.toLowerCase() === value.toLowerCase());
+        if (opt) return opt.label;
+        return value === '' ? (facet === 'stages' ? 'Not staged' : '(none)') : value;
+    }
+
+    activeFacetCount() {
+        return Object.values(this.facets).reduce((n, v) => n + v.length, 0);
+    }
+
+    // Filter rail: one checkbox list per facet with the count each option
+    // would keep. Counts ignore the rail's own selections, so options do
+    // not disappear as you tick them. Collapsed on a phone.
+    renderRail() {
+        if (this.matchers.length === 0 && !this.showAll) return '';
+        const fc = this.facetCounts;
+        const sections = BrowsePage.FACETS.map(([facet, title]) => {
+            const opts = fc ? (fc[facet] || []) : [];
+            const selected = new Set(this.facets[facet].map(v => v.toLowerCase()));
+            // A selected value the current result no longer has stays listed.
+            const extra = this.facets[facet].filter(v => !opts.some(o => o.value.toLowerCase() === v.toLowerCase()))
+                .map(v => ({ value: v, label: this.facetLabel(facet, v), count: 0 }));
+            const all = opts.concat(extra);
+            if (!all.length) return '';
+            const filter = all.length > 12
+                ? `<input type="search" class="browse-facet-filter" data-facet="${facet}" placeholder="Filter ${title.toLowerCase()}…" aria-label="Filter ${title}">` : '';
+            return `
+                <details class="browse-facet" ${selected.size || facet !== 'flags' ? 'open' : ''}>
+                    <summary>${this.escapeHtml(title)}${selected.size ? ` (${selected.size})` : ''}</summary>
+                    ${filter}
+                    <div class="browse-facet-options">
+                        ${all.map(o => `
+                            <label class="browse-facet-option" data-label="${this.escapeAttr(o.label.toLowerCase())}">
+                                <input type="checkbox" class="browse-facet-check" data-facet="${facet}" data-value="${this.escapeAttr(o.value)}"
+                                       ${selected.has(o.value.toLowerCase()) ? 'checked' : ''}>
+                                <span class="browse-facet-name">${this.escapeHtml(o.label)}</span>
+                                <span class="browse-facet-count">${o.count.toLocaleString()}</span>
+                            </label>`).join('')}
+                    </div>
+                </details>`;
+        }).join('');
+        const n = this.activeFacetCount();
+        return `
+            <details class="browse-rail" ${(this.railOpen ?? window.innerWidth > 760) ? 'open' : ''}>
+                <summary class="browse-rail-toggle">Filters${n ? ` (${n})` : ''}</summary>
+                ${sections || '<p class="empty-message">Search to see filters.</p>'}
+            </details>`;
+    }
+
+    renderChips() {
+        if (!this.activeFacetCount()) return '';
+        const chips = [];
+        for (const [facet, title] of BrowsePage.FACETS) {
+            for (const v of this.facets[facet]) {
+                chips.push(`<span class="browse-chip">${this.escapeHtml(title)}: ${this.escapeHtml(this.facetLabel(facet, v))}
+                    <button class="browse-chip-remove" data-facet="${facet}" data-value="${this.escapeAttr(v)}" aria-label="Remove filter">&times;</button></span>`);
+            }
+        }
+        return `<div class="browse-chips">${chips.join('')}<button class="btn btn-small btn-secondary" id="browse-reset-facets">Reset filters</button></div>`;
+    }
+
+    setFacet(facet, value, on) {
+        const list = this.facets[facet].filter(v => v.toLowerCase() !== value.toLowerCase());
+        if (on) list.push(value);
+        this.facets[facet] = list;
+        this.search(true);
     }
 
     renderMatcherEditor(matcher, index) {
@@ -231,11 +363,34 @@ class BrowsePage {
             return html;
         }
 
-        html += '<table class="datamanager-diff-table"><thead><tr><th>Series</th><th>Number</th><th>Title</th><th>Publisher</th><th>Year</th><th>Pages</th></tr></thead><tbody>';
+        const link = (c, inner) => `<a class="book-link" href="/books/${encodeURIComponent(c.id)}" data-route>${inner}</a>`;
+        if (this.view === 'grid') {
+            html += '<div class="comics-grid browse-grid">' + this.results.map(c => `
+                <div class="comic-card${c.unread ? '' : ' comic-read'}">
+                    <div class="comic-cover">
+                        <div class="comic-placeholder">📖</div>
+                        <img class="comic-cover-img" alt="" loading="lazy" src="/api/library/books/${encodeURIComponent(c.id)}/cover"
+                             onload="this.classList.add('loaded'); this.previousElementSibling.style.display='none';"
+                             onerror="this.style.display='none';">
+                    </div>
+                    <div class="comic-info">
+                        <div class="comic-series">${link(c, this.escapeHtml(c.series))}</div>
+                        <div class="comic-number">#${this.escapeHtml(c.number)}${c.year ? ` (${c.year})` : ''}</div>
+                    </div>
+                </div>`).join('') + '</div>';
+        } else if (this.view === 'compact') {
+            html += '<ul class="browse-compact">' + this.results.map(c =>
+                `<li>${link(c, `${this.escapeHtml(c.series)}${c.number ? ' #' + this.escapeHtml(c.number) : ''}`)}${c.year ? ` <span class="browse-compact-meta">(${c.year})</span>` : ''}${c.publisher ? ` <span class="browse-compact-meta">${this.escapeHtml(c.publisher)}</span>` : ''}</li>`).join('') + '</ul>';
+        }
+        if (this.view === 'grid' || this.view === 'compact') {
+            if (this.hasMore) html += `<div class="load-more-container"><button id="browse-load-more-btn" class="btn btn-secondary">Load More</button></div>`;
+            return html;
+        }
+        html += '<div class="browse-table-wrap"><table class="datamanager-diff-table"><thead><tr><th>Series</th><th>Number</th><th>Title</th><th>Publisher</th><th>Year</th><th>Pages</th></tr></thead><tbody>';
         for (const c of this.results) {
             html += `<tr><td><a class="book-link" href="/books/${encodeURIComponent(c.id)}" data-route>${this.escapeHtml(c.series)}</a></td><td>${this.escapeHtml(c.number)}</td><td>${this.escapeHtml(c.title)}</td><td>${this.escapeHtml(c.publisher)}</td><td>${c.year || ''}</td><td>${c.page_count || ''}</td></tr>`;
         }
-        html += '</tbody></table>';
+        html += '</tbody></table></div>';
 
         if (this.hasMore) {
             html += `<div class="load-more-container"><button id="browse-load-more-btn" class="btn btn-secondary">Load More</button></div>`;
@@ -271,6 +426,31 @@ class BrowsePage {
             this.sortDesc = sortDesc.checked;
             this.search(true);
         });
+
+        document.querySelectorAll('.browse-facet-check').forEach(el => el.addEventListener('change', () =>
+            this.setFacet(el.dataset.facet, el.dataset.value, el.checked)));
+        document.querySelectorAll('.browse-chip-remove').forEach(el => el.addEventListener('click', () =>
+            this.setFacet(el.dataset.facet, el.dataset.value, false)));
+        const resetFacets = document.getElementById('browse-reset-facets');
+        if (resetFacets) resetFacets.addEventListener('click', () => {
+            this.facets = { publishers: [], formats: [], stages: [], flags: [] };
+            this.search(true);
+        });
+        // Typing in a facet's filter box hides options without a re-render.
+        document.querySelectorAll('.browse-facet-filter').forEach(el => el.addEventListener('input', () => {
+            const q = el.value.trim().toLowerCase();
+            el.parentElement.querySelectorAll('.browse-facet-option').forEach(opt => {
+                opt.style.display = !q || opt.dataset.label.includes(q) ? '' : 'none';
+            });
+        }));
+        const rail = document.querySelector('.browse-rail');
+        if (rail) rail.addEventListener('toggle', () => { this.railOpen = rail.open; });
+        document.querySelectorAll('.browse-view-btn').forEach(el => el.addEventListener('click', () => {
+            this.view = el.dataset.view;
+            try { localStorage.setItem('browse-view', this.view); } catch (e) { /* storage blocked */ }
+            this.render();
+            this.attachListeners();
+        }));
 
         const addBtn = document.getElementById('browse-add-matcher-btn');
         if (addBtn) addBtn.addEventListener('click', () => this.addMatcher());
@@ -363,9 +543,11 @@ class BrowsePage {
     // reset=true starts a fresh search from offset 0 (any matcher edit);
     // reset=false appends the next page (Load More).
     async search(reset) {
+        this.writeUrl();
         if (this.matchers.length === 0 && !this.showAll) {
             this.results = [];
             this.total = 0;
+            this.facetCounts = null;
             this.render();
             this.attachListeners();
             return;
@@ -383,13 +565,14 @@ class BrowsePage {
             const response = await fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ matcher_mode: this.matcherMode, matchers: this.matchers, show_all: this.showAll, query: this.query, sort: this.sortField, sort_desc: this.sortDesc }),
+                body: JSON.stringify({ matcher_mode: this.matcherMode, matchers: this.matchers, show_all: this.showAll, query: this.query, sort: this.sortField, sort_desc: this.sortDesc, facets: this.facets }),
             });
             const text = await response.text();
             if (!response.ok) {
                 throw new Error(friendlyErrorText(response, text, 'Failed to browse library'));
             }
             const result = JSON.parse(text);
+            if (result.facets) this.facetCounts = result.facets;
             this.total = result.total || 0;
             this.hasMore = !!result.has_more;
             const page = result.comics || [];
@@ -598,11 +781,11 @@ class BrowsePage {
         }
     }
 
-    // dmScopeBody is the {matcher_mode, matchers, show_all} triple every
+    // dmScopeBody is the matchers/show_all/query/facets scope every
     // Browse-scoped Data Manager request sends, so the run always matches
     // exactly what the browse table above is currently showing.
     dmScopeBody() {
-        return { matcher_mode: this.matcherMode, matchers: this.matchers, show_all: this.showAll, query: this.query };
+        return { matcher_mode: this.matcherMode, matchers: this.matchers, show_all: this.showAll, query: this.query, facets: this.facets };
     }
 
     async dmPreview(reset) {

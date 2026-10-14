@@ -225,3 +225,65 @@ func TestHandleBrowse_SortIssueNumbersNumerically(t *testing.T) {
 		t.Errorf("ids = %v, want [1 2 10]", got)
 	}
 }
+
+func TestHandleBrowse_FacetsNarrowAndCount(t *testing.T) {
+	books := []library.ComicBook{
+		{ID: "1", Series: "Batman", Publisher: "DC Comics", Format: "Series", FilePath: "a.cbz"},
+		{ID: "2", Series: "Batman", Publisher: "dc comics", Format: "", FilePath: "b.cbz"},
+		{ID: "3", Series: "Spawn", Publisher: "Image", Format: "Series", FilePath: "c.cbz"},
+		{ID: "4", Series: "Saga", Publisher: "", Format: "TPB", FilePath: "d.cbz"},
+	}
+	s := newBrowseTestServer(t, books)
+	post := func(body string) (map[string]any, []string) {
+		t.Helper()
+		w := httptest.NewRecorder()
+		s.handleBrowse(w, httptest.NewRequest(http.MethodPost, "/api/library/browse", bytes.NewReader([]byte(body))))
+		if w.Code != http.StatusOK {
+			t.Fatalf("status %d: %s", w.Code, w.Body.String())
+		}
+		var resp struct {
+			Comics []struct {
+				ID string `json:"id"`
+			} `json:"comics"`
+			Facets map[string]any `json:"facets"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatal(err)
+		}
+		var ids []string
+		for _, c := range resp.Comics {
+			ids = append(ids, c.ID)
+		}
+		return resp.Facets, ids
+	}
+
+	// Publisher matches case-insensitively; OR within a facet.
+	if _, ids := post(`{"show_all":true,"facets":{"publishers":["DC Comics","image"]}}`); len(ids) != 3 {
+		t.Errorf("publishers = %v", ids)
+	}
+	// AND across facets.
+	if _, ids := post(`{"show_all":true,"facets":{"publishers":["DC Comics"],"formats":["series"]}}`); len(ids) != 1 || ids[0] != "1" {
+		t.Errorf("publisher+format = %v", ids)
+	}
+	// "" selects books with no value.
+	if _, ids := post(`{"show_all":true,"facets":{"publishers":[""]}}`); len(ids) != 1 || ids[0] != "4" {
+		t.Errorf("empty publisher = %v", ids)
+	}
+	// Flag facet: missing_format is set only on book 2.
+	if _, ids := post(`{"show_all":true,"facets":{"flags":["missing_format"]}}`); len(ids) != 1 || ids[0] != "2" {
+		t.Errorf("flag = %v", ids)
+	}
+	// Counts ignore the facets (so options do not vanish) and group spellings.
+	facets, _ := post(`{"show_all":true,"facets":{"publishers":["Image"]}}`)
+	pubs := facets["publishers"].([]any)
+	first := pubs[0].(map[string]any)
+	if len(pubs) != 3 || first["count"].(float64) != 2 || first["label"] == "" {
+		t.Errorf("publisher counts = %v", pubs)
+	}
+	// Load More pages do not carry the counts.
+	w := httptest.NewRecorder()
+	s.handleBrowse(w, httptest.NewRequest(http.MethodPost, "/api/library/browse?offset=20", bytes.NewReader([]byte(`{"show_all":true}`))))
+	if bytes.Contains(w.Body.Bytes(), []byte(`"facets"`)) {
+		t.Error("later page has facets")
+	}
+}

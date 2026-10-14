@@ -20,7 +20,8 @@ type BrowseDataManagerRequest struct {
 	MatcherMode string                     `json:"matcher_mode"`
 	Matchers    []library.ComicBookMatcher `json:"matchers"`
 	ShowAll     bool                       `json:"show_all,omitempty"`
-	Query       string                     `json:"query,omitempty"` // quick search, comic-server-mzkf
+	Query       string                     `json:"query,omitempty"`  // quick search, comic-server-mzkf
+	Facets      BrowseFacets               `json:"facets,omitempty"` // filter rail, comic-server-j6lk
 	BookIDs     []string                   `json:"book_ids,omitempty"`
 	Fields      []DMFieldSelector          `json:"fields,omitempty"`
 }
