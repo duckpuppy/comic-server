@@ -36,8 +36,8 @@ func BuildCompletenessMap(books []library.ComicBook, cache *Cache) (map[string]*
 		vb.bookIDs = append(vb.bookIDs, book.ID)
 		// A placeholder (no file yet, e.g. a Wanted book created from the
 		// missing-issues view) is not an owned issue even though it carries
-		// the issue's id.
-		if cvIssID > 0 && book.FilePath != "" {
+		// the issue's id. A paper copy is owned (comic-server-vffq).
+		if cvIssID > 0 && !library.IsWantedPlaceholder(book) {
 			vb.ownedIssueIDs[cvIssID] = true
 		}
 	}

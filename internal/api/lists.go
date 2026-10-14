@@ -497,6 +497,22 @@ type ComicPreview struct {
 	// configured, etc.) - populated whenever TargetPath isn't, so an
 	// empty target is never just a silent, unexplained gap.
 	TargetPathNote string `json:"target_path_note,omitempty"`
+
+	// Kind is "physical" (paper copy) or "wanted" for a book with no file,
+	// empty for a file-backed book (comic-server-vffq). Browse fills it.
+	Kind string `json:"kind,omitempty"`
+}
+
+// bookKind classifies a book for ComicPreview.Kind / BookDetail.Kind.
+func bookKind(b *library.ComicBook) string {
+	switch {
+	case b.FilePath != "":
+		return ""
+	case library.IsPhysical(b):
+		return "physical"
+	default:
+		return "wanted"
+	}
 }
 
 // handleGetListPreview returns a preview of comics matching the list

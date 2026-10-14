@@ -45,6 +45,7 @@ const (
 	ActionFormatDetect      = "format_detect"
 	ActionCountFill         = "count_fill"
 	ActionAcceptFlag        = "accept_flag"
+	ActionPhysicalAdd       = "physical_add"
 )
 
 // Change is one field's before/after.

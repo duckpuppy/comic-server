@@ -112,6 +112,7 @@ let komgaStatus = null;
 let trashBrowser = null;
 let scrapeReviewPage = null;
 let duplicatesPage = null;
+let physicalPage = null;
 let bookDetailPage = null;
 let historyPage = null;
 let variantCoversPage = null;
@@ -352,6 +353,15 @@ document.addEventListener('DOMContentLoaded', () => {
             duplicatesPage = new DuplicatesPage();
         }
         await duplicatesPage.init(ctx);
+    });
+
+    router.register('/physical', async () => {
+        navigation.setActive('physical');
+        dashboard.hide();
+        if (!physicalPage) {
+            physicalPage = new PhysicalPage();
+        }
+        await physicalPage.init();
     });
 
     router.register('/books/:bookId', async (params, ctx) => {

@@ -62,7 +62,12 @@ class Router {
             const match = path.match(regex);
             if (match) {
                 // Extract params from named groups
-                const params = match.groups || {};
+                // Decoded, so an id like "{guid}" (sent as %7Bguid%7D) is not
+                // encoded twice when a page puts it back into a URL.
+                const params = {};
+                for (const [k, v] of Object.entries(match.groups || {})) {
+                    try { params[k] = decodeURIComponent(v); } catch (e) { params[k] = v; }
+                }
                 handler(params, ctx);
                 return;
             }

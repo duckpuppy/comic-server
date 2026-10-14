@@ -374,13 +374,13 @@ class BrowsePage {
                              onerror="this.style.display='none';">
                     </div>
                     <div class="comic-info">
-                        <div class="comic-series">${link(c, this.escapeHtml(c.series))}</div>
+                        <div class="comic-series">${link(c, this.escapeHtml(c.series))}${PhysicalPage.kindBadge(c.kind)}</div>
                         <div class="comic-number">#${this.escapeHtml(c.number)}${c.year ? ` (${c.year})` : ''}</div>
                     </div>
                 </div>`).join('') + '</div>';
         } else if (this.view === 'compact') {
             html += '<ul class="browse-compact">' + this.results.map(c =>
-                `<li>${link(c, `${this.escapeHtml(c.series)}${c.number ? ' #' + this.escapeHtml(c.number) : ''}`)}${c.year ? ` <span class="browse-compact-meta">(${c.year})</span>` : ''}${c.publisher ? ` <span class="browse-compact-meta">${this.escapeHtml(c.publisher)}</span>` : ''}</li>`).join('') + '</ul>';
+                `<li>${link(c, `${this.escapeHtml(c.series)}${c.number ? ' #' + this.escapeHtml(c.number) : ''}`)}${PhysicalPage.kindBadge(c.kind)}${c.year ? ` <span class="browse-compact-meta">(${c.year})</span>` : ''}${c.publisher ? ` <span class="browse-compact-meta">${this.escapeHtml(c.publisher)}</span>` : ''}</li>`).join('') + '</ul>';
         }
         if (this.view === 'grid' || this.view === 'compact') {
             if (this.hasMore) html += `<div class="load-more-container"><button id="browse-load-more-btn" class="btn btn-secondary">Load More</button></div>`;
@@ -388,7 +388,7 @@ class BrowsePage {
         }
         html += '<div class="browse-table-wrap"><table class="datamanager-diff-table"><thead><tr><th>Series</th><th>Number</th><th>Title</th><th>Publisher</th><th>Year</th><th>Pages</th></tr></thead><tbody>';
         for (const c of this.results) {
-            html += `<tr><td><a class="book-link" href="/books/${encodeURIComponent(c.id)}" data-route>${this.escapeHtml(c.series)}</a></td><td>${this.escapeHtml(c.number)}</td><td>${this.escapeHtml(c.title)}</td><td>${this.escapeHtml(c.publisher)}</td><td>${c.year || ''}</td><td>${c.page_count || ''}</td></tr>`;
+            html += `<tr><td><a class="book-link" href="/books/${encodeURIComponent(c.id)}" data-route>${this.escapeHtml(c.series)}</a>${PhysicalPage.kindBadge(c.kind)}</td><td>${this.escapeHtml(c.number)}</td><td>${this.escapeHtml(c.title)}</td><td>${this.escapeHtml(c.publisher)}</td><td>${c.year || ''}</td><td>${c.page_count || ''}</td></tr>`;
         }
         html += '</tbody></table></div>';
 

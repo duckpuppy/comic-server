@@ -138,7 +138,7 @@ type Proposal struct {
 // Format: only an empty Format, or one still equal to what we last wrote.
 func Plan(book *library.ComicBook) Proposal {
 	p := Proposal{Old: book.Format}
-	if book.FilePath == "" {
+	if library.IsWantedPlaceholder(book) {
 		p.Why = "no file (wanted placeholder)"
 		return p
 	}

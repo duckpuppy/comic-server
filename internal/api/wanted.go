@@ -63,7 +63,8 @@ func (s *Server) handleGetWantedBooks(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, map[string]any{"comics": previews, "total": len(previews)})
 }
 
-// wantedBooks returns every book with an empty FilePath, working from a
+// wantedBooks returns every Wanted placeholder (no FilePath, not a paper
+// copy), working from a
 // fresh GetAllBooks() snapshot - same "scan everything, filter in Go"
 // pattern scanWatchFolders already uses, since there's no SQLite backend
 // today to push this filter down into a query.
@@ -74,7 +75,7 @@ func (s *Server) wantedBooks() ([]*library.ComicBook, error) {
 	}
 	var wanted []*library.ComicBook
 	for i := range allBooks {
-		if allBooks[i].FilePath == "" {
+		if library.IsWantedPlaceholder(&allBooks[i]) {
 			wanted = append(wanted, &allBooks[i])
 		}
 	}
@@ -193,6 +194,10 @@ func (s *Server) handleLinkWantedBook(w http.ResponseWriter, r *http.Request) {
 	}
 	if book.FilePath != "" {
 		http.Error(w, "Book already has a file - not a wanted entry", http.StatusConflict)
+		return
+	}
+	if library.IsPhysical(book) {
+		http.Error(w, "Book is a paper copy, not a wanted entry", http.StatusConflict)
 		return
 	}
 

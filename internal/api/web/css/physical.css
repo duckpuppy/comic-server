@@ -1,0 +1,54 @@
+/* Paper Copies page (comic-server-vffq) */
+.physical-page { padding: 1rem; max-width: 1100px; margin: 0 auto; }
+.physical-page h1 { margin: 0 0 0.5rem 0; color: var(--text-primary); }
+.physical-subtitle, .physical-hint { color: var(--text-secondary); margin: 0 0 0.75rem 0; }
+.physical-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    padding: 1rem;
+    margin: 1rem 0;
+}
+.physical-card h2 { margin: 0 0 0.75rem 0; font-size: 1.1rem; color: var(--text-primary); }
+.physical-form {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 0.75rem;
+}
+.physical-field { display: flex; flex-direction: column; gap: 0.25rem; color: var(--text-secondary); font-size: 0.9rem; min-width: 0; }
+.physical-field input, .physical-field textarea, #physical-csv {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.375rem;
+    padding: 0.45rem 0.6rem;
+    font: inherit;
+    min-width: 0;
+}
+.physical-notes { grid-column: 1 / -1; }
+#physical-csv { width: 100%; box-sizing: border-box; font-family: monospace; margin-top: 0.5rem; }
+.physical-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: end; margin-top: 0.5rem; }
+.physical-form .physical-actions { grid-column: 1 / -1; margin-top: 0; }
+.physical-summary { color: var(--text-primary); margin: 0.75rem 0 0.25rem 0; }
+.physical-table-wrap { overflow-x: auto; }
+.physical-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.physical-table th, .physical-table td { text-align: left; padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--border-color); color: var(--text-primary); }
+.physical-row-error td:nth-child(2) { color: var(--pill-error-text); }
+.physical-row-exists td { color: var(--text-secondary); }
+.physical-row-added td:nth-child(2), .physical-row-new td:nth-child(2) { color: var(--pill-success-text); }
+
+/* "Physical" / "Wanted" badge on Browse rows and the book page */
+.book-kind-badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.05rem 0.4rem;
+    border-radius: 0.25rem;
+    margin-left: 0.35rem;
+    vertical-align: middle;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+.book-kind-physical { background: var(--pill-warning-bg); color: var(--pill-warning-text); border-color: transparent; }
+.book-kind-wanted { background: var(--pill-info-bg); color: var(--pill-info-text); border-color: transparent; }

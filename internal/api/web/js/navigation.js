@@ -121,6 +121,7 @@ Navigation.ENTRIES = [
         { tab: 'missing-issues', href: '/missing-issues', icon: '🕳️', label: 'Missing Issues' },
         { tab: 'variant-covers', href: '/variant-covers', icon: '🖼️', label: 'Variant Covers' },
         { tab: 'duplicates', href: '/duplicates', icon: '👯', label: 'Duplicates' },
+        { tab: 'physical', href: '/physical', icon: '📦', label: 'Paper Copies' },
     ] },
     { group: 'pipeline', icon: '🧭', label: 'Pipeline', items: [
         { tab: 'workflow', href: '/workflow', icon: '🧭', label: 'Workflow' },

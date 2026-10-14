@@ -114,6 +114,7 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 			Year:      comic.Year,
 			PageCount: comic.PageCount,
 			Unread:    comic.IsUnread(),
+			Kind:      bookKind(comic),
 		})
 	}
 

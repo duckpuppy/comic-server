@@ -104,3 +104,27 @@ func TestBuildCompletenessMap_WantedPlaceholderIsNotOwned(t *testing.T) {
 		t.Errorf("completeness = %+v, want 1 owned / 3 missing", cv)
 	}
 }
+
+func TestPhysicalCopyIsOwned(t *testing.T) {
+	c := testCache(t)
+	seedVolume(t, c)
+	books := []library.ComicBook{
+		{ID: "own", FilePath: "a.cbz", CustomValuesStore: ",comicvine_volume=100,comicvine_issue=1001"},
+		{ID: "paper", BookCollectionStatus: "Physical", CustomValuesStore: ",comicvine_volume=100,comicvine_issue=1002"},
+		{ID: "want", CustomValuesStore: ",comicvine_volume=100,comicvine_issue=1003"},
+	}
+	m, err := BuildCompletenessMap(books, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cv := m["own"]; cv == nil || cv.OwnedIssues != 2 || cv.MissingCount != 2 {
+		t.Errorf("completeness = %+v, want 2 owned / 2 missing", cv)
+	}
+	sc, err := BuildSeriesCompleteness(books, c, 100)
+	if err != nil || sc == nil {
+		t.Fatal(err)
+	}
+	if sc.Owned != 2 || sc.Wanted != 1 {
+		t.Errorf("series = owned %d wanted %d, want 2 / 1", sc.Owned, sc.Wanted)
+	}
+}

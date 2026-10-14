@@ -55,6 +55,7 @@ type BookDetailComicVine struct {
 type BookDetail struct {
 	Book         library.ComicBook    `json:"book"`
 	CustomValues map[string]string    `json:"custom_values"`
+	Kind         string               `json:"kind,omitempty"` // "physical", "wanted", or empty (has a file)
 	Stage        string               `json:"stage,omitempty"`
 	StageLabel   string               `json:"stage_label,omitempty"`
 	Flags        []BookDetailFlag     `json:"flags"`
@@ -151,6 +152,7 @@ func (s *Server) handleBookDetail(w http.ResponseWriter, r *http.Request) {
 		Flags:        []BookDetailFlag{},
 		Accepted:     []BookDetailFlag{},
 		CoverURL:     "/api/library/books/" + book.ID + "/cover",
+		Kind:         bookKind(book),
 	}
 	if st := workflow.GetStage(book); st != workflow.StageUnknown {
 		d.Stage, d.StageLabel = st.String(), st.Label()

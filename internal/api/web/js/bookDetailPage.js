@@ -121,8 +121,9 @@ class BookDetailPage {
                 <div class="bd-header">
                     <button class="btn btn-secondary" id="bd-back">&larr; Back</button>
                     <div>
-                        <h1>${this.escapeHtml(heading)}</h1>
+                        <h1>${this.escapeHtml(heading)}${PhysicalPage.kindBadge(d.kind)}</h1>
                         ${b.Title ? `<p class="bd-subtitle">${this.escapeHtml(b.Title)}</p>` : ''}
+                        ${d.kind === 'physical' && (b.BookLocation || b.BookCondition) ? `<p class="bd-subtitle">${[b.BookLocation && 'Location: ' + this.escapeHtml(b.BookLocation), b.BookCondition && 'Condition: ' + this.escapeHtml(b.BookCondition)].filter(Boolean).join(' · ')}</p>` : ''}
                     </div>
                 </div>
                 <div class="bd-hero">

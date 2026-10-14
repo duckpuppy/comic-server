@@ -72,7 +72,7 @@ func groupHoldings(books []library.ComicBook) map[int]*volumeHolding {
 		}
 		iss := extractCVIssueID(b.CustomValuesStore)
 		switch {
-		case b.FilePath == "":
+		case library.IsWantedPlaceholder(b):
 			if iss > 0 {
 				h.wanted[iss] = b.ID
 			}

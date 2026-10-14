@@ -16,7 +16,8 @@ import (
 func TestHandleGetWantedBooks_OnlyReturnsBooksWithNoFilePath(t *testing.T) {
 	withFile := library.ComicBook{ID: "1", Series: "Batman", FilePath: "/comics/batman.cbz"}
 	wanted := library.ComicBook{ID: "2", Series: "Wanted Series"}
-	s := newWorkflowTestServer(t, []library.ComicBook{withFile, wanted})
+	paper := library.ComicBook{ID: "3", Series: "Paper", BookCollectionStatus: "physical"}
+	s := newWorkflowTestServer(t, []library.ComicBook{withFile, wanted, paper})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/library/workflow/wanted", nil)
 	w := httptest.NewRecorder()
