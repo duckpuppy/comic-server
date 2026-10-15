@@ -174,3 +174,46 @@ func TestRelinkMissing_BulkPreviewAndApply(t *testing.T) {
 		t.Errorf("missing = %v", s.disk.missing)
 	}
 }
+
+func TestRelink_ManualPick(t *testing.T) {
+	s, dir := relinkFixture(t, []string{"Odd Name.cbz", "notes.txt", "Owned.cbz"}, []library.ComicBook{
+		{ID: "b1", Series: "Batman", Number: "5", FilePath: "gone.cbr"},
+		{ID: "b2", Series: "Other", Number: "1", FilePath: "Owned.cbz"},
+	})
+	cases := map[string]string{
+		filepath.Join(dir, "Odd Name.cbz"): relinkFound,
+		filepath.Join(dir, "notes.txt"):    relinkPickBad,
+		filepath.Join(dir, "nope.cbz"):     relinkPickBad,
+		dir:                                relinkPickBad,
+		filepath.Join(dir, "Owned.cbz"):    relinkPickTaken,
+	}
+	for pick, want := range cases {
+		w := postJSONTo(s, s.handleBooksRouter, "/api/library/books/b1/relink", map[string]any{"apply": false, "file_path": pick})
+		var out RelinkOutcome
+		_ = json.Unmarshal(w.Body.Bytes(), &out)
+		if out.Status != want {
+			t.Errorf("%s: status %q, want %q", filepath.Base(pick), out.Status, want)
+		}
+	}
+	good := filepath.Join(dir, "Odd Name.cbz")
+	w := postJSONTo(s, s.handleBooksRouter, "/api/library/books/b1/relink", map[string]any{"apply": true, "file_path": good})
+	var out RelinkOutcome
+	_ = json.Unmarshal(w.Body.Bytes(), &out)
+	got, _ := s.backend.GetBook("b1")
+	if !out.Applied || got.FilePath != good || got.FileSize != 1 {
+		t.Errorf("apply = %+v, book = %+v", out, got)
+	}
+}
+
+func TestRelink_ManualPickKeepsWindowsStyleUnderRoot(t *testing.T) {
+	s, dir := relinkFixture(t, nil, nil)
+	s.config.Server.LibraryRoot = dir
+	s.config.Server.LibrarySourceRoot = `G:\Comics`
+	raw, ok := s.rawPathForPick(filepath.Join(dir, "sub", "x.cbz"), `G:\Comics\old\y.cbr`)
+	if !ok || raw != `G:\Comics\sub\x.cbz` {
+		t.Errorf("raw = %q ok=%v", raw, ok)
+	}
+	if _, ok := s.rawPathForPick("/elsewhere/x.cbz", `G:\Comics\y.cbr`); ok {
+		t.Error("a pick outside library_root must be refused")
+	}
+}

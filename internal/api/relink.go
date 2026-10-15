@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/duckpuppy/comic-server/internal/attention"
 	"github.com/duckpuppy/comic-server/internal/audit"
@@ -20,7 +21,8 @@ import (
 // Relink and Remove for books whose file is missing (comic-server-heox).
 // Relink only looks inside the book's old folder (one directory listing,
 // never a library walk - the disks are shared with media). A manual folder
-// browse for the rest is comic-server-679r.
+// browse for the rest is the manual pick (comic-server-679r): the request's
+// file_path names one file, checked here and never searched for.
 
 // Relink statuses.
 const (
@@ -138,6 +140,77 @@ func (s *Server) forgetMissing(ids ...string) {
 
 type relinkRequest struct {
 	Apply bool `json:"apply"` // false = preview only
+	// FilePath is a file the user picked by hand (comic-server-679r), as a
+	// path on this server's disk. Empty = search the old folder.
+	FilePath string `json:"file_path,omitempty"`
+}
+
+// Extra statuses for a manual pick.
+const (
+	relinkPickBad   = "pick_invalid" // not a file, not a comic, or outside the library root
+	relinkPickTaken = "pick_taken"   // another book already uses that file
+)
+
+// rawPathForPick turns a picked on-disk path into the library's own path
+// style. With a library root pair set, the pick must sit under library_root
+// and is written under library_source_root, keeping the separator style of
+// the book's old path. With no pair, the pick is stored as it is.
+func (s *Server) rawPathForPick(picked, oldRaw string) (string, bool) {
+	s.configMu.RLock()
+	cfg := s.config
+	s.configMu.RUnlock()
+	if cfg == nil || cfg.Server.LibrarySourceRoot == "" || cfg.Server.LibraryRoot == "" {
+		return picked, true
+	}
+	root := filepath.Clean(cfg.Server.LibraryRoot)
+	rel, err := filepath.Rel(root, picked)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	sep := "/"
+	if strings.Contains(oldRaw, `\`) && !strings.Contains(oldRaw, "/") {
+		sep = `\`
+	}
+	src := strings.TrimRight(cfg.Server.LibrarySourceRoot, `/\`)
+	return src + sep + strings.ReplaceAll(filepath.ToSlash(rel), "/", sep), true
+}
+
+// pick answers for a hand-picked file without changing anything. Same safety
+// as the folder search: the file must exist, be a comic archive, and not be
+// used by another book.
+func (c *relinkContext) pick(book *library.ComicBook, picked string) RelinkOutcome {
+	out := RelinkOutcome{BookID: book.ID, Series: book.Series, Number: book.Number, OldPath: book.FilePath}
+	if book.FilePath == "" {
+		out.Status = relinkNoFile
+		return out
+	}
+	if _, err := os.Stat(c.s.resolveBookFilePath(book.FilePath)); err == nil {
+		out.Status = relinkNotMissing
+		return out
+	}
+	picked = filepath.Clean(picked)
+	fi, err := os.Stat(picked)
+	if err != nil || !fi.Mode().IsRegular() {
+		out.Status, out.Reason = relinkPickBad, "That is not a file on the server."
+		return out
+	}
+	if !relink.IsComicFile(picked) {
+		out.Status, out.Reason = relinkPickBad, "That is not a comic archive."
+		return out
+	}
+	raw, ok := c.s.rawPathForPick(picked, book.FilePath)
+	if !ok {
+		out.Status, out.Reason = relinkPickBad, "That file is outside the library root."
+		return out
+	}
+	if id, used := c.used[filepath.Clean(c.s.resolveBookFilePath(raw))]; used && id != book.ID {
+		out.Status, out.Reason = relinkPickTaken, "Another book already uses that file."
+		return out
+	}
+	out.Status = relinkFound
+	out.NewPath = raw
+	out.Reason = "picked by hand"
+	return out
 }
 
 // handleBookRelink previews or applies a relink for one book.
@@ -165,7 +238,12 @@ func (s *Server) handleBookRelink(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to load library", http.StatusInternalServerError)
 		return
 	}
-	out := ctx.find(book)
+	var out RelinkOutcome
+	if req.FilePath != "" {
+		out = ctx.pick(book, req.FilePath)
+	} else {
+		out = ctx.find(book)
+	}
 	if req.Apply && out.Status == relinkFound {
 		if err := s.applyRelink(backend, []*library.ComicBook{book}, []RelinkOutcome{out}); err != nil {
 			log.Error().Err(err).Str("book_id", book.ID).Msg("Failed to save relink")

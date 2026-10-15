@@ -339,21 +339,37 @@ class BookDetailPage {
         });
     }
 
-    // Look for the missing file in its old folder (comic-server-heox).
+    // Look for the missing file in its old folder (comic-server-heox). When
+    // that finds nothing, offer to pick the file by hand (comic-server-679r).
     async relinkFile() {
         await this.runAction(async () => {
             try {
-                const p = await this.postJSON(`/api/library/books/${encodeURIComponent(this.bookId)}/relink`, { apply: false });
+                const url = `/api/library/books/${encodeURIComponent(this.bookId)}/relink`;
+                let p = await this.postJSON(url, { apply: false });
+                let picked = '';
+                if (p.status === 'not_missing' || p.status === 'no_file') {
+                    dialogs.toast(p.status === 'no_file' ? 'This book has no file.' : 'The file is on disk; nothing to relink.', 'info', 9000);
+                    return;
+                }
                 if (p.status !== 'found') {
                     const why = {
-                        not_found: 'No file in the old folder fits this book (same name, or same series and issue number).',
+                        not_found: 'No file in the old folder fits this book.',
                         ambiguous: `More than one file fits, so none was picked: ${(p.candidates || []).join(', ')}.`,
-                        folder_missing: 'The old folder is gone as well, so there is nowhere to look.',
-                        not_missing: 'The file is on disk; nothing to relink.',
-                        no_file: 'This book has no file.',
+                        folder_missing: 'The old folder is gone as well.',
                     }[p.status] || `Not relinked (${p.status}).`;
-                    dialogs.toast(why, 'info', 9000);
-                    return;
+                    const pick = await dialogs.confirm({
+                        title: 'Relink file',
+                        message: `${why}\n\nPick the file by hand?`,
+                        confirmLabel: 'Pick file…',
+                    });
+                    if (!pick) return;
+                    picked = await dialogs.browseServerFile({ title: 'Pick the file for this book' });
+                    if (!picked) return;
+                    p = await this.postJSON(url, { apply: false, file_path: picked });
+                    if (p.status !== 'found') {
+                        dialogs.toast(p.reason || `Not relinked (${p.status}).`, 'error', 9000);
+                        return;
+                    }
                 }
                 const ok = await dialogs.confirm({
                     title: 'Relink file',
@@ -361,7 +377,7 @@ class BookDetailPage {
                     confirmLabel: 'Relink',
                 });
                 if (!ok) return;
-                await this.postJSON(`/api/library/books/${encodeURIComponent(this.bookId)}/relink`, { apply: true });
+                await this.postJSON(url, picked ? { apply: true, file_path: picked } : { apply: true });
                 dialogs.toast('Relinked.', 'success');
             } catch (e) {
                 dialogs.toast(`Relink failed: ${e.message}`, 'error', 8000);
