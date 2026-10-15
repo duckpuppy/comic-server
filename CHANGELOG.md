@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.51.0](https://github.com/duckpuppy/comic-server/compare/v1.50.1...v1.51.0) (2026-10-15)
+
+
+### Features
+
+* in-browser reader - page viewer for CBZ/CBR/CB7 (comic-server-65o8) ([57e3c66](https://github.com/duckpuppy/comic-server/commit/57e3c665854888c1ed8db1d585e9943829412a2c))
+* page manager - reorder, delete and add pages inside a CBZ (comic-server-j1cv) ([7446aab](https://github.com/duckpuppy/comic-server/commit/7446aabb15398ad7fae9789a44a43a293541f548))
+
 ## [1.50.1](https://github.com/duckpuppy/comic-server/compare/v1.50.0...v1.50.1) (2026-10-15)
 
 
