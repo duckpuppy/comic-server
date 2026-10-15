@@ -1,0 +1,28 @@
+/* Page Manager (comic-server-j1cv) */
+.page-manager-page { padding: 1rem; max-width: 1400px; margin: 0 auto; }
+.page-manager-header h1 { margin: 0 0 0.5rem 0; color: var(--text-primary); }
+.page-manager-subtitle { color: var(--text-secondary); margin: 0 0 0.5rem 0; }
+.page-manager-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
+.page-manager-toolbar #pm-summary { flex: 1 1 auto; color: var(--text-primary); }
+.page-manager-toolbar label.disabled { opacity: 0.5; pointer-events: none; }
+.page-manager-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 1rem; margin: 1rem 0; }
+.pm-card {
+    display: flex; flex-direction: column; gap: 0.4rem; padding: 0.5rem;
+    border: 1px solid var(--border-color); border-radius: 0.5rem;
+    background: var(--bg-secondary); cursor: grab; position: relative;
+}
+.pm-card:active { cursor: grabbing; }
+.pm-thumb { display: flex; justify-content: center; align-items: center; min-height: 200px; }
+.pm-thumb img { max-width: 100%; max-height: 240px; object-fit: contain; border-radius: 0.25rem; }
+.pm-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; font-size: 0.85rem; }
+.pm-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; color: var(--text-secondary); }
+.pm-badge { font-size: 0.7rem; padding: 0.05rem 0.4rem; border: 1px solid var(--border-color); border-radius: 0.75rem; }
+.pm-badge-new { border-color: #2e8b57; color: #2e8b57; }
+.pm-actions { display: flex; gap: 0.25rem; flex-wrap: wrap; }
+.pm-actions .btn { padding: 0.15rem 0.5rem; }
+.pm-card-deleted { border-color: #c0392b; }
+.pm-card-deleted .pm-thumb { opacity: 0.35; }
+.pm-card-deleted::after {
+    content: "Will be removed"; position: absolute; top: 40%; left: 0; right: 0;
+    text-align: center; color: #c0392b; font-weight: bold; pointer-events: none;
+}

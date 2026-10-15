@@ -116,6 +116,7 @@ let physicalPage = null;
 let bookDetailPage = null;
 let historyPage = null;
 let variantCoversPage = null;
+let pageManagerPage = null;
 let missingIssuesPage = null;
 let scanInfoSettings = null;
 let dataManagerPage = null;
@@ -335,6 +336,15 @@ document.addEventListener('DOMContentLoaded', () => {
             variantCoversPage = new VariantCoversPage();
         }
         await variantCoversPage.init(ctx);
+    });
+
+    router.register('/page-manager', async (params, ctx) => {
+        navigation.setActive('browse');
+        dashboard.hide();
+        if (!pageManagerPage) {
+            pageManagerPage = new PageManagerPage();
+        }
+        await pageManagerPage.init(ctx);
     });
 
     router.register('/history', async (params, ctx) => {

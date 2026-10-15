@@ -186,3 +186,8 @@ func resizeNearestNeighbor(img image.Image, bounds image.Rectangle, srcW, srcH, 
 	}
 	return dst
 }
+
+// Thumbnail resizes raw image bytes to a JPEG at most width pixels wide
+// (comic-server-j1cv's page manager shows page thumbnails with it). Images
+// already narrower than width are re-encoded without scaling.
+func Thumbnail(data []byte, width int) ([]byte, error) { return resizeToJPEG(data, width) }

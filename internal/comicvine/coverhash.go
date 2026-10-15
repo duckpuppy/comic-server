@@ -506,3 +506,8 @@ func (c *Client) DownloadCoverHash(ctx context.Context, url string) (CoverHash, 
 	}
 	return ComputeDHash(data)
 }
+
+// SortedZipImageFiles returns the image entries of a CBZ in page order: the
+// same order ReadAllPages and ExtractCover use, so a page index means the same
+// entry everywhere (comic-server-j1cv's page manager relies on this).
+func SortedZipImageFiles(files []*zip.File) []*zip.File { return sortedImageFiles(files) }

@@ -46,6 +46,7 @@ const (
 	ActionCountFill         = "count_fill"
 	ActionAcceptFlag        = "accept_flag"
 	ActionPhysicalAdd       = "physical_add"
+	ActionPageManager       = "page_manager"
 )
 
 // Change is one field's before/after.

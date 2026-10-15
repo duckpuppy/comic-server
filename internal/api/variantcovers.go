@@ -78,10 +78,15 @@ func (s *Server) variantApplyBlocker(book *library.ComicBook) string {
 	s.configMu.RLock()
 	cfg := s.config
 	s.configMu.RUnlock()
+	// The trash path lives in config.db once migrated (config.yaml's copy is
+	// cleared in memory), so read the effective value, not cfg.Server.TrashPath.
+	trashPath, _, err := s.effectiveTrashConfig()
 	switch {
 	case cfg == nil || !cfg.Server.CBZConvert.Enabled:
 		return "cbz_convert is not enabled in config (it also enables writing to archives)"
-	case strings.TrimSpace(cfg.Server.TrashPath) == "":
+	case err != nil:
+		return "trash settings could not be read: " + err.Error()
+	case strings.TrimSpace(trashPath) == "":
 		return "trash_path is not configured"
 	}
 	switch strings.ToLower(extOf(book.FilePath)) {

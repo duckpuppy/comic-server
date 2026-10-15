@@ -80,6 +80,7 @@ type BookDetailActions struct {
 	Stale                bool              `json:"stale"`
 	ScrapeBlocker        string            `json:"scrape_blocker"`
 	VariantCoversBlocker string            `json:"variant_covers_blocker"`
+	PageManagerBlocker   string            `json:"page_manager_blocker"`
 	RollbackStages       []BookDetailStage `json:"rollback_stages"`
 }
 
@@ -215,9 +216,11 @@ func (s *Server) bookDetailActions(book *library.ComicBook, issueID int) BookDet
 	if book.FilePath == "" {
 		a.WriteMetadataBlocker = "this book has no file"
 		a.VariantCoversBlocker = "this book has no file"
+		a.PageManagerBlocker = "this book has no file"
 	} else {
 		a.WriteMetadataBlocker = s.variantApplyBlocker(book)
 		a.VariantCoversBlocker = a.WriteMetadataBlocker
+		a.PageManagerBlocker = a.WriteMetadataBlocker
 		if cfg != nil {
 			a.Stale = cbzconvert.IsStale(book, cfg.Server.CBZConvert.EmbedComicBook)
 		}
