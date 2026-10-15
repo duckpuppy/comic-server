@@ -683,6 +683,18 @@ Error: invalid configuration: library_path is required
 
 Check the error message and fix the configuration accordingly.
 
+## Scrape Publisher Filter
+
+ComicVine lists every regional edition of a series, so an automatic match can pick the Italian or Brazilian reprint. Two lists limit which publishers automatic matching may choose:
+
+```yaml
+server:
+  scrape_publisher_allow: [DC, Marvel, Image]  # only these (empty = all)
+  scrape_publisher_block: [Panini]             # never these
+```
+
+Or `COMIC_SERVER_SCRAPE_PUBLISHER_ALLOW` / `COMIC_SERVER_SCRAPE_PUBLISHER_BLOCK` (comma-separated). Entries are case-insensitive substrings of the publisher name, so `Panini` covers `Panini Comics` and `Editorial Panini`. The allow list narrows first, then the block list carves out exceptions. A candidate with no publisher always passes. Manual picks in Scrape Review and fast re-scrape are not filtered. A book whose every candidate is excluded is held back from whole-library scrapes. Restart the server after changing it.
+
 ## See Also
 
 - [Installation Guide](INSTALLATION.md) - Installing and setting up the server

@@ -89,6 +89,13 @@ func (c *Config) ApplyEnvironment() error {
 		c.Server.IgnoreDevices = devices
 	}
 
+	if val := os.Getenv("COMIC_SERVER_SCRAPE_PUBLISHER_ALLOW"); val != "" {
+		c.Server.ScrapePublisherAllow = splitCommaList(val)
+	}
+	if val := os.Getenv("COMIC_SERVER_SCRAPE_PUBLISHER_BLOCK"); val != "" {
+		c.Server.ScrapePublisherBlock = splitCommaList(val)
+	}
+
 	if val := os.Getenv("COMIC_SERVER_WATCH_FOLDERS"); val != "" {
 		folders := strings.Split(val, ",")
 		for i := range folders {
@@ -129,4 +136,15 @@ func (c *Config) ApplyEnvironment() error {
 	}
 
 	return nil
+}
+
+// splitCommaList splits a comma-separated env value, trimming blanks.
+func splitCommaList(val string) []string {
+	var out []string
+	for _, part := range strings.Split(val, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }

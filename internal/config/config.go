@@ -114,6 +114,12 @@ type ServerConfig struct {
 	// ComicVine integration
 	ComicVineAPIKey string `yaml:"comicvine_api_key,omitempty" toml:"comicvine_api_key,omitempty"` // API key for ComicVine enrichment
 
+	// Publisher filter for automatic ComicVine matching (comic-server-2w44).
+	// Case-insensitive substrings of the publisher name; Allow narrows
+	// first, Block carves out exceptions. Manual picks are not filtered.
+	ScrapePublisherAllow []string `yaml:"scrape_publisher_allow,omitempty" toml:"scrape_publisher_allow,omitempty"`
+	ScrapePublisherBlock []string `yaml:"scrape_publisher_block,omitempty" toml:"scrape_publisher_block,omitempty"`
+
 	// Komga integration
 	Komga KomgaConfig `yaml:"komga,omitempty" toml:"komga,omitempty"`
 

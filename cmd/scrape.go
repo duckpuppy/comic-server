@@ -73,7 +73,7 @@ func init() {
 }
 
 func runScrape(cmd *cobra.Command, args []string) error {
-	libPath, backend, cache, client, err := openScraperDeps(scrapeLibraryPath)
+	libPath, backend, cache, client, scrapeCfg, err := openScraperDeps(scrapeLibraryPath)
 	if err != nil {
 		return err
 	}
@@ -94,7 +94,7 @@ func runScrape(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	scraper := comicvine.NewScraper(client, cache, backend, comicvine.DefaultScraperConfig())
+	scraper := comicvine.NewScraper(client, cache, backend, scrapeCfg)
 	opts := comicvine.ScrapeOptions{
 		FastRescrape: scrapeRescrape,
 		AutoOnly:     scrapeAutoOnly,
@@ -187,7 +187,7 @@ func selectBooksToScrape(allBooks []library.ComicBook, args []string) ([]*librar
 }
 
 func runScrapeStatus(cmd *cobra.Command, args []string) error {
-	_, _, cache, _, err := openScraperDeps(scrapeLibraryPath)
+	_, _, cache, _, _, err := openScraperDeps(scrapeLibraryPath)
 	if err != nil {
 		return err
 	}
@@ -208,7 +208,7 @@ func runScrapeStatus(cmd *cobra.Command, args []string) error {
 }
 
 func runScrapeReview(cmd *cobra.Command, args []string) error {
-	_, _, cache, _, err := openScraperDeps(scrapeLibraryPath)
+	_, _, cache, _, _, err := openScraperDeps(scrapeLibraryPath)
 	if err != nil {
 		return err
 	}
@@ -240,14 +240,14 @@ func runScrapeAccept(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid volume ID %q: %w", args[1], err)
 	}
 
-	_, backend, cache, client, err := openScraperDeps(scrapeLibraryPath)
+	_, backend, cache, client, scrapeCfg, err := openScraperDeps(scrapeLibraryPath)
 	if err != nil {
 		return err
 	}
 	defer cache.Close()
 	defer backend.Close()
 
-	scraper := comicvine.NewScraper(client, cache, backend, comicvine.DefaultScraperConfig())
+	scraper := comicvine.NewScraper(client, cache, backend, scrapeCfg)
 	result, err := scraper.AcceptReview(context.Background(), defaultScrapeJobID, bookID, volumeCVID)
 	if err != nil {
 		return fmt.Errorf("accept review: %w", err)
@@ -258,14 +258,14 @@ func runScrapeAccept(cmd *cobra.Command, args []string) error {
 
 // openScraperDeps loads config, the library backend, the ComicVine cache,
 // and an API client shared by all scrape subcommands.
-func openScraperDeps(libraryPathOverride string) (libPath string, backend library.Backend, cache *comicvine.Cache, client *comicvine.Client, err error) {
+func openScraperDeps(libraryPathOverride string) (libPath string, backend library.Backend, cache *comicvine.Cache, client *comicvine.Client, scrapeCfg comicvine.ScraperConfig, err error) {
 	configPath, err := GetConfigPath()
 	if err != nil {
-		return "", nil, nil, nil, fmt.Errorf("get config path: %w", err)
+		return "", nil, nil, nil, comicvine.ScraperConfig{}, fmt.Errorf("get config path: %w", err)
 	}
 	cfg, err := config.Load(configPath)
 	if err != nil {
-		return "", nil, nil, nil, fmt.Errorf("load config: %w", err)
+		return "", nil, nil, nil, comicvine.ScraperConfig{}, fmt.Errorf("load config: %w", err)
 	}
 
 	libPath = libraryPathOverride
@@ -273,30 +273,35 @@ func openScraperDeps(libraryPathOverride string) (libPath string, backend librar
 		libPath = cfg.Server.LibraryPath
 	}
 	if libPath == "" {
-		return "", nil, nil, nil, fmt.Errorf("no library path: pass --library or set server.library_path in config")
+		return "", nil, nil, nil, comicvine.ScraperConfig{}, fmt.Errorf("no library path: pass --library or set server.library_path in config")
 	}
 
 	xmlBackend, err := library.NewXMLBackend(libPath, 0)
 	if err != nil {
-		return "", nil, nil, nil, fmt.Errorf("load library: %w", err)
+		return "", nil, nil, nil, comicvine.ScraperConfig{}, fmt.Errorf("load library: %w", err)
 	}
 
 	if cfg.Server.ComicVineAPIKey == "" {
 		xmlBackend.Close()
-		return "", nil, nil, nil, fmt.Errorf("no ComicVine API key configured (server.comicvine_api_key)")
+		return "", nil, nil, nil, comicvine.ScraperConfig{}, fmt.Errorf("no ComicVine API key configured (server.comicvine_api_key)")
 	}
 
 	cachePath, err := resolveComicVineCachePath(cfg.Server.ComicVineCachePath)
 	if err != nil {
 		xmlBackend.Close()
-		return "", nil, nil, nil, fmt.Errorf("resolve ComicVine cache path: %w", err)
+		return "", nil, nil, nil, comicvine.ScraperConfig{}, fmt.Errorf("resolve ComicVine cache path: %w", err)
 	}
 	cvCache, err := comicvine.OpenCache(cachePath)
 	if err != nil {
 		xmlBackend.Close()
-		return "", nil, nil, nil, fmt.Errorf("open ComicVine cache: %w", err)
+		return "", nil, nil, nil, comicvine.ScraperConfig{}, fmt.Errorf("open ComicVine cache: %w", err)
 	}
 
 	cvClient := comicvine.NewClient(cfg.Server.ComicVineAPIKey)
-	return libPath, xmlBackend, cvCache, cvClient, nil
+	scrapeCfg = comicvine.DefaultScraperConfig()
+	scrapeCfg.PublisherFilter = comicvine.PublisherFilter{
+		Allow: cfg.Server.ScrapePublisherAllow,
+		Block: cfg.Server.ScrapePublisherBlock,
+	}
+	return libPath, xmlBackend, cvCache, cvClient, scrapeCfg, nil
 }

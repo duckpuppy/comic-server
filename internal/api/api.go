@@ -177,7 +177,14 @@ func (s *Server) InvalidateListCache() {
 func (s *Server) SetScraper(client *comicvine.Client, cache *comicvine.Cache) {
 	s.cvClient = client
 	s.cvCache = cache
-	s.scraper = comicvine.NewScraper(client, cache, s.audited(audit.ActionScrape), comicvine.DefaultScraperConfig())
+	scrapeCfg := comicvine.DefaultScraperConfig()
+	if s.config != nil {
+		scrapeCfg.PublisherFilter = comicvine.PublisherFilter{
+			Allow: s.config.Server.ScrapePublisherAllow,
+			Block: s.config.Server.ScrapePublisherBlock,
+		}
+	}
+	s.scraper = comicvine.NewScraper(client, cache, s.audited(audit.ActionScrape), scrapeCfg)
 }
 
 // NewServer creates a new API server with version information

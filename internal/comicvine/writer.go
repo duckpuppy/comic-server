@@ -50,6 +50,11 @@ type ScraperConfig struct {
 	// Publisher mappings
 	PublisherAliases map[string]string // e.g. "Marvel Italia" -> "Marvel Comics"
 	ImprintMappings  map[string]string // e.g. "Vertigo" -> "DC Comics"
+
+	// PublisherFilter limits which candidate volumes automatic matching may
+	// choose (comic-server-2w44). Manual picks and fast re-scrape are not
+	// filtered.
+	PublisherFilter PublisherFilter
 }
 
 // DefaultScraperConfig returns a ScraperConfig with all field updates enabled

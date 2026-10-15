@@ -34,6 +34,7 @@ var ErrScrapeInProgress = errors.New("a scrape job is already in progress")
 const (
 	errNoCandidates  = "no candidate volumes found"
 	errIssueNotFound = "no matching issue number found in selected volume"
+	errAllFiltered   = "all candidate volumes excluded by the publisher filter"
 )
 
 // HeldBackReason says why a book's last scrape outcome means a
@@ -53,6 +54,8 @@ func HeldBackReason(r *BookScrapeResult) string {
 		return "no match on ComicVine"
 	case r.Status == BookStatusFailed && r.Error == errIssueNotFound:
 		return "issue number not in the matched volume"
+	case r.Status == BookStatusFailed && r.Error == errAllFiltered:
+		return "every candidate excluded by the publisher filter"
 	}
 	return ""
 }
@@ -331,6 +334,16 @@ func (s *Scraper) scrapeOneBook(ctx context.Context, book *library.ComicBook, ca
 		result.Status = BookStatusFailed
 		result.Error = errNoCandidates
 		return result
+	}
+
+	if f := s.cfg.PublisherFilter; f.Active() {
+		permitted := f.FilterVolumes(candidates)
+		if len(permitted) == 0 {
+			result.Status = BookStatusFailed
+			result.Error = errAllFiltered
+			return result
+		}
+		candidates = permitted
 	}
 
 	scored := ScoreVolumes(parsed, candidates, existingVolID)
