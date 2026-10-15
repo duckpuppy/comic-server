@@ -11,6 +11,7 @@ class BookDetailPage {
         this.error = null;
         this.loading = true;
         this.openSections = {};
+        this.completeness = null; // series-completeness of the book's CV volume
     }
 
     async init(ctx, bookId) {
@@ -21,12 +22,60 @@ class BookDetailPage {
         this.error = null;
         this.loading = true;
         this.openSections = {};
+        this.completeness = null;
         this.busy = false;
         this.render();
         await Promise.all([this.loadDetail(), this.loadHistory()]);
         if (ctx && ctx.aborted) return;
         this.loading = false;
         this.render();
+        this.loadCompleteness(ctx); // slower and optional: fills in when it arrives
+    }
+
+    // How much of the book's ComicVine volume the library owns
+    // (comic-server-n2yb). Quiet when ComicVine is off, the volume is not
+    // synced yet, or the book is untagged: the bar just does not appear.
+    async loadCompleteness(ctx) {
+        const volumeId = this.detail && this.detail.comicvine && this.detail.comicvine.volume_id;
+        if (!volumeId) return;
+        const bookId = this.bookId;
+        try {
+            const res = await fetch(`/api/library/series-completeness/${volumeId}`);
+            if (!res.ok) return;
+            const c = await res.json();
+            if ((ctx && ctx.aborted) || this.bookId !== bookId) return;
+            this.completeness = c;
+            this.render();
+        } catch (e) {
+            console.error('Failed to load series completeness:', e);
+        }
+    }
+
+    // A Browse link that lists books with this character/team (list
+    // membership, exact name) or this main character.
+    browseLink(type, operator, value) {
+        const m = [{ Type: type, Not: false, MatchOperator: String(operator), MatchValue: value, MatchValue2: '' }];
+        return `/browse?m=${encodeURIComponent(JSON.stringify(m))}`;
+    }
+
+    chips(value, type, operator) {
+        const names = String(value || '').split(/[,;]/).map(v => v.trim()).filter(Boolean);
+        return names.map(n =>
+            `<a class="bd-chip" href="${this.escapeHtml(this.browseLink(type, operator, n))}" data-route title="Books with ${this.escapeHtml(n)}">${this.escapeHtml(n)}</a>`
+        ).join(' ');
+    }
+
+    renderCompleteness() {
+        const c = this.completeness;
+        if (!c || !c.total) return '';
+        const pct = Math.max(0, Math.min(100, c.percent || 0));
+        const more = c.missing > 0
+            ? ` &middot; <a href="/missing-issues?volume=${c.volume_id}" data-route>${c.missing} missing</a>` : ' &middot; complete';
+        return `
+            <div class="bd-completeness">
+                <div class="bd-completeness-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><span style="width:${pct}%"></span></div>
+                <p class="empty-message">Own ${c.owned} of ${c.total} issues of ${this.escapeHtml(c.name)}${c.start_year ? ` (${this.escapeHtml(c.start_year)})` : ''}${more}</p>
+            </div>`;
     }
 
     async loadDetail() {
@@ -187,7 +236,7 @@ class BookDetailPage {
         const links = [];
         if (cv.volume_url) links.push(`<a href="${this.escapeHtml(cv.volume_url)}" target="_blank" rel="noopener">ComicVine volume ${cv.volume_id}</a>`);
         if (cv.issue_url) links.push(`<a href="${this.escapeHtml(cv.issue_url)}" target="_blank" rel="noopener">ComicVine issue ${cv.issue_id}</a>`);
-        return `<p class="bd-links">${links.join(' &middot; ')}</p>`;
+        return `<p class="bd-links">${links.join(' &middot; ')}</p>${this.renderCompleteness()}`;
     }
 
     // Actions (comic-server-2s4f). A blocked action stays visible but
@@ -401,9 +450,13 @@ class BookDetailPage {
     }
 
     renderStory(b) {
+        // Characters, teams and the main character link to Browse
+        // (comic-server-n2yb). 6 = "is a member of the comma list", 0 = equals.
         const grid = this.renderGrid([
-            ['Characters', b.Characters], ['Main character', b.MainCharacterOrTeam],
-            ['Teams', b.Teams], ['Locations', b.Locations], ['Tags', b.Tags],
+            ['Characters', this.chips(b.Characters, 'Characters', 6), true],
+            ['Main character', this.chips(b.MainCharacterOrTeam, 'MainCharacterOrTeam', 0), true],
+            ['Teams', this.chips(b.Teams, 'Teams', 6), true],
+            ['Locations', b.Locations], ['Tags', b.Tags],
         ]);
         const text = (label, v) => v ? `<h3>${label}</h3><p class="bd-text">${this.escapeHtml(v)}</p>` : '';
         const body = `${text('Summary', b.Summary)}${grid}${text('Notes', b.Notes)}${text('Review', b.Review)}`;

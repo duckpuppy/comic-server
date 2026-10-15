@@ -25,6 +25,9 @@ class MissingIssuesPage {
         this.render();
         await this.loadVolumes();
         this.render();
+        // /missing-issues?volume=<id> opens that volume (book page link).
+        const want = parseInt(new URLSearchParams(window.location.search).get('volume'), 10);
+        if (want > 0) await this.open(want);
     }
 
     escapeHtml(text) {

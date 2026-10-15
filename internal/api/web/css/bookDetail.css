@@ -232,3 +232,11 @@ a.book-link {
         grid-template-columns: 4.5rem 1fr auto;
     }
 }
+
+/* Series completeness and character chips (comic-server-n2yb) */
+.bd-completeness { margin-top: 0.5rem; max-width: 28rem; }
+.bd-completeness-bar { height: 0.5rem; border-radius: 0.25rem; background: var(--border-color, rgba(127, 127, 127, 0.25)); overflow: hidden; }
+.bd-completeness-bar span { display: block; height: 100%; background: var(--status-progress, #3b82f6); }
+.bd-completeness p { margin: 0.25rem 0 0; }
+.bd-chip { display: inline-block; margin: 0 0.25rem 0.25rem 0; padding: 0.1rem 0.5rem; border-radius: 999px; background: var(--bg-tertiary, rgba(127, 127, 127, 0.15)); color: inherit; text-decoration: none; font-size: 0.85em; }
+.bd-chip:hover { text-decoration: underline; }
