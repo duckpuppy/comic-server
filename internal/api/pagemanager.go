@@ -128,66 +128,86 @@ func zipPageFiles(zr *zip.ReadCloser) []*zip.File { return comicvine.SortedZipIm
 
 func (s *Server) pagesList(w http.ResponseWriter, book *library.ComicBook) {
 	info := BookPagesInfo{BookID: book.ID, Series: book.Series, Number: book.Number, Pages: []BookPage{}}
-	if !cbzconvert.IsZipPath(book.FilePath) {
-		info.Reason = "only CBZ files can be modified; convert this book to CBZ first"
-		s.writeJSON(w, http.StatusOK, info)
-		return
-	}
 	path := s.resolveBookFilePath(book.FilePath)
-	zr, err := zip.OpenReader(path)
-	if err != nil {
-		log.Warn().Err(err).Str("book_id", book.ID).Msg("Page manager could not open archive")
-		http.Error(w, "Could not open the archive", http.StatusNotFound)
-		return
+	var names []string
+	var sizes []int64
+	if cbzconvert.IsZipPath(book.FilePath) {
+		zr, err := zip.OpenReader(path)
+		if err != nil {
+			log.Warn().Err(err).Str("book_id", book.ID).Msg("Page list could not open archive")
+			http.Error(w, "Could not open the archive", http.StatusNotFound)
+			return
+		}
+		defer zr.Close()
+		for _, f := range zipPageFiles(zr) {
+			names = append(names, f.Name)
+			sizes = append(sizes, int64(f.UncompressedSize64))
+		}
+	} else {
+		// CBR/CB7: names only (the reader needs the count, not sizes).
+		var err error
+		if names, err = comicvine.ListPageNames(path); err != nil {
+			log.Warn().Err(err).Str("book_id", book.ID).Msg("Page list could not open archive")
+			http.Error(w, "Could not open the archive", http.StatusNotFound)
+			return
+		}
 	}
-	defer zr.Close()
 	info.Version = fileVersion(path)
 	byImage := map[int]library.ComicPageInfo{}
 	for _, p := range book.Pages {
 		byImage[p.Image] = p
 	}
-	for i, f := range zipPageFiles(zr) {
-		pg := BookPage{Index: i, Name: f.Name, Size: int64(f.UncompressedSize64)}
+	for i, name := range names {
+		pg := BookPage{Index: i, Name: name}
+		if i < len(sizes) {
+			pg.Size = sizes[i]
+		}
 		if lp, ok := byImage[i]; ok {
 			pg.Type, pg.Bookmark = lp.Type, lp.Bookmark
 		}
 		info.Pages = append(info.Pages, pg)
 	}
-	if reason := s.pageManagerBlocker(book); reason != "" {
-		info.Reason = reason
-	} else {
-		info.CanEdit = true
+	switch {
+	case !cbzconvert.IsZipPath(book.FilePath):
+		info.Reason = "only CBZ files can be modified; convert this book to CBZ first"
+	default:
+		if reason := s.pageManagerBlocker(book); reason != "" {
+			info.Reason = reason
+		} else {
+			info.CanEdit = true
+		}
 	}
 	s.writeJSON(w, http.StatusOK, info)
 }
 
+// pageImage serves page n. Default is a JPEG thumbnail (?w= pixels wide); with
+// ?full=1 it is the page's original bytes, for the reader (comic-server-65o8).
 func (s *Server) pageImage(w http.ResponseWriter, r *http.Request, book *library.ComicBook, n int) {
-	if !cbzconvert.IsZipPath(book.FilePath) {
-		http.Error(w, "Only CBZ files are supported", http.StatusConflict)
-		return
-	}
-	zr, err := zip.OpenReader(s.resolveBookFilePath(book.FilePath))
+	data, err := comicvine.ReadPage(s.resolveBookFilePath(book.FilePath), n)
 	if err != nil {
-		http.Error(w, "Could not open the archive", http.StatusNotFound)
-		return
-	}
-	defer zr.Close()
-	files := zipPageFiles(zr)
-	if n >= len(files) {
-		http.NotFound(w, r)
-		return
-	}
-	rc, err := files[n].Open()
-	if err != nil {
+		if strings.Contains(err.Error(), "out of range") {
+			http.NotFound(w, r)
+			return
+		}
+		log.Warn().Err(err).Str("book_id", book.ID).Int("page", n).Msg("Could not read page")
 		http.Error(w, "Could not read the page", http.StatusInternalServerError)
 		return
 	}
-	defer rc.Close()
-	data, err := io.ReadAll(rc)
-	if err != nil {
-		http.Error(w, "Could not read the page", http.StatusInternalServerError)
+	// The URL carries ?v=<version>, so a changed file gets a new URL.
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+
+	if r.URL.Query().Get("full") == "1" {
+		ct := http.DetectContentType(data)
+		if !strings.HasPrefix(ct, "image/") {
+			http.Error(w, "Page is not a readable image", http.StatusUnprocessableEntity)
+			return
+		}
+		w.Header().Set("Content-Type", ct)
+		w.Write(data)
 		return
 	}
+
 	width := pageThumbDefault
 	if v, err := strconv.Atoi(r.URL.Query().Get("w")); err == nil && v >= 50 && v <= pageThumbMax {
 		width = v
@@ -198,8 +218,6 @@ func (s *Server) pageImage(w http.ResponseWriter, r *http.Request, book *library
 		return
 	}
 	w.Header().Set("Content-Type", "image/jpeg")
-	// The URL carries ?v=<version>, so a changed file gets a new URL.
-	w.Header().Set("Cache-Control", "private, max-age=3600")
 	w.Write(thumb)
 }
 

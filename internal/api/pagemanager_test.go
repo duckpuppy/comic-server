@@ -197,3 +197,53 @@ func TestPageManager_TrashPathFromConfigDB(t *testing.T) {
 		t.Errorf("trash set in config.db should allow edits: %+v", info)
 	}
 }
+
+// The reader (comic-server-65o8) serves a page's original bytes with ?full=1,
+// from any supported format, and the listing works for non-CBZ too.
+func TestReader_FullPageAndNonCBZListing(t *testing.T) {
+	s, path := pageFixture(t, config.CBZConvertConfig{}) // reading needs no write gates
+	full := pagesRoute(s, http.MethodGet, "/api/library/books/b1/pages/1?full=1", nil, "")
+	if full.Code != http.StatusOK || full.Header().Get("Content-Type") != "image/png" {
+		t.Fatalf("full page = %d %s", full.Code, full.Header().Get("Content-Type"))
+	}
+	want := pngBytes(t, 90)
+	if !bytes.Equal(full.Body.Bytes(), want) {
+		t.Error("full page bytes differ from the archive entry")
+	}
+	if full.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Error("missing nosniff")
+	}
+
+	// A copy renamed to .cbr still reads by content (sniffed as ZIP), and the
+	// listing is names-only for non-.cbz extensions.
+	cbr := filepath.Join(filepath.Dir(path), "book.cbr")
+	data, _ := os.ReadFile(path)
+	if err := os.WriteFile(cbr, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := s.backend.GetBook("b1")
+	b.FilePath = cbr
+	if err := s.backend.UpdateBooks([]*library.ComicBook{b}); err != nil {
+		t.Fatal(err)
+	}
+	var info BookPagesInfo
+	w := pagesRoute(s, http.MethodGet, "/api/library/books/b1/pages", nil, "")
+	_ = json.NewDecoder(w.Body).Decode(&info)
+	if w.Code != http.StatusOK || len(info.Pages) != 3 || info.CanEdit || info.Reason == "" {
+		t.Errorf("cbr listing = %d %+v", w.Code, info)
+	}
+	if got := pagesRoute(s, http.MethodGet, "/api/library/books/b1/pages/2?full=1", nil, ""); got.Code != http.StatusOK {
+		t.Errorf("cbr page = %d", got.Code)
+	}
+}
+
+func TestReaderBlocker(t *testing.T) {
+	for path, wantBlocked := range map[string]bool{
+		"a.cbz": false, "a.CBR": false, "a.cb7": false, `C:\x\a.zip`: false,
+		"a.cbw": true, "a.pdf": true, "": true,
+	} {
+		if got := readerBlocker(path) != ""; got != wantBlocked {
+			t.Errorf("readerBlocker(%q) blocked=%v, want %v", path, got, wantBlocked)
+		}
+	}
+}

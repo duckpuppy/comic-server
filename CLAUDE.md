@@ -877,6 +877,12 @@ comic-server-j1cv. `/page-manager?book=<id>` (book page "Manage pages…") reord
 
 `variantApplyBlocker` (shared by Variant Covers, Write metadata and Manage pages on the book page) reads the **effective** trash path (`effectiveTrashConfig`, config.db first): config.yaml's `trash_path` is cleared in memory after the config.db migration, so reading `cfg.Server.TrashPath` made every migrated install report "trash_path is not configured". Not done: PDF/CBR/CB7 sources, page-type editing in the UI, undo (the trashed original is the undo, via the Trash page).
 
+## Reader
+
+comic-server-65o8. `/reader?book=<id>&page=<n>` (book page "Read") is a basic in-browser page viewer: prev/next/first/last, arrow keys / space / Home / End, click left third = back and the rest = forward, `f` toggles fit-screen / fit-width, next and previous page preloaded, `page` kept in the URL with `replaceState`. Pages come from the Page Manager routes: `GET /api/library/books/:id/pages` (names; sizes for CBZ only) and `GET .../pages/:n?full=1` (original bytes, content-sniffed, `image/*` only, `nosniff`). `comicvine.ListPageNames` / `comicvine.ReadPage` read one entry of CBZ/CBR/CB7 by the real container (sniffed), in the same page order as `ReadAllPages`, so a page index means the same page everywhere. Reading needs none of the write gates (`cbz_convert`, trash); `BookDetailActions.reader_blocker` covers no file, `.cbw` pointers and unknown formats.
+
+**No progress write-back and no manga/RTL mode** (reading progress belongs to device sync and Komga; decided as v1 scope). A CBR page request lists the archive then reads one entry, and a solid RAR cannot be read at random (same limit as covers), so very large RARs are slow per page.
+
 ## Browse Quick Search and Sort
 
 `POST /api/library/browse` (and the Browse-scoped Data Manager endpoints) accept an optional `query`, `sort` and `sort_desc` (comic-server-mzkf). `query` narrows the matched set and never widens it: with no matchers and no `show_all` the result is still empty. Plain words must each appear in series/title/publisher; `#N` matches issue number (leading zeros ignored), `(YYYY)` year, `VN` volume (`library.ParseSearchQuery`, `internal/library/searchtokens.go`). `sort` is one of series, number (numeric-aware), title, publisher, year, volume, pages; books with an unset value (no page count, no year...) sort last in both directions. The query is passed to the Data Manager preview/apply scope so a bulk action acts on exactly what the preview shows; it is not saved with "Save as Smart List".

@@ -81,6 +81,7 @@ type BookDetailActions struct {
 	ScrapeBlocker        string            `json:"scrape_blocker"`
 	VariantCoversBlocker string            `json:"variant_covers_blocker"`
 	PageManagerBlocker   string            `json:"page_manager_blocker"`
+	ReaderBlocker        string            `json:"reader_blocker"`
 	RollbackStages       []BookDetailStage `json:"rollback_stages"`
 }
 
@@ -217,7 +218,9 @@ func (s *Server) bookDetailActions(book *library.ComicBook, issueID int) BookDet
 		a.WriteMetadataBlocker = "this book has no file"
 		a.VariantCoversBlocker = "this book has no file"
 		a.PageManagerBlocker = "this book has no file"
+		a.ReaderBlocker = "this book has no file"
 	} else {
+		a.ReaderBlocker = readerBlocker(book.FilePath)
 		a.WriteMetadataBlocker = s.variantApplyBlocker(book)
 		a.VariantCoversBlocker = a.WriteMetadataBlocker
 		a.PageManagerBlocker = a.WriteMetadataBlocker
@@ -408,4 +411,15 @@ func (s *Server) handleAcceptFlag(w http.ResponseWriter, r *http.Request) {
 		s.InvalidateWorkflowCache()
 	}
 	s.writeJSON(w, http.StatusOK, map[string]any{"book_id": id, "flag": req.Flag, "accepted": req.Accepted})
+}
+
+// readerBlocker says why the in-browser reader cannot open path, or "".
+func readerBlocker(path string) string {
+	switch strings.ToLower(filepath.Ext(strings.ReplaceAll(path, "\\", "/"))) {
+	case ".cbz", ".zip", ".cbr", ".rar", ".cb7", ".7z":
+		return ""
+	case ".cbw":
+		return "this is a web comic pointer, not an archive"
+	}
+	return "this file format is not supported by the reader"
 }

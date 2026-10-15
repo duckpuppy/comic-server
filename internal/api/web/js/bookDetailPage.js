@@ -200,6 +200,7 @@ class BookDetailPage {
         if (a.scrape_blocker) notes.push(`Re-scrape: ${a.scrape_blocker}.`);
         if (a.write_metadata_blocker) notes.push(`Write metadata: ${a.write_metadata_blocker}.`);
         if (a.variant_covers_blocker) notes.push(`Variant covers: ${a.variant_covers_blocker}.`);
+        if (a.reader_blocker) notes.push(`Read: ${a.reader_blocker}.`);
         if (a.page_manager_blocker) notes.push(`Manage pages: ${a.page_manager_blocker}.`);
         const stages = a.rollback_stages || [];
         const rollback = stages.length ? `
@@ -215,6 +216,7 @@ class BookDetailPage {
                     ${btn('bd-scrape-btn', 'Re-scrape', a.scrape_blocker)}
                     ${btn('bd-write-btn', a.stale ? 'Write metadata to file (out of date)' : 'Write metadata to file', a.write_metadata_blocker)}
                     ${btn('bd-variants-btn', 'Variant covers…', a.variant_covers_blocker)}
+                    ${btn('bd-read-btn', 'Read', a.reader_blocker, 'btn-primary')}
                     ${btn('bd-pages-btn', 'Manage pages…', a.page_manager_blocker)}
                     ${rollback}
                 </div>
@@ -420,6 +422,7 @@ class BookDetailPage {
         on('bd-write-btn', () => this.writeMetadata());
         on('bd-rollback-btn', () => this.rollback());
         on('bd-variants-btn', () => router.navigate(`/variant-covers?book=${encodeURIComponent(this.bookId)}`));
+        on('bd-read-btn', () => router.navigate(`/reader?book=${encodeURIComponent(this.bookId)}`));
         on('bd-pages-btn', () => router.navigate(`/page-manager?book=${encodeURIComponent(this.bookId)}`));
         const ciBtn = document.getElementById('bd-comicinfo-btn');
         if (ciBtn) ciBtn.addEventListener('click', () => this.loadComicInfo());

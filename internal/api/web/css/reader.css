@@ -1,0 +1,13 @@
+/* Reader (comic-server-65o8) */
+.reader-page { padding: 0.5rem 1rem; max-width: 1600px; margin: 0 auto; }
+.reader-bar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem;
+    padding: 0.4rem 0; border-bottom: 1px solid var(--border-color);
+}
+.reader-title { flex: 1 1 auto; color: var(--text-primary); font-weight: bold; }
+.reader-controls { display: flex; align-items: center; gap: 0.4rem; }
+.reader-stage { display: flex; justify-content: center; padding: 0.5rem 0; }
+.reader-stage img { display: block; cursor: pointer; object-fit: contain; }
+.reader-fit-screen img { max-width: 100%; max-height: calc(100vh - 8rem); }
+.reader-fit-width img { width: 100%; height: auto; }
+.reader-hint { text-align: center; }
