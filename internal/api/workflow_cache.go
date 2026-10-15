@@ -2,6 +2,7 @@ package api
 
 import (
 	"github.com/duckpuppy/comic-server/internal/attention"
+	"path/filepath"
 	"time"
 
 	"github.com/duckpuppy/comic-server/internal/library"
@@ -55,6 +56,7 @@ func (s *Server) getOrBuildWorkflowCache() (*workflowCacheEntry, error) {
 		booksByFlag:  make(map[attention.Flag][]*library.ComicBook),
 	}
 	missing := s.missingFiles()
+	corrupt := s.corruptedArchives()
 	cv := s.cvAttentionData(allBooks)
 	ptrs := make([]*library.ComicBook, len(allBooks))
 	for i := range allBooks {
@@ -87,6 +89,11 @@ func (s *Server) getOrBuildWorkflowCache() (*workflowCacheEntry, error) {
 		}
 		if missing[book.ID] {
 			add(attention.FlagFileMissing)
+		}
+		if len(corrupt) > 0 && book.FilePath != "" {
+			if _, bad := corrupt[filepath.Clean(s.resolveBookFilePath(book.FilePath))]; bad {
+				add(attention.FlagCorruptedArchive)
+			}
 		}
 		if st == workflow.StageUnknown && book.FilePath != "" {
 			built.unstaged++

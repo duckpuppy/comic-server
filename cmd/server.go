@@ -503,6 +503,10 @@ func runServer(cmd *cobra.Command, args []string) error {
 		apiServer.SetDiskCheckInterval(time.Duration(h) * time.Hour)
 	}
 
+	// corrupted_archive is recorded from reads that already happen; nothing
+	// scans archives for it (comic-server-4inw).
+	comicvine.SetArchiveFailureHook(apiServer.RecordArchiveFailure)
+
 	var komgaStatus *komga.StatusStore
 	if cfg.Server.Komga.Enabled {
 		komgaStatus = komga.NewStatusStore()

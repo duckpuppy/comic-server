@@ -100,6 +100,8 @@ type Server struct {
 
 	// disk is the background file_missing pass (comic-server-4q1z).
 	disk diskCheck
+	// health is the lazily recorded corrupted_archive state (comic-server-4inw).
+	health archiveHealth
 
 	komgaStatus *komga.StatusStore
 	komgaSyncer *komga.Syncer

@@ -213,7 +213,7 @@ func ReadAllPages(path string) ([]Page, error) {
 func readAllPagesFromCBZ(path string) ([]Page, error) {
 	zr, err := zip.OpenReader(path)
 	if err != nil {
-		return nil, fmt.Errorf("open cbz: %w", err)
+		return nil, openFailure("cbz", path, err)
 	}
 	defer zr.Close()
 
@@ -232,7 +232,7 @@ func readAllPagesFromCBZ(path string) ([]Page, error) {
 func readAllPagesFromCBR(path string) ([]Page, error) {
 	files, err := rardecode.List(path)
 	if err != nil {
-		return nil, fmt.Errorf("open cbr: %w", err)
+		return nil, openFailure("cbr", path, err)
 	}
 
 	images := sortedRARFiles(files)
@@ -250,7 +250,7 @@ func readAllPagesFromCBR(path string) ([]Page, error) {
 func readAllPagesFromCB7(path string) ([]Page, error) {
 	rc, err := sevenzip.OpenReader(path)
 	if err != nil {
-		return nil, fmt.Errorf("open cb7: %w", err)
+		return nil, openFailure("cb7", path, err)
 	}
 	defer rc.Close()
 
@@ -305,7 +305,7 @@ func frontCoverIndexFromXML(data []byte) (int, bool) {
 func ExtractCoverFromCBZ(path string) ([]byte, error) {
 	zr, err := zip.OpenReader(path)
 	if err != nil {
-		return nil, fmt.Errorf("open cbz: %w", err)
+		return nil, openFailure("cbz", path, err)
 	}
 	defer zr.Close()
 
@@ -368,7 +368,7 @@ func readZipFile(f *zip.File) ([]byte, error) {
 func extractCoverFromCBR(path string) ([]byte, error) {
 	files, err := rardecode.List(path)
 	if err != nil {
-		return nil, fmt.Errorf("open cbr: %w", err)
+		return nil, openFailure("cbr", path, err)
 	}
 
 	images := sortedRARFiles(files)
@@ -424,7 +424,7 @@ func readRARFile(f *rardecode.File) ([]byte, error) {
 func extractCoverFromCB7(path string) ([]byte, error) {
 	rc, err := sevenzip.OpenReader(path)
 	if err != nil {
-		return nil, fmt.Errorf("open cb7: %w", err)
+		return nil, openFailure("cb7", path, err)
 	}
 	defer rc.Close()
 

@@ -17,7 +17,7 @@ func ListPageNames(path string) ([]string, error) {
 	case ".cbz", ".zip":
 		zr, err := zip.OpenReader(path)
 		if err != nil {
-			return nil, fmt.Errorf("open cbz: %w", err)
+			return nil, openFailure("cbz", path, err)
 		}
 		defer zr.Close()
 		var names []string
@@ -28,7 +28,7 @@ func ListPageNames(path string) ([]string, error) {
 	case ".cbr", ".rar":
 		files, err := rardecode.List(path)
 		if err != nil {
-			return nil, fmt.Errorf("open cbr: %w", err)
+			return nil, openFailure("cbr", path, err)
 		}
 		var names []string
 		for _, f := range sortedRARFiles(files) {
@@ -38,7 +38,7 @@ func ListPageNames(path string) ([]string, error) {
 	case ".cb7", ".7z":
 		rc, err := sevenzip.OpenReader(path)
 		if err != nil {
-			return nil, fmt.Errorf("open cb7: %w", err)
+			return nil, openFailure("cb7", path, err)
 		}
 		defer rc.Close()
 		var names []string
@@ -61,7 +61,7 @@ func ReadPage(path string, n int) ([]byte, error) {
 	case ".cbz", ".zip":
 		zr, err := zip.OpenReader(path)
 		if err != nil {
-			return nil, fmt.Errorf("open cbz: %w", err)
+			return nil, openFailure("cbz", path, err)
 		}
 		defer zr.Close()
 		files := sortedImageFiles(zr.File)
@@ -72,7 +72,7 @@ func ReadPage(path string, n int) ([]byte, error) {
 	case ".cbr", ".rar":
 		files, err := rardecode.List(path)
 		if err != nil {
-			return nil, fmt.Errorf("open cbr: %w", err)
+			return nil, openFailure("cbr", path, err)
 		}
 		images := sortedRARFiles(files)
 		if n >= len(images) {
@@ -82,7 +82,7 @@ func ReadPage(path string, n int) ([]byte, error) {
 	case ".cb7", ".7z":
 		rc, err := sevenzip.OpenReader(path)
 		if err != nil {
-			return nil, fmt.Errorf("open cb7: %w", err)
+			return nil, openFailure("cb7", path, err)
 		}
 		defer rc.Close()
 		images := sortedSevenZipFiles(rc.File)

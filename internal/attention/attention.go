@@ -51,6 +51,10 @@ const (
 	// FlagFileMissing needs a disk check, so FlagsFor never returns it; the
 	// API layer adds it from its background pass (comic-server-4q1z).
 	FlagFileMissing Flag = "file_missing"
+	// FlagCorruptedArchive is recorded lazily from reads that already
+	// happen (covers, page reads, convert), so FlagsFor never returns it
+	// either (comic-server-4inw).
+	FlagCorruptedArchive Flag = "corrupted_archive"
 )
 
 // LowPageCountThreshold: books with fewer pages than this (but more than 0,
@@ -73,6 +77,7 @@ type Info struct {
 // are equal.
 var Catalog = []Info{
 	{FlagFileMissing, "File missing", "The archive is not on disk where the library says. If many books show here, check the path mapping first.", SeverityError},
+	{FlagCorruptedArchive, "Corrupted archive", "The file could not be opened as a comic archive the last time something tried to read it (covers, page views, convert). Replace or re-download it; the flag clears itself when the file changes. Only files that were read since this was added are known, so this list grows as you browse.", SeverityError},
 	{FlagMetadataMismatch, "Wrong ComicVine issue?", "The tagged ComicVine issue has a different number, or belongs to a different volume than the book's comicvine_volume. Re-scrape the book, or fix its number.", SeverityWarn},
 	{FlagCVVolumeConflict, "ComicVine volume conflict", "Books with the same series, volume and format are tagged with different ComicVine volumes. The ones listed disagree with most of their siblings. Re-scrape them, or Accept the flag if both volumes are real (e.g. a publisher started two volumes of one series in the same year).", SeverityWarn},
 	{FlagNoSeries, "No series", "Book has no series name. Scrape it or set one by hand.", SeverityWarn},
