@@ -693,7 +693,7 @@ server:
   scrape_publisher_block: [Panini]             # never these
 ```
 
-Or `COMIC_SERVER_SCRAPE_PUBLISHER_ALLOW` / `COMIC_SERVER_SCRAPE_PUBLISHER_BLOCK` (comma-separated). Entries are case-insensitive substrings of the publisher name, so `Panini` covers `Panini Comics` and `Editorial Panini`. The allow list narrows first, then the block list carves out exceptions. A candidate with no publisher always passes. Manual picks in Scrape Review and fast re-scrape are not filtered. A book whose every candidate is excluded is held back from whole-library scrapes. Restart the server after changing it.
+Or `COMIC_SERVER_SCRAPE_PUBLISHER_ALLOW` / `COMIC_SERVER_SCRAPE_PUBLISHER_BLOCK` (comma-separated). Entries are case-insensitive substrings of the publisher name, so `Panini` covers `Panini Comics` and `Editorial Panini`. The allow list narrows first, then the block list carves out exceptions. A candidate with no publisher always passes. Manual picks in Scrape Review and fast re-scrape are not filtered. A book whose every candidate is excluded is held back from whole-library scrapes. Edit it in the web UI under Settings > Scrape publisher filter: a saved value overrides config.yaml and the environment, and takes effect on the next scrape without a restart.
 
 ## See Also
 

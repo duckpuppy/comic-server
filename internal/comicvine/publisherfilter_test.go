@@ -94,3 +94,39 @@ func TestScrape_PublisherFilterAllFilteredFails(t *testing.T) {
 		t.Error("expected a held-back reason so a library scrape does not retry it")
 	}
 }
+
+func TestScrape_PublisherFilterSourceReadAtJobStart(t *testing.T) {
+	fx := &scrapeFixture{
+		searchResults: map[string][]Volume{
+			"Batman": {{ID: 200, Name: "Batman", StartYear: "2016", Publisher: Publisher{Name: "Panini Comics"}, CountOfIssues: 85}},
+		},
+		issuesByVolume: map[int][]Issue{200: {{ID: 2001, IssueNumber: "1"}}},
+		issueDetails:   map[int]*IssueDetail{2001: {ID: 2001, IssueNumber: "1", Name: "Panini edition"}},
+	}
+	client, _ := newScrapeFixtureClient(t, fx)
+	backend := &fakeBackend{}
+	scraper := NewScraper(client, testCache(t), backend, DefaultScraperConfig())
+
+	current := PublisherFilter{Block: []string{"Panini"}}
+	scraper.SetPublisherFilterSource(func() PublisherFilter { return current })
+
+	books := []*library.ComicBook{{ID: "b1", FilePath: "Batman 001.cbz"}}
+	job, err := scraper.Scrape(context.Background(), "job-1", books, ScrapeOptions{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.Failed != 1 || len(backend.updated) != 0 {
+		t.Fatalf("blocked run: job=%+v updated=%d", job, len(backend.updated))
+	}
+
+	// Change the source: the next job picks it up with no new Scraper.
+	current = PublisherFilter{}
+	books2 := []*library.ComicBook{{ID: "b2", FilePath: "Batman 001.cbz"}}
+	job, err = scraper.Scrape(context.Background(), "job-2", books2, ScrapeOptions{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.Completed != 1 || len(backend.updated) != 1 {
+		t.Fatalf("unblocked run: job=%+v updated=%d", job, len(backend.updated))
+	}
+}

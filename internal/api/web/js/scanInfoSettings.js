@@ -23,6 +23,8 @@ class ScanInfoSettings {
         // log level, and Komga still remain config.yaml-only.
         this.trash = null; // { path, retention_days }
         this.trashSaving = false;
+        this.scrapeFilter = null; // { allow: [], block: [], source }
+        this.scrapeFilterSaving = false;
         // Library import (comic-server-szvk) - one-time/occasional
         // ComicRack -> comic-server migration, replacing the old always-on
         // file-watcher. selectedFile is the browser File object chosen but
@@ -334,7 +336,7 @@ class ScanInfoSettings {
         // leaving the page blank until the fetch resolves
         // (comic-server-4te).
         this.render();
-        await Promise.all([this.load(), this.loadTheme(), this.loadTrash(), this.loadImportStatus(), this.loadServerMisc(), this.loadRestartRequired(), this.loadWatchFolders(), this.loadCBLRepoStatus()]);
+        await Promise.all([this.load(), this.loadTheme(), this.loadTrash(), this.loadScrapeFilter(), this.loadImportStatus(), this.loadServerMisc(), this.loadRestartRequired(), this.loadWatchFolders(), this.loadCBLRepoStatus()]);
         if (ctx && ctx.aborted) return;
         this.render();
         this.attachListeners();
@@ -422,6 +424,49 @@ class ScanInfoSettings {
         } catch (error) {
             console.error('Failed to load trash settings:', error);
             this.trash = { path: '', retention_days: 30 };
+        }
+    }
+
+    async loadScrapeFilter() {
+        try {
+            const response = await fetch('/api/settings/scrape-publisher-filter');
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const data = await response.json();
+            this.scrapeFilter = { allow: data.allow || [], block: data.block || [], source: data.source || 'config' };
+        } catch (error) {
+            console.error('Failed to load scrape publisher filter:', error);
+            this.scrapeFilter = { allow: [], block: [], source: 'config' };
+        }
+    }
+
+    async saveScrapeFilter() {
+        const lines = (id) => (document.getElementById(id)?.value || '')
+            .split('\n').map((l) => l.trim()).filter(Boolean);
+        this.scrapeFilter.allow = lines('scrape-filter-allow');
+        this.scrapeFilter.block = lines('scrape-filter-block');
+        this.scrapeFilterSaving = true;
+        this.render();
+        this.attachListeners();
+        try {
+            const response = await fetch('/api/settings/scrape-publisher-filter', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ allow: this.scrapeFilter.allow, block: this.scrapeFilter.block }),
+            });
+            if (!response.ok) {
+                const text = await response.text();
+                throw new Error(friendlyErrorText(response, text));
+            }
+            const saved = await response.json();
+            this.scrapeFilter = { allow: saved.allow || [], block: saved.block || [], source: 'saved' };
+            dialogs.toast('Publisher filter saved.', 'success');
+        } catch (error) {
+            console.error('Failed to save scrape publisher filter:', error);
+            dialogs.toast('Failed to save publisher filter: ' + error.message, 'error');
+        } finally {
+            this.scrapeFilterSaving = false;
+            this.render();
+            this.attachListeners();
         }
     }
 
@@ -641,6 +686,7 @@ class ScanInfoSettings {
                 ${this.renderWatchFolders()}
                 ${this.renderRestartRequired()}
                 ${this.renderTrash()}
+                ${this.renderScrapeFilter()}
                 ${this.renderBody()}
             </div>
         `;
@@ -1047,6 +1093,41 @@ class ScanInfoSettings {
         `;
     }
 
+    renderScrapeFilter() {
+        const f = this.scrapeFilter || { allow: [], block: [], source: 'config' };
+        const note = f.source === 'saved'
+            ? 'Saved here. This overrides any scrape_publisher_allow / scrape_publisher_block in config.yaml.'
+            : 'Not saved here yet: showing the config.yaml / environment value (if any). Saving here overrides it.';
+        return `
+            <div class="panel scan-info-panel">
+                <div class="settings-section-header">
+                    <h2>Scrape publisher filter</h2>
+                    <p class="settings-section-description">Limits which publishers automatic ComicVine matching may pick, so a US series is not matched to its Italian or Brazilian reprint. Picking a volume by hand in Scrape Review is never filtered.</p>
+                </div>
+
+                <div class="form-group">
+                    <label for="scrape-filter-allow">Only allow these publishers</label>
+                    <textarea id="scrape-filter-allow" class="form-control" rows="4" placeholder="DC&#10;Marvel&#10;Image">${this.escapeAttr(f.allow.join('\n'))}</textarea>
+                    <div class="form-help">One per line. Leave empty to allow every publisher. A line matches any publisher whose name contains it ("DC" matches "DC Comics"). Be careful: ComicVine sometimes files a series under an unexpected publisher, and an allow list hides that match.</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="scrape-filter-block">Never pick these publishers</label>
+                    <textarea id="scrape-filter-block" class="form-control" rows="4" placeholder="Panini&#10;Editorial Televisa">${this.escapeAttr(f.block.join('\n'))}</textarea>
+                    <div class="form-help">One per line, same matching. Applied after the allow list. A volume with no publisher always passes both lists.</div>
+                </div>
+
+                <div class="form-help">${this.escapeAttr(note)} Takes effect on the next scrape; no restart needed. A book whose every candidate is excluded is held back from whole-library scrapes.</div>
+
+                <div class="scan-info-actions">
+                    <button class="btn btn-primary" id="scrape-filter-save" ${this.scrapeFilterSaving ? 'disabled' : ''}>
+                        ${this.scrapeFilterSaving ? 'Saving...' : 'Save'}
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
     renderAppearance() {
         const theme = this.theme || 'system';
         const options = [
@@ -1253,6 +1334,10 @@ class ScanInfoSettings {
             trashRetentionInput.addEventListener('input', (e) => {
                 this.trash.retention_days = parseInt(e.target.value, 10) || 0;
             });
+        }
+        const scrapeFilterSaveBtn = document.getElementById('scrape-filter-save');
+        if (scrapeFilterSaveBtn) {
+            scrapeFilterSaveBtn.addEventListener('click', () => this.saveScrapeFilter());
         }
         const trashSaveBtn = document.getElementById('trash-save');
         if (trashSaveBtn) {

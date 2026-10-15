@@ -185,6 +185,10 @@ func (s *Server) SetScraper(client *comicvine.Client, cache *comicvine.Cache) {
 		}
 	}
 	s.scraper = comicvine.NewScraper(client, cache, s.audited(audit.ActionScrape), scrapeCfg)
+	s.scraper.SetPublisherFilterSource(func() comicvine.PublisherFilter {
+		f, _ := s.effectiveScrapePublisherFilter()
+		return f
+	})
 }
 
 // NewServer creates a new API server with version information
@@ -336,6 +340,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/settings/scan-info", s.handleScanInfoConfig)
 	s.mux.HandleFunc("/api/settings/theme", s.handleThemeConfig)
 	s.mux.HandleFunc("/api/settings/trash", s.handleTrashSettings)
+	s.mux.HandleFunc("/api/settings/scrape-publisher-filter", s.handleScrapePublisherFilter)
 	s.mux.HandleFunc("/api/settings/library-import", s.handleLibraryImport)
 	s.mux.HandleFunc("/api/settings/server-misc", s.handleServerMiscSettings)
 	s.mux.HandleFunc("/api/settings/restart-required", s.handleRestartRequiredSettings)

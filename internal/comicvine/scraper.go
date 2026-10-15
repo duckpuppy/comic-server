@@ -142,6 +142,33 @@ type Scraper struct {
 
 	mu         sync.Mutex
 	currentJob *ScrapeJob
+
+	// filterSource, when set, supplies the publisher filter afresh at the
+	// start of each Scrape job (comic-server-pl94: the UI/config.db value
+	// takes effect without a restart). runFilter is that job's snapshot, so
+	// a batch uses one consistent filter and reads the source once, not per
+	// book. Without a source, cfg.PublisherFilter applies.
+	filterSource func() PublisherFilter
+	runFilter    *PublisherFilter
+}
+
+// SetPublisherFilterSource makes the scraper read its publisher filter from
+// fn at the start of every Scrape job instead of using cfg.PublisherFilter.
+func (s *Scraper) SetPublisherFilterSource(fn func() PublisherFilter) {
+	s.mu.Lock()
+	s.filterSource = fn
+	s.mu.Unlock()
+}
+
+// publisherFilter returns the filter in force for the running job, or the
+// configured one outside a job.
+func (s *Scraper) publisherFilter() PublisherFilter {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.runFilter != nil {
+		return *s.runFilter
+	}
+	return s.cfg.PublisherFilter
 }
 
 // NewScraper creates a Scraper.
@@ -170,6 +197,10 @@ func (s *Scraper) Scrape(ctx context.Context, jobID string, books []*library.Com
 
 	job := &ScrapeJob{ID: jobID, Status: JobStatusRunning, StartedAt: time.Now(), UpdatedAt: time.Now()}
 	s.currentJob = job
+	if s.filterSource != nil {
+		f := s.filterSource()
+		s.runFilter = &f
+	}
 	s.mu.Unlock()
 
 	prior, err := s.cache.GetScrapeJobBooks(jobID)
@@ -336,7 +367,7 @@ func (s *Scraper) scrapeOneBook(ctx context.Context, book *library.ComicBook, ca
 		return result
 	}
 
-	if f := s.cfg.PublisherFilter; f.Active() {
+	if f := s.publisherFilter(); f.Active() {
 		permitted := f.FilterVolumes(candidates)
 		if len(permitted) == 0 {
 			result.Status = BookStatusFailed
