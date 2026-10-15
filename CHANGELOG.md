@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.50.1](https://github.com/duckpuppy/comic-server/compare/v1.50.0...v1.50.1) (2026-10-15)
+
+
+### Bug Fixes
+
+* keep per-page info in the ComicInfo.xml Pages block ([d98b0b0](https://github.com/duckpuppy/comic-server/commit/d98b0b0c17f306ad5e2fb6cde9cf38b7a1ff55ae))
+
 ## [1.50.0](https://github.com/duckpuppy/comic-server/compare/v1.49.0...v1.50.0) (2026-10-14)
 
 
