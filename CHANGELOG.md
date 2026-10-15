@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.54.0](https://github.com/duckpuppy/comic-server/compare/v1.53.0...v1.54.0) (2026-10-15)
+
+
+### Features
+
+* optional throttled archive scan for corrupted_archive (comic-server-yn10) ([927955c](https://github.com/duckpuppy/comic-server/commit/927955c2a75234b68eb2f6005302ec5cf5e45b38))
+
 ## [1.53.0](https://github.com/duckpuppy/comic-server/compare/v1.52.0...v1.53.0) (2026-10-15)
 
 
