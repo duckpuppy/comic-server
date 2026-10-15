@@ -459,6 +459,7 @@ class WorkflowPage {
                 <div class="datamanager-page-header">
                     <button class="btn btn-secondary" id="workflow-back-btn">&larr; Back</button>
                     <h2>${this.escapeHtml(d.label)} (${countLabel})</h2>
+                    ${d.stage === 'flag:file_missing' && d.total > 0 ? `<button class="btn btn-primary" id="workflow-relink-missing-btn" title="Look for each missing file in its own old folder. Nothing changes until you confirm.">Relink missing files…</button>` : ''}
                 </div>
         `;
         if (this.loadingDrillIn && d.comics.length === 0) {
@@ -767,6 +768,9 @@ class WorkflowPage {
                 `/api/library/attention/${encodeURIComponent(el.dataset.flag)}/books`));
         });
 
+        const relinkBtn = document.getElementById('workflow-relink-missing-btn');
+        if (relinkBtn) relinkBtn.addEventListener('click', () => this.relinkMissing(relinkBtn));
+
         document.querySelectorAll('.drill-accept-btn').forEach(el => {
             el.addEventListener('click', () => this.acceptFlag(el.dataset.book, el.dataset.flag, el));
         });
@@ -871,6 +875,47 @@ class WorkflowPage {
 
         const organizeBtn = document.getElementById('workflow-organize-btn');
         if (organizeBtn) organizeBtn.addEventListener('click', () => router.navigate('/organize'));
+    }
+
+    // Preview, confirm, then apply a relink of every file_missing book
+    // (comic-server-heox). Looks only in each book's own old folder.
+    async relinkMissing(btn) {
+        const post = async (apply) => {
+            const res = await fetch('/api/library/workflow/relink-missing', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ apply }),
+            });
+            if (!res.ok) throw new Error((await res.text()).trim() || res.statusText);
+            return res.json();
+        };
+        btn.disabled = true;
+        try {
+            const p = await post(false);
+            const c = p.counts || {};
+            const found = c.found || 0;
+            const summary = `${p.total} missing book(s): ${found} can be relinked, ${c.ambiguous || 0} fit more than one file, ${c.not_found || 0} not found in their folder, ${c.folder_missing || 0} have no folder.`;
+            if (!found) {
+                dialogs.toast(`${summary} Nothing to relink.`, 'info', 8000);
+                return;
+            }
+            const sample = (p.rows || []).filter(r => r.status === 'found').slice(0, 5)
+                .map(r => `${r.series} #${r.number}: ${r.new_path.split(/[\\/]/).pop()}`).join('\n');
+            const ok = await dialogs.confirm({
+                title: 'Relink missing files',
+                message: `${summary}\n\nFirst matches:\n${sample}\n\nOnly the library record changes; no file is moved.`,
+                confirmLabel: `Relink ${found}`,
+            });
+            if (!ok) return;
+            const r = await post(true);
+            dialogs.toast(`Relinked ${(r.counts || {}).found || 0} book(s).`, 'success');
+            this.attentionDirty = true;
+            await this.loadDrillInPage(true);
+        } catch (e) {
+            dialogs.toast(`Relink failed: ${e.message || e}`, 'error', 8000);
+        } finally {
+            btn.disabled = false;
+        }
     }
 
     // Hide one flag on one book and drop it from the open list.

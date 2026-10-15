@@ -29,6 +29,14 @@ func (s *Server) handleBooksRouter(w http.ResponseWriter, r *http.Request) {
 		s.handleAcceptFlag(w, r)
 		return
 	}
+	if strings.HasSuffix(suffix, "/relink") {
+		s.handleBookRelink(w, r)
+		return
+	}
+	if strings.HasSuffix(suffix, "/remove-record") {
+		s.handleBookRemoveRecord(w, r)
+		return
+	}
 	if strings.HasSuffix(suffix, "/comicinfo") {
 		s.handleBookComicInfo(w, r)
 		return

@@ -279,6 +279,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/library/workflow/convert-cbz", s.handleRunCBZConvertWorkflow)
 	s.mux.HandleFunc("/api/library/workflow/stale-writes", s.handleStaleWrites)
 	s.mux.HandleFunc("/api/library/workflow/write-metadata", s.handleWriteMetadata)
+	s.mux.HandleFunc("/api/library/workflow/relink-missing", s.handleRelinkMissing)
 	s.mux.HandleFunc("/api/library/workflow/format-detect", s.handleFormatDetect)
 	s.mux.HandleFunc("/api/library/workflow/count-fill", s.handleCountFill)
 	s.mux.HandleFunc("/api/library/workflow/throughput", s.handleThroughput)

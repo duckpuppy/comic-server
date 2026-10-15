@@ -218,6 +218,7 @@ class BookDetailPage {
                     ${btn('bd-variants-btn', 'Variant covers…', a.variant_covers_blocker)}
                     ${btn('bd-read-btn', 'Read', a.reader_blocker, 'btn-primary')}
                     ${btn('bd-pages-btn', 'Manage pages…', a.page_manager_blocker)}
+                    ${d.file && !d.file.exists ? btn('bd-relink-btn', 'Relink file…', '') + btn('bd-remove-record-btn', 'Remove record…', '') : ''}
                     ${rollback}
                 </div>
                 ${notes.length ? `<p class="empty-message bd-action-notes">${notes.map(n => this.escapeHtml(n)).join('<br>')}</p>` : ''}
@@ -287,6 +288,54 @@ class BookDetailPage {
                 dialogs.toast(`Write failed: ${e.message}`, 'error', 8000);
             }
         });
+    }
+
+    // Look for the missing file in its old folder (comic-server-heox).
+    async relinkFile() {
+        await this.runAction(async () => {
+            try {
+                const p = await this.postJSON(`/api/library/books/${encodeURIComponent(this.bookId)}/relink`, { apply: false });
+                if (p.status !== 'found') {
+                    const why = {
+                        not_found: 'No file in the old folder fits this book (same name, or same series and issue number).',
+                        ambiguous: `More than one file fits, so none was picked: ${(p.candidates || []).join(', ')}.`,
+                        folder_missing: 'The old folder is gone as well, so there is nowhere to look.',
+                        not_missing: 'The file is on disk; nothing to relink.',
+                        no_file: 'This book has no file.',
+                    }[p.status] || `Not relinked (${p.status}).`;
+                    dialogs.toast(why, 'info', 9000);
+                    return;
+                }
+                const ok = await dialogs.confirm({
+                    title: 'Relink file',
+                    message: `Point this book at:\n${p.new_path}\n\nMatched by: ${p.reason}. Only the library record changes; no file is moved.`,
+                    confirmLabel: 'Relink',
+                });
+                if (!ok) return;
+                await this.postJSON(`/api/library/books/${encodeURIComponent(this.bookId)}/relink`, { apply: true });
+                dialogs.toast('Relinked.', 'success');
+            } catch (e) {
+                dialogs.toast(`Relink failed: ${e.message}`, 'error', 8000);
+            }
+        });
+    }
+
+    // Delete only the library record of a book whose file is gone.
+    async removeRecord() {
+        const ok = await dialogs.confirm({
+            title: 'Remove this record',
+            message: 'Delete this book from the library. Its file is already missing; no file is touched. Its metadata and reading progress are lost.',
+            confirmLabel: 'Remove record',
+            danger: true,
+        });
+        if (!ok) return;
+        try {
+            await this.postJSON(`/api/library/books/${encodeURIComponent(this.bookId)}/remove-record`, {});
+            dialogs.toast('Record removed.', 'success');
+            router.navigate('/workflow');
+        } catch (e) {
+            dialogs.toast(`Could not remove: ${e.message}`, 'error', 8000);
+        }
     }
 
     async rollback() {
@@ -424,6 +473,8 @@ class BookDetailPage {
         on('bd-variants-btn', () => router.navigate(`/variant-covers?book=${encodeURIComponent(this.bookId)}`));
         on('bd-read-btn', () => router.navigate(`/reader?book=${encodeURIComponent(this.bookId)}`));
         on('bd-pages-btn', () => router.navigate(`/page-manager?book=${encodeURIComponent(this.bookId)}`));
+        on('bd-relink-btn', () => this.relinkFile());
+        on('bd-remove-record-btn', () => this.removeRecord());
         const ciBtn = document.getElementById('bd-comicinfo-btn');
         if (ciBtn) ciBtn.addEventListener('click', () => this.loadComicInfo());
         document.querySelectorAll('.bd-section').forEach(el => el.addEventListener('toggle', () => {

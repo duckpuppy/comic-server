@@ -47,6 +47,8 @@ const (
 	ActionAcceptFlag        = "accept_flag"
 	ActionPhysicalAdd       = "physical_add"
 	ActionPageManager       = "page_manager"
+	ActionRelink            = "relink"
+	ActionRemoveRecord      = "remove_record"
 )
 
 // Change is one field's before/after.
