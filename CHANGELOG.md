@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.52.0](https://github.com/duckpuppy/comic-server/compare/v1.51.0...v1.52.0) (2026-10-15)
+
+
+### Features
+
+* edit the scrape publisher filter in Settings, stored in config.db (comic-server-pl94) ([6db49e1](https://github.com/duckpuppy/comic-server/commit/6db49e1576bce08decdabdd438440817d29958f4))
+* publisher allow/block list for automatic ComicVine matching (comic-server-2w44) ([456f7b8](https://github.com/duckpuppy/comic-server/commit/456f7b8f49f5df4e82f760ab5d452828d05f1377))
+* relink and remove-record for books with a missing file (comic-server-heox) ([9b47506](https://github.com/duckpuppy/comic-server/commit/9b47506a857c52a5b17420d179eb5f9e71dfc4a2))
+* series completeness bar and character/team chips on the book page (comic-server-n2yb) ([88d2424](https://github.com/duckpuppy/comic-server/commit/88d2424fd02e313524e5a5a972d4fa68ea5d5b4d))
+
 ## [1.51.0](https://github.com/duckpuppy/comic-server/compare/v1.50.1...v1.51.0) (2026-10-15)
 
 
