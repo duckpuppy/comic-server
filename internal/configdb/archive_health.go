@@ -75,3 +75,54 @@ func (db *DB) DeleteArchiveFailure(path string) error {
 	}
 	return nil
 }
+
+// Archive verification (comic-server-yn10): the opt-in background pass
+// remembers which file versions it already opened cleanly, so a restart (or
+// the next interval) resumes instead of re-reading every archive.
+func (db *DB) ensureArchiveVerifiedTable() error {
+	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS archive_verified (
+		path       TEXT PRIMARY KEY,
+		version    TEXT NOT NULL,
+		checked_at TEXT NOT NULL
+	)`)
+	if err != nil {
+		return fmt.Errorf("create archive_verified table: %w", err)
+	}
+	return nil
+}
+
+// VerifiedArchives returns path -> version for every archive the pass opened
+// cleanly.
+func (db *DB) VerifiedArchives() (map[string]string, error) {
+	if err := db.ensureArchiveVerifiedTable(); err != nil {
+		return nil, err
+	}
+	rows, err := db.Query(`SELECT path, version FROM archive_verified`)
+	if err != nil {
+		return nil, fmt.Errorf("list verified archives: %w", err)
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var p, v string
+		if err := rows.Scan(&p, &v); err != nil {
+			return nil, fmt.Errorf("scan verified archive: %w", err)
+		}
+		out[p] = v
+	}
+	return out, rows.Err()
+}
+
+// MarkArchiveVerified records that path opened cleanly at version.
+func (db *DB) MarkArchiveVerified(path, version string) error {
+	if err := db.ensureArchiveVerifiedTable(); err != nil {
+		return err
+	}
+	_, err := db.Exec(`INSERT INTO archive_verified (path, version, checked_at) VALUES (?, ?, ?)
+		ON CONFLICT(path) DO UPDATE SET version = excluded.version, checked_at = excluded.checked_at`,
+		path, version, time.Now().UTC().Format(time.RFC3339))
+	if err != nil {
+		return fmt.Errorf("mark archive verified: %w", err)
+	}
+	return nil
+}

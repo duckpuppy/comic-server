@@ -169,6 +169,13 @@ type ServerConfig struct {
 	// even that adds up, so it is slow by default. Default: 24. -1 turns it
 	// off.
 	DiskCheckIntervalHours int `yaml:"disk_check_interval_hours,omitempty" toml:"disk_check_interval_hours,omitempty"`
+
+	// ArchiveScanIntervalHours turns on the optional background pass that
+	// opens every archive's index to raise corrupted_archive for files
+	// nothing has read yet (comic-server-yn10). Each pass reads only new or
+	// changed files, in small throttled batches. Default 0 = off: a first
+	// pass is tens of thousands of header reads on shared disks.
+	ArchiveScanIntervalHours int `yaml:"archive_scan_interval_hours,omitempty" toml:"archive_scan_interval_hours,omitempty"`
 }
 
 // ScanInfoConfig holds the reference data and settings for scan-tag
@@ -518,6 +525,9 @@ func (c *Config) Validate() error {
 
 	if c.Server.DiskCheckIntervalHours < -1 {
 		return fmt.Errorf("disk_check_interval_hours must be >= -1 (-1 disables), got %d", c.Server.DiskCheckIntervalHours)
+	}
+	if c.Server.ArchiveScanIntervalHours < 0 {
+		return fmt.Errorf("archive_scan_interval_hours must be >= 0 (0 disables), got %d", c.Server.ArchiveScanIntervalHours)
 	}
 	if c.Server.TrashRetentionDays < 0 {
 		return fmt.Errorf("trash_retention_days must be >= 0, got %d", c.Server.TrashRetentionDays)

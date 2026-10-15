@@ -58,6 +58,14 @@ func (c *Config) ApplyEnvironment() error {
 		c.Server.DiskCheckIntervalHours = hours
 	}
 
+	if val := os.Getenv("COMIC_SERVER_ARCHIVE_SCAN_INTERVAL_HOURS"); val != "" {
+		hours, err := strconv.Atoi(val)
+		if err != nil {
+			return err
+		}
+		c.Server.ArchiveScanIntervalHours = hours
+	}
+
 	// Network settings
 	if val := os.Getenv("COMIC_SERVER_PORT"); val != "" {
 		port, err := strconv.Atoi(val)

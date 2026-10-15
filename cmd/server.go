@@ -507,6 +507,14 @@ func runServer(cmd *cobra.Command, args []string) error {
 	// scans archives for it (comic-server-4inw).
 	comicvine.SetArchiveFailureHook(apiServer.RecordArchiveFailure)
 
+	// Optional pass that opens every archive's index on purpose
+	// (comic-server-yn10). Off unless archive_scan_interval_hours is set.
+	archiveScanCtx, archiveScanCancel := context.WithCancel(context.Background())
+	defer archiveScanCancel()
+	if h := cfg.Server.ArchiveScanIntervalHours; h > 0 {
+		go apiServer.RunArchiveScan(archiveScanCtx, time.Duration(h)*time.Hour, api.ArchiveScanPause)
+	}
+
 	var komgaStatus *komga.StatusStore
 	if cfg.Server.Komga.Enabled {
 		komgaStatus = komga.NewStatusStore()
