@@ -99,7 +99,7 @@ func AddVariantCovers(book *library.ComicBook, resolvePath func(string) string, 
 		frontCovers = append(frontCovers, p.Image)
 	}
 	existingInfo, _ := comicvine.ReadComicInfoXMLBytes(target)
-	comicInfo, err := buildComicInfoXML(book, res.PageCount, frontCovers, existingInfo)
+	comicInfo, err := buildComicInfoXML(book, res.PageCount, frontCovers, existingInfo, false)
 	if err != nil {
 		return CoversResult{}, fmt.Errorf("cbzconvert: build ComicInfo.xml: %w", err)
 	}

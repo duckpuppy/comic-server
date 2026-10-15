@@ -3,6 +3,7 @@ package cbzconvert
 import (
 	"encoding/xml"
 	"reflect"
+	"sort"
 	"strings"
 
 	"github.com/duckpuppy/comic-server/internal/library"
@@ -87,24 +88,30 @@ type extraElement struct {
 }
 
 type comicInfoPageXML struct {
-	Image int    `xml:"Image,attr"`
-	Type  string `xml:"Type,attr,omitempty"`
+	Image       int    `xml:"Image,attr"`
+	Type        string `xml:"Type,attr,omitempty"`
+	Bookmark    string `xml:"Bookmark,attr,omitempty"`
+	ImageSize   int64  `xml:"ImageSize,attr,omitempty"`
+	ImageWidth  int    `xml:"ImageWidth,attr,omitempty"`
+	ImageHeight int    `xml:"ImageHeight,attr,omitempty"`
+	Key         string `xml:"Key,attr,omitempty"`
+	// Attrs holds page attributes the library does not store (another
+	// tagger's DoublePage, ComicRack's Rotation/PagePosition), kept from the
+	// file's existing ComicInfo.xml.
+	Attrs []xml.Attr `xml:",any,attr"`
 }
 
 // BuildComicInfoXML serializes book's current library metadata as
 // ComicInfo.xml bytes, with PageCount and the Pages block reflecting the
 // NEW archive's page count (pageCount) rather than whatever book.PageCount
 // happened to say before conversion - the two can differ if the source
-// archive's actual image count didn't match the library record. Page-level
-// per-image metadata (bookmarks, per-page Type beyond the front cover) is
-// intentionally not carried over - out of scope per comic-server-43b
-// (matches ComicRack's own default EmbedComicInfo behavior, which embeds
-// current book metadata, not a full page-info dump - that's the separate,
-// off-by-default EmbedComicBook). Deleted pages are already excluded from
-// pageCount/pages by dropDeletedPages before this is called - see
-// convert.go.
+// archive's actual image count didn't match the library record. The Pages
+// block is built by comicInfoPages (comic-server-mgac): one entry per page the
+// library knows, as ComicRackCE's PackedStorageProvider writes it, with
+// Deleted pages dropped and the rest renumbered, since Convert has already
+// dropped them from pageCount (see convert.go).
 func BuildComicInfoXML(book *library.ComicBook, pageCount int) ([]byte, error) {
-	return buildComicInfoXML(book, pageCount, nil, nil)
+	return buildComicInfoXML(book, pageCount, nil, nil, true)
 }
 
 // BuildComicInfoXMLKeeping is BuildComicInfoXML for a file that already has a
@@ -115,13 +122,15 @@ func BuildComicInfoXML(book *library.ComicBook, pageCount int) ([]byte, error) {
 // case (<writer> next to <Writer>) is dropped, so readers never see two
 // conflicting values. existing may be nil or invalid XML; nothing is kept then.
 func BuildComicInfoXMLKeeping(book *library.ComicBook, pageCount int, existing []byte) ([]byte, error) {
-	return buildComicInfoXML(book, pageCount, nil, existing)
+	return buildComicInfoXML(book, pageCount, nil, existing, true)
 }
 
 // buildComicInfoXML is BuildComicInfoXMLKeeping plus extra FrontCover page
-// indexes (comic-server-0u48's appended variant covers) written into the Pages
-// block after the usual page-0 cover.
-func buildComicInfoXML(book *library.ComicBook, pageCount int, extraFrontCovers []int, existing []byte) ([]byte, error) {
+// indexes (comic-server-0u48's appended variant covers) and control over
+// whether Deleted pages are dropped from the Pages block: Convert drops them
+// from the archive, an in-place write (Write Metadata, Variant covers) keeps
+// every page, so its indexes must not move.
+func buildComicInfoXML(book *library.ComicBook, pageCount int, extraFrontCovers []int, existing []byte, dropDeleted bool) ([]byte, error) {
 	ci := comicInfoXML{
 		Title:           book.Title,
 		Series:          book.Series,
@@ -173,13 +182,19 @@ func buildComicInfoXML(book *library.ComicBook, pageCount int, extraFrontCovers 
 		Review:          book.Review,
 	}
 
-	if pageCount > 0 {
-		ci.Pages.Page = []comicInfoPageXML{{Image: 0, Type: library.PageTypeFrontCover}}
-		for _, idx := range extraFrontCovers {
-			ci.Pages.Page = append(ci.Pages.Page, comicInfoPageXML{Image: idx, Type: library.PageTypeFrontCover})
+	var old *comicInfoXML
+	if len(existing) > 0 {
+		var parsed comicInfoXML
+		if xml.Unmarshal(existing, &parsed) == nil {
+			old = &parsed
 		}
 	}
-	ci.Extra = keptExtras(&ci, existing)
+	var oldPages []comicInfoPageXML
+	if old != nil {
+		oldPages = old.Pages.Page
+	}
+	ci.Pages.Page = comicInfoPages(book.Pages, oldPages, pageCount, extraFrontCovers, dropDeleted)
+	ci.Extra = keptExtras(&ci, old)
 
 	out, err := xml.MarshalIndent(ci, "", "  ")
 	if err != nil {
@@ -190,12 +205,8 @@ func buildComicInfoXML(book *library.ComicBook, pageCount int, extraFrontCovers 
 
 // keptExtras returns existing's unknown elements, minus any whose name equals
 // a schema field ci writes, ignoring case.
-func keptExtras(ci *comicInfoXML, existing []byte) []extraElement {
-	if len(existing) == 0 {
-		return nil
-	}
-	var old comicInfoXML
-	if err := xml.Unmarshal(existing, &old); err != nil || len(old.Extra) == 0 {
+func keptExtras(ci *comicInfoXML, old *comicInfoXML) []extraElement {
+	if old == nil || len(old.Extra) == 0 {
 		return nil
 	}
 	written := map[string]bool{}
@@ -214,6 +225,89 @@ func keptExtras(ci *comicInfoXML, existing []byte) []extraElement {
 			out = append(out, e)
 		}
 	}
+	return out
+}
+
+// comicInfoPages builds the Pages block for an archive of pageCount pages
+// (comic-server-mgac). The library's page info is the source, like
+// ComicRackCE's export; when the library has none, the file's own Pages block
+// is kept. Attributes the library does not store are copied from the file's
+// entry for the same page. With dropDeleted, Deleted pages are left out and the
+// rest renumbered by position. extraFrontCovers are marked FrontCover. With no
+// page data at all, the block is the page-0 FrontCover entry written before.
+// Entries outside the archive are dropped; none are written when pageCount is
+// 0 (the fingerprint build).
+func comicInfoPages(libPages []library.ComicPageInfo, filePages []comicInfoPageXML, pageCount int, extraFrontCovers []int, dropDeleted bool) []comicInfoPageXML {
+	if pageCount <= 0 {
+		return nil
+	}
+	fileByIndex := make(map[int]comicInfoPageXML, len(filePages))
+	for _, p := range filePages {
+		if _, dup := fileByIndex[p.Image]; !dup {
+			fileByIndex[p.Image] = p
+		}
+	}
+
+	var src []comicInfoPageXML
+	if len(libPages) > 0 {
+		for _, p := range libPages {
+			src = append(src, comicInfoPageXML{
+				Image: p.Image, Type: p.Type, Bookmark: p.Bookmark, ImageSize: p.ImageSize,
+				ImageWidth: p.ImageWidth, ImageHeight: p.ImageHeight, Key: p.Key,
+				Attrs: fileByIndex[p.Image].Attrs,
+			})
+		}
+	} else {
+		src = append(src, filePages...)
+	}
+
+	deleted := map[int]bool{}
+	if dropDeleted {
+		for _, p := range src {
+			if p.Type == library.PageTypeDeleted {
+				deleted[p.Image] = true
+			}
+		}
+	}
+	byIndex := map[int]comicInfoPageXML{}
+	for _, p := range src {
+		if deleted[p.Image] {
+			continue
+		}
+		n := p.Image
+		for d := range deleted {
+			if d < p.Image {
+				n--
+			}
+		}
+		if n < 0 || n >= pageCount {
+			continue
+		}
+		if _, dup := byIndex[n]; dup {
+			continue
+		}
+		p.Image = n
+		byIndex[n] = p
+	}
+
+	if len(byIndex) == 0 {
+		byIndex[0] = comicInfoPageXML{Image: 0, Type: library.PageTypeFrontCover}
+	}
+	for _, idx := range extraFrontCovers {
+		if idx < 0 || idx >= pageCount {
+			continue
+		}
+		p := byIndex[idx]
+		p.Image = idx
+		p.Type = library.PageTypeFrontCover
+		byIndex[idx] = p
+	}
+
+	out := make([]comicInfoPageXML, 0, len(byIndex))
+	for _, p := range byIndex {
+		out = append(out, p)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Image < out[j].Image })
 	return out
 }
 

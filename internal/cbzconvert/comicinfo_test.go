@@ -171,3 +171,69 @@ func TestBuildComicInfoXMLKeeping_BadOrEmptyExisting(t *testing.T) {
 		}
 	}
 }
+
+func pagesOf(t *testing.T, data []byte) []comicInfoPageXML {
+	t.Helper()
+	var ci comicInfoXML
+	if err := xml.Unmarshal(data, &ci); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	return ci.Pages.Page
+}
+
+func TestBuildComicInfoXML_PagesFromLibrary(t *testing.T) {
+	book := &library.ComicBook{Series: "S", Pages: []library.ComicPageInfo{
+		{Image: 0, Type: library.PageTypeFrontCover, ImageWidth: 1000, ImageHeight: 1500, ImageSize: 12345},
+		{Image: 1, Type: library.PageTypeDeleted},
+		{Image: 2, Bookmark: "Chapter 2", ImageWidth: 2000, ImageHeight: 1500, Key: "p3.jpg"},
+		{Image: 9}, // beyond the archive
+	}}
+	existing := []byte(`<ComicInfo><Pages><Page Image="2" DoublePage="True"/></Pages></ComicInfo>`)
+
+	// Convert: Deleted page dropped, later pages renumbered, file-only attrs follow the page.
+	got := pagesOf(t, mustBuild(t, func() ([]byte, error) { return BuildComicInfoXMLKeeping(book, 2, existing) }))
+	if len(got) != 2 {
+		t.Fatalf("pages = %+v, want 2 entries", got)
+	}
+	if got[0].Image != 0 || got[0].Type != library.PageTypeFrontCover || got[0].ImageWidth != 1000 || got[0].ImageSize != 12345 {
+		t.Errorf("page 0 = %+v", got[0])
+	}
+	if got[1].Image != 1 || got[1].Bookmark != "Chapter 2" || got[1].ImageWidth != 2000 || got[1].Key != "p3.jpg" {
+		t.Errorf("page 1 = %+v", got[1])
+	}
+	if len(got[1].Attrs) != 1 || got[1].Attrs[0].Name.Local != "DoublePage" {
+		t.Errorf("page 1 attrs = %+v, want DoublePage kept", got[1].Attrs)
+	}
+
+	// In place: every page keeps its index, Deleted included.
+	got = pagesOf(t, mustBuild(t, func() ([]byte, error) { return buildComicInfoXML(book, 3, nil, existing, false) }))
+	if len(got) != 3 || got[1].Type != library.PageTypeDeleted || got[2].Image != 2 {
+		t.Errorf("in-place pages = %+v", got)
+	}
+}
+
+func TestBuildComicInfoXML_PagesFromFileWhenLibraryHasNone(t *testing.T) {
+	book := &library.ComicBook{Series: "S"}
+	existing := []byte(`<ComicInfo><Pages><Page Image="0" Type="FrontCover" ImageWidth="900"/><Page Image="1" Type="Story" ImageHeight="1400"/></Pages></ComicInfo>`)
+	got := pagesOf(t, mustBuild(t, func() ([]byte, error) { return buildComicInfoXML(book, 2, []int{1}, existing, false) }))
+	if len(got) != 2 || got[0].ImageWidth != 900 || got[1].ImageHeight != 1400 || got[1].Type != library.PageTypeFrontCover {
+		t.Errorf("pages = %+v, want file pages with page 1 marked FrontCover", got)
+	}
+}
+
+func TestBuildComicInfoXML_NoPageDataKeepsCoverOnlyBlock(t *testing.T) {
+	book := &library.ComicBook{Series: "S"}
+	got := pagesOf(t, mustBuild(t, func() ([]byte, error) { return buildComicInfoXML(book, 5, []int{4}, nil, false) }))
+	if len(got) != 2 || got[0].Image != 0 || got[0].Type != library.PageTypeFrontCover || got[1].Image != 4 || got[1].Type != library.PageTypeFrontCover {
+		t.Errorf("pages = %+v, want page 0 and 4 FrontCover", got)
+	}
+}
+
+func mustBuild(t *testing.T, f func() ([]byte, error)) []byte {
+	t.Helper()
+	data, err := f()
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	return data
+}

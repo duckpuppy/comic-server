@@ -134,7 +134,7 @@ func UpdateMetadata(book *library.ComicBook, resolvePath func(string) string, tr
 	}
 
 	existingInfo, _ := comicvine.ReadComicInfoXMLBytes(target)
-	comicInfo, err := BuildComicInfoXMLKeeping(book, pageCount, existingInfo)
+	comicInfo, err := buildComicInfoXML(book, pageCount, nil, existingInfo, false)
 	if err != nil {
 		return Result{}, fmt.Errorf("cbzconvert: build ComicInfo.xml: %w", err)
 	}
