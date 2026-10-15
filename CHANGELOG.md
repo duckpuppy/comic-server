@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.53.0](https://github.com/duckpuppy/comic-server/compare/v1.52.0...v1.53.0) (2026-10-15)
+
+
+### Features
+
+* corrupted_archive flag recorded lazily from reads that already happen (comic-server-4inw) ([5c71acf](https://github.com/duckpuppy/comic-server/commit/5c71acf4edfe5f9a14570273e7d10ee308108ea0))
+* pick a missing book's file by hand when its old folder has no match (comic-server-679r) ([5cab240](https://github.com/duckpuppy/comic-server/commit/5cab240379ba55f0e852e98595bc285c979d83a4))
+
 ## [1.52.0](https://github.com/duckpuppy/comic-server/compare/v1.51.0...v1.52.0) (2026-10-15)
 
 
