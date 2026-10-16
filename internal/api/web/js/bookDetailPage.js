@@ -349,8 +349,14 @@ class BookDetailPage {
         if (!ok) return;
         await this.runAction(async () => {
             try {
-                await this.postJSON('/api/scrape', { book_ids: [this.bookId] });
-                dialogs.toast('Re-scrape started - see Dashboard for progress. Reload this page when it finishes.', 'success', 6000);
+                const started = await this.postJSON('/api/scrape', { book_ids: [this.bookId] });
+                ScrapeLog.open(started.job_id, {
+                    title: 'Re-scrape',
+                    onDone: async () => {
+                        await Promise.all([this.loadDetail(), this.loadHistory()]);
+                        this.render();
+                    },
+                });
             } catch (e) {
                 dialogs.toast(e.status === 409 ? 'A scrape is already running. Try again when it finishes.' : `Re-scrape failed: ${e.message}`, 'error', 8000);
             }

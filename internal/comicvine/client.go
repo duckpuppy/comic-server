@@ -76,6 +76,7 @@ func (c *Client) FetchVolume(ctx context.Context, cvID int) (*Volume, error) {
 		"field_list": {"id,name,start_year,publisher,count_of_issues,description,deck,site_detail_url,date_added,date_last_updated"},
 	}
 	var resp apiResponse[Volume]
+	jobLog(ctx, JobLogInfo, "Fetching volume %d from ComicVine", cvID)
 	if err := c.get(ctx, fmt.Sprintf("/volume/4050-%d", cvID), params, &resp); err != nil {
 		return nil, err
 	}
@@ -100,6 +101,7 @@ func (c *Client) FetchVolumeIssues(ctx context.Context, volumeCVID int) ([]Issue
 			"sort":       {"cover_date:asc"},
 		}
 		var resp apiResponse[[]Issue]
+		jobLog(ctx, JobLogInfo, "Fetching the issue list of volume %d from ComicVine", volumeCVID)
 		if err := c.get(ctx, "/issues", params, &resp); err != nil {
 			return all, err
 		}
@@ -125,6 +127,7 @@ func (c *Client) SearchVolumes(ctx context.Context, query string) ([]Volume, err
 		"field_list": {"id,name,start_year,publisher,count_of_issues,image,description,deck,site_detail_url"},
 	}
 	var resp apiResponse[[]Volume]
+	jobLog(ctx, JobLogInfo, "Searching ComicVine for %q", query)
 	if err := c.get(ctx, "/search", params, &resp); err != nil {
 		return nil, err
 	}
@@ -141,6 +144,7 @@ func (c *Client) FetchIssueDetail(ctx context.Context, cvIssueID int) (*IssueDet
 			"person_credits,character_credits,team_credits,location_credits,story_arc_credits,image"},
 	}
 	var resp apiResponse[IssueDetail]
+	jobLog(ctx, JobLogInfo, "Fetching issue %d from ComicVine", cvIssueID)
 	if err := c.get(ctx, fmt.Sprintf("/issue/4000-%d", cvIssueID), params, &resp); err != nil {
 		return nil, err
 	}
@@ -153,7 +157,9 @@ func (c *Client) FetchIssueDetail(ctx context.Context, cvIssueID int) (*IssueDet
 // get performs a rate-limited, circuit-broken GET request.
 func (c *Client) get(ctx context.Context, path string, params url.Values, dest any) error {
 	if !c.circuit.Allow() {
-		return ErrCircuitOpen{Until: c.circuit.BackoffUntil()}
+		until := c.circuit.BackoffUntil()
+		jobLog(ctx, JobLogWarn, "ComicVine requests are paused after an error for another %s", untilText(until))
+		return ErrCircuitOpen{Until: until}
 	}
 
 	if err := c.pacer.Wait(ctx); err != nil {
