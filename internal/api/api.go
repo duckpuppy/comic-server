@@ -68,6 +68,7 @@ type Server struct {
 	cvImageAnyHost bool
 	cvCache        *comicvine.Cache
 	scraper        *comicvine.Scraper
+	scrapeLogs     *scrapeLogStore
 
 	// cblRepo is the cloned CBL-hosting repo browser (comic-server-oprf),
 	// nil when server.cbl_repo.url isn't configured - see SetCBLRepo.
@@ -191,6 +192,8 @@ func (s *Server) SetScraper(client *comicvine.Client, cache *comicvine.Cache) {
 		f, _ := s.effectiveScrapePublisherFilter()
 		return f
 	})
+	s.scrapeLogs = newScrapeLogStore()
+	s.scraper.SetJobLog(s.recordScrapeLog)
 }
 
 // NewServer creates a new API server with version information
@@ -333,6 +336,7 @@ func (s *Server) registerRoutes() {
 	// ComicVine scraper endpoints
 	s.mux.HandleFunc("/api/scrape", s.handleScrapeStart)
 	s.mux.HandleFunc("/api/scrape/status", s.handleScrapeStatus)
+	s.mux.HandleFunc("/api/scrape/log", s.handleScrapeLog)
 	s.mux.HandleFunc("/api/scrape/review", s.handleScrapeReviewList)
 	s.mux.HandleFunc("/api/scrape/review/", s.handleScrapeReviewResolve)
 

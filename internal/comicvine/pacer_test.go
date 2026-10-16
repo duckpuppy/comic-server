@@ -2,6 +2,7 @@ package comicvine
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 )
@@ -110,5 +111,20 @@ func TestPacer_Stats(t *testing.T) {
 	burst, window := p.Stats()
 	if burst != 2 || window != 2 {
 		t.Fatalf("stats: burst=%d window=%d, want 2,2", burst, window)
+	}
+}
+
+func TestPacer_ReportsPauseToJobLog(t *testing.T) {
+	p := NewPacer(WithBurstSize(1), WithBurstPause(10*time.Millisecond))
+	p.RecordRequest()
+	var got []string
+	ctx := withJobLog(context.Background(), "job-1", func(jobID, level, msg string) {
+		got = append(got, jobID+": "+msg)
+	})
+	if err := p.Wait(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || !strings.Contains(got[0], "job-1: Waiting") || !strings.Contains(got[0], "rate limit") {
+		t.Errorf("job log = %q", got)
 	}
 }

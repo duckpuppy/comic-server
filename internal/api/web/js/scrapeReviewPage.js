@@ -198,7 +198,8 @@ class ScrapeReviewPage {
     }
 
     // Re-scrape one book: a fresh search replaces its stored candidates
-    // (comic-server-5wer phase 4). The page refreshes on the scrape websocket events.
+    // (comic-server-5wer phase 4). A live log shows the search as it runs;
+    // the page refreshes on the scrape websocket events.
     async rescrape(bookId) {
         if (this.busy.has(bookId)) return;
         this.busy.add(bookId);
@@ -209,8 +210,10 @@ class ScrapeReviewPage {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ book_ids: [bookId] }),
             });
+            if (res.status === 409) throw new Error('a scrape is already running. Try again when it finishes.');
             if (!res.ok) throw new Error((await res.text()).trim() || `HTTP ${res.status}`);
-            if (typeof dialogs !== 'undefined') dialogs.toast('Re-scrape started. The candidates refresh when it finishes.', 'success');
+            const started = await res.json();
+            ScrapeLog.open(started.job_id, { title: 'Re-scrape' });
         } catch (e) {
             if (typeof dialogs !== 'undefined') dialogs.toast(`Could not re-scrape: ${e.message}`, 'error', 8000);
         } finally {

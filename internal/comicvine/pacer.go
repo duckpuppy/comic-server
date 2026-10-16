@@ -78,6 +78,7 @@ func (p *Pacer) Wait(ctx context.Context) error {
 	p.mu.Unlock()
 
 	if pause > 0 {
+		jobLog(ctx, JobLogInfo, "Waiting %s for the ComicVine rate limit", pause.Round(time.Second))
 		select {
 		case <-time.After(pause):
 		case <-ctx.Done():

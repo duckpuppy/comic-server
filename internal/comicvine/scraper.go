@@ -156,6 +156,17 @@ type Scraper struct {
 	// book. Without a source, cfg.PublisherFilter applies.
 	filterSource func() PublisherFilter
 	runFilter    *PublisherFilter
+
+	// jobLog, when set, receives each job's steps as plain sentences for
+	// a live log (the Re-scrape dialog). Steps are also logged at debug.
+	jobLog JobLogFunc
+}
+
+// SetJobLog sets the sink for each job's step-by-step log.
+func (s *Scraper) SetJobLog(fn JobLogFunc) {
+	s.mu.Lock()
+	s.jobLog = fn
+	s.mu.Unlock()
 }
 
 // SetPublisherFilterSource makes the scraper read its publisher filter from
@@ -207,7 +218,19 @@ func (s *Scraper) Scrape(ctx context.Context, jobID string, books []*library.Com
 		f := s.filterSource()
 		s.runFilter = &f
 	}
+	sink := s.jobLog
 	s.mu.Unlock()
+
+	ctx = withJobLog(ctx, jobID, func(jobID, level, msg string) {
+		ev := log.Debug()
+		if level == JobLogWarn {
+			ev = log.Warn()
+		}
+		ev.Str("job_id", jobID).Msg("scrape: " + msg)
+		if sink != nil {
+			sink(jobID, level, msg)
+		}
+	})
 
 	prior, err := s.cache.GetScrapeJobBooks(jobID)
 	if err != nil {
@@ -235,6 +258,10 @@ func (s *Scraper) Scrape(ctx context.Context, jobID string, books []*library.Com
 	}
 	job.Total = len(prior) + len(pending)
 	s.saveJobMeta(job)
+	if len(prior) > 0 {
+		jobLog(ctx, JobLogInfo, "Resuming: %d of %d book(s) already done", len(prior), job.Total)
+	}
+	jobLog(ctx, JobLogInfo, "Scraping %d book(s)", len(pending))
 
 	issueCache := make(map[int][]Issue) // volume CV ID -> issues, reused within this run
 
@@ -248,6 +275,9 @@ func (s *Scraper) Scrape(ctx context.Context, jobID string, books []*library.Com
 		var searchErr error
 		if groupNeedsSearch(group.books, opts) {
 			candidates, searchErr = s.client.SearchVolumes(ctx, group.seriesName)
+			if searchErr == nil {
+				jobLog(ctx, JobLogInfo, "Found %d volume(s) named like %q", len(candidates), group.seriesName)
+			}
 		}
 
 		for _, book := range group.books {
@@ -255,7 +285,9 @@ func (s *Scraper) Scrape(ctx context.Context, jobID string, books []*library.Com
 				break
 			}
 
+			jobLog(ctx, JobLogInfo, "Book: %s", fileBase(book.FilePath))
 			result := s.scrapeOneBook(ctx, book, candidates, searchErr, issueCache, opts)
+			logResult(ctx, result)
 			s.recordResult(job, result, onProgress)
 
 			processed++
@@ -271,7 +303,10 @@ func (s *Scraper) Scrape(ctx context.Context, jobID string, books []*library.Com
 	job.Status = JobStatusComplete
 	if ctx.Err() != nil {
 		job.Status = JobStatusFailed
+		jobLog(ctx, JobLogWarn, "Stopped: %v", ctx.Err())
 	}
+	jobLog(ctx, JobLogInfo, "Finished: %d matched, %d to review, %d skipped, %d failed",
+		job.Completed, job.PendingReview, job.Skipped, job.Failed)
 	job.UpdatedAt = time.Now()
 	s.saveJobMeta(job)
 
@@ -357,6 +392,7 @@ func (s *Scraper) scrapeOneBook(ctx context.Context, book *library.ComicBook, ca
 	existingIssID := extractCVIssueID(book.CustomValuesStore)
 
 	if opts.FastRescrape && existingVolID > 0 && existingIssID > 0 {
+		jobLog(ctx, JobLogInfo, "Using the existing ComicVine tag (volume %d, issue %d)", existingVolID, existingIssID)
 		detail, err := s.issueDetail(ctx, existingIssID)
 		if err != nil {
 			result.Status = BookStatusFailed
@@ -385,6 +421,9 @@ func (s *Scraper) scrapeOneBook(ctx context.Context, book *library.ComicBook, ca
 
 	if f := s.publisherFilter(); f.Active() {
 		permitted := f.FilterVolumes(candidates)
+		if len(permitted) < len(candidates) {
+			jobLog(ctx, JobLogInfo, "Publisher filter kept %d of %d volume(s)", len(permitted), len(candidates))
+		}
 		if len(permitted) == 0 {
 			result.Status = BookStatusFailed
 			result.Error = errAllFiltered
@@ -397,9 +436,11 @@ func (s *Scraper) scrapeOneBook(ctx context.Context, book *library.ComicBook, ca
 
 	ambiguousCover := false
 	if opts.CoverVerify {
+		jobLog(ctx, JobLogInfo, "Comparing the cover with the top candidates")
 		scored, ambiguousCover = s.verifyCovers(ctx, book, scored)
 	}
 	best := scored[0]
+	jobLog(ctx, JobLogInfo, "Best match: %s", describeMatch(best))
 
 	if ambiguousCover || best.Confidence != ConfidenceHigh {
 		if opts.AutoOnly {
@@ -430,6 +471,7 @@ func (s *Scraper) scrapeOneBook(ctx context.Context, book *library.ComicBook, ca
 		return result
 	}
 
+	jobLog(ctx, JobLogInfo, "Looking for issue #%s", number)
 	issues, err := s.volumeIssues(ctx, best.Volume.ID, issueCache)
 	if err != nil {
 		result.Status = BookStatusFailed
@@ -454,6 +496,32 @@ func (s *Scraper) scrapeOneBook(ctx context.Context, book *library.ComicBook, ca
 	}
 
 	return s.applyOrDryRun(book, best.Volume, detail, best.Volume.ID, issue.ID, opts)
+}
+
+// describeMatch is a candidate volume as one log phrase.
+func describeMatch(m MatchResult) string {
+	d := m.Volume.Name
+	if m.Volume.StartYear != "" {
+		d += " (" + m.Volume.StartYear + ")"
+	}
+	if m.Volume.Publisher.Name != "" {
+		d += ", " + m.Volume.Publisher.Name
+	}
+	return fmt.Sprintf("%s, %d issues, volume %d - %s confidence", d, m.Volume.CountOfIssues, m.Volume.ID, m.Confidence)
+}
+
+// logResult writes a book's outcome to the job log.
+func logResult(ctx context.Context, r *BookScrapeResult) {
+	switch r.Status {
+	case BookStatusScraped:
+		jobLog(ctx, JobLogInfo, "Matched: volume %d, issue %d - metadata written", r.VolumeID, r.IssueID)
+	case BookStatusPendingReview:
+		jobLog(ctx, JobLogInfo, "Not sure: sent to Scrape Review with %d candidate(s)", len(r.Candidates))
+	case BookStatusSkipped:
+		jobLog(ctx, JobLogInfo, "Skipped: %s", r.Error)
+	case BookStatusFailed:
+		jobLog(ctx, JobLogWarn, "Failed: %s", r.Error)
+	}
 }
 
 // issueNumberFor is the issue number to look for: the file name's, else the
