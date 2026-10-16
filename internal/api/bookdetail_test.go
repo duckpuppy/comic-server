@@ -188,3 +188,40 @@ func TestAcceptFlag_HidesFlagAndCanUndo(t *testing.T) {
 		t.Errorf("unknown flag status %d", code)
 	}
 }
+
+func TestCVNoMatch_MarksMovesStageAndUndoes(t *testing.T) {
+	b1 := library.ComicBook{ID: "b1", Series: "Omnibus", FilePath: "a.cbz", ScanInformation: "s"}
+	workflow.SetStage(&b1, workflow.StageScrape)
+	books := []library.ComicBook{b1, {ID: "w1", Series: "Wanted"}}
+	s := newDuplicatesTestServer(t, t.TempDir(), books)
+	post := func(id, body string) int {
+		w := httptest.NewRecorder()
+		s.handleBooksRouter(w, httptest.NewRequest(http.MethodPost, "/api/library/books/"+id+"/cv-nomatch", strings.NewReader(body)))
+		return w.Code
+	}
+	if c := post("b1", `{"set":true,"reason":"bogus"}`); c != http.StatusBadRequest {
+		t.Errorf("bad reason status %d", c)
+	}
+	if c := post("w1", `{"set":true,"reason":"collected"}`); c != http.StatusConflict {
+		t.Errorf("fileless status %d", c)
+	}
+	if c := post("b1", `{"set":true,"reason":"collected"}`); c != http.StatusOK {
+		t.Fatalf("set status %d", c)
+	}
+	var d BookDetail
+	getJSON(t, s, "/api/library/books/b1", &d)
+	if d.NoCVMatch == nil || d.NoCVMatch.Reason != "collected" {
+		t.Fatalf("detail cv_nomatch = %+v", d.NoCVMatch)
+	}
+	if d.Stage == "scrape" || d.Stage == "" {
+		t.Errorf("stage after marking = %q, want past scrape", d.Stage)
+	}
+	if c := post("b1", `{"set":false}`); c != http.StatusOK {
+		t.Fatalf("undo status %d", c)
+	}
+	d = BookDetail{}
+	getJSON(t, s, "/api/library/books/b1", &d)
+	if d.NoCVMatch != nil || d.Stage != "scrape" {
+		t.Errorf("after undo: %+v stage %q", d.NoCVMatch, d.Stage)
+	}
+}

@@ -113,6 +113,12 @@ class ScrapeReviewPage {
                         <p class="scrape-review-file" title="${this.escapeHtml(item.filename)}">${this.escapeHtml(item.filename)}</p>
                     </div>
                 </div>
+                <div class="scrape-review-nomatch">
+                    <select class="scrape-review-reason" aria-label="Why it is not in ComicVine">
+                        ${ScrapeReviewPage.NO_MATCH_REASONS.map(r => `<option value="${r[0]}">${r[1]}</option>`).join('')}
+                    </select>
+                    <button class="btn btn-small btn-secondary scrape-review-nomatch-btn" data-book="${this.escapeHtml(item.book_id)}" ${busy ? 'disabled' : ''}>None of these - not in ComicVine</button>
+                </div>
                 <table class="scrape-review-table">
                     <thead><tr><th>Cover</th><th>Volume</th><th>Start year</th><th>Issues</th><th>Publisher</th><th>Score</th><th>Confidence</th><th></th></tr></thead>
                     <tbody>${rows}</tbody>
@@ -121,10 +127,39 @@ class ScrapeReviewPage {
     }
 
     attachListeners() {
+        document.querySelectorAll('.scrape-review-nomatch-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const sel = btn.parentElement.querySelector('.scrape-review-reason');
+                this.markNoMatch(btn.dataset.book, sel ? sel.value : 'other');
+            });
+        });
         document.querySelectorAll('.scrape-review-accept').forEach(btn => {
             btn.addEventListener('click', () =>
                 this.accept(btn.dataset.book, parseInt(btn.dataset.volume, 10)));
         });
+    }
+
+    // "None of these": record the decision (comic-server-5wer) and drop the item.
+    async markNoMatch(bookId, reason) {
+        if (this.busy.has(bookId)) return;
+        this.busy.add(bookId);
+        this.render();
+        try {
+            const res = await fetch(`/api/library/books/${encodeURIComponent(bookId)}/cv-nomatch`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ set: true, reason }),
+            });
+            if (!res.ok) throw new Error((await res.text()).trim() || `HTTP ${res.status}`);
+            this.items = this.items.filter(i => i.book_id !== bookId);
+            if (typeof dialogs !== 'undefined') dialogs.toast('Marked as not in ComicVine.', 'success');
+            if (typeof navigation !== 'undefined') navigation.updateBadge('scrape-review', this.items.length);
+        } catch (e) {
+            if (typeof dialogs !== 'undefined') dialogs.toast(`Could not save: ${e.message}`, 'error', 8000);
+        } finally {
+            this.busy.delete(bookId);
+            this.render();
+        }
     }
 
     async accept(bookId, volumeId) {
@@ -184,3 +219,5 @@ ScrapeReviewPage.active = null;
     };
     if (!hook()) document.addEventListener('DOMContentLoaded', hook);
 })();
+
+ScrapeReviewPage.NO_MATCH_REASONS = [['collected','Collected edition'],['not_listed','Not listed'],['web_comic','Web comic'],['other','Other']];

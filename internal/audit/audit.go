@@ -49,6 +49,7 @@ const (
 	ActionPageManager       = "page_manager"
 	ActionRelink            = "relink"
 	ActionRemoveRecord      = "remove_record"
+	ActionCVNoMatch         = "cv_nomatch"
 )
 
 // Change is one field's before/after.

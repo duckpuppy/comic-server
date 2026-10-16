@@ -314,3 +314,42 @@ func TestStageIndex(t *testing.T) {
 		t.Errorf("StageIndex(StageOrganized) = %d, want %d", StageIndex(StageOrganized), len(Stages))
 	}
 }
+
+func TestNoCVMatch_StageAndRoundTrip(t *testing.T) {
+	b := &library.ComicBook{ID: "x", FilePath: "/c/a.cbz", ScanInformation: "scanned"}
+	if got := InferStage(b, nil); got != StageScrape {
+		t.Fatalf("unmarked untagged = %v, want Scrape", got)
+	}
+	SetStage(b, StageScrape)
+	if !SetNoCVMatch(b, "collected", "2026-10-16") {
+		t.Fatal("first set should change")
+	}
+	if SetNoCVMatch(b, "collected", "2026-10-16") {
+		t.Error("same value should not change")
+	}
+	if r, d, ok := NoCVMatch(b); !ok || r != "collected" || d != "2026-10-16" {
+		t.Errorf("NoCVMatch = %q %q %v", r, d, ok)
+	}
+	if got := GetStage(b); got <= StageScrape {
+		t.Errorf("stored stage still %v after marking", got)
+	}
+	if got := InferStage(&library.ComicBook{FilePath: "/c/a.cbz", ScanInformation: "s", CustomValuesStore: b.CustomValuesStore}, nil); got == StageScrape {
+		t.Error("marked book inferred at Scrape")
+	}
+	if !ClearNoCVMatch(b) {
+		t.Fatal("clear should report change")
+	}
+	if GetStage(b) != StageScrape {
+		t.Errorf("stage after clear = %v, want Scrape", GetStage(b))
+	}
+	if IsNoCVMatch(b) || ClearNoCVMatch(b) {
+		t.Error("marker still present")
+	}
+}
+
+func TestInferStage_CVDBSkipLeavesScrape(t *testing.T) {
+	b := &library.ComicBook{FilePath: "/c/a.cbz", Tags: "CVDBSKIP", ScanInformation: "s"}
+	if got := InferStage(b, nil); got == StageScrape {
+		t.Errorf("CVDBSKIP book inferred at Scrape")
+	}
+}

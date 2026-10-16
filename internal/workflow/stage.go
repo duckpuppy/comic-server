@@ -185,7 +185,7 @@ func InferStage(book *library.ComicBook, rulesets []datamanager.Ruleset) Stage {
 	if needsConvertToCBZ(book.FilePath) {
 		return StageConvertToCBZ
 	}
-	if _, tagged := library.GetCustomValue(book.CustomValuesStore, "comicvine_volume"); !tagged {
+	if _, tagged := library.GetCustomValue(book.CustomValuesStore, "comicvine_volume"); !tagged && !ExemptFromScrape(book) {
 		return StageScrape
 	}
 	if book.ScanInformation == "" {
@@ -352,4 +352,62 @@ func IsCVDBSkip(book *library.ComicBook) bool {
 		}
 	}
 	return false
+}
+
+// KeyNoCVMatch is the custom value that marks a book the user decided is not
+// in ComicVine (collected volumes, web comics...), comic-server-5wer. Format
+// "<reason>|<YYYY-MM-DD>". The comic_server_ prefix keeps it out of the
+// written-hash fingerprint.
+const KeyNoCVMatch = "comic_server_cv_nomatch"
+
+// NoCVMatchReasons are the accepted reasons, in display order.
+var NoCVMatchReasons = []string{"collected", "not_listed", "web_comic", "other"}
+
+// NoCVMatch returns the reason and date of the marker.
+func NoCVMatch(book *library.ComicBook) (reason, date string, ok bool) {
+	v, found := library.GetCustomValue(book.CustomValuesStore, KeyNoCVMatch)
+	if !found {
+		return "", "", false
+	}
+	reason, date, _ = strings.Cut(v, "|")
+	return reason, date, true
+}
+
+// IsNoCVMatch reports whether the book carries the "not in ComicVine" marker.
+func IsNoCVMatch(book *library.ComicBook) bool {
+	_, _, ok := NoCVMatch(book)
+	return ok
+}
+
+// ExemptFromScrape reports whether a book without a ComicVine tag is still
+// done with the Scrape stage: the user marked it as not in ComicVine, or it
+// carries the older CVDBSKIP tag.
+func ExemptFromScrape(book *library.ComicBook) bool {
+	return IsNoCVMatch(book) || IsCVDBSkip(book)
+}
+
+// SetNoCVMatch marks the book and moves it past the Scrape stage. Returns
+// whether anything changed.
+func SetNoCVMatch(book *library.ComicBook, reason, date string) bool {
+	val := reason + "|" + date
+	if cur, found := library.GetCustomValue(book.CustomValuesStore, KeyNoCVMatch); found && cur == val {
+		return false
+	}
+	book.CustomValuesStore = library.SetCustomValue(book.CustomValuesStore, KeyNoCVMatch, val)
+	AdvanceIfAtOrBefore(book, StageScrape, nil)
+	return true
+}
+
+// ClearNoCVMatch removes the marker. A book that has no ComicVine tag and no
+// other exemption goes back to the Scrape stage if it had moved past it.
+// Returns whether the marker was present.
+func ClearNoCVMatch(book *library.ComicBook) bool {
+	if !IsNoCVMatch(book) {
+		return false
+	}
+	book.CustomValuesStore = library.RemoveCustomValue(book.CustomValuesStore, KeyNoCVMatch)
+	if _, tagged := library.GetCustomValue(book.CustomValuesStore, "comicvine_volume"); !tagged && !IsCVDBSkip(book) {
+		RegressToStageIfPast(book, StageScrape)
+	}
+	return true
 }

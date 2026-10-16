@@ -41,6 +41,23 @@ func GetCustomValue(store, key string) (string, bool) {
 	return "", false
 }
 
+// RemoveCustomValue drops key from a CustomValuesStore string, keeping the
+// other keys. A key that is not present leaves the store unchanged.
+func RemoveCustomValue(store, key string) string {
+	pairs := splitCustomValues(store)
+	kept := pairs[:0:0]
+	for _, p := range pairs {
+		if k, _, ok := strings.Cut(p, "="); ok && k == key {
+			continue
+		}
+		kept = append(kept, p)
+	}
+	if len(kept) == len(pairs) {
+		return store
+	}
+	return joinCustomValues(kept)
+}
+
 func splitCustomValues(store string) []string {
 	var pairs []string
 	for p := range strings.SplitSeq(store, ",") {

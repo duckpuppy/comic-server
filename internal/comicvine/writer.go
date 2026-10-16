@@ -261,7 +261,9 @@ func ApplyMetadata(book *library.ComicBook, volume Volume, detail *IssueDetail, 
 	note("Web", setString(&book.Web, detail.SiteDetailURL, cfg.UpdateWebpage, cfg.OverwriteExisting, cfg.IgnoreBlanks))
 
 	// Identity tracking is always applied, independent of the per-field toggles above.
-	newStore := library.SetCustomValue(book.CustomValuesStore, "comicvine_volume", strconv.Itoa(volume.ID))
+	// A real match replaces any "not in ComicVine" decision (comic-server-5wer).
+	newStore := library.RemoveCustomValue(book.CustomValuesStore, workflow.KeyNoCVMatch)
+	newStore = library.SetCustomValue(newStore, "comicvine_volume", strconv.Itoa(volume.ID))
 	newStore = library.SetCustomValue(newStore, "comicvine_issue", strconv.Itoa(detail.ID))
 	if newStore != book.CustomValuesStore {
 		book.CustomValuesStore = newStore

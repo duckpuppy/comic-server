@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/duckpuppy/comic-server/internal/workflow"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -352,4 +353,18 @@ func TestHandleScrapeStart_WholeLibraryHoldsBackKnownProblems(t *testing.T) {
 		t.Fatalf("retry: status %d resp %+v", w.Code, resp)
 	}
 	waitForJobStatus(t, srv, comicvine.JobStatusComplete)
+}
+
+func TestFilterHeldBack_SkipsMarkedNotInComicVine(t *testing.T) {
+	s := &Server{}
+	marked := &library.ComicBook{ID: "m", FilePath: "a.cbz"}
+	workflow.SetNoCVMatch(marked, "collected", "2026-10-16")
+	plain := &library.ComicBook{ID: "p", FilePath: "b.cbz"}
+	kept, counts := s.filterHeldBack([]*library.ComicBook{marked, plain}, true)
+	if len(kept) != 1 || kept[0].ID != "p" {
+		t.Fatalf("kept = %+v", kept)
+	}
+	if counts["marked not in ComicVine"] != 1 {
+		t.Errorf("counts = %v (retry must not re-include marked books)", counts)
+	}
 }

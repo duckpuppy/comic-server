@@ -390,6 +390,11 @@ class WorkflowPage {
                 <p class="workflow-card-count">${this.summary.cvdb_skip}</p>
                 <p class="empty-message">Books tagged to skip ComicVine processing. Informational only.</p>
             </div>
+            <div class="panel workflow-card workflow-card-info">
+                <h2>Not in ComicVine</h2>
+                <p class="workflow-card-count">${this.summary.cv_nomatch || 0}</p>
+                <p class="empty-message">Books you marked as not in ComicVine. Whole-library scrapes skip them and they move on in the workflow.</p>
+            </div>
         `;
         html += '</div>';
 

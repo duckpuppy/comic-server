@@ -29,6 +29,10 @@ func (s *Server) handleBooksRouter(w http.ResponseWriter, r *http.Request) {
 		s.handleAcceptFlag(w, r)
 		return
 	}
+	if strings.HasSuffix(suffix, "/cv-nomatch") {
+		s.handleCVNoMatch(w, r)
+		return
+	}
 	if strings.HasSuffix(suffix, "/relink") {
 		s.handleBookRelink(w, r)
 		return

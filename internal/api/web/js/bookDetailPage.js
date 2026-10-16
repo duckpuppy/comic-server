@@ -227,8 +227,42 @@ class BookDetailPage {
         if (d.stage_label) badges.push(`<span class="bd-badge">Stage: ${this.escapeHtml(d.stage_label)}</span>`);
         if (!d.file) badges.push('<span class="bd-badge">No file (wanted or physical)</span>');
         else if (!d.file.exists) badges.push('<span class="bd-badge bd-badge-error">File missing</span>');
+        if (d.cv_nomatch) badges.push(`<span class="bd-badge">Not in ComicVine (${this.escapeHtml(this.noMatchLabel(d.cv_nomatch.reason))}, ${this.escapeHtml(d.cv_nomatch.date)})</span>`);
         if (d.book.ComicInfoIsDirty) badges.push('<span class="bd-badge">ComicInfo not yet written</span>');
         return badges.length ? `<div class="bd-badges">${badges.join('')}</div>` : '';
+    }
+
+    noMatchLabel(reason) {
+        const found = BookDetailPage.NO_MATCH_REASONS.find(r => r[0] === reason);
+        return found ? found[1] : reason;
+    }
+
+    // Mark / undo "not in ComicVine" (comic-server-5wer).
+    renderNoMatch(d) {
+        if (!d.file) return '';
+        if (d.cv_nomatch) {
+            return `<button class="btn btn-secondary" id="bd-nomatch-undo-btn" ${this.busy ? 'disabled' : ''}>Undo "not in ComicVine"</button>`;
+        }
+        if (d.comicvine) return '';
+        return `<span class="bd-rollback">
+            <select id="bd-nomatch-reason" aria-label="Why it is not in ComicVine">
+                ${BookDetailPage.NO_MATCH_REASONS.map(r => `<option value="${r[0]}">${r[1]}</option>`).join('')}
+            </select>
+            <button class="btn btn-secondary" id="bd-nomatch-btn" ${this.busy ? 'disabled' : ''}>Mark as not in ComicVine</button>
+        </span>`;
+    }
+
+    async setNoMatch(set) {
+        const sel = document.getElementById('bd-nomatch-reason');
+        await this.runAction(async () => {
+            try {
+                await this.postJSON(`/api/library/books/${encodeURIComponent(this.bookId)}/cv-nomatch`,
+                    { set, reason: set && sel ? sel.value : '' });
+                dialogs.toast(set ? 'Marked as not in ComicVine. The book moves on in the workflow.' : 'Mark removed. The book can be scraped again.', 'success');
+            } catch (e) {
+                dialogs.toast(`Could not save: ${e.message}`, 'error', 8000);
+            }
+        });
     }
 
     renderComicVine(cv) {
@@ -268,6 +302,7 @@ class BookDetailPage {
                     ${btn('bd-read-btn', 'Read', a.reader_blocker, 'btn-primary')}
                     ${btn('bd-pages-btn', 'Manage pages…', a.page_manager_blocker)}
                     ${d.file && !d.file.exists ? btn('bd-relink-btn', 'Relink file…', '') + btn('bd-remove-record-btn', 'Remove record…', '') : ''}
+                    ${this.renderNoMatch(d)}
                     ${rollback}
                 </div>
                 ${notes.length ? `<p class="empty-message bd-action-notes">${notes.map(n => this.escapeHtml(n)).join('<br>')}</p>` : ''}
@@ -539,6 +574,8 @@ class BookDetailPage {
             this.setAccepted(el.dataset.flag, el.dataset.accept === '1')));
         on('bd-write-btn', () => this.writeMetadata());
         on('bd-rollback-btn', () => this.rollback());
+        on('bd-nomatch-btn', () => this.setNoMatch(true));
+        on('bd-nomatch-undo-btn', () => this.setNoMatch(false));
         on('bd-variants-btn', () => router.navigate(`/variant-covers?book=${encodeURIComponent(this.bookId)}`));
         on('bd-read-btn', () => router.navigate(`/reader?book=${encodeURIComponent(this.bookId)}`));
         on('bd-pages-btn', () => router.navigate(`/page-manager?book=${encodeURIComponent(this.bookId)}`));
@@ -551,3 +588,5 @@ class BookDetailPage {
         }));
     }
 }
+
+BookDetailPage.NO_MATCH_REASONS = [['collected','Collected edition'],['not_listed','Not listed'],['web_comic','Web comic'],['other','Other']];

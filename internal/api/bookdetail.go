@@ -8,9 +8,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/duckpuppy/comic-server/internal/attention"
 	"github.com/duckpuppy/comic-server/internal/audit"
@@ -51,6 +53,12 @@ type BookDetailComicVine struct {
 	IssueURL  string `json:"issue_url,omitempty"`
 }
 
+// BookDetailNoCVMatch is the "not in ComicVine" decision on a book (comic-server-5wer).
+type BookDetailNoCVMatch struct {
+	Reason string `json:"reason"`
+	Date   string `json:"date"`
+}
+
 // BookDetail is the response of GET /api/library/books/:id.
 type BookDetail struct {
 	Book         library.ComicBook    `json:"book"`
@@ -62,6 +70,7 @@ type BookDetail struct {
 	Accepted     []BookDetailFlag     `json:"accepted_flags"` // flags the user hid on this book
 	File         *BookDetailFile      `json:"file,omitempty"` // nil for a fileless book
 	ComicVine    *BookDetailComicVine `json:"comicvine,omitempty"`
+	NoCVMatch    *BookDetailNoCVMatch `json:"cv_nomatch,omitempty"` // user marked: not in ComicVine
 	CoverURL     string               `json:"cover_url"`
 	Actions      BookDetailActions    `json:"actions"`
 }
@@ -191,6 +200,10 @@ func (s *Server) handleBookDetail(w http.ResponseWriter, r *http.Request) {
 			f.Exists, f.Size = true, st.Size()
 		}
 		d.File = f
+	}
+
+	if reason, date, ok := workflow.NoCVMatch(book); ok {
+		d.NoCVMatch = &BookDetailNoCVMatch{Reason: reason, Date: date}
 	}
 
 	vol, iss := comicvine.VolumeIDFromStore(book.CustomValuesStore), comicvine.IssueIDFromStore(book.CustomValuesStore)
@@ -411,6 +424,62 @@ func (s *Server) handleAcceptFlag(w http.ResponseWriter, r *http.Request) {
 		s.InvalidateWorkflowCache()
 	}
 	s.writeJSON(w, http.StatusOK, map[string]any{"book_id": id, "flag": req.Flag, "accepted": req.Accepted})
+}
+
+// CVNoMatchRequest is the body of POST /api/library/books/:id/cv-nomatch.
+type CVNoMatchRequest struct {
+	Set    bool   `json:"set"`
+	Reason string `json:"reason"`
+}
+
+// handleCVNoMatch marks (or un-marks) a book as not in ComicVine
+// (comic-server-5wer). Marking moves it past the Scrape stage and keeps
+// whole-library scrapes away from it; any real match clears the mark.
+// POST /api/library/books/:id/cv-nomatch
+func (s *Server) handleCVNoMatch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.backend == nil {
+		http.Error(w, "Library not available", http.StatusServiceUnavailable)
+		return
+	}
+	id := bookDetailID(r.URL.Path, "/cv-nomatch")
+	var req CVNoMatchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.Set && !slices.Contains(workflow.NoCVMatchReasons, req.Reason) {
+		http.Error(w, "reason must be one of: "+strings.Join(workflow.NoCVMatchReasons, ", "), http.StatusBadRequest)
+		return
+	}
+	backend := s.audited(audit.ActionCVNoMatch)
+	book, err := backend.GetBook(id)
+	if err != nil || book == nil {
+		http.Error(w, "Book not found", http.StatusNotFound)
+		return
+	}
+	if req.Set && book.FilePath == "" {
+		http.Error(w, "this book has no file; there is nothing to scrape", http.StatusConflict)
+		return
+	}
+	changed := false
+	if req.Set {
+		changed = workflow.SetNoCVMatch(book, req.Reason, time.Now().Format("2006-01-02"))
+	} else {
+		changed = workflow.ClearNoCVMatch(book)
+	}
+	if changed {
+		if err := backend.UpdateBooks([]*library.ComicBook{book}); err != nil {
+			log.Error().Err(err).Str("book_id", id).Msg("Failed to save ComicVine no-match mark")
+			http.Error(w, "Failed to save book", http.StatusInternalServerError)
+			return
+		}
+		s.InvalidateWorkflowCache()
+	}
+	s.writeJSON(w, http.StatusOK, map[string]any{"book_id": id, "set": req.Set, "changed": changed})
 }
 
 // readerBlocker says why the in-browser reader cannot open path, or "".

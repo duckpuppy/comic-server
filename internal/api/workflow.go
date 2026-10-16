@@ -21,8 +21,9 @@ type WorkflowStageSummary struct {
 
 // WorkflowSummary is the response for GET /api/library/workflow.
 type WorkflowSummary struct {
-	Stages   []WorkflowStageSummary `json:"stages"`
-	CVDBSkip int                    `json:"cvdb_skip"` // informational only, never advances - see comic-server-3x3
+	Stages    []WorkflowStageSummary `json:"stages"`
+	CVDBSkip  int                    `json:"cvdb_skip"`  // informational only, never advances - see comic-server-3x3
+	CVNoMatch int                    `json:"cv_nomatch"` // books marked not in ComicVine (comic-server-5wer)
 	// Unstaged is books that have a file but no stored workflow stage (not
 	// backfilled yet). They are in no stage count above.
 	Unstaged int `json:"unstaged"`
@@ -46,7 +47,7 @@ func (s *Server) handleGetWorkflowSummary(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	summary := WorkflowSummary{CVDBSkip: entry.cvdbSkip, Unstaged: entry.unstaged}
+	summary := WorkflowSummary{CVDBSkip: entry.cvdbSkip, CVNoMatch: entry.cvNoMatch, Unstaged: entry.unstaged}
 	for _, st := range workflow.Stages {
 		summary.Stages = append(summary.Stages, WorkflowStageSummary{
 			Stage: st.String(),

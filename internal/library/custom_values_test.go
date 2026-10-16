@@ -16,3 +16,16 @@ func TestSetCustomValue(t *testing.T) {
 		}
 	}
 }
+
+func TestRemoveCustomValue(t *testing.T) {
+	store := ",a=1,b=2,c=3"
+	if got := RemoveCustomValue(store, "b"); got != ",a=1,c=3" {
+		t.Errorf("got %q", got)
+	}
+	if got := RemoveCustomValue(store, "zz"); got != store {
+		t.Errorf("absent key changed store: %q", got)
+	}
+	if got := RemoveCustomValue(",a=1", "a"); got != "" {
+		t.Errorf("last key: %q", got)
+	}
+}
