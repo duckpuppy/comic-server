@@ -93,6 +93,18 @@
     margin-top: 0.75rem;
 }
 
+/* The browser's default link blue is unreadable on the dark theme. */
+.bd-links a {
+    color: var(--primary-color);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.bd-links a:hover,
+.bd-links a:focus-visible {
+    color: var(--primary-hover);
+}
+
 .bd-section > summary {
     cursor: pointer;
     list-style: none;
