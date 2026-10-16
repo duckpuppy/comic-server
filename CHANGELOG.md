@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.0](https://github.com/duckpuppy/comic-server/compare/v1.57.0...v1.58.0) (2026-10-16)
+
+
+### Features
+
+* unnumbered books go to Scrape Review and the user picks the issue (comic-server-5wer phase 3) ([3538e32](https://github.com/duckpuppy/comic-server/commit/3538e3224c34a5da4c13abad6d3c435b81503a77))
+
 ## [1.57.0](https://github.com/duckpuppy/comic-server/compare/v1.56.1...v1.57.0) (2026-10-16)
 
 
