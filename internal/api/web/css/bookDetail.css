@@ -265,3 +265,72 @@ a.book-link {
 .cvm-mine { color: var(--text-secondary); }
 .cvm-table { width: 100%; }
 .cvm-preview a { color: var(--primary-color); text-decoration: underline; text-underline-offset: 2px; }
+
+/* Edit form */
+.bd-edit-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.bd-edit-group {
+    margin: 0;
+    border: 1px solid var(--border-color);
+}
+
+.bd-edit-group legend {
+    font-weight: 600;
+    padding: 0 0.4rem;
+}
+
+.bd-edit-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 0.75rem 1rem;
+}
+
+.bd-edit-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 0;
+}
+
+.bd-edit-field span {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.bd-edit-field input,
+.bd-edit-field select,
+.bd-edit-field textarea {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.4rem 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font: inherit;
+}
+
+.bd-edit-wide {
+    grid-column: 1 / -1;
+}
+
+.bd-edit-check {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    align-self: end;
+    padding-bottom: 0.4rem;
+}
+
+.bd-edit-buttons {
+    display: flex;
+    gap: 0.5rem;
+    position: sticky;
+    bottom: 0;
+    padding: 0.75rem 0;
+    background: var(--bg-primary);
+}

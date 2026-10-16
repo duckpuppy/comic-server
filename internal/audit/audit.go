@@ -51,6 +51,7 @@ const (
 	ActionRemoveRecord      = "remove_record"
 	ActionCVNoMatch         = "cv_nomatch"
 	ActionCVMatch           = "cv_match"
+	ActionEdit              = "edit"
 )
 
 // Change is one field's before/after.

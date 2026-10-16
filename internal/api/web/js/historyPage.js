@@ -109,7 +109,7 @@ class HistoryPage {
                     <button class="btn btn-secondary" id="history-next" ${this.offset + this.entries.length >= this.total ? 'disabled' : ''}>Older &rarr;</button>
                 </div>`;
         }
-        const actions = ['convert_cbz', 'write_metadata', 'scan_info', 'data_manager', 'organize', 'scrape', 'link_wanted', 'rollback'];
+        const actions = ['convert_cbz', 'write_metadata', 'scan_info', 'data_manager', 'organize', 'scrape', 'link_wanted', 'rollback', 'edit'];
         app.innerHTML = `
             <div class="history-page">
                 <div class="history-header">

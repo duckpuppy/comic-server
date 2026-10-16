@@ -1,7 +1,7 @@
 // Book detail page (comic-server-br14): one book's record, file, workflow
 // stage, attention flags, ComicVine links, history and the file's own
-// ComicInfo.xml compared with the library. View-only; actions come later
-// (comic-server-2s4f).
+// ComicInfo.xml compared with the library. Actions (comic-server-2s4f) and
+// an edit form for the book's metadata (POST .../edit).
 class BookDetailPage {
     constructor() {
         this.bookId = null;
@@ -24,6 +24,7 @@ class BookDetailPage {
         this.openSections = {};
         this.completeness = null;
         this.busy = false;
+        this.editing = false;
         this.render();
         await Promise.all([this.loadDetail(), this.loadHistory()]);
         if (ctx && ctx.aborted) return;
@@ -165,6 +166,20 @@ class BookDetailPage {
         const d = this.detail;
         const b = d.book;
         const heading = `${b.Series || '(no series)'}${b.Number ? ' #' + b.Number : ''}${b.Volume ? ` (${b.Volume})` : ''}`;
+        if (this.editing) {
+            app.innerHTML = `
+                <div class="book-detail-page">
+                    <div class="bd-header">
+                        <div>
+                            <h1>Edit ${this.escapeHtml(heading)}</h1>
+                            ${b.Title ? `<p class="bd-subtitle">${this.escapeHtml(b.Title)}</p>` : ''}
+                        </div>
+                    </div>
+                    ${this.renderEditForm(b)}
+                </div>`;
+            this.attachEditListeners();
+            return;
+        }
         app.innerHTML = `
             <div class="book-detail-page">
                 <div class="bd-header">
@@ -301,6 +316,8 @@ class BookDetailPage {
                     ${btn('bd-write-btn', a.stale ? 'Write metadata to file (out of date)' : 'Write metadata to file', a.write_metadata_blocker)}
                     ${btn('bd-variants-btn', 'Variant covers…', a.variant_covers_blocker)}
                     ${btn('bd-read-btn', 'Read', a.reader_blocker, 'btn-primary')}
+                    ${btn('bd-edit-btn', 'Edit', '')}
+                    ${btn('bd-mark-read-btn', d.book.OpenCount > 0 && !this.isUnread(d.book) ? 'Mark as unread' : 'Mark as read', '')}
                     ${btn('bd-pages-btn', 'Manage pages…', a.page_manager_blocker)}
                     ${d.file && !d.file.exists ? btn('bd-relink-btn', 'Relink file…', '') + btn('bd-remove-record-btn', 'Remove record…', '') : ''}
                     ${this.renderNoMatch(d)}
@@ -567,6 +584,152 @@ class BookDetailPage {
         return html;
     }
 
+    // Same rule as library.ComicBook.IsUnread.
+    isUnread(b) {
+        if (!b.OpenCount) return true;
+        return b.PageCount > 0 ? b.LastPageRead < b.PageCount - 1 : false;
+    }
+
+    async toggleRead() {
+        const read = !(this.detail.book.OpenCount > 0 && !this.isUnread(this.detail.book));
+        await this.runAction(async () => {
+            try {
+                await this.postJSON(`/api/library/books/${encodeURIComponent(this.bookId)}/edit`, { read: read ? 'read' : 'unread' });
+                dialogs.toast(read ? 'Marked as read.' : 'Marked as unread.', 'success');
+            } catch (e) {
+                dialogs.toast(`Could not save: ${e.message}`, 'error', 8000);
+            }
+        });
+    }
+
+    // The value a field shows in the form, as a string. A 0 number is
+    // shown empty, the way the library treats it as unset.
+    editValue(b, name, type) {
+        const v = b[name];
+        if (type === 'bool') return v ? 'Yes' : 'No';
+        if (type === 'int' || type === 'num') return v ? String(v) : '';
+        if (BookDetailPage.EDIT_CHOICES[type] && v === 'Unknown') return '';
+        return v == null ? '' : String(v);
+    }
+
+    renderEditField(b, [name, label, type]) {
+        const id = `bd-edit-${name}`;
+        const v = this.editValue(b, name, type);
+        const attrs = `id="${id}" data-field="${name}" data-type="${type}"`;
+        let input;
+        if (type === 'textarea') {
+            input = `<textarea ${attrs} rows="4">${this.escapeHtml(v)}</textarea>`;
+        } else if (type === 'bool') {
+            return `<label class="bd-edit-check"><input type="checkbox" ${attrs} ${b[name] ? 'checked' : ''}> ${this.escapeHtml(label)}</label>`;
+        } else if (BookDetailPage.EDIT_CHOICES[type]) {
+            const opts = BookDetailPage.EDIT_CHOICES[type].slice();
+            if (v && !opts.some(o => o[0] === v)) opts.push([v, v]); // keep a value the list does not know
+            input = `<select ${attrs}>${opts.map(([val, text]) =>
+                `<option value="${this.escapeHtml(val)}" ${val === v ? 'selected' : ''}>${this.escapeHtml(text)}</option>`).join('')}</select>`;
+        } else {
+            const extra = type === 'int' ? 'type="number" step="1" min="0"'
+                : type === 'num' ? `type="number" min="0" ${name.endsWith('Rating') ? 'max="5" step="0.5"' : 'step="any"'}`
+                : 'type="text"';
+            input = `<input ${extra} ${attrs} value="${this.escapeHtml(v)}">`;
+        }
+        return `<label class="bd-edit-field${type === 'textarea' ? ' bd-edit-wide' : ''}" for="${id}"><span>${this.escapeHtml(label)}</span>${input}</label>`;
+    }
+
+    renderEditForm(b) {
+        const groups = BookDetailPage.EDIT_GROUPS.map(([title, fields]) => `
+            <fieldset class="panel bd-edit-group">
+                <legend>${this.escapeHtml(title)}</legend>
+                <div class="bd-edit-grid">${fields.map(f => this.renderEditField(b, f)).join('')}</div>
+            </fieldset>`).join('');
+        const note = this.detail.file
+            ? 'Saving changes the library only. Fields that go into ComicInfo.xml mark the file out of date; use "Write metadata to file" to update it.'
+            : 'Saving changes the library only.';
+        return `
+            <form id="bd-edit-form" class="bd-edit-form" novalidate>
+                <p class="empty-message">${note} Comma-separate lists such as writers and characters.</p>
+                ${groups}
+                <div class="bd-edit-buttons">
+                    <button type="submit" class="btn btn-primary" id="bd-edit-save" ${this.busy ? 'disabled' : ''}>Save</button>
+                    <button type="button" class="btn btn-secondary" id="bd-edit-cancel">Cancel</button>
+                </div>
+            </form>`;
+    }
+
+    // Only the fields the user changed are sent, so a change made elsewhere
+    // to another field in the meantime is kept.
+    collectEdits() {
+        const b = this.detail.book;
+        const fields = {};
+        document.querySelectorAll('#bd-edit-form [data-field]').forEach(el => {
+            const name = el.dataset.field, type = el.dataset.type;
+            if (type === 'bool') {
+                if (el.checked !== !!b[name]) fields[name] = el.checked;
+                return;
+            }
+            const now = type === 'textarea' ? el.value.trim() : el.value.trim().replace(/\s+/g, ' ');
+            const before = this.editValue(b, name, type);
+            const same = (type === 'int' || type === 'num') ? Number(now || 0) === Number(before || 0) : now === before.trim();
+            if (!same) fields[name] = now;
+        });
+        return fields;
+    }
+
+    async saveEdits() {
+        const form = document.getElementById('bd-edit-form');
+        const bad = form && [...form.querySelectorAll('input[type=number]')].find(el => !el.checkValidity());
+        if (bad) {
+            dialogs.toast(`${bad.closest('label').querySelector('span').textContent}: ${bad.validationMessage}`, 'error', 6000);
+            bad.focus();
+            return;
+        }
+        const fields = this.collectEdits();
+        if (!Object.keys(fields).length) {
+            this.editing = false;
+            this.render();
+            return;
+        }
+        if (this.busy) return;
+        this.busy = true;
+        const save = document.getElementById('bd-edit-save');
+        if (save) save.disabled = true;
+        try {
+            const res = await this.postJSON(`/api/library/books/${encodeURIComponent(this.bookId)}/edit`, { fields });
+            const n = (res.changed || []).length;
+            dialogs.toast(n ? `Saved ${n} field${n === 1 ? '' : 's'}.` : 'Nothing changed.', 'success');
+            this.editing = false;
+        } catch (e) {
+            // Keep the form and what was typed; the server says which field is wrong.
+            dialogs.toast(`Could not save: ${e.message}`, 'error', 8000);
+            if (save) save.disabled = false;
+            this.busy = false;
+            return;
+        }
+        this.busy = false;
+        await Promise.all([this.loadDetail(), this.loadHistory()]);
+        if (this.comicInfo && this.comicInfo !== 'loading') this.comicInfo = null;
+        this.render();
+        window.scrollTo(0, 0);
+    }
+
+    attachEditListeners() {
+        const form = document.getElementById('bd-edit-form');
+        if (!form) return;
+        form.addEventListener('submit', e => { e.preventDefault(); this.saveEdits(); });
+        document.getElementById('bd-edit-cancel').addEventListener('click', async () => {
+            if (Object.keys(this.collectEdits()).length) {
+                const ok = await dialogs.confirm({
+                    title: 'Discard changes',
+                    message: 'Leave the form without saving your changes?',
+                    confirmLabel: 'Discard',
+                    danger: true,
+                });
+                if (!ok) return;
+            }
+            this.editing = false;
+            this.render();
+        });
+    }
+
     attachListeners() {
         const back = document.getElementById('bd-back');
         if (back) back.addEventListener('click', () => {
@@ -590,6 +753,8 @@ class BookDetailPage {
         on('bd-nomatch-undo-btn', () => this.setNoMatch(false));
         on('bd-variants-btn', () => router.navigate(`/variant-covers?book=${encodeURIComponent(this.bookId)}`));
         on('bd-read-btn', () => router.navigate(`/reader?book=${encodeURIComponent(this.bookId)}`));
+        on('bd-edit-btn', () => { this.editing = true; this.render(); window.scrollTo(0, 0); });
+        on('bd-mark-read-btn', () => this.toggleRead());
         on('bd-pages-btn', () => router.navigate(`/page-manager?book=${encodeURIComponent(this.bookId)}`));
         on('bd-relink-btn', () => this.relinkFile());
         on('bd-remove-record-btn', () => this.removeRecord());
@@ -601,4 +766,46 @@ class BookDetailPage {
     }
 }
 
+// Edit form layout: [group title, [[field, label, type]...]]. Types: text,
+// int, num, textarea, bool, or a key of EDIT_CHOICES.
+BookDetailPage.EDIT_GROUPS = [
+    ['Series', [
+        ['Series', 'Series', 'text'], ['Number', 'Number', 'text'], ['Count', 'Issue count', 'int'],
+        ['Volume', 'Volume', 'int'], ['Title', 'Title', 'text'], ['Format', 'Format', 'text'],
+        ['AlternateSeries', 'Alternate series', 'text'], ['AlternateNumber', 'Alternate number', 'text'],
+        ['AlternateCount', 'Alternate count', 'int'], ['StoryArc', 'Story arc', 'text'],
+        ['SeriesGroup', 'Series group', 'text'], ['SeriesComplete', 'Series complete', 'yesno'],
+    ]],
+    ['Publishing', [
+        ['Publisher', 'Publisher', 'text'], ['Imprint', 'Imprint', 'text'],
+        ['Year', 'Year', 'int'], ['Month', 'Month', 'int'], ['Day', 'Day', 'int'],
+        ['Genre', 'Genre', 'text'], ['LanguageISO', 'Language (ISO code)', 'text'],
+        ['AgeRating', 'Age rating', 'text'], ['BlackAndWhite', 'Black and white', 'yesno'],
+        ['Manga', 'Manga', 'manga'], ['Web', 'Web', 'text'], ['ISBN', 'ISBN', 'text'],
+    ]],
+    ['Credits', [
+        ['Writer', 'Writer', 'text'], ['Penciller', 'Penciller', 'text'], ['Inker', 'Inker', 'text'],
+        ['Colorist', 'Colorist', 'text'], ['Letterer', 'Letterer', 'text'], ['CoverArtist', 'Cover artist', 'text'],
+        ['Editor', 'Editor', 'text'], ['Translator', 'Translator', 'text'],
+    ]],
+    ['Story', [
+        ['Characters', 'Characters', 'text'], ['MainCharacterOrTeam', 'Main character or team', 'text'],
+        ['Teams', 'Teams', 'text'], ['Locations', 'Locations', 'text'], ['Tags', 'Tags', 'text'],
+        ['Summary', 'Summary', 'textarea'],
+    ]],
+    ['Personal', [
+        ['Rating', 'My rating (0-5)', 'num'], ['CommunityRating', 'Community rating (0-5)', 'num'],
+        ['Checked', 'Checked', 'bool'], ['Notes', 'Notes', 'textarea'], ['Review', 'Review', 'textarea'],
+    ]],
+    ['Collection', [
+        ['BookCollectionStatus', 'Collection status', 'text'], ['BookLocation', 'Location', 'text'],
+        ['BookCondition', 'Condition', 'text'], ['BookAge', 'Age', 'text'], ['BookOwner', 'Owner', 'text'],
+        ['BookStore', 'Store', 'text'], ['BookPrice', 'Price', 'num'], ['ScanInformation', 'Scan information', 'text'],
+        ['BookNotes', 'Collection notes', 'textarea'],
+    ]],
+];
+BookDetailPage.EDIT_CHOICES = {
+    yesno: [['', 'Unknown'], ['Yes', 'Yes'], ['No', 'No']],
+    manga: [['', 'Unknown'], ['No', 'No'], ['Yes', 'Yes'], ['YesAndRightToLeft', 'Yes, right to left']],
+};
 BookDetailPage.NO_MATCH_REASONS = [['collected','Collected edition'],['not_listed','Not listed'],['web_comic','Web comic'],['other','Other']];
