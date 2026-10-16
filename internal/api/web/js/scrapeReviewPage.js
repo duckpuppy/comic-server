@@ -119,6 +119,7 @@ class ScrapeReviewPage {
                     </select>
                     <button class="btn btn-small btn-secondary scrape-review-nomatch-btn" data-book="${this.escapeHtml(item.book_id)}" ${busy ? 'disabled' : ''}>None of these - not in ComicVine</button>
                 </div>
+                <details class="scrape-review-cvmatch" ${this.matchBoxes && this.matchBoxes[item.book_id] && this.matchBoxes[item.book_id].state ? 'open' : ''}><summary>Match by ComicVine link or ID</summary><div class="scrape-review-cvmatch-host" data-book="${this.escapeHtml(item.book_id)}"></div></details>
                 <table class="scrape-review-table">
                     <thead><tr><th>Cover</th><th>Volume</th><th>Start year</th><th>Issues</th><th>Publisher</th><th>Score</th><th>Confidence</th><th></th></tr></thead>
                     <tbody>${rows}</tbody>
@@ -127,6 +128,18 @@ class ScrapeReviewPage {
     }
 
     attachListeners() {
+        document.querySelectorAll('.scrape-review-cvmatch-host').forEach(host => {
+            const bookId = host.dataset.book;
+            const prior = this.matchBoxes && this.matchBoxes[bookId];
+            if (typeof CVMatchBox === 'undefined') return;
+            const box = new CVMatchBox(bookId, host, () => {
+                this.items = this.items.filter(i => i.book_id !== bookId);
+                if (typeof navigation !== 'undefined') navigation.updateBadge('scrape-review', this.items.length);
+                this.render();
+            });
+            if (prior) { box.ref = prior.ref; box.state = prior.state; box.render(); }
+            (this.matchBoxes = this.matchBoxes || {})[bookId] = box;
+        });
         document.querySelectorAll('.scrape-review-nomatch-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 const sel = btn.parentElement.querySelector('.scrape-review-reason');

@@ -306,6 +306,7 @@ class BookDetailPage {
                     ${this.renderNoMatch(d)}
                     ${rollback}
                 </div>
+                ${d.file ? `<details class="bd-cvmatch"><summary>Match by ComicVine link or ID</summary><div id="bd-cvmatch-host"></div></details>` : ''}
                 ${notes.length ? `<p class="empty-message bd-action-notes">${notes.map(n => this.escapeHtml(n)).join('<br>')}</p>` : ''}
             </div>`;
     }
@@ -575,6 +576,10 @@ class BookDetailPage {
             this.setAccepted(el.dataset.flag, el.dataset.accept === '1')));
         on('bd-write-btn', () => this.writeMetadata());
         on('bd-rollback-btn', () => this.rollback());
+        const cvHost = document.getElementById('bd-cvmatch-host');
+        if (cvHost && typeof CVMatchBox !== 'undefined') {
+            new CVMatchBox(this.bookId, cvHost, () => this.runAction(async () => {}));
+        }
         on('bd-nomatch-btn', () => this.setNoMatch(true));
         on('bd-nomatch-undo-btn', () => this.setNoMatch(false));
         on('bd-variants-btn', () => router.navigate(`/variant-covers?book=${encodeURIComponent(this.bookId)}`));

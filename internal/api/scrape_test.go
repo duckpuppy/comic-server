@@ -368,3 +368,65 @@ func TestFilterHeldBack_SkipsMarkedNotInComicVine(t *testing.T) {
 		t.Errorf("counts = %v (retry must not re-include marked books)", counts)
 	}
 }
+
+func TestCVMatch_PreviewVolumeApplyAndErrors(t *testing.T) {
+	d := &comicvine.IssueDetail{ID: 5001, IssueNumber: "1", Name: "Collected"}
+	d.Volume.ID, d.Volume.Name = 200, "Young Omnibus"
+	fx := &scrapeAPIFixture{
+		searchResults:  map[string][]comicvine.Volume{"x": {{ID: 200, Name: "Young Omnibus", StartYear: "2012", Publisher: comicvine.Publisher{Name: "Marvel"}, CountOfIssues: 1}}},
+		issuesByVolume: map[int][]comicvine.Issue{200: {{ID: 5001, IssueNumber: "1", Name: "Collected"}}},
+		issueDetails:   map[int]*comicvine.IssueDetail{5001: d},
+	}
+	book := library.ComicBook{ID: "b1", Series: "Young Omnibus", FilePath: "a.cbz", PageCount: 121}
+	workflow.SetNoCVMatch(&book, "collected", "2026-10-16")
+	s := newScrapeAPITestServer(t, []library.ComicBook{book}, fx)
+
+	post := func(body string, out any) int {
+		w := httptest.NewRecorder()
+		s.handleBooksRouter(w, httptest.NewRequest(http.MethodPost, "/api/library/books/b1/cv-match", strings.NewReader(body)))
+		if out != nil && w.Code == http.StatusOK {
+			_ = json.NewDecoder(w.Body).Decode(out)
+		}
+		return w.Code
+	}
+
+	var prev CVMatchResponse
+	if c := post(`{"ref":"https://comicvine.gamespot.com/young/4000-5001/"}`, &prev); c != http.StatusOK {
+		t.Fatalf("preview status %d", c)
+	}
+	if prev.Kind != "issue" || prev.Issue == nil || prev.Issue.VolumeName != "Young Omnibus" || prev.Applied || prev.Book.PageCount != 121 {
+		t.Fatalf("issue preview = %+v", prev)
+	}
+	var d0 BookDetail
+	getJSON(t, s, "/api/library/books/b1", &d0)
+	if d0.ComicVine != nil {
+		t.Fatal("preview changed the book")
+	}
+
+	var vol CVMatchResponse
+	if c := post(`{"ref":"4050-200"}`, &vol); c != http.StatusOK || vol.Kind != "volume" || len(vol.Volume.Issues) != 1 {
+		t.Fatalf("volume preview = %d %+v", c, vol)
+	}
+
+	for _, bad := range []string{`{"ref":"hello"}`, `{"ref":"https://comicvine.gamespot.com/x/4005-1/"}`, `{}`} {
+		if c := post(bad, nil); c != http.StatusBadRequest {
+			t.Errorf("%s -> %d, want 400", bad, c)
+		}
+	}
+	if c := post(`{"ref":"4000-99999"}`, nil); c != http.StatusBadGateway {
+		t.Errorf("unknown issue -> %d, want 502", c)
+	}
+
+	var done CVMatchResponse
+	if c := post(`{"ref":"4050-200","issue_id":5001,"apply":true}`, &done); c != http.StatusOK || !done.Applied {
+		t.Fatalf("apply = %d %+v", c, done)
+	}
+	var d1 BookDetail
+	getJSON(t, s, "/api/library/books/b1", &d1)
+	if d1.ComicVine == nil || d1.ComicVine.IssueID != 5001 || d1.ComicVine.VolumeID != 200 {
+		t.Errorf("comicvine = %+v", d1.ComicVine)
+	}
+	if d1.NoCVMatch != nil {
+		t.Errorf("not-in-ComicVine marker survived a real match: %+v", d1.NoCVMatch)
+	}
+}

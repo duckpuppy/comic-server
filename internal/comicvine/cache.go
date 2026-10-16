@@ -508,6 +508,16 @@ func (c *Cache) GetPendingReviewBooks(jobID string) ([]*BookScrapeResult, error)
 	return results, rows.Err()
 }
 
+// ResolvePendingReview marks every pending-review row of a book as scraped
+// with the chosen volume and issue, so a match made another way (a pasted
+// ComicVine link) takes the book out of the review queue.
+func (c *Cache) ResolvePendingReview(bookID string, volumeCVID, issueCVID int) error {
+	_, err := c.db.Exec(`UPDATE scrape_job_books SET status = ?, volume_cv_id = ?, issue_cv_id = ?,
+		error = NULL, candidates_json = NULL WHERE book_id = ? AND status = ?`,
+		BookStatusScraped, volumeCVID, issueCVID, bookID, BookStatusPendingReview)
+	return err
+}
+
 // LatestScrapeResults returns each book's most recent scrape outcome across
 // every job (status and error only; candidates are not decoded). Jobs are
 // ordered by start time, rows within a job by insertion.

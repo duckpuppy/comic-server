@@ -50,6 +50,7 @@ const (
 	ActionRelink            = "relink"
 	ActionRemoveRecord      = "remove_record"
 	ActionCVNoMatch         = "cv_nomatch"
+	ActionCVMatch           = "cv_match"
 )
 
 // Change is one field's before/after.

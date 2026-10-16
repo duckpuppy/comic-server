@@ -412,3 +412,23 @@ func TestCache_IssueRefsChunksAndSkipsUnknown(t *testing.T) {
 		t.Errorf("empty ids = %v, %v", refs, err)
 	}
 }
+
+func TestResolvePendingReview(t *testing.T) {
+	c := testCache(t)
+	r := &BookScrapeResult{BookID: "b1", Filename: "a.cbz", Status: BookStatusPendingReview,
+		Candidates: []ReviewCandidate{{VolumeID: 1, Name: "V"}}}
+	if err := c.UpsertScrapeJobBook("job1", r); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.ResolvePendingReview("b1", 7, 9); err != nil {
+		t.Fatal(err)
+	}
+	pending, err := c.GetPendingReviewBooks("")
+	if err != nil || len(pending) != 0 {
+		t.Fatalf("pending after resolve = %v, %v", pending, err)
+	}
+	got, _ := c.GetScrapeJobBooks("job1")
+	if got["b1"].Status != BookStatusScraped || got["b1"].IssueID != 9 {
+		t.Errorf("row = %+v", got["b1"])
+	}
+}
