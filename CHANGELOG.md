@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.56.0](https://github.com/duckpuppy/comic-server/compare/v1.55.0...v1.56.0) (2026-10-16)
+
+
+### Features
+
+* mark books as not in ComicVine so they leave the Scrape stage (comic-server-5wer phase 1) ([8bfe8c5](https://github.com/duckpuppy/comic-server/commit/8bfe8c53e976a720379b9f2599074b89211f9614))
+* Scrape Review shows book cover, pages, year, and each candidate's cover, issue count and link ([5b7eeb3](https://github.com/duckpuppy/comic-server/commit/5b7eeb3b01b1bfb8b5680d42670d020ce290a44c))
+
 ## [1.55.0](https://github.com/duckpuppy/comic-server/compare/v1.54.1...v1.55.0) (2026-10-16)
 
 
