@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.55.0](https://github.com/duckpuppy/comic-server/compare/v1.54.1...v1.55.0) (2026-10-16)
+
+
+### Features
+
+* relink file picker opens in the book's old folder (nearest existing parent) ([63eb96b](https://github.com/duckpuppy/comic-server/commit/63eb96b8ff919e3b97f940adc5c8da03e8fabbfa))
+
+
+### Bug Fixes
+
+* Browse searches again when reopened from the menu with results held ([aca5fe8](https://github.com/duckpuppy/comic-server/commit/aca5fe85939086aa3343d87de5dd84956ce1238a))
+* reload an open workflow drill-in when returning to the page ([5882746](https://github.com/duckpuppy/comic-server/commit/588274695713abffad9ea40e06dbc8b74504cbf3))
+* style ComicVine links on the book page so they read on the dark theme ([45db206](https://github.com/duckpuppy/comic-server/commit/45db20627566d4b56f7ecd73a82b80576da3070c))
+
 ## [1.54.1](https://github.com/duckpuppy/comic-server/compare/v1.54.0...v1.54.1) (2026-10-16)
 
 
