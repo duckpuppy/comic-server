@@ -295,7 +295,17 @@ func (s *Scraper) AcceptReview(ctx context.Context, jobID, bookID string, volume
 	}
 	pending, ok := prior[bookID]
 	if !ok || pending.Status != BookStatusPendingReview {
-		return nil, fmt.Errorf("book %s is not pending review in job %s", bookID, jobID)
+		// The review may belong to an earlier job than the one asked for: the
+		// web UI passes the latest job, and any scrape since (a Re-scrape of
+		// another book) replaces it. Record the outcome in the review's own job.
+		owner, err := s.cache.PendingReviewJobID(bookID)
+		if err != nil {
+			return nil, fmt.Errorf("find pending review: %w", err)
+		}
+		if owner == "" {
+			return nil, fmt.Errorf("book %s is not pending review", bookID)
+		}
+		jobID = owner
 	}
 
 	volume, err := s.client.FetchVolume(ctx, volumeCVID)

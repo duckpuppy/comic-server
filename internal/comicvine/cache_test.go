@@ -467,3 +467,22 @@ func TestUpsertScrapeJobBook_NewPendingReplacesStale(t *testing.T) {
 		t.Errorf("skip dropped a pending review: %d left", len(pending))
 	}
 }
+
+func TestUpsertScrapeJobBook_MatchClearsStalePending(t *testing.T) {
+	c := testCache(t)
+	if err := c.UpsertScrapeJobBook("job1", &BookScrapeResult{BookID: "b1", Filename: "a.cbz",
+		Status: BookStatusPendingReview, Candidates: []ReviewCandidate{{VolumeID: 1}}}); err != nil {
+		t.Fatal(err)
+	}
+	// A re-scrape in a later job matches the book outright.
+	if err := c.UpsertScrapeJobBook("job2", &BookScrapeResult{BookID: "b1", Filename: "a.cbz",
+		Status: BookStatusScraped, VolumeID: 1, IssueID: 10}); err != nil {
+		t.Fatal(err)
+	}
+	if pending, _ := c.GetPendingReviewBooks(""); len(pending) != 0 {
+		t.Errorf("matched book still pending review: %+v", pending)
+	}
+	if id, err := c.PendingReviewJobID("b1"); err != nil || id != "" {
+		t.Errorf("PendingReviewJobID = %q, %v; want none", id, err)
+	}
+}

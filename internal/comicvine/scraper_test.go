@@ -376,6 +376,43 @@ func TestScraper_AcceptReview(t *testing.T) {
 	}
 }
 
+// The web UI passes the latest job to AcceptReview; after a Re-scrape of
+// another book that job does not hold this book's review.
+func TestScraper_AcceptReview_PendingInEarlierJob(t *testing.T) {
+	fx := &scrapeFixture{
+		searchResults: map[string][]Volume{
+			"Ambiguous Comic": {
+				{ID: 1, Name: "Ambiguous Comic", StartYear: "2020", CountOfIssues: 150},
+				{ID: 2, Name: "Ambiguous Comic", StartYear: "2020", CountOfIssues: 150},
+			},
+		},
+		issuesByVolume: map[int][]Issue{2: {{ID: 2001, IssueNumber: "1"}}},
+		issueDetails:   map[int]*IssueDetail{2001: {ID: 2001, IssueNumber: "1", Name: "Chosen"}},
+	}
+	client, _ := newScrapeFixtureClient(t, fx)
+	cache := testCache(t)
+	book := &library.ComicBook{ID: "book-1", FilePath: "Ambiguous Comic 001.cbz"}
+	backend := &fakeBackend{books: map[string]*library.ComicBook{"book-1": book}}
+	scraper := NewScraper(client, cache, backend, DefaultScraperConfig())
+
+	if _, err := scraper.Scrape(context.Background(), "job-1", []*library.ComicBook{book}, ScrapeOptions{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	result, err := scraper.AcceptReview(context.Background(), "job-later", "book-1", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != BookStatusScraped || result.IssueID != 2001 {
+		t.Errorf("result = %+v", result)
+	}
+	if pending, _ := cache.GetPendingReviewBooks(""); len(pending) != 0 {
+		t.Errorf("expected no pending reviews, got %+v", pending)
+	}
+	if _, err := scraper.AcceptReview(context.Background(), "job-later", "book-1", 2); err == nil {
+		t.Error("accepting a book no longer pending review should fail")
+	}
+}
+
 func TestScrape_NoCandidatesFails(t *testing.T) {
 	fx := &scrapeFixture{searchResults: map[string][]Volume{}}
 	client, _ := newScrapeFixtureClient(t, fx)
