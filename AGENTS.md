@@ -1,16 +1,6 @@
 # Agent Instructions
 
-This project uses **bd** (beads) for issue tracking. Run `bd prime` for full workflow context.
-
-## Quick Reference
-
-```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work atomically
-bd close <id>         # Complete work
-bd dolt push          # Push beads data to remote
-```
+Project rules, architecture and the task tracker (GitHub Issues in the private `duckpuppy/comic-server-tracker` repo) are described in `CLAUDE.md`. Read its "Task Tracker", "Standing Notes" and "Session Completion" sections first. Beads (`bd`) is retired; do not use it for new work.
 
 ## Non-Interactive Shell Commands
 
@@ -36,49 +26,19 @@ cp -rf source dest          # NOT: cp -r source dest
 - `apt-get` - use `-y` flag
 - `brew` - use `HOMEBREW_NO_AUTO_UPDATE=1` env var
 
-<!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
-## Beads Issue Tracker
+## Task Tracker (GitHub Issues)
 
-This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
+Open work is tracked as GitHub Issues in the **private** repo `duckpuppy/comic-server-tracker` (moved from beads on 2026-10-16: cloud threads cannot push beads' Dolt data ref). This repo is public, so keep prod host names, paths and other private detail in the tracker or the handoff notes, not in commits, PR bodies or code. Use `gh` (or the GitHub MCP tools in cloud threads); do NOT use TodoWrite, TaskCreate or markdown TODO lists.
 
-### Quick Reference
-
-```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work
-bd close <id>         # Complete work
-```
-
-### Rules
-
-- Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
-- Run `bd prime` for detailed command reference and session close protocol
-- Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
+- **Find work**: `gh issue list --repo duckpuppy/comic-server-tracker --label P1` (or `P2`...); `gh issue view N --repo ...`.
+- **Priority** is the label `P0` (critical) to `P4` (backlog). **Type** is the label `bug`, `feature`, `task` or `epic`.
+- **Create**: `gh issue create --repo duckpuppy/comic-server-tracker --title ... --body ... --label P2,feature`. Put design, acceptance criteria and notes in the body; there is no length pressure.
+- **Epics**: make children native sub-issues (cloud MCP: `issue_write` create with `parent_issue_number`, or `sub_issue_write`; CLI: `gh api -X POST repos/duckpuppy/comic-server-tracker/issues/PARENT/sub_issues -F sub_issue_id=<child database id>`).
+- **Dependencies**: `gh api -X POST repos/duckpuppy/comic-server-tracker/issues/N/dependencies/blocked_by -F issue_id=<blocker database id>` (get the id with `gh api repos/.../issues/M --jq .id`). No MCP tool exists for this.
+- **Close from a PR**: put `Closes duckpuppy/comic-server-tracker#N` in the PR body; merging closes the issue even though the repo differs. The line reveals the private repo name and number in a public PR, nothing else.
+- **Old IDs**: the 14 beads still open on 2026-10-16 became issues #1-#14 and keep their `comic-server-xxxx` id in the title. The ~278 closed beads stay in the local beads database (`bd show <id>`) as a read-only archive. Older docs, commits and memory notes cite those ids.
+- **Not in the tracker**: durable facts about the code belong in this file; `bd remember` is no longer used.
 
 ## Session Completion
 
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
-
-**MANDATORY WORKFLOW:**
-
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
-   ```bash
-   git pull --rebase
-   bd dolt push
-   git push
-   git status  # MUST show "up to date with origin"
-   ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
-
-**CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
-<!-- END BEADS INTEGRATION -->
+See `CLAUDE.md` "Session Completion": quality gates, `git pull --rebase`, `git push`, and `git status` showing up to date with origin. Work is not complete until `git push` succeeds.

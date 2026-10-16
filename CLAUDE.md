@@ -1476,48 +1476,46 @@ Each release includes:
 
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
-## Beads Issue Tracker
+## Task Tracker (GitHub Issues)
 
-This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
+Open work is tracked as GitHub Issues in the **private** repo `duckpuppy/comic-server-tracker` (moved from beads on 2026-10-16: cloud threads cannot push beads' Dolt data ref). This repo is public, so keep prod host names, paths and other private detail in the tracker or the handoff notes, not in commits, PR bodies or code. Use `gh` (or the GitHub MCP tools in cloud threads); do NOT use TodoWrite, TaskCreate or markdown TODO lists.
 
-### Quick Reference
+- **Find work**: `gh issue list --repo duckpuppy/comic-server-tracker --label P1` (or `P2`...); `gh issue view N --repo ...`.
+- **Priority** is the label `P0` (critical) to `P4` (backlog). **Type** is the label `bug`, `feature`, `task` or `epic`.
+- **Create**: `gh issue create --repo duckpuppy/comic-server-tracker --title ... --body ... --label P2,feature`. Put design, acceptance criteria and notes in the body; there is no length pressure.
+- **Epics**: make children native sub-issues (cloud MCP: `issue_write` create with `parent_issue_number`, or `sub_issue_write`; CLI: `gh api -X POST repos/duckpuppy/comic-server-tracker/issues/PARENT/sub_issues -F sub_issue_id=<child database id>`).
+- **Dependencies**: `gh api -X POST repos/duckpuppy/comic-server-tracker/issues/N/dependencies/blocked_by -F issue_id=<blocker database id>` (get the id with `gh api repos/.../issues/M --jq .id`). No MCP tool exists for this.
+- **Close from a PR**: put `Closes duckpuppy/comic-server-tracker#N` in the PR body; merging closes the issue even though the repo differs. The line reveals the private repo name and number in a public PR, nothing else.
+- **Old IDs**: the 14 beads still open on 2026-10-16 became issues #1-#14 and keep their `comic-server-xxxx` id in the title. The ~278 closed beads stay in the local beads database (`bd show <id>`) as a read-only archive. Older docs, commits and memory notes cite those ids.
+- **Not in the tracker**: durable facts about the code belong in this file; `bd remember` is no longer used.
 
-```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work
-bd close <id>         # Complete work
-```
+## Standing Notes
 
-### Rules
+Carried over from `bd remember` entries when beads was retired:
 
-- Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
-- Run `bd prime` for detailed command reference and session close protocol
-- Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
+- **Smoke-testing anything that opens `book.FilePath`** (covers, sync, cbzconvert...) against a scratch copy of `testdata/library`: `FilePath` entries in `ComicDb.xml` are RELATIVE (for example `testdata/library/comics/...`) and resolve against the SERVER PROCESS's cwd, not the library file's directory. Pointing `--library`/config at a scratch copy is not enough: also run the server with its cwd inside a scratch tree that mirrors the relative path, or it silently reads and writes the REAL fixture files. Those files are gitignored, so a clean `git status` does NOT prove nothing was touched; verify by content or hash. This once overwrote four committed comic files' ComicInfo.xml during the CBZ conversion work.
+- **Untagged books** (about 1,650 of 66K) are mostly hand-collected web comics with no ComicVine id. Do not fuzzy-match them for enrichment.
+- **ComicRack matcher compatibility**: existing `ComicBookXxxMatcher` types must stay compatible with ComicRackCE smart lists. New comic-server-only matcher types are fine; ComicRack just will not recognise them.
+- **ComicVine scraper reference**: https://github.com/cbanack/comic-vine-scraper (the ComicRack plugin this scraper replaces).
 
 ## Session Completion
 
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+**When ending a work session**, complete ALL steps below. Work is NOT complete until `git push` succeeds.
 
-**MANDATORY WORKFLOW:**
-
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
+1. **File issues for remaining work** in the tracker above.
+2. **Run quality gates** (if code changed): `just ci` (tests, lint, build).
+3. **Update issue status**: close finished issues (or let the PR's `Closes` line do it), comment on in-progress ones.
+4. **Push**:
    ```bash
    git pull --rebase
-   bd dolt push
    git push
    git status  # MUST show "up to date with origin"
    ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
+5. **Clean up**: clear stashes, prune merged branches.
+6. **Hand off**: give the next session the context it needs.
 
 **CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
-<!-- END BEADS INTEGRATION -->
+- Work is NOT complete until `git push` succeeds.
+- NEVER stop before pushing; that leaves work stranded locally.
+- NEVER say "ready to push when you are"; push it yourself.
+- If push fails, resolve and retry until it succeeds.
