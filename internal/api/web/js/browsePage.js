@@ -49,6 +49,7 @@ class BrowsePage {
         this.loading = false;
         this.error = null;
         this.searchDebounce = null;
+        this.bulk = typeof BrowseBulk !== 'undefined' ? new BrowseBulk(this) : null; // comic-server-k1bt.2
 
         // Data Manager section state (comic-server-w7ig) - field names
         // prefixed dm* throughout to keep them distinct from the browse
@@ -189,6 +190,7 @@ class BrowsePage {
                         </div>
                     </div>
                     ${this.renderChips()}
+                    <div id="bulk-host">${this.bulk ? this.bulk.render() : ''}</div>
                     ${this.renderResults()}
                   </div>
                 </div>
@@ -370,6 +372,7 @@ class BrowsePage {
             html += '<div class="comics-grid browse-grid">' + this.results.map(c => `
                 <div class="comic-card${c.unread ? '' : ' comic-read'}">
                     <div class="comic-cover">
+                        ${this.bulk ? `<span class="bulk-card-check">${this.bulk.checkbox(c.id)}</span>` : ''}
                         <div class="comic-placeholder">📖</div>
                         <img class="comic-cover-img" alt="" loading="lazy" src="/api/library/books/${encodeURIComponent(c.id)}/cover"
                              onload="this.classList.add('loaded'); this.previousElementSibling.style.display='none';"
@@ -382,15 +385,15 @@ class BrowsePage {
                 </div>`).join('') + '</div>';
         } else if (this.view === 'compact') {
             html += '<ul class="browse-compact">' + this.results.map(c =>
-                `<li>${link(c, `${this.escapeHtml(c.series)}${c.number ? ' #' + this.escapeHtml(c.number) : ''}`)}${PhysicalPage.kindBadge(c.kind)}${c.year ? ` <span class="browse-compact-meta">(${c.year})</span>` : ''}${c.publisher ? ` <span class="browse-compact-meta">${this.escapeHtml(c.publisher)}</span>` : ''}</li>`).join('') + '</ul>';
+                `<li>${this.bulk ? this.bulk.checkbox(c.id) + ' ' : ''}${link(c, `${this.escapeHtml(c.series)}${c.number ? ' #' + this.escapeHtml(c.number) : ''}`)}${PhysicalPage.kindBadge(c.kind)}${c.year ? ` <span class="browse-compact-meta">(${c.year})</span>` : ''}${c.publisher ? ` <span class="browse-compact-meta">${this.escapeHtml(c.publisher)}</span>` : ''}</li>`).join('') + '</ul>';
         }
         if (this.view === 'grid' || this.view === 'compact') {
             if (this.hasMore) html += `<div class="load-more-container"><button id="browse-load-more-btn" class="btn btn-secondary">Load More</button></div>`;
             return html;
         }
-        html += '<div class="browse-table-wrap"><table class="datamanager-diff-table"><thead><tr><th>Series</th><th>Number</th><th>Title</th><th>Publisher</th><th>Year</th><th>Pages</th></tr></thead><tbody>';
+        html += '<div class="browse-table-wrap"><table class="datamanager-diff-table"><thead><tr>' + (this.bulk ? `<th class="bulk-col">${this.bulk.headerCheckbox()}</th>` : '') + '<th>Series</th><th>Number</th><th>Title</th><th>Publisher</th><th>Year</th><th>Pages</th></tr></thead><tbody>';
         for (const c of this.results) {
-            html += `<tr><td><a class="book-link" href="/books/${encodeURIComponent(c.id)}" data-route>${this.escapeHtml(c.series)}</a>${PhysicalPage.kindBadge(c.kind)}</td><td>${this.escapeHtml(c.number)}</td><td>${this.escapeHtml(c.title)}</td><td>${this.escapeHtml(c.publisher)}</td><td>${c.year || ''}</td><td>${c.page_count || ''}</td></tr>`;
+            html += `<tr>${this.bulk ? `<td class="bulk-col">${this.bulk.checkbox(c.id)}</td>` : ''}<td><a class="book-link" href="/books/${encodeURIComponent(c.id)}" data-route>${this.escapeHtml(c.series)}</a>${PhysicalPage.kindBadge(c.kind)}</td><td>${this.escapeHtml(c.number)}</td><td>${this.escapeHtml(c.title)}</td><td>${this.escapeHtml(c.publisher)}</td><td>${c.year || ''}</td><td>${c.page_count || ''}</td></tr>`;
         }
         html += '</tbody></table></div>';
 
@@ -465,6 +468,7 @@ class BrowsePage {
 
         this.attachMatcherListeners();
         this.attachDMListeners();
+        if (this.bulk) this.bulk.attach();
     }
 
     attachMatcherListeners() {
@@ -560,6 +564,8 @@ class BrowsePage {
         if (reset) {
             this.offset = 0;
             this.results = [];
+            // The filter changed, so a selection (or "all matching") no longer means the same books.
+            if (this.bulk) this.bulk.reset();
         }
 
         try {

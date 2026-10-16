@@ -57,8 +57,80 @@ type BookEditRequest struct {
 	// Fields maps a field name to its new value: a string, number or bool.
 	// An empty string clears the field.
 	Fields map[string]any `json:"fields"`
+	// ListAdd and ListRemove change a list field (Genre, Writer, Tags...)
+	// by adding or removing items instead of replacing the whole value
+	// (bulk edit, comic-server-k1bt.2). Each value is a comma-separated
+	// list of items. A field may not also appear in Fields.
+	ListAdd    map[string]string `json:"list_add,omitempty"`
+	ListRemove map[string]string `json:"list_remove,omitempty"`
 	// Read is "read", "unread" or "" (leave the read state alone).
 	Read string `json:"read"`
+}
+
+// listFields hold comma-separated items, so they can take ListAdd/ListRemove.
+var listFields = map[string]bool{
+	"Genre": true, "Writer": true, "Penciller": true, "Inker": true, "Colorist": true,
+	"Letterer": true, "CoverArtist": true, "Editor": true, "Translator": true,
+	"Characters": true, "Teams": true, "Locations": true, "Tags": true,
+}
+
+// splitItems splits a comma-separated list into trimmed, non-empty items.
+func splitItems(list string) []string {
+	var items []string
+	for _, v := range strings.Split(list, ",") {
+		if v = strings.TrimSpace(v); v != "" {
+			items = append(items, v)
+		}
+	}
+	return items
+}
+
+// mergeListItems adds then removes items, comparing without regard to case.
+// Existing items keep their spelling and order; added ones go on the end.
+func mergeListItems(current string, add, remove []string) string {
+	items := splitItems(current)
+	has := func(list []string, item string) bool {
+		return slices.ContainsFunc(list, func(v string) bool { return strings.EqualFold(v, item) })
+	}
+	for _, a := range add {
+		if !has(items, a) {
+			items = append(items, a)
+		}
+	}
+	kept := items[:0:0]
+	for _, it := range items {
+		if !has(remove, it) {
+			kept = append(kept, it)
+		}
+	}
+	return strings.Join(kept, ", ")
+}
+
+// expandListOps turns ListAdd/ListRemove into whole-field values, using the
+// book's current value, so applyBookEdit treats them like any other field.
+func expandListOps(book *library.ComicBook, req BookEditRequest) (map[string]any, error) {
+	fields := make(map[string]any, len(req.Fields)+len(req.ListAdd)+len(req.ListRemove))
+	for k, v := range req.Fields {
+		fields[k] = v
+	}
+	names := map[string]bool{}
+	for f := range req.ListAdd {
+		names[f] = true
+	}
+	for f := range req.ListRemove {
+		names[f] = true
+	}
+	for f := range names {
+		if !listFields[f] {
+			return nil, fmt.Errorf("%s is not a list field", f)
+		}
+		if _, dup := req.Fields[f]; dup {
+			return nil, fmt.Errorf("%s: cannot replace and add/remove in one edit", f)
+		}
+		cur, _ := datamanager.GetFieldString(book, f)
+		fields[f] = mergeListItems(cur, splitItems(req.ListAdd[f]), splitItems(req.ListRemove[f]))
+	}
+	return fields, nil
 }
 
 // BookEditResponse lists the fields that actually changed.
@@ -138,7 +210,11 @@ func validateEditValue(field, value string) error {
 func applyBookEdit(book *library.ComicBook, req BookEditRequest, now time.Time) ([]string, error) {
 	var changed []string
 	comicInfoChanged, organizeChanged := false, false
-	for field, raw := range req.Fields {
+	fields, err := expandListOps(book, req)
+	if err != nil {
+		return nil, err
+	}
+	for field, raw := range fields {
 		spec, ok := editableFields[field]
 		if !ok {
 			return nil, fmt.Errorf("field %q cannot be edited", field)
