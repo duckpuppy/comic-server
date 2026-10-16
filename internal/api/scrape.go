@@ -268,6 +268,7 @@ func (s *Server) handleScrapeReviewList(w http.ResponseWriter, r *http.Request) 
 				Series: b.Series, Number: b.Number, Year: b.Year,
 				PageCount: b.PageCount, Format: b.Format, Publisher: b.Publisher,
 			}
+			item.NeedsIssue = comicvine.NeedsIssueNumber(b)
 		}
 		out = append(out, item)
 	}
@@ -279,6 +280,9 @@ func (s *Server) handleScrapeReviewList(w http.ResponseWriter, r *http.Request) 
 type scrapeReviewItem struct {
 	*comicvine.BookScrapeResult
 	Book *scrapeReviewBook `json:"book,omitempty"`
+	// NeedsIssue: the book has no issue number, so the user picks the issue
+	// from the volume's list (comic-server-5wer phase 3).
+	NeedsIssue bool `json:"needs_issue,omitempty"`
 }
 
 type scrapeReviewBook struct {

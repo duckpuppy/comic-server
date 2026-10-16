@@ -308,7 +308,7 @@ func (s *Scraper) AcceptReview(ctx context.Context, jobID, bookID string, volume
 	if err != nil {
 		return nil, fmt.Errorf("fetch issues for volume %d: %w", volumeCVID, err)
 	}
-	issue := SelectIssue(parsed.IssueNumber, issues)
+	issue := SelectIssue(issueNumberFor(book, parsed), issues)
 	if issue == nil {
 		result := &BookScrapeResult{BookID: bookID, Filename: book.FilePath, Series: parsed.Series,
 			Status: BookStatusFailed, VolumeID: volumeCVID, Error: errIssueNotFound}
@@ -406,13 +406,27 @@ func (s *Scraper) scrapeOneBook(ctx context.Context, book *library.ComicBook, ca
 		return result
 	}
 
+	// An unnumbered book (a one-shot, a collected edition) is never matched
+	// to a guessed issue: the user picks the issue in Scrape Review.
+	number := issueNumberFor(book, parsed)
+	if number == "" {
+		if opts.AutoOnly {
+			result.Status = BookStatusSkipped
+			result.Error = "no issue number in the file name or library"
+			return result
+		}
+		result.Status = BookStatusPendingReview
+		result.Candidates = toReviewCandidates(scored)
+		return result
+	}
+
 	issues, err := s.volumeIssues(ctx, best.Volume.ID, issueCache)
 	if err != nil {
 		result.Status = BookStatusFailed
 		result.Error = fmt.Sprintf("fetch issues: %v", err)
 		return result
 	}
-	issue := SelectIssue(parsed.IssueNumber, issues)
+	issue := SelectIssue(number, issues)
 	if issue == nil {
 		result.Status = BookStatusFailed
 		result.VolumeID = best.Volume.ID
@@ -430,6 +444,22 @@ func (s *Scraper) scrapeOneBook(ctx context.Context, book *library.ComicBook, ca
 	}
 
 	return s.applyOrDryRun(book, best.Volume, detail, best.Volume.ID, issue.ID, opts)
+}
+
+// issueNumberFor is the issue number to look for: the file name's, else the
+// library's own Number field (comic-server-5wer phase 3). Empty means the book
+// is unnumbered; a scrape never guesses issue #1 for it.
+func issueNumberFor(book *library.ComicBook, parsed ParsedFilename) string {
+	if parsed.IssueNumber != "" {
+		return parsed.IssueNumber
+	}
+	return strings.TrimSpace(book.Number)
+}
+
+// NeedsIssueNumber reports whether a book has no issue number in its file name
+// or its library record, so the user has to pick the issue.
+func NeedsIssueNumber(book *library.ComicBook) bool {
+	return issueNumberFor(book, ParseFilename(book.FilePath)) == ""
 }
 
 func (s *Scraper) applyOrDryRun(book *library.ComicBook, volume Volume, detail *IssueDetail, volumeID, issueID int, opts ScrapeOptions) *BookScrapeResult {

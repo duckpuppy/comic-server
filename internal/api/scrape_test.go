@@ -430,3 +430,44 @@ func TestCVMatch_PreviewVolumeApplyAndErrors(t *testing.T) {
 		t.Errorf("not-in-ComicVine marker survived a real match: %+v", d1.NoCVMatch)
 	}
 }
+
+func TestScrapeReviewList_FlagsUnnumberedBooks(t *testing.T) {
+	books := []library.ComicBook{
+		{ID: "u1", Series: "Godzilla", FilePath: "/c/Godzilla Here There Be Aliens (2026).cbz"},
+		{ID: "n1", Series: "Batman", FilePath: "/c/Batman 005 (2016).cbz"},
+	}
+	s := newScrapeAPITestServer(t, books, &scrapeAPIFixture{})
+	for _, id := range []string{"u1", "n1"} {
+		r := &comicvine.BookScrapeResult{BookID: id, Filename: id, Status: comicvine.BookStatusPendingReview,
+			Candidates: []comicvine.ReviewCandidate{{VolumeID: 1, Name: "V", IssueCount: 5, CoverURL: "https://img/x.jpg"}}}
+		if err := s.cvCache.UpsertScrapeJobBook("j1", r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w := httptest.NewRecorder()
+	s.handleScrapeReviewList(w, httptest.NewRequest(http.MethodGet, "/api/scrape/review", nil))
+	var items []struct {
+		BookID     string `json:"book_id"`
+		NeedsIssue bool   `json:"needs_issue"`
+		Book       struct {
+			Series string `json:"series"`
+		} `json:"book"`
+		Candidates []struct {
+			IssueCount int    `json:"issue_count"`
+			CoverURL   string `json:"cover_url"`
+		} `json:"candidates"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&items); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, it := range items {
+		got[it.BookID] = it.NeedsIssue
+		if len(it.Candidates) != 1 || it.Candidates[0].IssueCount != 5 || it.Candidates[0].CoverURL == "" {
+			t.Errorf("%s candidates = %+v", it.BookID, it.Candidates)
+		}
+	}
+	if len(got) != 2 || !got["u1"] || got["n1"] {
+		t.Errorf("needs_issue = %v, want u1 true and n1 false", got)
+	}
+}

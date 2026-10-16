@@ -91,9 +91,13 @@ class ScrapeReviewPage {
                     <td>${this.escapeHtml(c.publisher)}</td>
                     <td>${(c.score ?? 0).toFixed(2)}</td>
                     <td><span class="scrape-review-confidence conf-${this.escapeHtml(c.confidence)}">${this.escapeHtml(c.confidence)}</span></td>
-                    <td><button class="btn btn-small btn-primary scrape-review-accept"
+                    <td>${item.needs_issue
+                        ? `<button class="btn btn-small btn-primary scrape-review-choose"
                                 data-book="${this.escapeHtml(item.book_id)}"
-                                data-volume="${c.volume_id}" ${busy ? 'disabled' : ''}>Accept</button></td>
+                                data-volume="${c.volume_id}" ${busy ? 'disabled' : ''}>Choose issue…</button>`
+                        : `<button class="btn btn-small btn-primary scrape-review-accept"
+                                data-book="${this.escapeHtml(item.book_id)}"
+                                data-volume="${c.volume_id}" ${busy ? 'disabled' : ''}>Accept</button>`}</td>
                 </tr>`).join('');
         const b = item.book;
         const facts = b ? [
@@ -113,6 +117,7 @@ class ScrapeReviewPage {
                         <p class="scrape-review-file" title="${this.escapeHtml(item.filename)}">${this.escapeHtml(item.filename)}</p>
                     </div>
                 </div>
+                ${item.needs_issue ? '<p class="scrape-review-hint">This book has no issue number, so it is never matched on its own. Choose the volume, then the issue.</p>' : ''}
                 <div class="scrape-review-nomatch">
                     <select class="scrape-review-reason" aria-label="Why it is not in ComicVine">
                         ${ScrapeReviewPage.NO_MATCH_REASONS.map(r => `<option value="${r[0]}">${r[1]}</option>`).join('')}
@@ -128,6 +133,16 @@ class ScrapeReviewPage {
     }
 
     attachListeners() {
+        document.querySelectorAll('.scrape-review-choose').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const box = this.matchBoxes && this.matchBoxes[btn.dataset.book];
+                if (!box) return;
+                const details = box.host.closest('details');
+                if (details) details.open = true;
+                box.ref = `4050-${btn.dataset.volume}`;
+                box.run({ ref: box.ref });
+            });
+        });
         document.querySelectorAll('.scrape-review-cvmatch-host').forEach(host => {
             const bookId = host.dataset.book;
             const prior = this.matchBoxes && this.matchBoxes[bookId];
