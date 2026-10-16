@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.54.1](https://github.com/duckpuppy/comic-server/compare/v1.54.0...v1.54.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* find a book's file when the folder differs only in letter case (comic-server-bj3j) ([575a2e6](https://github.com/duckpuppy/comic-server/commit/575a2e6125e0f26835eb309a65f365c94466f91c))
+
 ## [1.54.0](https://github.com/duckpuppy/comic-server/compare/v1.53.0...v1.54.0) (2026-10-15)
 
 
