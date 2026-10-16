@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.59.0](https://github.com/duckpuppy/comic-server/compare/v1.58.0...v1.59.0) (2026-10-16)
+
+
+### Features
+
+* live log dialog for Re-scrape shows the search, best match, rate-limit waits and result (comic-server-5wer.3) ([9f601f6](https://github.com/duckpuppy/comic-server/commit/9f601f6398ef7234e64e03fc2e975e27ce01a57c))
+* review page Issues and Re-scrape buttons; a new pending review replaces stale candidates (comic-server-5wer phase 4) ([3852032](https://github.com/duckpuppy/comic-server/commit/3852032b1f40cb43790b6af5250152ca43c94c0c))
+
+
+### Bug Fixes
+
+* Scrape Review Accept works after a Re-scrape, and a matching re-scrape clears the stale review ([2bce5a2](https://github.com/duckpuppy/comic-server/commit/2bce5a2445aa57c392d734b6d7afc25a00f0b6d4))
+* set window.wsClient so Scrape Review and Devices live updates subscribe (comic-server-5wer.2) ([51c433d](https://github.com/duckpuppy/comic-server/commit/51c433d6605e65bfee420ca0a8f4ffb22a9012b1))
+
 ## [1.58.0](https://github.com/duckpuppy/comic-server/compare/v1.57.0...v1.58.0) (2026-10-16)
 
 
