@@ -88,3 +88,7 @@
     padding-top: 1.5rem;
     border-top: 1px solid var(--border-color);
 }
+
+/* Settings > Backups (comic-server-yzdt) */
+.backup-status { margin: 0.5rem 0 1rem; }
+.backup-failed { color: var(--danger-color, #b42318); font-weight: 600; }

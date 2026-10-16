@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/duckpuppy/comic-server/internal/backup"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,8 +18,15 @@ const cacheSchemaVersion = 4
 
 // Cache provides SQLite-backed storage for ComicVine API responses.
 type Cache struct {
-	db *sql.DB
+	db   *sql.DB
+	path string
 }
+
+// Path returns the cache database file path.
+func (c *Cache) Path() string { return c.path }
+
+// SnapshotTo writes a consistent copy of the cache to dest (a backup).
+func (c *Cache) SnapshotTo(dest string) error { return backup.VacuumInto(c.db, dest) }
 
 // OpenCache opens or creates the ComicVine cache database.
 func OpenCache(path string) (*Cache, error) {
@@ -38,7 +46,7 @@ func OpenCache(path string) (*Cache, error) {
 		return nil, fmt.Errorf("ping cache database: %w", err)
 	}
 
-	c := &Cache{db: db}
+	c := &Cache{db: db, path: path}
 	if err := c.initSchema(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("initialize cache schema: %w", err)

@@ -2,6 +2,7 @@ package storage
 
 import (
 	"fmt"
+	"github.com/duckpuppy/comic-server/internal/backup"
 	"strings"
 	"sync"
 
@@ -492,6 +493,16 @@ func (b *SQLiteBackend) Flush() error {
 }
 
 // Close closes the database connection.
+// SnapshotTo writes a consistent copy of the library database to dest (a
+// backup). The lock is held only to read the handle: a VACUUM INTO of a large
+// database takes a while and must not block writers meanwhile.
+func (b *SQLiteBackend) SnapshotTo(dest string) error {
+	b.mu.RLock()
+	db := b.db
+	b.mu.RUnlock()
+	return backup.VacuumInto(db.DB, dest)
+}
+
 func (b *SQLiteBackend) Close() error {
 	return b.db.Close()
 }

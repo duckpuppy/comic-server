@@ -50,6 +50,7 @@ type Server struct {
 	configMu          sync.RWMutex // Protects config modifications
 	configDB          *configdb.DB // Device registrations + list assignments (comic-server-3ek)
 	version           VersionInfo
+	backupState       backupState // scheduled/manual backups (comic-server-yzdt)
 	mux               *http.ServeMux
 	startTime         time.Time
 	wsHub             *ws.Hub
@@ -349,6 +350,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/settings/scan-info", s.handleScanInfoConfig)
 	s.mux.HandleFunc("/api/settings/theme", s.handleThemeConfig)
 	s.mux.HandleFunc("/api/settings/trash", s.handleTrashSettings)
+	s.mux.HandleFunc("/api/settings/backups", s.handleBackupSettings)
+	s.mux.HandleFunc("/api/backups/run", s.handleBackupRun)
+	s.mux.HandleFunc("/api/backups", s.handleBackupList)
 	s.mux.HandleFunc("/api/settings/scrape-publisher-filter", s.handleScrapePublisherFilter)
 	s.mux.HandleFunc("/api/settings/library-import", s.handleLibraryImport)
 	s.mux.HandleFunc("/api/settings/server-misc", s.handleServerMiscSettings)

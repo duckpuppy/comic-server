@@ -618,6 +618,7 @@ func runServer(cmd *cobra.Command, args []string) error {
 	} else if stored != nil {
 		trashPath, trashRetentionDays = stored.Path, stored.RetentionDays
 	}
+	apiServer.StartBackups(context.Background())
 	trashCtx, trashCancel := context.WithCancel(context.Background())
 	defer trashCancel()
 	if trashPath != "" {

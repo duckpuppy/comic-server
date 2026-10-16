@@ -686,10 +686,21 @@ class ScanInfoSettings {
                 ${this.renderWatchFolders()}
                 ${this.renderRestartRequired()}
                 ${this.renderTrash()}
+                <div id="backup-settings-host"></div>
                 ${this.renderScrapeFilter()}
                 ${this.renderBody()}
             </div>
         `;
+        // Backups draw themselves (comic-server-yzdt).
+        const backupHost = document.getElementById('backup-settings-host');
+        if (backupHost && typeof BackupSettings !== 'undefined') {
+            if (!this.backupSettings) {
+                this.backupSettings = new BackupSettings(backupHost);
+            } else {
+                this.backupSettings.host = backupHost;
+                this.backupSettings.render();
+            }
+        }
     }
 
     renderLibraryImport() {
