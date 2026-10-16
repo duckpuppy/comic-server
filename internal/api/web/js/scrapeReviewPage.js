@@ -97,7 +97,10 @@ class ScrapeReviewPage {
                                 data-volume="${c.volume_id}" ${busy ? 'disabled' : ''}>Choose issue…</button>`
                         : `<button class="btn btn-small btn-primary scrape-review-accept"
                                 data-book="${this.escapeHtml(item.book_id)}"
-                                data-volume="${c.volume_id}" ${busy ? 'disabled' : ''}>Accept</button>`}</td>
+                                data-volume="${c.volume_id}" ${busy ? 'disabled' : ''}>Accept</button>
+                           <button class="btn btn-small btn-secondary scrape-review-choose"
+                                data-book="${this.escapeHtml(item.book_id)}"
+                                data-volume="${c.volume_id}" ${busy ? 'disabled' : ''}>Issues…</button>`}</td>
                 </tr>`).join('');
         const b = item.book;
         const facts = b ? [
@@ -123,6 +126,7 @@ class ScrapeReviewPage {
                         ${ScrapeReviewPage.NO_MATCH_REASONS.map(r => `<option value="${r[0]}">${r[1]}</option>`).join('')}
                     </select>
                     <button class="btn btn-small btn-secondary scrape-review-nomatch-btn" data-book="${this.escapeHtml(item.book_id)}" ${busy ? 'disabled' : ''}>None of these - not in ComicVine</button>
+                    <button class="btn btn-small btn-secondary scrape-review-rescrape" data-book="${this.escapeHtml(item.book_id)}" ${busy ? 'disabled' : ''} title="Search ComicVine again and replace these candidates">Re-scrape</button>
                 </div>
                 <details class="scrape-review-cvmatch" ${this.matchBoxes && this.matchBoxes[item.book_id] && this.matchBoxes[item.book_id].state ? 'open' : ''}><summary>Match by ComicVine link or ID</summary><div class="scrape-review-cvmatch-host" data-book="${this.escapeHtml(item.book_id)}"></div></details>
                 <table class="scrape-review-table">
@@ -161,6 +165,9 @@ class ScrapeReviewPage {
                 this.markNoMatch(btn.dataset.book, sel ? sel.value : 'other');
             });
         });
+        document.querySelectorAll('.scrape-review-rescrape').forEach(btn => {
+            btn.addEventListener('click', () => this.rescrape(btn.dataset.book));
+        });
         document.querySelectorAll('.scrape-review-accept').forEach(btn => {
             btn.addEventListener('click', () =>
                 this.accept(btn.dataset.book, parseInt(btn.dataset.volume, 10)));
@@ -184,6 +191,28 @@ class ScrapeReviewPage {
             if (typeof navigation !== 'undefined') navigation.updateBadge('scrape-review', this.items.length);
         } catch (e) {
             if (typeof dialogs !== 'undefined') dialogs.toast(`Could not save: ${e.message}`, 'error', 8000);
+        } finally {
+            this.busy.delete(bookId);
+            this.render();
+        }
+    }
+
+    // Re-scrape one book: a fresh search replaces its stored candidates
+    // (comic-server-5wer phase 4). The page refreshes on the scrape websocket events.
+    async rescrape(bookId) {
+        if (this.busy.has(bookId)) return;
+        this.busy.add(bookId);
+        this.render();
+        try {
+            const res = await fetch('/api/scrape', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ book_ids: [bookId] }),
+            });
+            if (!res.ok) throw new Error((await res.text()).trim() || `HTTP ${res.status}`);
+            if (typeof dialogs !== 'undefined') dialogs.toast('Re-scrape started. The candidates refresh when it finishes.', 'success');
+        } catch (e) {
+            if (typeof dialogs !== 'undefined') dialogs.toast(`Could not re-scrape: ${e.message}`, 'error', 8000);
         } finally {
             this.busy.delete(bookId);
             this.render();

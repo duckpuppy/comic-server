@@ -432,3 +432,38 @@ func TestResolvePendingReview(t *testing.T) {
 		t.Errorf("row = %+v", got["b1"])
 	}
 }
+
+func TestUpsertScrapeJobBook_NewPendingReplacesStale(t *testing.T) {
+	c := testCache(t)
+	old := &BookScrapeResult{BookID: "b1", Filename: "a.cbz", Status: BookStatusPendingReview,
+		Candidates: []ReviewCandidate{{VolumeID: 1, Name: "Old"}}}
+	other := &BookScrapeResult{BookID: "b2", Filename: "b.cbz", Status: BookStatusPendingReview,
+		Candidates: []ReviewCandidate{{VolumeID: 5, Name: "Other"}}}
+	for _, r := range []*BookScrapeResult{old, other} {
+		if err := c.UpsertScrapeJobBook("job1", r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fresh := &BookScrapeResult{BookID: "b1", Filename: "a.cbz", Status: BookStatusPendingReview,
+		Candidates: []ReviewCandidate{{VolumeID: 2, Name: "Fresh", IssueCount: 12}}}
+	if err := c.UpsertScrapeJobBook("job2", fresh); err != nil {
+		t.Fatal(err)
+	}
+	pending, err := c.GetPendingReviewBooks("")
+	if err != nil || len(pending) != 2 {
+		t.Fatalf("pending = %d, %v; want 2 (b1 once, b2 untouched)", len(pending), err)
+	}
+	for _, p := range pending {
+		if p.BookID == "b1" && (len(p.Candidates) != 1 || p.Candidates[0].Name != "Fresh") {
+			t.Errorf("b1 kept stale candidates: %+v", p.Candidates)
+		}
+	}
+	// A non-pending outcome (e.g. a skip) must not discard a pending review.
+	skip := &BookScrapeResult{BookID: "b2", Filename: "b.cbz", Status: BookStatusSkipped}
+	if err := c.UpsertScrapeJobBook("job3", skip); err != nil {
+		t.Fatal(err)
+	}
+	if pending, _ := c.GetPendingReviewBooks(""); len(pending) != 2 {
+		t.Errorf("skip dropped a pending review: %d left", len(pending))
+	}
+}

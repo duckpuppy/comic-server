@@ -427,6 +427,15 @@ func (c *Cache) UpsertScrapeJobBook(jobID string, r *BookScrapeResult) error {
 			volume_cv_id=excluded.volume_cv_id, issue_cv_id=excluded.issue_cv_id,
 			error=excluded.error, candidates_json=excluded.candidates_json`,
 		jobID, r.BookID, r.Filename, r.Series, r.Status, r.VolumeID, r.IssueID, r.Error, candidatesJSON)
+	if err != nil {
+		return err
+	}
+	if r.Status == BookStatusPendingReview {
+		// Fresh candidates replace the ones an earlier job stored (comic-server-5wer
+		// phase 4); otherwise a re-scrape would list the book twice, one row stale.
+		_, err = c.db.Exec(`DELETE FROM scrape_job_books WHERE book_id = ? AND job_id <> ? AND status = ?`,
+			r.BookID, jobID, BookStatusPendingReview)
+	}
 	return err
 }
 
