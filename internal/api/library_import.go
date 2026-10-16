@@ -198,6 +198,7 @@ func (s *Server) runLibraryImport(job *LibraryImportJobStatus, stagingPath strin
 			finish(nil, false, err)
 			return
 		}
+		s.MigrateCVDBSkip() // ComicRack's XML still carries the old tag
 		s.InvalidateListCache()
 		s.InvalidateWorkflowCache()
 		if s.wsHub != nil {

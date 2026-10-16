@@ -497,6 +497,11 @@ func runServer(cmd *cobra.Command, args []string) error {
 		log.Info().Str("dir", resolvedCoverCacheDir).Msg("Cover thumbnail cache enabled")
 	}
 
+	// Old CVDBSKIP tag -> not-in-ComicVine marker (comic-server-5wer). Runs in
+	// the background so a big library does not delay startup; also runs after
+	// every library import.
+	go apiServer.MigrateCVDBSkip()
+
 	// Background pass that flags books whose archive is gone from disk
 	// (comic-server-4q1z). Stat-only, slow by default, -1 disables.
 	if h := cfg.Server.DiskCheckIntervalHours; h > 0 {

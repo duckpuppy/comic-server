@@ -234,6 +234,7 @@ class BookDetailPage {
 
     noMatchLabel(reason) {
         const found = BookDetailPage.NO_MATCH_REASONS.find(r => r[0] === reason);
+        if (reason === 'legacy_cvdbskip') return 'Old CVDBSKIP tag';
         return found ? found[1] : reason;
     }
 

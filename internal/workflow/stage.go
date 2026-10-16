@@ -363,6 +363,10 @@ const KeyNoCVMatch = "comic_server_cv_nomatch"
 // NoCVMatchReasons are the accepted reasons, in display order.
 var NoCVMatchReasons = []string{"collected", "not_listed", "web_comic", "other"}
 
+// NoCVMatchLegacy is the reason recorded by the migration of the old
+// ComicRack CVDBSKIP tag. It is not offered in the UI.
+const NoCVMatchLegacy = "legacy_cvdbskip"
+
 // NoCVMatch returns the reason and date of the marker.
 func NoCVMatch(book *library.ComicBook) (reason, date string, ok bool) {
 	v, found := library.GetCustomValue(book.CustomValuesStore, KeyNoCVMatch)

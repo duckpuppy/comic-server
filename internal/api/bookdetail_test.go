@@ -225,3 +225,37 @@ func TestCVNoMatch_MarksMovesStageAndUndoes(t *testing.T) {
 		t.Errorf("after undo: %+v stage %q", d.NoCVMatch, d.Stage)
 	}
 }
+
+func TestMigrateCVDBSkip_CopiesTagIntoMarkerOnce(t *testing.T) {
+	stuck := library.ComicBook{ID: "s1", Series: "Cover Pack", FilePath: "a.cbz", Tags: "CVDBSKIP", ScanInformation: "s"}
+	workflow.SetStage(&stuck, workflow.StageScrape)
+	tagged := library.ComicBook{ID: "t1", Series: "Real", FilePath: "b.cbz", Tags: "CVDBSKIP", CustomValuesStore: ",comicvine_volume=5"}
+	plain := library.ComicBook{ID: "p1", Series: "Plain", FilePath: "c.cbz"}
+	fileless := library.ComicBook{ID: "f1", Series: "Wanted", Tags: "CVDBSKIP"}
+	s := newDuplicatesTestServer(t, t.TempDir(), []library.ComicBook{stuck, tagged, plain, fileless})
+
+	if n := s.MigrateCVDBSkip(); n != 1 {
+		t.Fatalf("first run changed %d, want 1", n)
+	}
+	if n := s.MigrateCVDBSkip(); n != 0 {
+		t.Errorf("second run changed %d, want 0 (idempotent)", n)
+	}
+	var d BookDetail
+	getJSON(t, s, "/api/library/books/s1", &d)
+	if d.NoCVMatch == nil || d.NoCVMatch.Reason != workflow.NoCVMatchLegacy {
+		t.Fatalf("marker = %+v", d.NoCVMatch)
+	}
+	if d.Stage == "scrape" || d.Stage == "" {
+		t.Errorf("stage = %q, want past scrape", d.Stage)
+	}
+	if !strings.Contains(d.Book.Tags, "CVDBSKIP") {
+		t.Errorf("tag was removed: %q", d.Book.Tags)
+	}
+	for _, id := range []string{"t1", "p1", "f1"} {
+		d = BookDetail{}
+		getJSON(t, s, "/api/library/books/"+id, &d)
+		if d.NoCVMatch != nil {
+			t.Errorf("%s was marked", id)
+		}
+	}
+}
