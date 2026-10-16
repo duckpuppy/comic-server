@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -209,5 +211,28 @@ func TestConfigValidate_TrashRetentionDaysNegative(t *testing.T) {
 
 	if err := cfg.Validate(); err == nil {
 		t.Error("Config.Validate() should reject a negative trash_retention_days")
+	}
+}
+
+// A library written on Windows spells a folder one way, the Linux disk
+// another (comic-server-bj3j): resolving finds the real spelling.
+func TestResolveLibraryFilePath_FoldsCase(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "DC", "Wildstorm")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	real := filepath.Join(dir, "A.cbz")
+	if err := os.WriteFile(real, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c := &Config{Server: ServerConfig{LibrarySourceRoot: `G:\Comics`, LibraryRoot: root}}
+
+	if got := c.ResolveLibraryFilePath(`G:\Comics\DC\WildStorm\A.cbz`); got != real {
+		t.Errorf("source-root path = %q, want %q", got, real)
+	}
+	// already translated (SQLite stores real paths), wrong case
+	if got := c.ResolveLibraryFilePath(filepath.Join(root, "DC", "WILDSTORM", "a.cbz")); got != real {
+		t.Errorf("stored path = %q, want %q", got, real)
 	}
 }

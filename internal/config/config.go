@@ -28,10 +28,14 @@ type Config struct {
 // its own (comic-server-ye2e's actual root cause, see LibraryRoot's own
 // doc comment).
 func (c *Config) ResolveLibraryFilePath(rawPath string) string {
+	p := rawPath
 	if translated, ok := pathmap.Resolve(c.Server.LibrarySourceRoot, c.Server.LibraryRoot, rawPath); ok {
-		return translated
+		p = translated
 	}
-	return rawPath
+	// A library written on Windows ignores letter case, a Linux disk does
+	// not: use the on-disk spelling when exactly one matches
+	// (comic-server-bj3j). An existing path costs one extra stat.
+	return pathmap.ExistingCase(p)
 }
 
 // ServerConfig contains global server settings
