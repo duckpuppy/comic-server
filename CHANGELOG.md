@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.56.1](https://github.com/duckpuppy/comic-server/compare/v1.56.0...v1.56.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* copy the old CVDBSKIP tag into the not-in-ComicVine marker so stored Scrape stages move on ([40cc519](https://github.com/duckpuppy/comic-server/commit/40cc519b74a9180aa23861bc3a505bfc71542524))
+
 ## [1.56.0](https://github.com/duckpuppy/comic-server/compare/v1.55.0...v1.56.0) (2026-10-16)
 
 
