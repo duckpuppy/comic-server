@@ -259,3 +259,77 @@ func TestMigrateCVDBSkip_CopiesTagIntoMarkerOnce(t *testing.T) {
 		}
 	}
 }
+
+func TestCVNoMatchBulk_MarksListsAndUndoes(t *testing.T) {
+	var books []library.ComicBook
+	for _, id := range []string{"b1", "b2", "b3"} {
+		b := library.ComicBook{ID: id, Series: "Omnibus " + id, FilePath: id + ".cbz", ScanInformation: "s"}
+		workflow.SetStage(&b, workflow.StageScrape)
+		books = append(books, b)
+	}
+	books = append(books, library.ComicBook{ID: "w1", Series: "Wanted"})
+	s := newDuplicatesTestServer(t, t.TempDir(), books)
+	bulk := func(body string) (int, CVNoMatchBulkResult) {
+		w := httptest.NewRecorder()
+		s.handleCVNoMatchBooks(w, httptest.NewRequest(http.MethodPost, "/api/library/workflow/cv-nomatch", strings.NewReader(body)))
+		var res CVNoMatchBulkResult
+		if w.Code == http.StatusOK {
+			if err := json.NewDecoder(w.Body).Decode(&res); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return w.Code, res
+	}
+	type page struct {
+		Comics []CVNoMatchPreview `json:"comics"`
+		Total  int                `json:"total"`
+	}
+	list := func() page {
+		var p page
+		w := httptest.NewRecorder()
+		s.handleCVNoMatchBooks(w, httptest.NewRequest(http.MethodGet, "/api/library/workflow/cv-nomatch?limit=10", nil))
+		if w.Code != http.StatusOK {
+			t.Fatalf("list status %d", w.Code)
+		}
+		if err := json.NewDecoder(w.Body).Decode(&p); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+
+	for _, bad := range []string{`{}`, `{"book_ids":["b1"],"set":true,"reason":"bogus"}`, `not json`} {
+		if c, _ := bulk(bad); c != http.StatusBadRequest {
+			t.Errorf("%s -> %d, want 400", bad, c)
+		}
+	}
+
+	c, res := bulk(`{"book_ids":["b1","b2","b2","w1","nope"],"set":true,"reason":"collected"}`)
+	if c != http.StatusOK || res.Changed != 2 || res.Unchanged != 0 || len(res.Skipped) != 2 {
+		t.Fatalf("mark = %d %+v", c, res)
+	}
+	p := list()
+	if p.Total != 2 || len(p.Comics) != 2 || p.Comics[0].Reason != "collected" || p.Comics[0].Date == "" {
+		t.Fatalf("list after mark = %+v", p)
+	}
+	var d BookDetail
+	getJSON(t, s, "/api/library/books/b2", &d)
+	if d.Stage == "scrape" {
+		t.Errorf("b2 still at scrape after a bulk mark")
+	}
+
+	// Marking again changes nothing; undo puts the book back at Scrape.
+	if c, res = bulk(`{"book_ids":["b1"],"set":true,"reason":"other"}`); c != http.StatusOK || res.Changed+res.Unchanged != 1 {
+		t.Fatalf("re-mark = %d %+v", c, res)
+	}
+	if c, res = bulk(`{"book_ids":["b1","b3"],"set":false}`); c != http.StatusOK || res.Changed != 1 || res.Unchanged != 1 {
+		t.Fatalf("undo = %d %+v", c, res)
+	}
+	if p = list(); p.Total != 1 || p.Comics[0].ID != "b2" {
+		t.Fatalf("list after undo = %+v", p)
+	}
+	d = BookDetail{}
+	getJSON(t, s, "/api/library/books/b1", &d)
+	if d.Stage != "scrape" || d.NoCVMatch != nil {
+		t.Errorf("b1 after undo: stage %q mark %+v", d.Stage, d.NoCVMatch)
+	}
+}

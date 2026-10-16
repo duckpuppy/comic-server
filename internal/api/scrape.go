@@ -269,6 +269,9 @@ func (s *Server) handleScrapeReviewList(w http.ResponseWriter, r *http.Request) 
 				PageCount: b.PageCount, Format: b.Format, Publisher: b.Publisher,
 			}
 			item.NeedsIssue = comicvine.NeedsIssueNumber(b)
+			if item.NeedsIssue {
+				item.OnlyIssues = s.onlyIssuePicks(p.Candidates)
+			}
 		}
 		out = append(out, item)
 	}
@@ -283,6 +286,40 @@ type scrapeReviewItem struct {
 	// NeedsIssue: the book has no issue number, so the user picks the issue
 	// from the volume's list (comic-server-5wer phase 3).
 	NeedsIssue bool `json:"needs_issue,omitempty"`
+	// OnlyIssues maps a candidate volume id to its single issue, for
+	// candidates ComicVine lists with exactly one issue (comic-server-5wer
+	// phase 5). The review page offers it as the pick; the user still
+	// confirms it in the match preview.
+	OnlyIssues map[int]reviewIssuePick `json:"only_issues,omitempty"`
+}
+
+// reviewIssuePick is a ready-made issue choice on the review page.
+type reviewIssuePick struct {
+	IssueID int    `json:"issue_id"`
+	Number  string `json:"number"`
+	Name    string `json:"name,omitempty"`
+}
+
+// onlyIssuePicks finds the candidates that are one-issue volumes and whose
+// one issue is already in the cache. Cache only: no ComicVine call is made
+// while listing the review queue. A candidate whose issue list is not cached
+// keeps the plain "Choose issue" path.
+func (s *Server) onlyIssuePicks(cands []comicvine.ReviewCandidate) map[int]reviewIssuePick {
+	var picks map[int]reviewIssuePick
+	for _, c := range cands {
+		if c.IssueCount != 1 {
+			continue
+		}
+		issues, err := s.cvCache.GetIssuesForVolume(c.VolumeID)
+		if err != nil || len(issues) != 1 {
+			continue
+		}
+		if picks == nil {
+			picks = make(map[int]reviewIssuePick)
+		}
+		picks[c.VolumeID] = reviewIssuePick{IssueID: issues[0].CVID, Number: issues[0].Number, Name: issues[0].Name}
+	}
+	return picks
 }
 
 type scrapeReviewBook struct {
