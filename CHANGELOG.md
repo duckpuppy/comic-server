@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.57.0](https://github.com/duckpuppy/comic-server/compare/v1.56.1...v1.57.0) (2026-10-16)
+
+
+### Features
+
+* match a book to ComicVine by pasting an issue or volume link or ID (comic-server-5wer phase 2) ([27cd37f](https://github.com/duckpuppy/comic-server/commit/27cd37fc474c5f7545c44a45fee0ae0430507840))
+
 ## [1.56.1](https://github.com/duckpuppy/comic-server/compare/v1.56.0...v1.56.1) (2026-10-16)
 
 
