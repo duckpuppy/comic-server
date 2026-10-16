@@ -32,3 +32,11 @@
 @media (max-width: 640px) {
     .scrape-review-table { display: block; overflow-x: auto; }
 }
+
+.scrape-review-book { display: flex; gap: 1rem; align-items: flex-start; margin-bottom: 0.75rem; }
+.scrape-review-cover { width: 64px; border-radius: 3px; display: block; }
+.scrape-review-book > .scrape-review-cover, .scrape-review-book > img { width: 96px; }
+.scrape-review-facts { margin: 0.25rem 0; color: var(--text-primary); }
+.scrape-review-deck { color: var(--text-secondary); font-size: 0.85rem; max-width: 28rem; }
+.scrape-review-table a { color: var(--primary-color); text-decoration: underline; text-underline-offset: 2px; }
+.scrape-review-item h2 a { color: inherit; text-decoration: none; }

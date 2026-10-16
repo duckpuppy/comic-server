@@ -476,3 +476,12 @@ func TestScrape_CoverVerifyIgnoredWhenLocalCoverMissing(t *testing.T) {
 		t.Errorf("job = %+v, want Completed=1 despite missing local cover file", job)
 	}
 }
+
+func TestToReviewCandidatesCarriesDetail(t *testing.T) {
+	v := Volume{ID: 7, Name: "V", CountOfIssues: 5, SiteDetailURL: "https://cv/x", Deck: "d"}
+	v.Image.MediumURL = "https://img/m.jpg"
+	out := toReviewCandidates([]MatchResult{{Volume: v, Score: 1}})
+	if len(out) != 1 || out[0].IssueCount != 5 || out[0].CoverURL != "https://img/m.jpg" || out[0].SiteURL != "https://cv/x" || out[0].Deck != "d" {
+		t.Fatalf("detail not carried: %+v", out)
+	}
+}

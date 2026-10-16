@@ -81,11 +81,13 @@ class ScrapeReviewPage {
         const cands = item.candidates || [];
         const busy = this.busy.has(item.book_id);
         const rows = cands.length === 0
-            ? '<tr><td colspan="6" class="empty-message">No candidates recorded.</td></tr>'
+            ? '<tr><td colspan="8" class="empty-message">No candidates recorded.</td></tr>'
             : cands.map(c => `
                 <tr>
-                    <td>${this.escapeHtml(c.name)}</td>
+                    <td>${c.cover_url ? `<img class="scrape-review-cover" src="${this.escapeHtml(c.cover_url)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ''}</td>
+                    <td>${c.site_url ? `<a href="${this.escapeHtml(c.site_url)}" target="_blank" rel="noopener noreferrer">${this.escapeHtml(c.name)}</a>` : this.escapeHtml(c.name)}${c.deck ? `<div class="scrape-review-deck">${this.escapeHtml(c.deck)}</div>` : ''}</td>
                     <td>${this.escapeHtml(c.start_year)}</td>
+                    <td>${c.issue_count || ''}</td>
                     <td>${this.escapeHtml(c.publisher)}</td>
                     <td>${(c.score ?? 0).toFixed(2)}</td>
                     <td><span class="scrape-review-confidence conf-${this.escapeHtml(c.confidence)}">${this.escapeHtml(c.confidence)}</span></td>
@@ -93,12 +95,26 @@ class ScrapeReviewPage {
                                 data-book="${this.escapeHtml(item.book_id)}"
                                 data-volume="${c.volume_id}" ${busy ? 'disabled' : ''}>Accept</button></td>
                 </tr>`).join('');
+        const b = item.book;
+        const facts = b ? [
+            b.number ? `#${b.number}` : '',
+            b.year ? `Year ${b.year}` : '',
+            b.page_count ? `${b.page_count} pages` : '',
+            b.format || '',
+            b.publisher || '',
+        ].filter(Boolean).join(' · ') : '';
         return `
             <section class="scrape-review-item" data-book="${this.escapeHtml(item.book_id)}">
-                <h2>${this.escapeHtml(item.series || item.filename)}</h2>
-                <p class="scrape-review-file" title="${this.escapeHtml(item.filename)}">${this.escapeHtml(item.filename)}</p>
+                <div class="scrape-review-book">
+                    <img class="scrape-review-cover" src="/api/library/books/${encodeURIComponent(item.book_id)}/cover" alt="" loading="lazy">
+                    <div>
+                        <h2><a href="/books/${encodeURIComponent(item.book_id)}" data-route>${this.escapeHtml(item.series || item.filename)}</a></h2>
+                        ${facts ? `<p class="scrape-review-facts">${this.escapeHtml(facts)}</p>` : ''}
+                        <p class="scrape-review-file" title="${this.escapeHtml(item.filename)}">${this.escapeHtml(item.filename)}</p>
+                    </div>
+                </div>
                 <table class="scrape-review-table">
-                    <thead><tr><th>Volume</th><th>Start year</th><th>Publisher</th><th>Score</th><th>Confidence</th><th></th></tr></thead>
+                    <thead><tr><th>Cover</th><th>Volume</th><th>Start year</th><th>Issues</th><th>Publisher</th><th>Score</th><th>Confidence</th><th></th></tr></thead>
                     <tbody>${rows}</tbody>
                 </table>
             </section>`;

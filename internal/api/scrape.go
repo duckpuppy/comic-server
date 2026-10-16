@@ -255,12 +255,34 @@ func (s *Server) handleScrapeReviewList(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "Failed to load pending reviews", http.StatusInternalServerError)
 		return
 	}
-	if pending == nil {
-		// Encode "none pending" as [] rather than null so web clients can
-		// iterate without a special case (comic-server-0nhp).
-		pending = []*comicvine.BookScrapeResult{}
+	out := make([]scrapeReviewItem, 0, len(pending))
+	for _, p := range pending {
+		item := scrapeReviewItem{BookScrapeResult: p}
+		if b, err := s.backend.GetBook(p.BookID); err == nil && b != nil {
+			item.Book = &scrapeReviewBook{
+				Series: b.Series, Number: b.Number, Year: b.Year,
+				PageCount: b.PageCount, Format: b.Format, Publisher: b.Publisher,
+			}
+		}
+		out = append(out, item)
 	}
-	s.writeJSON(w, http.StatusOK, pending)
+	s.writeJSON(w, http.StatusOK, out)
+}
+
+// scrapeReviewItem is a pending result plus the book's own details, so the
+// reviewer can compare it with each candidate (cover, pages, year, number).
+type scrapeReviewItem struct {
+	*comicvine.BookScrapeResult
+	Book *scrapeReviewBook `json:"book,omitempty"`
+}
+
+type scrapeReviewBook struct {
+	Series    string `json:"series"`
+	Number    string `json:"number"`
+	Year      int    `json:"year"`
+	PageCount int    `json:"page_count"`
+	Format    string `json:"format"`
+	Publisher string `json:"publisher"`
 }
 
 // handleScrapeReviewResolve resolves a pending review by applying the chosen

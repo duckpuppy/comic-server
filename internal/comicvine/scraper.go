@@ -100,6 +100,12 @@ type ReviewCandidate struct {
 	Publisher  string  `json:"publisher"`
 	Score      float64 `json:"score"`
 	Confidence string  `json:"confidence"`
+	// Detail for the reviewer (already in the volume search response, no
+	// extra API call): issue count, cover thumbnail, ComicVine page.
+	IssueCount int    `json:"issue_count,omitempty"`
+	CoverURL   string `json:"cover_url,omitempty"`
+	SiteURL    string `json:"site_url,omitempty"`
+	Deck       string `json:"deck,omitempty"`
 }
 
 // BookScrapeResult records the outcome of scraping a single book.
@@ -592,6 +598,10 @@ func toReviewCandidates(scored []MatchResult) []ReviewCandidate {
 			Publisher:  scored[i].Volume.Publisher.Name,
 			Score:      scored[i].Score,
 			Confidence: scored[i].Confidence,
+			IssueCount: scored[i].Volume.CountOfIssues,
+			CoverURL:   firstNonEmpty(scored[i].Volume.Image.SmallURL, scored[i].Volume.Image.MediumURL, scored[i].Volume.Image.IconURL),
+			SiteURL:    scored[i].Volume.SiteDetailURL,
+			Deck:       scored[i].Volume.Deck,
 		}
 	}
 	return out
@@ -647,4 +657,13 @@ func groupBooksBySeries(books []*library.ComicBook) []seriesGroup {
 		groups[i] = *byKey[k]
 	}
 	return groups
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
