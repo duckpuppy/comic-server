@@ -75,7 +75,9 @@ class BrowsePage {
         const fromUrl = this.readUrl();
         this.render();
         this.attachListeners();
-        if (fromUrl) this.search(true);
+        // Results held from an earlier visit are searched again too: a book
+        // removed or relinked since would otherwise stay in the list.
+        if (fromUrl || this.results.length) this.search(true);
         else this.writeUrl(); // reached via the nav: show the kept filter in the URL
         await this.resumeDMJobIfAny(ctx);
     }
