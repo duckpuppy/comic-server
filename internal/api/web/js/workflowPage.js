@@ -80,6 +80,14 @@ class WorkflowPage {
         if (ctx && ctx.aborted) return;
         this.render();
         this.attachListeners();
+        // The page object is a singleton, so an open drill-in comes back
+        // from memory with the rows it had when we left. A book may have
+        // been removed or relinked on its own page since (the missing-file
+        // list kept the removed record), so fetch the list again.
+        if (this.drillIn) {
+            await this.loadDrillInPage(true);
+            if (ctx && ctx.aborted) return;
+        }
     }
 
     async load() {
