@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.60.0](https://github.com/duckpuppy/comic-server/compare/v1.59.0...v1.60.0) (2026-10-16)
+
+
+### Features
+
+* edit a book's metadata from the book page, and mark it read or unread (comic-server-k1bt.1) ([bfc5137](https://github.com/duckpuppy/comic-server/commit/bfc51372ea44b6e943f96e74dd2464138cfa7f7c))
+* list and bulk-mark books not in ComicVine; offer the only issue of a one-issue volume (comic-server-5wer.4) ([46ffa66](https://github.com/duckpuppy/comic-server/commit/46ffa6627e65e7ae77ab323588191af0ac5cecc4))
+* select books in Browse and edit them together, with add/remove for list fields (comic-server-k1bt.2) ([1e90059](https://github.com/duckpuppy/comic-server/commit/1e90059d47ccbe49bae116c682849655c8bc9278))
+
 ## [1.59.0](https://github.com/duckpuppy/comic-server/compare/v1.58.0...v1.59.0) (2026-10-16)
 
 
