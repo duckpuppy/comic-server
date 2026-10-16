@@ -29,8 +29,10 @@ type workflowCacheEntry struct {
 	computedAt   time.Time
 	booksByStage map[workflow.Stage][]*library.ComicBook
 	cvdbSkip     int
-	cvNoMatch    int // books marked not in ComicVine (comic-server-5wer)
-	unstaged     int // books with a file but no stored stage
+	// cvNoMatch holds every book marked not in ComicVine (comic-server-5wer),
+	// so the workflow card can list them, not just count them.
+	cvNoMatch []*library.ComicBook
+	unstaged  int // books with a file but no stored stage
 	// booksByFlag holds every book with each attention flag (comic-server-z77p),
 	// computed in the same pass as booksByStage.
 	booksByFlag map[attention.Flag][]*library.ComicBook
@@ -103,7 +105,7 @@ func (s *Server) getOrBuildWorkflowCache() (*workflowCacheEntry, error) {
 			built.cvdbSkip++
 		}
 		if workflow.IsNoCVMatch(book) {
-			built.cvNoMatch++
+			built.cvNoMatch = append(built.cvNoMatch, book)
 		}
 	}
 

@@ -461,15 +461,10 @@ func (s *Server) handleCVNoMatch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Book not found", http.StatusNotFound)
 		return
 	}
-	if req.Set && book.FilePath == "" {
-		http.Error(w, "this book has no file; there is nothing to scrape", http.StatusConflict)
+	changed, blocked := setNoCVMatch(book, req.Set, req.Reason, time.Now())
+	if blocked != "" {
+		http.Error(w, blocked, http.StatusConflict)
 		return
-	}
-	changed := false
-	if req.Set {
-		changed = workflow.SetNoCVMatch(book, req.Reason, time.Now().Format("2006-01-02"))
-	} else {
-		changed = workflow.ClearNoCVMatch(book)
 	}
 	if changed {
 		if err := backend.UpdateBooks([]*library.ComicBook{book}); err != nil {
@@ -480,6 +475,21 @@ func (s *Server) handleCVNoMatch(w http.ResponseWriter, r *http.Request) {
 		s.InvalidateWorkflowCache()
 	}
 	s.writeJSON(w, http.StatusOK, map[string]any{"book_id": id, "set": req.Set, "changed": changed})
+}
+
+// errNoFileToScrape is why a fileless book cannot be marked not in ComicVine.
+const errNoFileToScrape = "this book has no file; there is nothing to scrape"
+
+// setNoCVMatch sets or clears the not-in-ComicVine marker on book in memory.
+// blocked is non-empty when the book cannot take the mark (no file).
+func setNoCVMatch(book *library.ComicBook, set bool, reason string, now time.Time) (changed bool, blocked string) {
+	if !set {
+		return workflow.ClearNoCVMatch(book), ""
+	}
+	if book.FilePath == "" {
+		return false, errNoFileToScrape
+	}
+	return workflow.SetNoCVMatch(book, reason, now.Format("2006-01-02")), ""
 }
 
 // readerBlocker says why the in-browser reader cannot open path, or "".

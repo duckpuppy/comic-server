@@ -43,3 +43,6 @@
 
 .scrape-review-nomatch { display: flex; gap: 0.5rem; align-items: center; margin: 0 0 0.75rem 0; flex-wrap: wrap; }
 .scrape-review-hint { color: var(--text-secondary); margin: 0 0 0.5rem 0; }
+.scrape-review-bulk { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; margin: 0 0 1rem 0; padding: 0.5rem 0.75rem; border: 1px solid var(--border-color); border-radius: 4px; }
+.scrape-review-bulk-count { color: var(--text-secondary); }
+.scrape-review-select { margin-top: 0.4rem; }

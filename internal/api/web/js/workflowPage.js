@@ -394,6 +394,9 @@ class WorkflowPage {
                 <h2>Not in ComicVine</h2>
                 <p class="workflow-card-count">${this.summary.cv_nomatch || 0}</p>
                 <p class="empty-message">Books you marked as not in ComicVine. Whole-library scrapes skip them and they move on in the workflow.</p>
+                <div class="workflow-card-actions">
+                    <button class="btn btn-secondary" id="workflow-cv-nomatch-view-btn" ${this.summary.cv_nomatch ? '' : 'disabled'}>View</button>
+                </div>
             </div>
         `;
         html += '</div>';
@@ -496,6 +499,14 @@ class WorkflowPage {
                     // dash that looks indistinguishable from a bug.
                     const target = c.target_path || (c.target_path_note ? `— (${c.target_path_note})` : '—');
                     html += `<tr><td><a class="book-link" href="/books/${encodeURIComponent(c.id)}" data-route>${this.escapeHtml(label)}</a></td><td>${this.escapeHtml(c.current_path)}</td><td>${this.escapeHtml(target)}</td></tr>`;
+                }
+                html += '</tbody></table>';
+            } else if (d.stage === 'cv_nomatch') {
+                // Books marked not in ComicVine, newest mark first, each with
+                // Undo (comic-server-5wer phase 5).
+                html += '<table class="datamanager-diff-table"><thead><tr><th>Series</th><th>Number</th><th>Publisher</th><th>Reason</th><th>Marked</th><th></th></tr></thead><tbody>';
+                for (const c of d.comics) {
+                    html += `<tr><td><a class="book-link" href="/books/${encodeURIComponent(c.id)}" data-route>${this.escapeHtml(c.series)}</a></td><td>${this.escapeHtml(c.number)}</td><td>${this.escapeHtml(c.publisher)}</td><td>${this.escapeHtml(WorkflowPage.noMatchLabel(c.reason))}</td><td>${this.escapeHtml(c.date)}</td><td><button class="btn btn-secondary drill-nomatch-undo-btn" data-book="${this.escapeAttr(c.id)}" title="Remove the mark; the book goes back to the Scrape stage">Undo</button></td></tr>`;
                 }
                 html += '</tbody></table>';
             } else {
@@ -788,6 +799,13 @@ class WorkflowPage {
             el.addEventListener('click', () => this.acceptFlag(el.dataset.book, el.dataset.flag, el));
         });
 
+        const noMatchBtn = document.getElementById('workflow-cv-nomatch-view-btn');
+        if (noMatchBtn) noMatchBtn.addEventListener('click', () =>
+            this.openDrillIn('cv_nomatch', 'Not in ComicVine', '/api/library/workflow/cv-nomatch'));
+        document.querySelectorAll('.drill-nomatch-undo-btn').forEach(el => {
+            el.addEventListener('click', () => this.undoNoMatch(el.dataset.book, el));
+        });
+
         document.querySelectorAll('.workflow-view-btn').forEach(el => {
             el.addEventListener('click', () => this.openDrillIn(el.dataset.stage, el.dataset.label));
         });
@@ -953,6 +971,31 @@ class WorkflowPage {
         } catch (e) {
             btn.disabled = false;
             dialogs.toast(`Could not accept the flag: ${e.message || e}`, 'error', 6000);
+        }
+    }
+
+    // Undo one "not in ComicVine" mark from the list; the book goes back to Scrape.
+    async undoNoMatch(bookId, btn) {
+        btn.disabled = true;
+        try {
+            const res = await fetch(`/api/library/books/${encodeURIComponent(bookId)}/cv-nomatch`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ set: false }),
+            });
+            if (!res.ok) throw new Error(await res.text());
+            const d = this.drillIn;
+            if (d) {
+                d.comics = d.comics.filter(c => c.id !== bookId);
+                d.total = Math.max(0, d.total - 1);
+                d.offset = Math.max(0, d.offset - 1);
+            }
+            if (this.summary && this.summary.cv_nomatch) this.summary.cv_nomatch--;
+            this.render();
+            this.attachListeners();
+        } catch (e) {
+            btn.disabled = false;
+            dialogs.toast(`Could not undo the mark: ${e.message || e}`, 'error', 6000);
         }
     }
 
@@ -1230,3 +1273,8 @@ WorkflowPage.TOOLS = {
 };
 
 window.WorkflowPage = WorkflowPage;
+
+WorkflowPage.noMatchLabel = (reason) => ({
+    collected: 'Collected edition', not_listed: 'Not listed', web_comic: 'Web comic',
+    other: 'Other', legacy_cvdbskip: 'Old CVDBSKIP tag',
+})[reason] || reason;

@@ -6,6 +6,7 @@ import (
 	"github.com/duckpuppy/comic-server/internal/workflow"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -469,5 +470,59 @@ func TestScrapeReviewList_FlagsUnnumberedBooks(t *testing.T) {
 	}
 	if len(got) != 2 || !got["u1"] || got["n1"] {
 		t.Errorf("needs_issue = %v, want u1 true and n1 false", got)
+	}
+}
+
+func TestScrapeReviewList_OffersOnlyIssueOfOneIssueVolume(t *testing.T) {
+	books := []library.ComicBook{
+		{ID: "u1", Series: "Godzilla", FilePath: "/c/Godzilla Here There Be Aliens (2026).cbz"},
+		{ID: "n1", Series: "Batman", FilePath: "/c/Batman 005 (2016).cbz"},
+	}
+	s := newScrapeAPITestServer(t, books, &scrapeAPIFixture{})
+	// Volume 10: one issue, cached. Volume 11: one issue, not cached.
+	// Volume 12: cached with one issue, but ComicVine lists more (partial sync).
+	for _, v := range []int{10, 11, 12} {
+		if err := s.cvCache.UpsertVolume(&comicvine.CachedVolume{CVID: v, Name: "V"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.cvCache.UpsertIssues([]comicvine.CachedIssue{
+		{CVID: 900, VolumeCVID: 10, Number: "1", Name: "Here There Be Aliens"},
+		{CVID: 901, VolumeCVID: 12, Number: "1"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cands := []comicvine.ReviewCandidate{
+		{VolumeID: 10, Name: "A", IssueCount: 1},
+		{VolumeID: 11, Name: "B", IssueCount: 1},
+		{VolumeID: 12, Name: "C", IssueCount: 4},
+	}
+	for _, id := range []string{"u1", "n1"} {
+		r := &comicvine.BookScrapeResult{BookID: id, Filename: id, Status: comicvine.BookStatusPendingReview, Candidates: cands}
+		if err := s.cvCache.UpsertScrapeJobBook("j1", r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w := httptest.NewRecorder()
+	s.handleScrapeReviewList(w, httptest.NewRequest(http.MethodGet, "/api/scrape/review", nil))
+	var items []struct {
+		BookID     string                     `json:"book_id"`
+		OnlyIssues map[string]reviewIssuePick `json:"only_issues"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&items); err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range items {
+		switch it.BookID {
+		case "u1":
+			want := map[string]reviewIssuePick{"10": {IssueID: 900, Number: "1", Name: "Here There Be Aliens"}}
+			if !reflect.DeepEqual(it.OnlyIssues, want) {
+				t.Errorf("u1 only_issues = %+v, want %+v", it.OnlyIssues, want)
+			}
+		case "n1":
+			if len(it.OnlyIssues) != 0 {
+				t.Errorf("numbered book got only_issues %+v", it.OnlyIssues)
+			}
+		}
 	}
 }
