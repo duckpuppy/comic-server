@@ -290,6 +290,22 @@ class Dialogs {
     // type: 'success' | 'error' | 'info' (default). Replaces the ~44
     // alert() call sites that were just transient success/error feedback,
     // not something needing an OK click.
+    // custom({title, bodyHTML, footerHTML, onOpen, onClose, contentClass}) -> close function.
+    // A modal with caller-built content; buttons with data-action="cancel" close it.
+    custom({ title = '', bodyHTML = '', footerHTML = '', onOpen = null, onClose = null, contentClass = '' } = {}) {
+        let closed = false;
+        const close = () => {
+            if (closed) return;
+            closed = true;
+            this._closeModal();
+            if (onClose) onClose();
+        };
+        this._openModal({ title, bodyHTML, footerHTML, onCancel: close, onOpen });
+        const content = document.querySelector('#dialogs-modal .dialog-content');
+        if (content && contentClass) content.classList.add(...contentClass.split(' '));
+        return close;
+    }
+
     toast(message, type = 'info', durationMs = 4000) {
         if (!this._toastContainer) {
             this._toastContainer = document.createElement('div');

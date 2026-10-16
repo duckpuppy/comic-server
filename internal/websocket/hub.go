@@ -26,6 +26,7 @@ const (
 	EventScrapeProgress     EventType = "scrape_progress"
 	EventScrapeCompleted    EventType = "scrape_completed"
 	EventScrapeReviewNeeded EventType = "scrape_review_needed"
+	EventScrapeLog          EventType = "scrape_log"
 	EventLibraryReloaded    EventType = "library_reloaded"
 )
 

@@ -89,6 +89,11 @@ class WebSocketClient {
         this.eventHandlers[eventType].push(handler);
     }
 
+    off(eventType, handler) {
+        const handlers = this.eventHandlers[eventType];
+        if (handlers) this.eventHandlers[eventType] = handlers.filter(h => h !== handler);
+    }
+
     handleEvent(event) {
         console.log('WebSocket event:', event);
 
@@ -126,5 +131,7 @@ class WebSocketClient {
     }
 }
 
-// Global WebSocket client instance
+// Global WebSocket client instance. A top-level const is not a window
+// property, so pages that look it up as window.wsClient need this too.
 const wsClient = new WebSocketClient();
+window.wsClient = wsClient;

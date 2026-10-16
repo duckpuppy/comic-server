@@ -3,6 +3,7 @@ package comicvine
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -430,9 +431,10 @@ func (c *Cache) UpsertScrapeJobBook(jobID string, r *BookScrapeResult) error {
 	if err != nil {
 		return err
 	}
-	if r.Status == BookStatusPendingReview {
+	if r.Status == BookStatusPendingReview || r.Status == BookStatusScraped {
 		// Fresh candidates replace the ones an earlier job stored (comic-server-5wer
 		// phase 4); otherwise a re-scrape would list the book twice, one row stale.
+		// A match settles the book, so it also leaves the review queue.
 		_, err = c.db.Exec(`DELETE FROM scrape_job_books WHERE book_id = ? AND job_id <> ? AND status = ?`,
 			r.BookID, jobID, BookStatusPendingReview)
 	}
@@ -515,6 +517,20 @@ func (c *Cache) GetPendingReviewBooks(jobID string) ([]*BookScrapeResult, error)
 		results = append(results, r)
 	}
 	return results, rows.Err()
+}
+
+// PendingReviewJobID returns the job holding the book's pending review (the
+// newest one if several do), or "" when the book is not pending review.
+func (c *Cache) PendingReviewJobID(bookID string) (string, error) {
+	var jobID string
+	err := c.db.QueryRow(`SELECT b.job_id FROM scrape_job_books b
+		LEFT JOIN scrape_jobs j ON j.job_id = b.job_id
+		WHERE b.book_id = ? AND b.status = ?
+		ORDER BY j.started_at DESC, b.rowid DESC LIMIT 1`, bookID, BookStatusPendingReview).Scan(&jobID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return jobID, err
 }
 
 // ResolvePendingReview marks every pending-review row of a book as scraped
