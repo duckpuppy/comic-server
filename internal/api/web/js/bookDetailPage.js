@@ -363,7 +363,7 @@ class BookDetailPage {
                         confirmLabel: 'Pick file…',
                     });
                     if (!pick) return;
-                    picked = await dialogs.browseServerFile({ title: 'Pick the file for this book' });
+                    picked = await dialogs.browseServerFile({ title: 'Pick the file for this book', startPath: p.start_dir || '/' });
                     if (!picked) return;
                     p = await this.postJSON(url, { apply: false, file_path: picked });
                     if (p.status !== 'found') {

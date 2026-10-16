@@ -217,3 +217,22 @@ func TestRelink_ManualPickKeepsWindowsStyleUnderRoot(t *testing.T) {
 		t.Error("a pick outside library_root must be refused")
 	}
 }
+
+func TestNearestExistingDir(t *testing.T) {
+	root := t.TempDir()
+	deep := filepath.Join(root, "DC", "Series (2017)")
+	if err := os.MkdirAll(deep, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct{ name, in, want string }{
+		{"folder exists", deep, deep},
+		{"folder gone, parent kept", filepath.Join(root, "DC", "Gone (2020)"), filepath.Join(root, "DC")},
+		{"several levels gone", filepath.Join(root, "DC", "Gone", "Deeper"), filepath.Join(root, "DC")},
+		{"relative path", "comics/x", ""},
+	}
+	for _, c := range cases {
+		if got := nearestExistingDir(c.in); got != c.want {
+			t.Errorf("%s: nearestExistingDir(%q) = %q, want %q", c.name, c.in, got, c.want)
+		}
+	}
+}

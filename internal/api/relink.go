@@ -46,6 +46,21 @@ type RelinkOutcome struct {
 	Reason     string   `json:"reason,omitempty"`
 	Candidates []string `json:"candidates,omitempty"`
 	Applied    bool     `json:"applied,omitempty"`
+	// StartDir is where the manual file picker should open: the book's old
+	// folder, or its nearest parent that still exists. Empty = no good guess.
+	StartDir string `json:"start_dir,omitempty"`
+}
+
+// nearestExistingDir walks up from dir to the first folder that exists. It
+// returns "" when nothing but the disk root (or no absolute path) is left,
+// so the caller keeps its own default.
+func nearestExistingDir(dir string) string {
+	for d := filepath.Clean(dir); filepath.IsAbs(d) && d != filepath.Dir(d); d = filepath.Dir(d) {
+		if fi, err := os.Stat(d); err == nil && fi.IsDir() {
+			return d
+		}
+	}
+	return ""
 }
 
 // relinkContext carries what one run shares between books: which paths other
@@ -102,6 +117,7 @@ func (c *relinkContext) find(book *library.ComicBook) RelinkOutcome {
 		return out
 	}
 	dir := filepath.Dir(resolved)
+	out.StartDir = nearestExistingDir(dir)
 	names, err := c.listDir(dir)
 	if err != nil {
 		out.Status = relinkFolderMissing
