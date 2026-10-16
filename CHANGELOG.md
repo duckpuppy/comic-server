@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.60.1](https://github.com/duckpuppy/comic-server/compare/v1.60.0...v1.60.1) (2026-10-16)
+
+
+### Documentation
+
+* track work in the private GitHub tracker repo instead of beads ([39ec403](https://github.com/duckpuppy/comic-server/commit/39ec4033c1d526f309897c583a0d89439076f431))
+
 ## [1.60.0](https://github.com/duckpuppy/comic-server/compare/v1.59.0...v1.60.0) (2026-10-16)
 
 
