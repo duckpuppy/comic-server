@@ -5,6 +5,9 @@ import "fmt"
 // Schema version for migrations
 const schemaVersion = 10
 
+// SchemaVersion is the newest schema this build understands; restore refuses a backup above it.
+const SchemaVersion = schemaVersion
+
 // initSchema creates the database tables if they don't exist.
 func (db *DB) initSchema() error {
 	// Check current schema version

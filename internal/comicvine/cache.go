@@ -16,6 +16,9 @@ import (
 
 const cacheSchemaVersion = 4
 
+// CacheSchemaVersion is the newest schema this build understands; restore refuses a backup above it.
+const CacheSchemaVersion = cacheSchemaVersion
+
 // Cache provides SQLite-backed storage for ComicVine API responses.
 type Cache struct {
 	db   *sql.DB

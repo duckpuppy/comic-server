@@ -17,6 +17,9 @@ import "fmt"
 // to server_misc_settings (comic-server-r769).
 const schemaVersion = 13
 
+// SchemaVersion is the newest schema this build understands; restore refuses a backup above it.
+const SchemaVersion = schemaVersion
+
 // initSchema brings the database up to schemaVersion. No-ops if already
 // current - safe to call on every Open, every server startup.
 func (db *DB) initSchema() error {
