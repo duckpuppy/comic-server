@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.62.0](https://github.com/duckpuppy/comic-server/compare/v1.61.0...v1.62.0) (2026-10-17)
+
+
+### Features
+
+* built-in login for the web UI and API, off until a password is set ([#182](https://github.com/duckpuppy/comic-server/issues/182)) ([075c9e2](https://github.com/duckpuppy/comic-server/commit/075c9e2f647c3ee7bf2ebef34bccc16b2176a821))
+
 ## [1.61.0](https://github.com/duckpuppy/comic-server/compare/v1.60.1...v1.61.0) (2026-10-17)
 
 
