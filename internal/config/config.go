@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -166,6 +167,13 @@ type ServerConfig struct {
 	// TrashRetentionDays is how long a quarantined file is kept before
 	// being permanently deleted. Default: 30 (see comic-server-1up).
 	TrashRetentionDays int `yaml:"trash_retention_days,omitempty" toml:"trash_retention_days,omitempty"`
+
+	// TrustedProxies lists IPs/CIDRs of reverse proxies (Nginx Proxy Manager,
+	// Cloudflare Tunnel's connector...) whose X-Forwarded-For, CF-Connecting-IP,
+	// X-Forwarded-Proto and X-Forwarded-Host headers are believed. Default:
+	// none, so a client can never forge its address for the login rate limit
+	// or turn on the cookie's Secure flag. Not re-read on SIGHUP.
+	TrustedProxies []string `yaml:"trusted_proxies,omitempty" toml:"trusted_proxies,omitempty"`
 
 	// DiskCheckIntervalHours is how often the background pass stats every
 	// book's file to raise the file_missing flag (comic-server-4q1z). It only
@@ -533,6 +541,9 @@ func (c *Config) Validate() error {
 	if c.Server.ArchiveScanIntervalHours < 0 {
 		return fmt.Errorf("archive_scan_interval_hours must be >= 0 (0 disables), got %d", c.Server.ArchiveScanIntervalHours)
 	}
+	if _, err := ParseTrustedProxies(c.Server.TrustedProxies); err != nil {
+		return fmt.Errorf("trusted_proxies: %w", err)
+	}
 	if c.Server.TrashRetentionDays < 0 {
 		return fmt.Errorf("trash_retention_days must be >= 0, got %d", c.Server.TrashRetentionDays)
 	}
@@ -600,4 +611,26 @@ func (kc *KomgaConfig) Validate(libraryRoot string) error {
 	}
 
 	return nil
+}
+
+// ParseTrustedProxies reads IPs and CIDRs ("10.0.0.1", "172.18.0.0/16").
+func ParseTrustedProxies(list []string) ([]netip.Prefix, error) {
+	var out []netip.Prefix
+	for _, raw := range list {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		if p, err := netip.ParsePrefix(raw); err == nil {
+			out = append(out, p.Masked())
+			continue
+		}
+		a, err := netip.ParseAddr(raw)
+		if err != nil {
+			return nil, fmt.Errorf("%q is not an IP or CIDR", raw)
+		}
+		a = a.Unmap()
+		out = append(out, netip.PrefixFrom(a, a.BitLen()))
+	}
+	return out, nil
 }

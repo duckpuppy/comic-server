@@ -50,6 +50,14 @@ func (c *Config) ApplyEnvironment() error {
 		c.Server.TrashRetentionDays = days
 	}
 
+	if val := os.Getenv("COMIC_SERVER_TRUSTED_PROXIES"); val != "" {
+		proxies := strings.Split(val, ",")
+		for i := range proxies {
+			proxies[i] = strings.TrimSpace(proxies[i])
+		}
+		c.Server.TrustedProxies = proxies
+	}
+
 	if val := os.Getenv("COMIC_SERVER_DISK_CHECK_INTERVAL_HOURS"); val != "" {
 		hours, err := strconv.Atoi(val)
 		if err != nil {
