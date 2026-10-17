@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.61.0](https://github.com/duckpuppy/comic-server/compare/v1.60.1...v1.61.0) (2026-10-17)
+
+
+### Features
+
+* comic-server restore command, with checksum check, schema refusal and a safety backup (tracker [#6](https://github.com/duckpuppy/comic-server/issues/6), restore half) ([649ccdc](https://github.com/duckpuppy/comic-server/commit/649ccdc0c8af12330d0f5477cfb83c8c8441a179))
+* scheduled and manual backups of comic-server's own state, with a Backups section in Settings (tracker [#6](https://github.com/duckpuppy/comic-server/issues/6), backup half) ([ed1c194](https://github.com/duckpuppy/comic-server/commit/ed1c194230707997594cfa7b9d34e7be1792fcfe))
+
+
+### Documentation
+
+* record restore decision, config.db restore keeps backup settings ([cbf450f](https://github.com/duckpuppy/comic-server/commit/cbf450f285589b0dace99efd0aa853ca22016678))
+
 ## [1.60.1](https://github.com/duckpuppy/comic-server/compare/v1.60.0...v1.60.1) (2026-10-16)
 
 
