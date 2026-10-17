@@ -352,6 +352,45 @@ Maximum number of requests a device can make per minute.
 
 Rate limits individual devices to prevent abuse. Set to 0 to disable.
 
+#### Web UI and API login
+
+The web UI and REST API have **no login until you set a password**. Set one in
+**Settings > Security**, or from the command line:
+
+```bash
+comic-server auth set-password            # asks twice, hidden
+echo "a long password" | comic-server auth set-password --password-stdin
+comic-server auth status
+comic-server auth disable                 # turn login off again
+```
+
+Passwords need at least 12 characters. The `auth` commands change `config.db`
+directly, so they work with the server stopped. They are the way back in if
+you forget the password. Setting a password signs out every browser.
+
+Once login is on, everything under `/api/`, `/ws` and `/metrics` needs a login
+cookie or an API token (`Authorization: Bearer cs_...`, created in Settings >
+Security). `/api/health` and `/api/version` stay open. Device sync (TCP 7614)
+does not use the login.
+
+#### trusted_proxies
+
+IPs or CIDRs of reverse proxies in front of the server (Nginx Proxy Manager,
+a Cloudflare Tunnel connector).
+
+**Type:** list of strings
+**Default:** empty (trust none)
+**Environment:** `COMIC_SERVER_TRUSTED_PROXIES` (comma-separated)
+
+Only requests that come directly from these addresses are allowed to say who
+the real client is (`X-Forwarded-For`, `CF-Connecting-IP`), whether the browser
+used HTTPS (`X-Forwarded-Proto`) and which host it asked for
+(`X-Forwarded-Host`). If this list is wrong, the login rate limit sees the
+proxy's address for everyone, and the session cookie is not marked `Secure`.
+The proxy must pass the `Host` header on (or send `X-Forwarded-Host`), or
+saving anything in the browser is refused as a cross-site request. Not
+re-read on SIGHUP.
+
 ### Device Management
 
 #### ignore_devices

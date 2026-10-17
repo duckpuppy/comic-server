@@ -686,11 +686,22 @@ class ScanInfoSettings {
                 ${this.renderWatchFolders()}
                 ${this.renderRestartRequired()}
                 ${this.renderTrash()}
+                <div id="security-settings-host"></div>
                 <div id="backup-settings-host"></div>
                 ${this.renderScrapeFilter()}
                 ${this.renderBody()}
             </div>
         `;
+        // Security (login) draws itself (tracker #21).
+        const securityHost = document.getElementById('security-settings-host');
+        if (securityHost && typeof SecuritySettings !== 'undefined') {
+            if (!this.securitySettings) {
+                this.securitySettings = new SecuritySettings(securityHost);
+            } else {
+                this.securitySettings.host = securityHost;
+                this.securitySettings.render();
+            }
+        }
         // Backups draw themselves (comic-server-yzdt).
         const backupHost = document.getElementById('backup-settings-host');
         if (backupHost && typeof BackupSettings !== 'undefined') {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/duckpuppy/comic-server/internal/attention"
 	"github.com/duckpuppy/comic-server/internal/audit"
+	"github.com/duckpuppy/comic-server/internal/auth"
 	"io"
 	"io/fs"
 	"net/http"
@@ -41,6 +42,7 @@ type VersionInfo struct {
 
 // Server provides REST API endpoints for monitoring and control
 type Server struct {
+	auth              *auth.Manager // built-in login; nil only if its config is invalid
 	syncManager       *syncstate.Manager
 	registry          *device.Registry
 	backend           library.Backend    // Backend for library operations
@@ -212,12 +214,20 @@ func NewServer(syncManager *syncstate.Manager, registry *device.Registry, backen
 		startTime:         time.Now(),
 		wsHub:             wsHub,
 		registeredDevices: make(map[string]bool),
-		upgrader: websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool {
-				// Allow all origins for now (in production, check against allowed origins)
-				return true
-			},
-		},
+		upgrader:          websocket.Upgrader{},
+	}
+	// Same origin only: a page on another site must not open a socket with
+	// the user's cookie (login, tracker #21).
+	s.upgrader.CheckOrigin = func(r *http.Request) bool {
+		return s.auth == nil || s.auth.SameOrigin(r)
+	}
+	if cfg != nil {
+		m, err := auth.New(configDB, cfg.Server.TrustedProxies)
+		if err != nil {
+			log.Error().Err(err).Msg("Login is unavailable")
+		} else {
+			s.auth = m
+		}
 	}
 
 	// Load initial registration state from config.db - every device with a
@@ -236,6 +246,9 @@ func NewServer(syncManager *syncstate.Manager, registry *device.Registry, backen
 
 // ServeHTTP implements http.Handler
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if !s.authGate(w, r) {
+		return
+	}
 	s.mux.ServeHTTP(w, r)
 }
 
@@ -244,6 +257,12 @@ func (s *Server) registerRoutes() {
 	// API endpoints
 	s.mux.HandleFunc("/api/health", s.handleHealth)
 	s.mux.HandleFunc("/api/version", s.handleVersion)
+	s.mux.HandleFunc("/api/auth/status", s.handleAuthStatus)
+	s.mux.HandleFunc("/api/auth/login", s.handleAuthLogin)
+	s.mux.HandleFunc("/api/auth/logout", s.handleAuthLogout)
+	s.mux.HandleFunc("/api/auth/password", s.handleAuthPassword)
+	s.mux.HandleFunc("/api/auth/tokens", s.handleAuthTokens)
+	s.mux.HandleFunc("/api/auth/tokens/", s.handleAuthTokenItem)
 	s.mux.HandleFunc("/api/sync/status", s.handleSyncStatus)
 	s.mux.HandleFunc("/api/sync/history", s.handleSyncHistory)
 	s.mux.HandleFunc("/api/stats", s.handleStats)
