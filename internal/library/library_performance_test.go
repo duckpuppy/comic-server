@@ -1,6 +1,7 @@
 package library
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -8,8 +9,18 @@ import (
 
 const testLibraryPath = "../../testdata/library/ComicDb.xml"
 
-// TestSaveLibraryPerformance ensures SaveLibrary performance doesn't regress
-// Uses testdata library (10 books) - save should complete in < 1ms
+// perfCeiling is the longest any of the small-library operations below may
+// take. These are sanity ceilings, not speed tests: an operation on 3-10 books
+// takes microseconds, so a result near this means something is badly wrong
+// (an accidental O(n^2), a stuck lock), while ordinary CI noise (a busy shared
+// runner, a GC pause) cannot reach it. The earlier limits (1ms, 100us, a
+// time-ratio) failed releases at random (tracker #23). Real speed
+// measurements are the Benchmark functions in performance_test.go and the
+// *Large benchmarks below.
+const perfCeiling = 2 * time.Second
+
+// TestSaveLibraryPerformance ensures SaveLibrary does not become pathologically
+// slow (see perfCeiling). Uses the testdata library.
 func TestSaveLibraryPerformance(t *testing.T) {
 	// Load test library
 	lib, err := LoadLibrary(testLibraryPath)
@@ -34,19 +45,17 @@ func TestSaveLibraryPerformance(t *testing.T) {
 		t.Fatalf("SaveLibrary failed: %v", err)
 	}
 
-	// For small library (10 books), save should be < 1ms
 	// Observed performance: ~87µs
-	maxDuration := 1 * time.Millisecond
-	if duration > maxDuration {
-		t.Errorf("SaveLibrary too slow: %v (expected < %v for %d books)",
-			duration, maxDuration, len(lib.Books))
+	if duration > perfCeiling {
+		t.Errorf("SaveLibrary too slow: %v (ceiling %v for %d books)",
+			duration, perfCeiling, len(lib.Books))
 	}
 
 	t.Logf("SaveLibrary performance: %v for %d books", duration, len(lib.Books))
 }
 
-// TestLoadLibraryPerformance ensures LoadLibrary performance doesn't regress
-// Uses testdata library (10 books) - load should complete in < 1ms
+// TestLoadLibraryPerformance ensures LoadLibrary does not become pathologically
+// slow (see perfCeiling). Uses the testdata library.
 func TestLoadLibraryPerformance(t *testing.T) {
 	// Measure performance
 	start := time.Now()
@@ -57,19 +66,17 @@ func TestLoadLibraryPerformance(t *testing.T) {
 		t.Skipf("Skipping performance test: testdata library not available: %v", err)
 	}
 
-	// For small library (10 books), load should be < 1ms
 	// Observed performance: ~176µs
-	maxDuration := 1 * time.Millisecond
-	if duration > maxDuration {
-		t.Errorf("LoadLibrary too slow: %v (expected < %v for %d books)",
-			duration, maxDuration, len(lib.Books))
+	if duration > perfCeiling {
+		t.Errorf("LoadLibrary too slow: %v (ceiling %v for %d books)",
+			duration, perfCeiling, len(lib.Books))
 	}
 
 	t.Logf("LoadLibrary performance: %v for %d books", duration, len(lib.Books))
 }
 
-// TestLibraryCacheFlushPerformance ensures cache flush doesn't regress
-// Uses testdata library (10 books) - flush should complete in < 1ms
+// TestLibraryCacheFlushPerformance ensures cache flush does not become
+// pathologically slow (see perfCeiling). Uses the testdata library.
 func TestLibraryCacheFlushPerformance(t *testing.T) {
 	// Load test library
 	lib, err := LoadLibrary(testLibraryPath)
@@ -109,79 +116,65 @@ func TestLibraryCacheFlushPerformance(t *testing.T) {
 		t.Fatalf("Flush failed: %v", err)
 	}
 
-	// Flush includes SaveLibrary overhead + cache bookkeeping
-	// For small library (10 books), should be well under 10ms.
-	// Observed performance: ~87µs locally, but GitHub Actions' shared
-	// runners are noisy enough that this flaked twice in a row at the
-	// original 1ms threshold (2.66ms and 2.74ms observed on CI, comic-
-	// server release v1.11.0 - see internal/library's git history) -
-	// 10ms keeps real regressions (which would be orders of magnitude
-	// slower, not single-digit-ms) caught while giving CI room to breathe.
-	maxDuration := 10 * time.Millisecond
-	if duration > maxDuration {
-		t.Errorf("Cache flush too slow: %v (expected < %v for %d books)",
-			duration, maxDuration, len(lib.Books))
+	// Observed performance: ~87µs locally.
+	if duration > perfCeiling {
+		t.Errorf("Cache flush too slow: %v (ceiling %v for %d books)",
+			duration, perfCeiling, len(lib.Books))
 	}
 
 	t.Logf("Cache flush performance: %v for %d books", duration, len(lib.Books))
 }
 
-// TestLibraryCacheBatchEfficiency ensures cache batching provides performance benefit
-// Batching 10 saves should be faster than 10 individual saves
+// TestLibraryCacheBatchEfficiency checks that batching does what it is for:
+// ten changes cost one write, not ten. It counts writes (the flush counter and
+// the file appearing) instead of comparing times, which depended on how busy
+// the machine was (tracker #23).
 func TestLibraryCacheBatchEfficiency(t *testing.T) {
-	// Load test library
 	lib, err := LoadLibrary(testLibraryPath)
 	if err != nil {
-		t.Skipf("Skipping performance test: testdata library not available: %v", err)
+		t.Skipf("Skipping test: testdata library not available: %v", err)
 	}
 
-	tempDir := t.TempDir()
-	libraryPath := filepath.Join(tempDir, "test.xml")
-
-	// Measure 10 individual saves (no caching)
-	individualStart := time.Now()
-	for i := 0; i < 10; i++ {
-		if err := SaveLibrary(libraryPath, lib); err != nil {
-			t.Fatalf("Individual save failed: %v", err)
-		}
-	}
-	individualDuration := time.Since(individualStart)
-
-	// Measure 10 cached saves (batched into 1)
+	libraryPath := filepath.Join(t.TempDir(), "test.xml")
 	cache := NewLibraryCache(lib, libraryPath, 0) // No auto-flush
 	defer cache.Stop()
 
-	batchStart := time.Now()
+	flushes := func() float64 { return getCounterValue(cacheFlushesTotal.WithLabelValues("success")) }
+	before := flushes()
+
 	for i := 0; i < 10; i++ {
-		// Simulate marking different books dirty
-		bookIdx := i % len(lib.Books)
-		cache.MarkDirty(lib.Books[bookIdx].ID)
+		cache.MarkDirty(lib.Books[i%len(lib.Books)].ID)
 	}
-	// Flush once (batches all 10 marks into 1 save)
-	if _, err := cache.Flush(); err != nil {
-		t.Fatalf("Batch flush failed: %v", err)
+	if got := flushes() - before; got != 0 {
+		t.Fatalf("marking books dirty wrote %v times, want 0 (batching broken)", got)
 	}
-	batchDuration := time.Since(batchStart)
-
-	// Batched approach should be meaningfully faster. This was originally
-	// a >5x threshold, but that flaked twice in a row on GitHub Actions'
-	// shared runners (2.4x and 3.4x observed there, comic-server release
-	// v1.11.0) despite batching genuinely helping every time it ran -
-	// the noise is in how much it helps, not whether it does. 2x still
-	// catches a real regression (e.g. batching degenerating to one save
-	// per mark) while giving CI enough room not to flake on a good day.
-	if batchDuration*2 > individualDuration {
-		t.Errorf("Cache batching not efficient enough: individual=%v, batched=%v (expected >2x improvement)",
-			individualDuration, batchDuration)
+	if _, err := os.Stat(libraryPath); err == nil {
+		t.Fatal("library file written before any Flush")
 	}
 
-	improvementRatio := float64(individualDuration) / float64(batchDuration)
-	t.Logf("Cache batching efficiency: %v individual saves in %v, batched into 1 save in %v (%.1fx improvement)",
-		10, individualDuration, batchDuration, improvementRatio)
+	saved, err := cache.Flush()
+	if err != nil || !saved {
+		t.Fatalf("Flush = %v, %v; want true, nil", saved, err)
+	}
+	if got := flushes() - before; got != 1 {
+		t.Errorf("10 changes caused %v writes, want exactly 1", got)
+	}
+	if _, err := os.Stat(libraryPath); err != nil {
+		t.Errorf("library file missing after Flush: %v", err)
+	}
+
+	// Nothing is dirty any more, so another Flush must not write again.
+	saved, err = cache.Flush()
+	if err != nil || saved {
+		t.Errorf("second Flush = %v, %v; want false, nil", saved, err)
+	}
+	if got := flushes() - before; got != 1 {
+		t.Errorf("an empty Flush wrote again: %v writes total, want 1", got)
+	}
 }
 
-// TestSmartListEvaluationPerformance ensures smart list evaluation doesn't regress
-// Uses testdata library (10 books) - evaluation should be < 100µs
+// TestSmartListEvaluationPerformance ensures smart list evaluation does not
+// become pathologically slow (see perfCeiling). Uses the testdata library.
 func TestSmartListEvaluationPerformance(t *testing.T) {
 	// Load test library
 	lib, err := LoadLibrary(testLibraryPath)
@@ -213,12 +206,10 @@ func TestSmartListEvaluationPerformance(t *testing.T) {
 		t.Fatalf("MatchBooks failed: %v", err)
 	}
 
-	// For small library (10 books), evaluation should be < 100µs
 	// Observed performance: ~2.8µs
-	maxDuration := 100 * time.Microsecond
-	if duration > maxDuration {
-		t.Errorf("Smart list evaluation too slow: %v (expected < %v for %d books with %d matchers)",
-			duration, maxDuration, len(lib.Books), len(smartList.Matchers))
+	if duration > perfCeiling {
+		t.Errorf("Smart list evaluation too slow: %v (ceiling %v for %d books with %d matchers)",
+			duration, perfCeiling, len(lib.Books), len(smartList.Matchers))
 	}
 
 	t.Logf("Smart list evaluation performance: %v for %d books, %d matchers, %d matches",
