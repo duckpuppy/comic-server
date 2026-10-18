@@ -41,10 +41,16 @@ var ErrBadCredentials = errors.New("wrong password")
 
 // Manager holds the login rules. It is safe for concurrent use.
 type Manager struct {
-	db      *configdb.DB
-	proxies []netip.Prefix
-	limiter *ratelimit.IPLimiter
-	oidc    *oidcState
+	db       *configdb.DB
+	fallback []string // config.yaml / env list, used until one is saved
+	limiter  *ratelimit.IPLimiter
+	oidc     *oidcState
+
+	proxyMu       sync.RWMutex
+	proxies       []netip.Prefix
+	proxyList     []string
+	proxySaved    bool
+	proxyLoadedAt time.Time
 
 	mu          sync.Mutex
 	enabled     bool
@@ -52,19 +58,21 @@ type Manager struct {
 	enabledSeen bool
 }
 
-// New builds a Manager. trustedProxies are IPs or CIDRs whose forwarding
-// headers are believed; an empty list trusts none.
-func New(db *configdb.DB, trustedProxies []string) (*Manager, error) {
-	prefixes, err := config.ParseTrustedProxies(trustedProxies)
-	if err != nil {
+// New builds a Manager. fallbackProxies (config.yaml / env) are IPs or CIDRs
+// whose forwarding headers are believed until a list is saved in Settings; an
+// empty list trusts none.
+func New(db *configdb.DB, fallbackProxies []string) (*Manager, error) {
+	if _, err := config.ParseTrustedProxies(fallbackProxies); err != nil {
 		return nil, err
 	}
-	return &Manager{
-		db:      db,
-		proxies: prefixes,
-		limiter: ratelimit.NewIPLimiter(loginAttempts, loginWindow),
-		oidc:    &oidcState{pending: map[string]pendingLogin{}},
-	}, nil
+	m := &Manager{
+		db:       db,
+		fallback: fallbackProxies,
+		limiter:  ratelimit.NewIPLimiter(loginAttempts, loginWindow),
+		oidc:     &oidcState{pending: map[string]pendingLogin{}},
+	}
+	m.reloadProxies()
+	return m, nil
 }
 
 // Close stops the limiter's cleanup goroutine.
@@ -106,7 +114,7 @@ func (m *Manager) fromTrustedProxy(r *http.Request) bool {
 }
 
 func (m *Manager) trusted(a netip.Addr) bool {
-	for _, p := range m.proxies {
+	for _, p := range m.currentProxies() {
 		if p.Contains(a) {
 			return true
 		}
@@ -317,4 +325,122 @@ func (m *Manager) Cookie(r *http.Request, value string) *http.Cookie {
 		c.MaxAge = int(SessionLifetime.Seconds())
 	}
 	return c
+}
+
+// proxyRefresh is how often the trusted list is re-read, so a change from the
+// command line or another process is seen without a restart.
+const proxyRefresh = 5 * time.Second
+
+// reloadProxies picks the effective list: the one saved in Settings if there
+// is one (even an empty one), else config.yaml / the env var. If the saved
+// row cannot be read, the last good list stays in force.
+func (m *Manager) reloadProxies() {
+	saved, ok, err := m.db.GetTrustedProxies()
+	list := m.fallback
+	if err != nil {
+		m.proxyMu.Lock()
+		if m.proxies != nil || m.proxyList != nil {
+			m.proxyMu.Unlock()
+			return
+		}
+		m.proxyMu.Unlock()
+	} else if ok {
+		list = saved
+	}
+	prefixes, perr := config.ParseTrustedProxies(list)
+	if perr != nil {
+		// A bad row (hand-edited database): trust nothing rather than guess.
+		prefixes, list, ok = nil, nil, false
+	}
+	m.proxyMu.Lock()
+	m.proxies, m.proxyList, m.proxySaved, m.proxyLoadedAt = prefixes, append([]string{}, list...), ok && err == nil, time.Now()
+	m.proxyMu.Unlock()
+}
+
+func (m *Manager) currentProxies() []netip.Prefix {
+	m.proxyMu.RLock()
+	stale := time.Since(m.proxyLoadedAt) >= proxyRefresh
+	m.proxyMu.RUnlock()
+	if stale {
+		m.reloadProxies()
+	}
+	m.proxyMu.RLock()
+	defer m.proxyMu.RUnlock()
+	return m.proxies
+}
+
+// TrustedProxies returns the list in force and where it came from: "saved"
+// (Settings) or "config" (config.yaml / the env var).
+func (m *Manager) TrustedProxies() (list []string, source string) {
+	m.reloadProxies()
+	m.proxyMu.RLock()
+	defer m.proxyMu.RUnlock()
+	source = "config"
+	if m.proxySaved {
+		source = "saved"
+	}
+	return append([]string{}, m.proxyList...), source
+}
+
+// ConfigProxies is the config.yaml / env list that applies when nothing is saved.
+func (m *Manager) ConfigProxies() []string { return append([]string{}, m.fallback...) }
+
+// SaveTrustedProxies validates and stores a list, and applies it at once. An
+// empty list is saved as such: it means "trust no proxy" and overrides config.yaml.
+func (m *Manager) SaveTrustedProxies(list []string) ([]string, error) {
+	clean := []string{}
+	for _, e := range list {
+		if e = strings.TrimSpace(e); e != "" {
+			clean = append(clean, e)
+		}
+	}
+	if _, err := config.ParseTrustedProxies(clean); err != nil {
+		return nil, err
+	}
+	if err := m.db.SaveTrustedProxies(clean); err != nil {
+		return nil, err
+	}
+	m.reloadProxies()
+	return clean, nil
+}
+
+// ClearTrustedProxies drops the saved list so config.yaml / the env var apply again.
+func (m *Manager) ClearTrustedProxies() error {
+	if err := m.db.ClearTrustedProxies(); err != nil {
+		return err
+	}
+	m.reloadProxies()
+	return nil
+}
+
+// Peek describes how this request looks to the server, so the trusted list
+// can be checked against what a proxy really sends.
+type Peek struct {
+	PeerIP         string `json:"peer_ip"`
+	PeerTrusted    bool   `json:"peer_trusted"`
+	ClientIP       string `json:"client_ip"`
+	Secure         bool   `json:"secure"`
+	ForwardedFor   string `json:"forwarded_for,omitempty"`
+	ForwardedProto string `json:"forwarded_proto,omitempty"`
+	ForwardedHost  string `json:"forwarded_host,omitempty"`
+	CFConnectingIP string `json:"cf_connecting_ip,omitempty"`
+}
+
+// Peek reports the peer address, whether it is trusted, and what the server
+// concludes from it. The header values are the caller's own, echoed back.
+func (m *Manager) Peek(r *http.Request) Peek {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	return Peek{
+		PeerIP:         host,
+		PeerTrusted:    m.fromTrustedProxy(r),
+		ClientIP:       m.ClientIP(r),
+		Secure:         m.IsSecure(r),
+		ForwardedFor:   strings.Join(r.Header.Values("X-Forwarded-For"), ", "),
+		ForwardedProto: r.Header.Get("X-Forwarded-Proto"),
+		ForwardedHost:  r.Header.Get("X-Forwarded-Host"),
+		CFConnectingIP: r.Header.Get("CF-Connecting-IP"),
+	}
 }

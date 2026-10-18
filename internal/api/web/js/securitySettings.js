@@ -9,6 +9,7 @@ class SecuritySettings {
         this.notice = '';
         this.newToken = '';     // shown once, right after creation
         this.oidc = null;       // GET /api/auth/oidc
+        this.proxies = null;    // GET /api/auth/trusted-proxies
         this.busy = false;
         this.load();
     }
@@ -29,9 +30,12 @@ class SecuritySettings {
                 this.tokens = t.ok ? ((await t.json()).tokens || []) : [];
                 const o = await fetch('/api/auth/oidc');
                 this.oidc = o.ok ? await o.json() : null;
+                const p = await fetch('/api/auth/trusted-proxies');
+                this.proxies = p.ok ? await p.json() : null;
             } else {
                 this.tokens = [];
                 this.oidc = null;
+                this.proxies = null;
             }
             this.error = '';
         } catch (e) {
@@ -94,6 +98,52 @@ class SecuritySettings {
             </div>`;
     }
 
+    // What the server makes of THIS request, with the one fix that matters:
+    // a proxy header from an address that is not on the list.
+    renderPeek() {
+        const k = this.proxies.seen;
+        const hasProxyHeaders = !!(k.forwarded_for || k.forwarded_proto || k.forwarded_host || k.cf_connecting_ip);
+        let verdict;
+        if (!k.peer_trusted && hasProxyHeaders) {
+            verdict = `<p class="datamanager-errors">This page came in from <code>${this.esc(k.peer_ip)}</code> with proxy headers, but that address is not trusted, so the headers are ignored. If <code>${this.esc(k.peer_ip)}</code> is your reverse proxy, add it below.</p>`;
+        } else if (k.peer_trusted) {
+            verdict = `<p class="form-help" role="status"><code>${this.esc(k.peer_ip)}</code> is a trusted proxy. The server reads your address as <code>${this.esc(k.client_ip)}</code>.</p>`;
+        } else {
+            verdict = `<p class="form-help" role="status">A direct connection from <code>${this.esc(k.peer_ip)}</code>. No proxy is involved.</p>`;
+        }
+        return `${verdict}
+            <table class="data-table"><tbody>
+                <tr><td>Connection from</td><td><code>${this.esc(k.peer_ip)}</code> (${k.peer_trusted ? 'trusted' : 'not trusted'})</td></tr>
+                <tr><td>Your address, as read</td><td><code>${this.esc(k.client_ip)}</code></td></tr>
+                <tr><td>Counted as HTTPS</td><td>${k.secure ? 'yes' : 'no'}</td></tr>
+                <tr><td>X-Forwarded-For</td><td>${this.esc(k.forwarded_for || 'not sent')}</td></tr>
+                <tr><td>X-Forwarded-Proto</td><td>${this.esc(k.forwarded_proto || 'not sent')}</td></tr>
+                <tr><td>X-Forwarded-Host</td><td>${this.esc(k.forwarded_host || 'not sent')}</td></tr>
+                <tr><td>CF-Connecting-IP</td><td>${this.esc(k.cf_connecting_ip || 'not sent')}</td></tr>
+            </tbody></table>`;
+    }
+
+    renderProxies() {
+        if (!this.status.enabled || !this.proxies) return '';
+        const p = this.proxies;
+        const where = p.source === 'saved'
+            ? 'Saved here. This overrides config.yaml and the environment variable.'
+            : `Taken from config.yaml or <code>COMIC_SERVER_TRUSTED_PROXIES</code>${(p.config || []).length ? '' : ' (nothing set)'}. Saving a list here overrides it.`;
+        return `
+            <h3>Trusted proxies</h3>
+            <p class="form-help">Addresses of reverse proxies in front of this server (Nginx Proxy Manager, a Cloudflare Tunnel connector). Only they are believed when they say who the real visitor is and whether the connection used HTTPS. With none listed the login rate limit sees the proxy for everybody, and the cookie is not marked Secure. Changes apply at once.</p>
+            <p class="form-help">${where}</p>
+            <div class="form-group"><label for="sec-proxies">One address or range per line (for example <code>192.168.0.56</code> or <code>172.18.0.0/16</code>)</label>
+                <textarea id="sec-proxies" class="form-control" rows="4" style="max-width:28rem;">${this.esc((p.proxies || []).join('\n'))}</textarea></div>
+            <div class="scan-info-actions">
+                <button class="btn btn-primary" id="sec-proxies-save" ${this.busy ? 'disabled' : ''}>Save trusted proxies</button>
+                ${p.source === 'saved' ? '<button class="btn btn-secondary" id="sec-proxies-clear">Use config.yaml / environment instead</button>' : ''}
+            </div>
+            <h4>What the server sees for this page</h4>
+            ${this.renderPeek()}
+            <p class="form-help">If a bad list ever makes saving here fail, stop the server and run <code>comic-server auth trusted-proxies --clear</code>.</p>`;
+    }
+
     renderOIDC() {
         if (!this.status.enabled || !this.oidc) return '';
         const o = this.oidc;
@@ -141,6 +191,7 @@ class SecuritySettings {
                 ${this.notice ? `<p class="form-help" role="status">${this.esc(this.notice)}</p>` : ''}
                 ${this.renderPassword()}
                 ${this.renderTokens()}
+                ${this.renderProxies()}
                 ${this.renderOIDC()}
             </div>`;
         this.attach();
@@ -152,6 +203,8 @@ class SecuritySettings {
         $('#sec-logout')?.addEventListener('click', () => window.AuthUI && window.AuthUI.logout());
         $('#sec-token-create')?.addEventListener('click', () => this.createToken());
         $('#oidc-save')?.addEventListener('click', () => this.saveOIDC());
+        $('#sec-proxies-save')?.addEventListener('click', () => this.saveProxies());
+        $('#sec-proxies-clear')?.addEventListener('click', () => this.clearProxies());
         this.host.querySelectorAll('[data-revoke]').forEach(b =>
             b.addEventListener('click', () => this.revoke(b.dataset.revoke)));
     }
@@ -175,6 +228,35 @@ class SecuritySettings {
         }
         this.busy = false;
         await this.load();
+    }
+
+    async saveProxies() {
+        const lines = ((this.host.querySelector('#sec-proxies') || {}).value || '')
+            .split(/[\n,]+/).map(x => x.trim()).filter(Boolean);
+        this.busy = true;
+        try {
+            this.proxies = await this.post('/api/auth/trusted-proxies', { proxies: lines }, 'PUT');
+            this.error = '';
+            this.notice = 'Trusted proxies saved. They apply now.';
+        } catch (e) {
+            this.error = e.message;
+            this.notice = '';
+        }
+        this.busy = false;
+        this.render();
+    }
+
+    async clearProxies() {
+        if (!confirm('Forget the list saved here and use config.yaml / the environment variable again?')) return;
+        try {
+            this.proxies = await this.post('/api/auth/trusted-proxies', undefined, 'DELETE');
+            this.error = '';
+            this.notice = 'Saved list cleared.';
+        } catch (e) {
+            this.error = e.message;
+            this.notice = '';
+        }
+        this.render();
     }
 
     async saveOIDC() {

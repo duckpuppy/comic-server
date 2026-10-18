@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/duckpuppy/comic-server/internal/configdb"
 )
@@ -207,5 +208,109 @@ func TestSameOrigin(t *testing.T) {
 		if got := m.SameOrigin(c.r); got != c.want {
 			t.Errorf("%s: got %v want %v", c.name, got, c.want)
 		}
+	}
+}
+
+func TestTrustedProxyListPrecedenceAndLiveChange(t *testing.T) {
+	m := newManager(t, "10.0.0.1") // config.yaml / env list
+	req := func(remote string) *http.Request {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.RemoteAddr = remote
+		r.Header.Set("X-Forwarded-For", "198.51.100.7")
+		return r
+	}
+	list, source := m.TrustedProxies()
+	if source != "config" || len(list) != 1 || list[0] != "10.0.0.1" {
+		t.Fatalf("before saving: %v %s", list, source)
+	}
+	if got := m.ClientIP(req("10.0.0.1:1")); got != "198.51.100.7" {
+		t.Errorf("config proxy not trusted: %s", got)
+	}
+
+	// A saved list wins over config, and takes effect with no restart.
+	if _, err := m.SaveTrustedProxies([]string{" 10.9.0.0/16 ", ""}); err != nil {
+		t.Fatal(err)
+	}
+	list, source = m.TrustedProxies()
+	if source != "saved" || len(list) != 1 || list[0] != "10.9.0.0/16" {
+		t.Fatalf("after saving: %v %s", list, source)
+	}
+	if got := m.ClientIP(req("10.0.0.1:1")); got != "10.0.0.1" {
+		t.Errorf("config proxy still trusted after a saved list replaced it: %s", got)
+	}
+	if got := m.ClientIP(req("10.9.3.4:1")); got != "198.51.100.7" {
+		t.Errorf("saved proxy not trusted: %s", got)
+	}
+
+	// A saved EMPTY list is a real choice: trust nobody, even though config names one.
+	if _, err := m.SaveTrustedProxies(nil); err != nil {
+		t.Fatal(err)
+	}
+	if list, source = m.TrustedProxies(); source != "saved" || len(list) != 0 {
+		t.Fatalf("empty saved list: %v %s", list, source)
+	}
+	if got := m.ClientIP(req("10.0.0.1:1")); got != "10.0.0.1" {
+		t.Errorf("empty saved list still trusts config proxy: %s", got)
+	}
+
+	// Clearing goes back to config.
+	if err := m.ClearTrustedProxies(); err != nil {
+		t.Fatal(err)
+	}
+	if list, source = m.TrustedProxies(); source != "config" || len(list) != 1 {
+		t.Fatalf("after clear: %v %s", list, source)
+	}
+	if got := m.ClientIP(req("10.0.0.1:1")); got != "198.51.100.7" {
+		t.Errorf("config proxy not back: %s", got)
+	}
+}
+
+func TestTrustedProxyChangeFromAnotherProcessIsSeen(t *testing.T) {
+	m := newManager(t)
+	if m.fromTrustedProxy(httptest.NewRequest(http.MethodGet, "/", nil)) {
+		t.Fatal("trusted before any list")
+	}
+	// What `comic-server auth trusted-proxies` does: writes config.db directly.
+	if err := m.db.SaveTrustedProxies([]string{"192.0.2.0/24"}); err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest(http.MethodGet, "/", nil) // RemoteAddr 192.0.2.1
+	m.proxyMu.Lock()
+	m.proxyLoadedAt = time.Time{} // as if the refresh interval had passed
+	m.proxyMu.Unlock()
+	if !m.fromTrustedProxy(r) {
+		t.Error("a list saved by another process was not picked up")
+	}
+}
+
+func TestTrustedProxyListRefusals(t *testing.T) {
+	m := newManager(t)
+	for _, bad := range [][]string{{"not-an-ip"}, {"0.0.0.0/0"}, {"::/0"}, {"10.0.0.1", "10.0.0.256"}} {
+		if _, err := m.SaveTrustedProxies(bad); err == nil {
+			t.Errorf("%v accepted", bad)
+		}
+	}
+	if list, source := m.TrustedProxies(); source != "config" || len(list) != 0 {
+		t.Errorf("a refused save changed the list: %v %s", list, source)
+	}
+	if _, err := m.SaveTrustedProxies([]string{"10.0.0.0/8", "fd00::/8", "192.168.0.56"}); err != nil {
+		t.Errorf("good list refused: %v", err)
+	}
+}
+
+func TestPeekExplainsWhatTheServerSees(t *testing.T) {
+	m := newManager(t, "10.0.0.1")
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.RemoteAddr = "192.168.0.56:4000"
+	r.Header.Set("X-Forwarded-For", "203.0.113.9")
+	r.Header.Set("X-Forwarded-Proto", "https")
+	p := m.Peek(r)
+	if p.PeerIP != "192.168.0.56" || p.PeerTrusted || p.ClientIP != "192.168.0.56" || p.Secure || p.ForwardedFor != "203.0.113.9" {
+		t.Errorf("untrusted peer: %+v", p)
+	}
+	r.RemoteAddr = "10.0.0.1:4000"
+	p = m.Peek(r)
+	if !p.PeerTrusted || p.ClientIP != "203.0.113.9" || !p.Secure {
+		t.Errorf("trusted peer: %+v", p)
 	}
 }

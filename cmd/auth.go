@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/duckpuppy/comic-server/internal/auth"
+	"github.com/duckpuppy/comic-server/internal/config"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -74,9 +75,63 @@ var authStatusCmd = &cobra.Command{
 	},
 }
 
+var authProxiesClear bool
+
+var authTrustedProxiesCmd = &cobra.Command{
+	Use:   "trusted-proxies [ip-or-cidr ...]",
+	Short: "Show, set or reset the trusted proxy list (works with the server stopped)",
+	Long: `Shows the trusted proxy list in force. With addresses, saves them as the list
+(this overrides config.yaml and COMIC_SERVER_TRUSTED_PROXIES). With --clear, forgets
+the saved list so config.yaml / the env var apply again.
+
+This is the way back if a wrong list makes the web UI refuse your changes.
+A running server notices within a few seconds.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cmd.SilenceUsage = true
+		if authProxiesClear && len(args) > 0 {
+			return fmt.Errorf("use either --clear or a list of addresses, not both")
+		}
+		db, err := openConfigDB()
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+		out := cmd.OutOrStdout()
+		switch {
+		case authProxiesClear:
+			if err := db.ClearTrustedProxies(); err != nil {
+				return err
+			}
+			fmt.Fprintln(out, "Saved list cleared. config.yaml / COMIC_SERVER_TRUSTED_PROXIES apply again.")
+		case len(args) > 0:
+			if _, err := config.ParseTrustedProxies(args); err != nil {
+				return err
+			}
+			if err := db.SaveTrustedProxies(args); err != nil {
+				return err
+			}
+			fmt.Fprintf(out, "Saved: %s\n", strings.Join(args, ", "))
+		default:
+			list, saved, err := db.GetTrustedProxies()
+			if err != nil {
+				return err
+			}
+			if !saved {
+				fmt.Fprintln(out, "No list saved: config.yaml / COMIC_SERVER_TRUSTED_PROXIES apply (none if unset).")
+			} else if len(list) == 0 {
+				fmt.Fprintln(out, "Saved list: empty (no proxy is trusted).")
+			} else {
+				fmt.Fprintf(out, "Saved list: %s\n", strings.Join(list, ", "))
+			}
+		}
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(authCmd)
-	authCmd.AddCommand(authSetPasswordCmd, authDisableCmd, authStatusCmd)
+	authCmd.AddCommand(authSetPasswordCmd, authDisableCmd, authStatusCmd, authTrustedProxiesCmd)
+	authTrustedProxiesCmd.Flags().BoolVar(&authProxiesClear, "clear", false, "Forget the saved list so config.yaml / the env var apply again")
 	authSetPasswordCmd.Flags().BoolVar(&authPasswordStdin, "password-stdin", false, "Read the password from standard input (one line) instead of asking")
 }
 
