@@ -1650,8 +1650,10 @@ func startComicVineSync(ctx context.Context, apiKey string, backend library.Back
 	updateCVData(backend, books, cache)
 
 	synced, pending, failed, _ := cache.SyncStats()
+	missing, _ := cache.MissingVolumeCount()
 	log.Info().
 		Int("seeded_volumes", seeded).
+		Int("missing", missing).
 		Int("synced", synced).
 		Int("pending", pending).
 		Int("failed", failed).

@@ -239,7 +239,7 @@ func (c *Cache) GetIssuesForVolume(volumeCVID int) ([]CachedIssue, error) {
 // ordered by priority (most-owned-issues first). Takes a map of cvVolumeID → count
 // of books owned in the library for prioritization.
 func (c *Cache) PendingVolumeIDs(owned map[int]int) ([]int, error) {
-	rows, err := c.db.Query(`SELECT cv_id FROM cv_volumes WHERE sync_status = 'pending' OR issues_synced = 0`)
+	rows, err := c.db.Query(`SELECT cv_id FROM cv_volumes WHERE (sync_status = 'pending' OR issues_synced = 0) AND sync_status <> 'missing'`)
 	if err != nil {
 		return nil, err
 	}
@@ -355,6 +355,13 @@ func (c *Cache) SyncStats() (synced, pending, failed int, err error) {
 		FROM cv_volumes`)
 	err = row.Scan(&synced, &pending, &failed)
 	return
+}
+
+// MissingVolumeCount returns how many volumes ComicVine no longer has.
+func (c *Cache) MissingVolumeCount() (int, error) {
+	var n int
+	err := c.db.QueryRow(`SELECT COUNT(*) FROM cv_volumes WHERE sync_status = 'missing'`).Scan(&n)
+	return n, err
 }
 
 // SetSyncState stores a key-value pair for sync state tracking (e.g. backoff timers).

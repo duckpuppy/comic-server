@@ -100,8 +100,14 @@ func (s *Syncer) Run(ctx context.Context, owned map[int]int) error {
 					}
 				}
 
+				var gone ErrVolumeNotFound
+				if errors.As(err, &gone) {
+					log.Warn().Int("cv_volume_id", cvID).Msg("ComicVine sync: volume no longer exists on ComicVine, not retrying")
+					s.markStatus(cvID, SyncStatusMissing)
+					continue
+				}
 				log.Error().Err(err).Int("cv_volume_id", cvID).Msg("ComicVine sync: volume failed")
-				s.markFailed(cvID)
+				s.markStatus(cvID, SyncStatusFailed)
 				continue
 			}
 		}
@@ -181,12 +187,12 @@ func (s *Syncer) syncVolume(ctx context.Context, cvID int) error {
 	return nil
 }
 
-func (s *Syncer) markFailed(cvID int) {
+func (s *Syncer) markStatus(cvID int, status SyncStatus) {
 	v, err := s.cache.GetVolume(cvID)
 	if err != nil || v == nil {
 		return
 	}
-	v.SyncStatus = SyncStatusFailed
+	v.SyncStatus = status
 	s.cache.UpsertVolume(v)
 }
 
