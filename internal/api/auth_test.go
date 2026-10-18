@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/duckpuppy/comic-server/internal/auth"
+	"github.com/duckpuppy/comic-server/internal/auth/authtest"
 	"github.com/duckpuppy/comic-server/internal/library"
 )
 
@@ -231,5 +233,111 @@ func TestPasswordTooShortAndTokenAPI(t *testing.T) {
 	}
 	if w := do(s, http.MethodDelete, "/api/auth/tokens/1", "", nil, c); w.Code != http.StatusOK {
 		t.Errorf("revoke gave %d", w.Code)
+	}
+}
+
+func TestOIDCRoutesAndSettingsAPI(t *testing.T) {
+	s := authServer(t)
+	// Off: start sends the browser back with a reason, never an error page.
+	w := do(s, http.MethodGet, "/auth/oidc/start", "", nil, nil)
+	if w.Code != http.StatusSeeOther || !strings.Contains(w.Header().Get("Location"), "login_error=sso_off") {
+		t.Errorf("start while off: %d %s", w.Code, w.Header().Get("Location"))
+	}
+	// A callback with no state/cookie fails cleanly.
+	w = do(s, http.MethodGet, "/auth/oidc/callback?state=x&code=y", "", nil, nil)
+	if w.Code != http.StatusSeeOther || !strings.Contains(w.Header().Get("Location"), "login_error=sso_failed") {
+		t.Errorf("bad callback: %d %s", w.Code, w.Header().Get("Location"))
+	}
+	if w := do(s, http.MethodGet, "/auth/oidc/callback?error=access_denied", "", nil, nil); !strings.Contains(w.Header().Get("Location"), "sso_refused") {
+		t.Errorf("provider error: %s", w.Header().Get("Location"))
+	}
+
+	// Settings need a login, and the secret is never returned.
+	w = do(s, http.MethodPost, "/api/auth/password", `{"new_password":"a long enough password"}`, nil, nil)
+	c := sessionCookie(w)
+	if w := do(s, http.MethodGet, "/api/auth/oidc", "", nil, nil); w.Code != http.StatusUnauthorized {
+		t.Errorf("settings without login: %d", w.Code)
+	}
+	body := `{"enabled":true,"issuer":"http://127.0.0.1:1","client_id":"cs","client_secret":"TOP-SECRET","public_url":"https://comic.example.com","allowed_groups":["admins"]}`
+	w = do(s, http.MethodPut, "/api/auth/oidc", body, nil, c)
+	if w.Code != http.StatusOK {
+		t.Fatalf("save: %d %s", w.Code, w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "TOP-SECRET") || !strings.Contains(w.Body.String(), `"has_secret":true`) ||
+		!strings.Contains(w.Body.String(), "https://comic.example.com/auth/oidc/callback") {
+		t.Errorf("save response = %s", w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"check":{"ok":false`) {
+		t.Errorf("unreachable issuer should report a failed check: %s", w.Body.String())
+	}
+	w = do(s, http.MethodGet, "/api/auth/oidc", "", nil, c)
+	if strings.Contains(w.Body.String(), "TOP-SECRET") {
+		t.Error("GET leaks the client secret")
+	}
+	w = do(s, http.MethodGet, "/api/auth/status", "", nil, nil)
+	if !strings.Contains(w.Body.String(), `"oidc":true`) {
+		t.Errorf("status should offer SSO: %s", w.Body.String())
+	}
+	// Start with an unreachable provider goes back with a reason too.
+	w = do(s, http.MethodGet, "/auth/oidc/start", "", nil, nil)
+	if !strings.Contains(w.Header().Get("Location"), "login_error=sso_unreachable") {
+		t.Errorf("unreachable start: %d %s", w.Code, w.Header().Get("Location"))
+	}
+	// Bad settings are a 400 with a reason.
+	w = do(s, http.MethodPut, "/api/auth/oidc", `{"enabled":true,"issuer":"https://x.example","client_id":"a","client_secret":"b","public_url":"https://c.example"}`, nil, c)
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "allowed group or user") {
+		t.Errorf("no allow list: %d %s", w.Code, w.Body.String())
+	}
+}
+
+// The whole browser trip against a fake provider: start, redirect, callback,
+// then the new session works. Also: a person the lists exclude gets no session.
+func TestOIDCFullTripThroughHTTP(t *testing.T) {
+	idp := authtest.NewFakeIdP(t)
+	idp.InfoGroups = []string{"admins"}
+	s := authServer(t)
+	w := do(s, http.MethodPost, "/api/auth/password", `{"new_password":"a long enough password"}`, nil, nil)
+	c := sessionCookie(w)
+	cfg := `{"enabled":true,"issuer":"` + idp.URL() + `","client_id":"cs-client","client_secret":"s","public_url":"http://localhost:7620","allowed_groups":["admins"]}`
+	if w := do(s, http.MethodPut, "/api/auth/oidc", cfg, nil, c); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"check":{"ok":true`) {
+		t.Fatalf("save: %d %s", w.Code, w.Body.String())
+	}
+
+	trip := func() *httptest.ResponseRecorder {
+		w := do(s, http.MethodGet, "/auth/oidc/start", "", nil, nil)
+		if w.Code != http.StatusFound {
+			t.Fatalf("start: %d %s", w.Code, w.Header().Get("Location"))
+		}
+		var binding *http.Cookie
+		for _, ck := range w.Result().Cookies() {
+			if ck.Name == auth.OIDCCookieName {
+				binding = ck
+			}
+		}
+		if binding == nil || !binding.HttpOnly || binding.Path != "/auth/oidc" {
+			t.Fatalf("binding cookie = %+v", binding)
+		}
+		loc, _ := url.Parse(w.Header().Get("Location"))
+		idp.Capture(loc.Query())
+		cb := "/auth/oidc/callback?code=" + idp.Code() + "&state=" + url.QueryEscape(loc.Query().Get("state"))
+		return do(s, http.MethodGet, cb, "", nil, binding)
+	}
+
+	w = trip()
+	if w.Code != http.StatusSeeOther || w.Header().Get("Location") != "/" {
+		t.Fatalf("callback: %d %s", w.Code, w.Header().Get("Location"))
+	}
+	sso := sessionCookie(w)
+	if sso == nil || !sso.HttpOnly {
+		t.Fatalf("no session cookie after sign-in")
+	}
+	if w := do(s, http.MethodGet, "/api/stats", "", nil, sso); w.Code == http.StatusUnauthorized {
+		t.Error("single sign-on session not accepted")
+	}
+
+	idp.InfoGroups = []string{"guests"}
+	w = trip()
+	if !strings.Contains(w.Header().Get("Location"), "login_error=not_allowed") || sessionCookie(w) != nil {
+		t.Errorf("excluded user: %d %s", w.Code, w.Header().Get("Location"))
 	}
 }

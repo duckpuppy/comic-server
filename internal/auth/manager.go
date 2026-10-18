@@ -44,6 +44,7 @@ type Manager struct {
 	db      *configdb.DB
 	proxies []netip.Prefix
 	limiter *ratelimit.IPLimiter
+	oidc    *oidcState
 
 	mu          sync.Mutex
 	enabled     bool
@@ -62,6 +63,7 @@ func New(db *configdb.DB, trustedProxies []string) (*Manager, error) {
 		db:      db,
 		proxies: prefixes,
 		limiter: ratelimit.NewIPLimiter(loginAttempts, loginWindow),
+		oidc:    &oidcState{pending: map[string]pendingLogin{}},
 	}, nil
 }
 
