@@ -486,3 +486,45 @@ func TestUpsertScrapeJobBook_MatchClearsStalePending(t *testing.T) {
 		t.Errorf("PendingReviewJobID = %q, %v; want none", id, err)
 	}
 }
+
+// Rows saved before UpsertScrapeJobBook replaced stale ones can leave one
+// book pending in two jobs; the review list must show it once, newest data.
+func TestGetPendingReviewBooks_OneRowPerBookNewestWins(t *testing.T) {
+	c := testCache(t)
+	for _, j := range []struct{ id, at string }{{"old-job", "2026-01-01T00:00:00Z"}, {"new-job", "2026-02-01T00:00:00Z"}} {
+		if _, err := c.db.Exec(`INSERT INTO scrape_jobs (job_id, status, total, started_at, updated_at) VALUES (?, 'completed', 1, ?, ?)`, j.id, j.at, j.at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Inserted directly: going through UpsertScrapeJobBook would clean the stale row.
+	ins := func(job, book, cand string) {
+		t.Helper()
+		if _, err := c.db.Exec(`INSERT INTO scrape_job_books (job_id, book_id, filename, series, status, candidates_json) VALUES (?, ?, 'f.cbz', 's', ?, ?)`,
+			job, book, BookStatusPendingReview, cand); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ins("old-job", "dup", `[{"volume_id":1,"name":"Stale"}]`)
+	ins("old-job", "solo", `[{"volume_id":7,"name":"Solo"}]`)
+	ins("new-job", "dup", `[{"volume_id":2,"name":"Fresh","issue_count":5}]`)
+
+	got, err := c.GetPendingReviewBooks("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d rows, want 2 (dup once, solo once)", len(got))
+	}
+	// First position is kept: dup was first in the oldest job.
+	if got[0].BookID != "dup" || got[1].BookID != "solo" {
+		t.Errorf("order = %s, %s", got[0].BookID, got[1].BookID)
+	}
+	if len(got[0].Candidates) != 1 || got[0].Candidates[0].Name != "Fresh" || got[0].Candidates[0].IssueCount != 5 {
+		t.Errorf("dup kept stale candidates: %+v", got[0].Candidates)
+	}
+	// Asking for one job still returns that job's own row.
+	oldOnly, err := c.GetPendingReviewBooks("old-job")
+	if err != nil || len(oldOnly) != 2 || oldOnly[0].Candidates[0].Name != "Stale" {
+		t.Errorf("per-job read = %d rows, %v", len(oldOnly), err)
+	}
+}
