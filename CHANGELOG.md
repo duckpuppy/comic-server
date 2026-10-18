@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.63.2](https://github.com/duckpuppy/comic-server/compare/v1.63.1...v1.63.2) (2026-10-18)
+
+
+### Bug Fixes
+
+* **deps:** move to github.com/dlclark/regexp2/v2 v2.9.1 ([#193](https://github.com/duckpuppy/comic-server/issues/193)) ([2e67a84](https://github.com/duckpuppy/comic-server/commit/2e67a848b6464a5f0daef7e2179f23aa41cc1a5b))
+* **deps:** update all non-major dependencies ([#156](https://github.com/duckpuppy/comic-server/issues/156)) ([c76aafd](https://github.com/duckpuppy/comic-server/commit/c76aafd54d03b44cea6f7c85a928f33c6b4fd18e))
+
 ## [1.63.1](https://github.com/duckpuppy/comic-server/compare/v1.63.0...v1.63.1) (2026-10-18)
 
 
