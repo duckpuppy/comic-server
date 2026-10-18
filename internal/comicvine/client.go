@@ -1,6 +1,7 @@
 package comicvine
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -75,15 +76,40 @@ func (c *Client) FetchVolume(ctx context.Context, cvID int) (*Volume, error) {
 	params := url.Values{
 		"field_list": {"id,name,start_year,publisher,count_of_issues,description,deck,site_detail_url,date_added,date_last_updated"},
 	}
-	var resp apiResponse[Volume]
+	// Results stay raw until the status is read: for a volume ComicVine does
+	// not have, "results" is an empty list, not an object, and decoding it
+	// straight into a Volume failed before the status was ever looked at. That
+	// hid the real answer and skipped the pacer's count of the call.
+	var resp apiResponse[json.RawMessage]
 	jobLog(ctx, JobLogInfo, "Fetching volume %d from ComicVine", cvID)
 	if err := c.get(ctx, fmt.Sprintf("/volume/4050-%d", cvID), params, &resp); err != nil {
 		return nil, err
 	}
+	if resp.StatusCode == comicVineObjectNotFound {
+		return nil, ErrVolumeNotFound{CVID: cvID}
+	}
 	if resp.StatusCode != 1 {
 		return nil, fmt.Errorf("comicvine API error %d: %s", resp.StatusCode, resp.Error)
 	}
-	return &resp.Results, nil
+	results := bytes.TrimSpace(resp.Results)
+	if len(results) == 0 || results[0] == '[' || string(results) == "null" {
+		return nil, ErrVolumeNotFound{CVID: cvID}
+	}
+	var vol Volume
+	if err := json.Unmarshal(results, &vol); err != nil {
+		return nil, fmt.Errorf("decode volume %d: %w", cvID, err)
+	}
+	return &vol, nil
+}
+
+// comicVineObjectNotFound is the API's status_code for an id it does not have.
+const comicVineObjectNotFound = 101
+
+// ErrVolumeNotFound means ComicVine has no volume with this id any more.
+type ErrVolumeNotFound struct{ CVID int }
+
+func (e ErrVolumeNotFound) Error() string {
+	return fmt.Sprintf("volume %d is not on ComicVine (deleted or merged)", e.CVID)
 }
 
 // FetchVolumeIssues fetches all issues for a volume, handling pagination.
@@ -177,15 +203,25 @@ func (c *Client) get(ctx context.Context, path string, params url.Values, dest a
 	req.Header.Set("User-Agent", userAgent)
 
 	resp, err := c.http.Do(req)
+	// Every request that went out counts toward the pacer's burst and window,
+	// whatever came back. It used to be counted only after a good answer, so a
+	// run of rate-limit replies was never paced.
+	c.pacer.RecordRequest()
 	if err != nil {
 		c.circuit.RecordFailure()
 		return fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusTooManyRequests ||
-		resp.StatusCode == http.StatusForbidden ||
-		resp.StatusCode >= 500 {
+	// ComicVine says "slow down" with HTTP 420 (status_code 107, "Slow down
+	// cowboy") as well as the usual 429. 420 used to fall through as an
+	// unexpected error, which left the circuit closed: the sync then failed
+	// every pending volume one after another, 200 requests in seconds.
+	if resp.StatusCode == comicVineRateLimitHTTP || resp.StatusCode == http.StatusTooManyRequests {
+		return c.rateLimited(ctx, fmt.Sprintf("HTTP %d", resp.StatusCode))
+	}
+
+	if resp.StatusCode == http.StatusForbidden || resp.StatusCode >= 500 {
 		c.circuit.RecordFailure()
 		return fmt.Errorf("comicvine returned HTTP %d", resp.StatusCode)
 	}
@@ -195,11 +231,38 @@ func (c *Client) get(ctx context.Context, path string, params url.Values, dest a
 		return fmt.Errorf("unexpected HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(dest); err != nil {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read response: %w", err)
+	}
+	// The same refusal can arrive inside a 200 envelope.
+	var probe struct {
+		StatusCode int `json:"status_code"`
+	}
+	if json.Unmarshal(body, &probe) == nil && probe.StatusCode == comicVineRateLimitStatus {
+		return c.rateLimited(ctx, "status_code 107")
+	}
+	if err := json.Unmarshal(body, dest); err != nil {
 		return fmt.Errorf("decode response: %w", err)
 	}
 
 	c.circuit.RecordSuccess()
-	c.pacer.RecordRequest()
 	return nil
+}
+
+const (
+	// comicVineRateLimitHTTP and comicVineRateLimitStatus are how ComicVine
+	// refuses a request for going too fast: HTTP 420 with status_code 107.
+	comicVineRateLimitHTTP   = 420
+	comicVineRateLimitStatus = 107
+)
+
+// rateLimited opens the circuit and reports it the same way an already-open
+// circuit is reported, so every caller (the sync, the scraper, the match
+// endpoint) waits instead of treating the refusal as a failure of one volume.
+func (c *Client) rateLimited(ctx context.Context, what string) error {
+	c.circuit.RecordFailure()
+	until := c.circuit.BackoffUntil()
+	jobLog(ctx, JobLogWarn, "ComicVine is rate limiting this key (%s); requests are paused for %s", what, untilText(until))
+	return ErrCircuitOpen{Until: until}
 }

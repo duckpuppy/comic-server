@@ -263,6 +263,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/auth/password", s.handleAuthPassword)
 	s.mux.HandleFunc("/api/auth/tokens", s.handleAuthTokens)
 	s.mux.HandleFunc("/api/auth/oidc", s.handleOIDCSettings)
+	s.mux.HandleFunc("/api/auth/trusted-proxies", s.handleTrustedProxies)
 	s.mux.HandleFunc("/auth/oidc/start", s.handleOIDCStart)
 	s.mux.HandleFunc("/auth/oidc/callback", s.handleOIDCCallback)
 	s.mux.HandleFunc("/api/auth/tokens/", s.handleAuthTokenItem)

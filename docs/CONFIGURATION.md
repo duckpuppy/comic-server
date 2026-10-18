@@ -421,8 +421,24 @@ used HTTPS (`X-Forwarded-Proto`) and which host it asked for
 (`X-Forwarded-Host`). If this list is wrong, the login rate limit sees the
 proxy's address for everyone, and the session cookie is not marked `Secure`.
 The proxy must pass the `Host` header on (or send `X-Forwarded-Host`), or
-saving anything in the browser is refused as a cross-site request. Not
-re-read on SIGHUP.
+saving anything in the browser is refused as a cross-site request. A range that
+covers every address (`0.0.0.0/0`, `::/0`) is refused.
+
+You can also set the list in **Settings > Security > Trusted proxies**. That
+page shows what the server sees for your own connection (the address it
+arrives from, whether that address is trusted, and the proxy headers), so you
+can tell which address to add. A list saved there overrides config.yaml and the
+environment variable, takes effect at once and needs no restart. A saved empty
+list means "trust no proxy". The button "Use config.yaml / environment instead"
+forgets the saved list.
+
+From a shell, with the server running or stopped:
+
+```bash
+comic-server auth trusted-proxies                    # show the saved list
+comic-server auth trusted-proxies 192.168.0.56       # save a list
+comic-server auth trusted-proxies --clear            # forget it; config.yaml / env apply again
+```
 
 ### Device Management
 

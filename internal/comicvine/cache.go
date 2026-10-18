@@ -239,7 +239,7 @@ func (c *Cache) GetIssuesForVolume(volumeCVID int) ([]CachedIssue, error) {
 // ordered by priority (most-owned-issues first). Takes a map of cvVolumeID → count
 // of books owned in the library for prioritization.
 func (c *Cache) PendingVolumeIDs(owned map[int]int) ([]int, error) {
-	rows, err := c.db.Query(`SELECT cv_id FROM cv_volumes WHERE sync_status = 'pending' OR issues_synced = 0`)
+	rows, err := c.db.Query(`SELECT cv_id FROM cv_volumes WHERE (sync_status = 'pending' OR issues_synced = 0) AND sync_status <> 'missing'`)
 	if err != nil {
 		return nil, err
 	}
@@ -355,6 +355,13 @@ func (c *Cache) SyncStats() (synced, pending, failed int, err error) {
 		FROM cv_volumes`)
 	err = row.Scan(&synced, &pending, &failed)
 	return
+}
+
+// MissingVolumeCount returns how many volumes ComicVine no longer has.
+func (c *Cache) MissingVolumeCount() (int, error) {
+	var n int
+	err := c.db.QueryRow(`SELECT COUNT(*) FROM cv_volumes WHERE sync_status = 'missing'`).Scan(&n)
+	return n, err
 }
 
 // SetSyncState stores a key-value pair for sync state tracking (e.g. backoff timers).
@@ -502,13 +509,18 @@ func (c *Cache) GetScrapeJobBooks(jobID string) (map[string]*BookScrapeResult, e
 // GetPendingReviewBooks returns books awaiting manual review. If jobID is
 // non-empty, results are limited to that job.
 func (c *Cache) GetPendingReviewBooks(jobID string) ([]*BookScrapeResult, error) {
-	query := `SELECT book_id, filename, series, status, volume_cv_id, issue_cv_id,
-		COALESCE(error,''), COALESCE(candidates_json,'') FROM scrape_job_books WHERE status = ?`
+	// Oldest job first, so a later row for the same book can replace an
+	// earlier one below.
+	query := `SELECT b.book_id, b.filename, b.series, b.status, b.volume_cv_id, b.issue_cv_id,
+		COALESCE(b.error,''), COALESCE(b.candidates_json,'')
+		FROM scrape_job_books b LEFT JOIN scrape_jobs j ON j.job_id = b.job_id
+		WHERE b.status = ?`
 	args := []any{BookStatusPendingReview}
 	if jobID != "" {
-		query += " AND job_id = ?"
+		query += " AND b.job_id = ?"
 		args = append(args, jobID)
 	}
+	query += " ORDER BY j.started_at, b.rowid"
 
 	rows, err := c.db.Query(query, args...)
 	if err != nil {
@@ -516,7 +528,13 @@ func (c *Cache) GetPendingReviewBooks(jobID string) ([]*BookScrapeResult, error)
 	}
 	defer rows.Close()
 
+	// One entry per book. A book can hold pending rows in several jobs (rows
+	// saved before UpsertScrapeJobBook started replacing them are never
+	// cleaned up), and listing each shows the same book twice, the old one
+	// with stale candidates. The newest job's row wins and keeps the book's
+	// first position in the list.
 	var results []*BookScrapeResult
+	at := map[string]int{}
 	for rows.Next() {
 		r, candidatesJSON, err := scanScrapeJobBookRow(rows)
 		if err != nil {
@@ -525,6 +543,11 @@ func (c *Cache) GetPendingReviewBooks(jobID string) ([]*BookScrapeResult, error)
 		if err := decodeCandidates(r, candidatesJSON); err != nil {
 			return nil, err
 		}
+		if i, seen := at[r.BookID]; seen {
+			results[i] = r
+			continue
+		}
+		at[r.BookID] = len(results)
 		results = append(results, r)
 	}
 	return results, rows.Err()

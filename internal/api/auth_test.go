@@ -341,3 +341,48 @@ func TestOIDCFullTripThroughHTTP(t *testing.T) {
 		t.Errorf("excluded user: %d %s", w.Code, w.Header().Get("Location"))
 	}
 }
+
+func TestTrustedProxiesAPI(t *testing.T) {
+	s := authServer(t)
+	w := do(s, http.MethodPost, "/api/auth/password", `{"new_password":"a long enough password"}`, nil, nil)
+	c := sessionCookie(w)
+	if w := do(s, http.MethodGet, "/api/auth/trusted-proxies", "", nil, nil); w.Code != http.StatusUnauthorized {
+		t.Errorf("without login: %d", w.Code)
+	}
+
+	// do() connects from 192.0.2.10: not trusted until saved.
+	w = do(s, http.MethodGet, "/api/auth/trusted-proxies", "", map[string]string{"X-Forwarded-For": "203.0.113.4"}, c)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"source":"config"`) ||
+		!strings.Contains(w.Body.String(), `"peer_trusted":false`) || !strings.Contains(w.Body.String(), `"peer_ip":"192.0.2.10"`) {
+		t.Fatalf("get: %d %s", w.Code, w.Body.String())
+	}
+
+	// Save the peer as a proxy: it applies on the very next request.
+	w = do(s, http.MethodPut, "/api/auth/trusted-proxies", `{"proxies":["192.0.2.10"]}`, nil, c)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"source":"saved"`) || !strings.Contains(w.Body.String(), `"proxies":["192.0.2.10"]`) {
+		t.Fatalf("put: %d %s", w.Code, w.Body.String())
+	}
+	w = do(s, http.MethodGet, "/api/auth/trusted-proxies", "", map[string]string{"X-Forwarded-For": "203.0.113.4"}, c)
+	if !strings.Contains(w.Body.String(), `"peer_trusted":true`) || !strings.Contains(w.Body.String(), `"client_ip":"203.0.113.4"`) {
+		t.Errorf("after save: %s", w.Body.String())
+	}
+
+	// Bad entries are refused with the entry named, and change nothing.
+	w = do(s, http.MethodPut, "/api/auth/trusted-proxies", `{"proxies":["192.0.2.99","banana"]}`, nil, c)
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "banana") {
+		t.Errorf("bad entry: %d %s", w.Code, w.Body.String())
+	}
+	if w := do(s, http.MethodPut, "/api/auth/trusted-proxies", `{"proxies":["0.0.0.0/0"]}`, nil, c); w.Code != http.StatusBadRequest {
+		t.Errorf("trust-everyone range accepted: %d", w.Code)
+	}
+	// A cross-site write is refused like every other cookie write.
+	if w := do(s, http.MethodPut, "/api/auth/trusted-proxies", `{"proxies":[]}`, map[string]string{"Origin": "https://evil.example"}, c); w.Code != http.StatusForbidden {
+		t.Errorf("cross-site PUT gave %d", w.Code)
+	}
+
+	// DELETE goes back to config.yaml / env.
+	w = do(s, http.MethodDelete, "/api/auth/trusted-proxies", "", nil, c)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"source":"config"`) {
+		t.Errorf("delete: %d %s", w.Code, w.Body.String())
+	}
+}

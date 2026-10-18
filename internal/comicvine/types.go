@@ -102,6 +102,9 @@ const (
 	SyncStatusPending SyncStatus = "pending"
 	SyncStatusSynced  SyncStatus = "synced"
 	SyncStatusFailed  SyncStatus = "failed"
+	// SyncStatusMissing: ComicVine no longer has this volume (deleted or merged).
+	// Not retried by the background sync; it is not a failure of ours.
+	SyncStatusMissing SyncStatus = "missing"
 )
 
 // CachedVolume is a locally cached ComicVine volume with sync metadata.

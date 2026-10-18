@@ -1,5 +1,39 @@
 # Changelog
 
+## [1.63.1](https://github.com/duckpuppy/comic-server/compare/v1.63.0...v1.63.1) (2026-10-18)
+
+
+### Bug Fixes
+
+* treat ComicVine's HTTP 420 "slow down" as a rate limit, and pace every request ([#191](https://github.com/duckpuppy/comic-server/issues/191)) ([6b6fb8a](https://github.com/duckpuppy/comic-server/commit/6b6fb8a978af7a4258354fd1e02add7e0212c558))
+
+## [1.63.0](https://github.com/duckpuppy/comic-server/compare/v1.62.1...v1.63.0) (2026-10-18)
+
+
+### Features
+
+* set the trusted proxy list from Settings, with a view of what the server sees ([#189](https://github.com/duckpuppy/comic-server/issues/189)) ([d2278a0](https://github.com/duckpuppy/comic-server/commit/d2278a0078354a91212265194a9caa29320b23b5))
+
+
+### Bug Fixes
+
+* stop timing-based library tests from failing releases at random ([#188](https://github.com/duckpuppy/comic-server/issues/188)) ([a2152fc](https://github.com/duckpuppy/comic-server/commit/a2152fcdbeeda0d9cc5634bc4ae79717548ce790))
+
+## [1.62.1](https://github.com/duckpuppy/comic-server/compare/v1.62.0...v1.62.1) (2026-10-18)
+
+
+### Bug Fixes
+
+* list a book once in Scrape Review when old jobs left extra pending rows ([#185](https://github.com/duckpuppy/comic-server/issues/185)) ([9e17f1d](https://github.com/duckpuppy/comic-server/commit/9e17f1dba55c6fc910fc960faacc1a3b1879b0b4))
+* treat a ComicVine volume that no longer exists as missing, not as a failure ([#186](https://github.com/duckpuppy/comic-server/issues/186)) ([afc17ce](https://github.com/duckpuppy/comic-server/commit/afc17ce06f78df620ca103c6c5c6e4e1c37b83a7))
+
+## [1.62.0](https://github.com/duckpuppy/comic-server/compare/v1.61.0...v1.62.0) (2026-10-17)
+
+
+### Features
+
+* built-in login for the web UI and API, off until a password is set ([#182](https://github.com/duckpuppy/comic-server/issues/182)) ([075c9e2](https://github.com/duckpuppy/comic-server/commit/075c9e2f647c3ee7bf2ebef34bccc16b2176a821))
+
 ## [1.61.0](https://github.com/duckpuppy/comic-server/compare/v1.60.1...v1.61.0) (2026-10-17)
 
 
