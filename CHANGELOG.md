@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.63.0](https://github.com/duckpuppy/comic-server/compare/v1.62.1...v1.63.0) (2026-10-18)
+
+
+### Features
+
+* set the trusted proxy list from Settings, with a view of what the server sees ([#189](https://github.com/duckpuppy/comic-server/issues/189)) ([d2278a0](https://github.com/duckpuppy/comic-server/commit/d2278a0078354a91212265194a9caa29320b23b5))
+
+
+### Bug Fixes
+
+* stop timing-based library tests from failing releases at random ([#188](https://github.com/duckpuppy/comic-server/issues/188)) ([a2152fc](https://github.com/duckpuppy/comic-server/commit/a2152fcdbeeda0d9cc5634bc4ae79717548ce790))
+
 ## [1.62.1](https://github.com/duckpuppy/comic-server/compare/v1.62.0...v1.62.1) (2026-10-18)
 
 
