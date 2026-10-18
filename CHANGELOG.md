@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.63.1](https://github.com/duckpuppy/comic-server/compare/v1.63.0...v1.63.1) (2026-10-18)
+
+
+### Bug Fixes
+
+* treat ComicVine's HTTP 420 "slow down" as a rate limit, and pace every request ([#191](https://github.com/duckpuppy/comic-server/issues/191)) ([6b6fb8a](https://github.com/duckpuppy/comic-server/commit/6b6fb8a978af7a4258354fd1e02add7e0212c558))
+
 ## [1.63.0](https://github.com/duckpuppy/comic-server/compare/v1.62.1...v1.63.0) (2026-10-18)
 
 
