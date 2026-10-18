@@ -2,9 +2,11 @@ package comicvine
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestExtractCVVolumeID(t *testing.T) {
@@ -128,5 +130,36 @@ func TestSyncer_MissingVolumeIsNotRetried(t *testing.T) {
 	}
 	if ids, _ := c.PendingVolumeIDs(map[int]int{}); len(ids) != 1 || ids[0] != 200 {
 		t.Errorf("failed volume should stay pending-for-retry, got %v", ids)
+	}
+}
+
+// While ComicVine says "slow down", the sync must stop after one refusal and
+// leave every volume as it was, instead of failing the whole queue.
+func TestSyncer_RateLimitPausesInsteadOfFailingVolumes(t *testing.T) {
+	c := testCache(t)
+	hits := 0
+	client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.WriteHeader(420)
+		_, _ = w.Write([]byte(`{"error":"Rate limit exceeded.  Slow down cowboy.","status_code":107,"results":[]}`))
+	})
+	syncer := NewSyncer(client, c)
+	stores := []string{",comicvine_volume=1", ",comicvine_volume=2", ",comicvine_volume=3", ",comicvine_volume=4"}
+	if _, err := syncer.SeedFromLibrary(stores); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	err := syncer.Run(ctx, map[int]int{1: 4, 2: 3, 3: 2, 4: 1})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Run err = %v, want it to be waiting out the pause until the context ended", err)
+	}
+	if hits != 1 {
+		t.Errorf("ComicVine saw %d requests, want 1", hits)
+	}
+	synced, pending, failed, _ := c.SyncStats()
+	if synced != 0 || pending != 4 || failed != 0 {
+		t.Errorf("synced=%d pending=%d failed=%d, want 0/4/0 (a rate limit is not a failure)", synced, pending, failed)
 	}
 }
