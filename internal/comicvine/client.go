@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -41,6 +42,34 @@ func WithCircuitBreaker(cb *CircuitBreaker) ClientOption {
 func WithPacer(p *Pacer) ClientOption {
 	return func(cl *Client) { cl.pacer = p }
 }
+
+var (
+	sharedMu      sync.Mutex
+	sharedPacer   *Pacer
+	sharedCircuit *CircuitBreaker
+)
+
+// WithSharedPersistentLimits gives the client the process-wide pacer and
+// circuit breaker, which keep their state in store and so survive a restart.
+// The sync, the scraper and the match endpoint all talk to ComicVine with one
+// key, so they must count against one pacer, not one each. The first call
+// creates them; later calls reuse them whatever store they pass.
+func WithSharedPersistentLimits(store StateStore) ClientOption {
+	sharedMu.Lock()
+	defer sharedMu.Unlock()
+	if sharedPacer == nil {
+		sharedPacer = NewPacer(WithPacerStore(store))
+		sharedCircuit = NewCircuitBreaker(WithCircuitStore(store))
+	}
+	p, cb := sharedPacer, sharedCircuit
+	return func(cl *Client) { cl.pacer, cl.circuit = p, cb }
+}
+
+// Circuit returns the client's circuit breaker.
+func (c *Client) Circuit() *CircuitBreaker { return c.circuit }
+
+// RequestsLastHour returns how many ComicVine requests went out in the last hour, restarts included.
+func (c *Client) RequestsLastHour() int { return c.pacer.RequestsLastHour() }
 
 // WithBaseURL overrides the ComicVine API base URL (used in tests).
 func WithBaseURL(u string) ClientOption {
@@ -263,6 +292,6 @@ const (
 func (c *Client) rateLimited(ctx context.Context, what string) error {
 	c.circuit.RecordFailure()
 	until := c.circuit.BackoffUntil()
-	jobLog(ctx, JobLogWarn, "ComicVine is rate limiting this key (%s); requests are paused for %s", what, untilText(until))
+	jobLog(ctx, JobLogWarn, "ComicVine is rate limiting this key (%s) after %d requests in the last hour; requests are paused for %s", what, c.pacer.RequestsLastHour(), untilText(until))
 	return ErrCircuitOpen{Until: until}
 }

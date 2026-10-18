@@ -1594,7 +1594,7 @@ func wireScraperAPI(apiServer *api.Server, apiKey, cachePathOverride string) err
 		return fmt.Errorf("open ComicVine cache: %w", err)
 	}
 
-	client := comicvine.NewClient(apiKey)
+	client := comicvine.NewClient(apiKey, comicvine.WithSharedPersistentLimits(cache))
 	apiServer.SetScraper(client, cache)
 	return nil
 }
@@ -1613,16 +1613,17 @@ func startComicVineSync(ctx context.Context, apiKey string, backend library.Back
 	}
 	defer cache.Close()
 
-	client := comicvine.NewClient(apiKey,
-		comicvine.WithCircuitBreaker(comicvine.NewCircuitBreaker(
-			comicvine.WithOnStateChange(func(from, to comicvine.CircuitState) {
-				log.Info().
-					Str("from", from.String()).
-					Str("to", to.String()).
-					Msg("ComicVine sync: circuit breaker state change")
-			}),
-		)),
-	)
+	client := comicvine.NewClient(apiKey, comicvine.WithSharedPersistentLimits(cache))
+	client.Circuit().SetOnStateChange(func(from, to comicvine.CircuitState) {
+		log.Info().
+			Str("from", from.String()).
+			Str("to", to.String()).
+			Msg("ComicVine sync: circuit breaker state change")
+	})
+	log.Info().
+		Int("requests_last_hour", client.RequestsLastHour()).
+		Str("circuit", client.Circuit().State().String()).
+		Msg("ComicVine sync: starting")
 
 	syncer := comicvine.NewSyncer(client, cache)
 

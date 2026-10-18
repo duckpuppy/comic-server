@@ -1,6 +1,7 @@
 package comicvine
 
 import (
+	"encoding/json"
 	"sync"
 	"time"
 )
@@ -44,6 +45,65 @@ type CircuitBreaker struct {
 	maxBackoff      time.Duration
 	consecutiveOK   int
 	onStateChange   func(from, to CircuitState)
+	store           StateStore
+}
+
+const circuitStateKey = "circuit_state"
+
+type circuitSaved struct {
+	Open        bool  `json:"open"`
+	BackoffMs   int64 `json:"backoff_ms"`
+	UntilUnixMs int64 `json:"until_ms"`
+}
+
+// WithCircuitStore makes the breaker keep its open/backoff state across
+// restarts, so a restart during a backoff does not send a request at once.
+func WithCircuitStore(s StateStore) CircuitBreakerOption {
+	return func(cb *CircuitBreaker) { cb.store = s }
+}
+
+// SetOnStateChange sets the state-change callback after creation.
+func (cb *CircuitBreaker) SetOnStateChange(fn func(from, to CircuitState)) {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	cb.onStateChange = fn
+}
+
+func (cb *CircuitBreaker) load() {
+	if cb.store == nil {
+		return
+	}
+	raw, err := cb.store.GetSyncState(circuitStateKey)
+	if err != nil || raw == "" {
+		return
+	}
+	var st circuitSaved
+	if json.Unmarshal([]byte(raw), &st) != nil || !st.Open {
+		return
+	}
+	if d := time.Duration(st.BackoffMs) * time.Millisecond; d >= cb.minBackoff && d <= cb.maxBackoff {
+		cb.backoffDuration = d
+	}
+	cb.backoffUntil = time.UnixMilli(st.UntilUnixMs)
+	// If the backoff already passed, Allow moves to half-open for one probe.
+	cb.state = CircuitOpen
+}
+
+// save writes the state out. Caller holds mu. A failed save is ignored.
+func (cb *CircuitBreaker) save() {
+	if cb.store == nil {
+		return
+	}
+	st := circuitSaved{
+		Open:        cb.state != CircuitClosed,
+		BackoffMs:   cb.backoffDuration.Milliseconds(),
+		UntilUnixMs: cb.backoffUntil.UnixMilli(),
+	}
+	b, err := json.Marshal(st)
+	if err != nil {
+		return
+	}
+	_ = cb.store.SetSyncState(circuitStateKey, string(b))
 }
 
 // CircuitBreakerOption configures a CircuitBreaker.
@@ -72,6 +132,7 @@ func NewCircuitBreaker(opts ...CircuitBreakerOption) *CircuitBreaker {
 		o(cb)
 	}
 	cb.backoffDuration = cb.minBackoff
+	cb.load()
 	return cb
 }
 
@@ -121,6 +182,7 @@ func (cb *CircuitBreaker) RecordSuccess() {
 		cb.backoffDuration = cb.minBackoff
 		cb.backoffUntil = time.Time{}
 		cb.transition(CircuitClosed)
+		cb.save()
 	}
 }
 
@@ -142,6 +204,7 @@ func (cb *CircuitBreaker) RecordFailure() {
 
 	cb.backoffUntil = time.Now().Add(cb.backoffDuration)
 	cb.transition(CircuitOpen)
+	cb.save()
 }
 
 // Reset forces the circuit back to closed state (e.g. on server startup with fresh state).
@@ -152,6 +215,7 @@ func (cb *CircuitBreaker) Reset() {
 	cb.backoffUntil = time.Time{}
 	cb.consecutiveOK = 0
 	cb.transition(CircuitClosed)
+	cb.save()
 }
 
 func (cb *CircuitBreaker) transition(to CircuitState) {
