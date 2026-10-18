@@ -8,6 +8,7 @@ class SecuritySettings {
         this.error = '';
         this.notice = '';
         this.newToken = '';     // shown once, right after creation
+        this.oidc = null;       // GET /api/auth/oidc
         this.busy = false;
         this.load();
     }
@@ -26,8 +27,11 @@ class SecuritySettings {
             if (this.status.enabled) {
                 const t = await fetch('/api/auth/tokens');
                 this.tokens = t.ok ? ((await t.json()).tokens || []) : [];
+                const o = await fetch('/api/auth/oidc');
+                this.oidc = o.ok ? await o.json() : null;
             } else {
                 this.tokens = [];
+                this.oidc = null;
             }
             this.error = '';
         } catch (e) {
@@ -90,6 +94,38 @@ class SecuritySettings {
             </div>`;
     }
 
+    renderOIDC() {
+        if (!this.status.enabled || !this.oidc) return '';
+        const o = this.oidc;
+        const check = o.check
+            ? (o.check.ok ? '<p class="form-help" role="status">The provider answered. Try it: sign out, then use the single sign-on button.</p>'
+                : `<p class="datamanager-errors">The settings are saved, but the provider could not be reached: ${this.esc(o.check.error)}</p>`)
+            : '';
+        return `
+            <h3>Single sign-on (Authelia, or any OpenID Connect provider)</h3>
+            <p class="form-help">Adds a sign-in button next to the password. The password keeps working, so a provider outage cannot lock you out.
+                In the provider, register this server as a client with the redirect address shown below, the <code>authorization_code</code> flow with PKCE,
+                and the scopes <code>openid profile email groups</code>.</p>
+            ${check}
+            <div class="form-group"><label><input type="checkbox" id="oidc-enabled" ${o.enabled ? 'checked' : ''}> Allow sign-in with single sign-on</label></div>
+            <div class="form-group"><label for="oidc-issuer">Provider address (issuer)</label>
+                <input type="text" id="oidc-issuer" class="form-control" value="${this.esc(o.issuer)}" placeholder="https://login.example.com" style="max-width:28rem;"></div>
+            <div class="form-group"><label for="oidc-client">Client ID</label>
+                <input type="text" id="oidc-client" class="form-control" value="${this.esc(o.client_id)}" autocomplete="off" style="max-width:20rem;"></div>
+            <div class="form-group"><label for="oidc-secret">Client secret</label>
+                <input type="password" id="oidc-secret" class="form-control" autocomplete="new-password" placeholder="${o.has_secret ? 'saved - leave empty to keep it' : ''}" style="max-width:20rem;">
+                <div class="form-help">Stored in this server's database, so it is also in backups. It is never shown again.</div></div>
+            <div class="form-group"><label for="oidc-public">This server's address, as browsers use it</label>
+                <input type="text" id="oidc-public" class="form-control" value="${this.esc(o.public_url)}" placeholder="https://comic.example.com" style="max-width:28rem;">
+                ${o.redirect_uri ? `<div class="form-help">Redirect address to register: <code>${this.esc(o.redirect_uri)}</code></div>` : ''}</div>
+            <div class="form-group"><label for="oidc-groups">Allowed groups (comma separated)</label>
+                <input type="text" id="oidc-groups" class="form-control" value="${this.esc((o.allowed_groups || []).join(', '))}" style="max-width:28rem;"></div>
+            <div class="form-group"><label for="oidc-users">Allowed users (comma separated; a username, or a verified email)</label>
+                <input type="text" id="oidc-users" class="form-control" value="${this.esc((o.allowed_users || []).join(', '))}" style="max-width:28rem;">
+                <div class="form-help">At least one group or user is required. Nobody else in your single sign-on can get in.</div></div>
+            <div class="scan-info-actions"><button class="btn btn-primary" id="oidc-save" ${this.busy ? 'disabled' : ''}>Save single sign-on</button></div>`;
+    }
+
     render() {
         if (!this.host || !document.body.contains(this.host)) return;
         if (!this.status) {
@@ -105,6 +141,7 @@ class SecuritySettings {
                 ${this.notice ? `<p class="form-help" role="status">${this.esc(this.notice)}</p>` : ''}
                 ${this.renderPassword()}
                 ${this.renderTokens()}
+                ${this.renderOIDC()}
             </div>`;
         this.attach();
     }
@@ -114,6 +151,7 @@ class SecuritySettings {
         $('#sec-save')?.addEventListener('click', () => this.savePassword());
         $('#sec-logout')?.addEventListener('click', () => window.AuthUI && window.AuthUI.logout());
         $('#sec-token-create')?.addEventListener('click', () => this.createToken());
+        $('#oidc-save')?.addEventListener('click', () => this.saveOIDC());
         this.host.querySelectorAll('[data-revoke]').forEach(b =>
             b.addEventListener('click', () => this.revoke(b.dataset.revoke)));
     }
@@ -137,6 +175,29 @@ class SecuritySettings {
         }
         this.busy = false;
         await this.load();
+    }
+
+    async saveOIDC() {
+        const v = (id) => ((this.host.querySelector(id) || {}).value || '').trim();
+        const list = (id) => v(id).split(',').map(x => x.trim()).filter(Boolean);
+        this.busy = true;
+        try {
+            const out = await this.post('/api/auth/oidc', {
+                enabled: this.host.querySelector('#oidc-enabled').checked,
+                issuer: v('#oidc-issuer'), client_id: v('#oidc-client'), client_secret: (this.host.querySelector('#oidc-secret') || {}).value || '',
+                public_url: v('#oidc-public'), allowed_groups: list('#oidc-groups'), allowed_users: list('#oidc-users'),
+            }, 'PUT');
+            this.error = '';
+            this.notice = 'Single sign-on settings saved.';
+            this.busy = false;
+            this.oidc = out;
+            return this.render();
+        } catch (e) {
+            this.error = e.message;
+            this.notice = '';
+        }
+        this.busy = false;
+        this.render();
     }
 
     async createToken() {

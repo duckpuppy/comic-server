@@ -32,6 +32,30 @@
         return res;
     };
 
+    const LOGIN_ERRORS = {
+        not_allowed: 'Your account signed in, but it is not allowed to use this server.',
+        sso_off: 'Single sign-on is not switched on.',
+        sso_unreachable: 'Could not reach the sign-in provider. Use your password instead.',
+        sso_refused: 'The sign-in provider refused the request.',
+        sso_failed: 'Single sign-on failed. Try again, or use your password.',
+        rate_limited: 'Too many attempts. Wait a few minutes.',
+    };
+
+    // The callback sends failures back as ?login_error=<code>.
+    function takeLoginError() {
+        try {
+            const url = new URL(location.href);
+            const code = url.searchParams.get('login_error');
+            if (!code) return '';
+            url.searchParams.delete('login_error');
+            history.replaceState(null, '', url.pathname + url.search + url.hash);
+            return LOGIN_ERRORS[code] || 'Sign-in failed.';
+        } catch (e) {
+            return '';
+        }
+    }
+    let pendingError = takeLoginError();
+
     function showLogin() {
         if (overlay) return;
         overlay = document.createElement('div');
@@ -53,7 +77,21 @@
         const form = overlay.querySelector('#auth-login-form');
         const pw = overlay.querySelector('#auth-password');
         const err = overlay.querySelector('#auth-error');
+        if (pendingError) {
+            err.textContent = pendingError;
+            pendingError = '';
+        }
         pw.focus();
+        // Offer single sign-on when the server has it switched on.
+        realFetch('/api/auth/status').then(r => r.ok ? r.json() : null).then(st => {
+            if (!st || !st.oidc || !overlay) return;
+            const a = document.createElement('a');
+            a.href = '/auth/oidc/start';
+            a.className = 'btn btn-secondary';
+            a.textContent = 'Sign in with single sign-on';
+            a.style.cssText = 'display:block;width:100%;box-sizing:border-box;text-align:center;margin-top:.5rem;';
+            form.appendChild(a);
+        }).catch(() => {});
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             err.textContent = '';

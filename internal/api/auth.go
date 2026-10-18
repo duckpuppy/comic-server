@@ -102,6 +102,7 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, map[string]bool{
 		"enabled":       enabled,
 		"authenticated": !enabled || s.auth.Authenticate(r) != auth.None,
+		"oidc":          enabled && s.auth.OIDCAvailable(),
 	})
 }
 

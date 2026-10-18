@@ -373,6 +373,39 @@ cookie or an API token (`Authorization: Bearer cs_...`, created in Settings >
 Security). `/api/health` and `/api/version` stay open. Device sync (TCP 7614)
 does not use the login.
 
+#### Sign in with Authelia (OpenID Connect)
+
+Settings > Security can add a "single sign-on" button next to the password. It
+works with Authelia or any OpenID Connect provider. The password keeps working,
+so a provider outage cannot lock you out. You need a local password first.
+
+In Authelia, add a client (the secret is stored hashed there; comic-server needs
+the plain secret):
+
+```yaml
+identity_providers:
+  oidc:
+    clients:
+      - client_id: 'comic-server'
+        client_name: 'Comic Server'
+        client_secret: '$pbkdf2-sha512$...'      # hash of the secret you give comic-server
+        public: false
+        authorization_policy: 'one_factor'       # or two_factor
+        redirect_uris:
+          - 'https://comic.example.com/auth/oidc/callback'
+        scopes: ['openid', 'profile', 'email', 'groups']
+        response_types: ['code']
+        grant_types: ['authorization_code']
+        pkce_challenge_method: 'S256'
+        token_endpoint_auth_method: 'client_secret_basic'
+```
+
+Then fill in the form: the provider address (issuer, for example
+`https://login.example.com`), client ID and secret, this server's public address
+(the same host as in `redirect_uris`), and the groups or users who may sign in.
+At least one group or user is required: anyone else in your sign-on is refused.
+Users match by username, or by email when the provider marks it verified.
+
 #### trusted_proxies
 
 IPs or CIDRs of reverse proxies in front of the server (Nginx Proxy Manager,
