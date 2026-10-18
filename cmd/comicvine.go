@@ -51,7 +51,8 @@ func runCVStatus(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("get stats: %w", err)
 	}
 
-	total := synced + pending + failed
+	missing, _ := cache.MissingVolumeCount()
+	total := synced + pending + failed + missing
 	fmt.Printf("ComicVine Enrichment Cache\n")
 	fmt.Printf("  Path:    %s\n", cachePath)
 	fmt.Printf("  Volumes: %d total\n", total)
@@ -62,6 +63,7 @@ func runCVStatus(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 	fmt.Printf("  Pending: %d\n", pending)
 	fmt.Printf("  Failed:  %d\n", failed)
+	fmt.Printf("  Missing: %d (no longer on ComicVine)\n", missing)
 
 	return nil
 }

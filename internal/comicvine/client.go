@@ -1,6 +1,7 @@
 package comicvine
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -75,15 +76,40 @@ func (c *Client) FetchVolume(ctx context.Context, cvID int) (*Volume, error) {
 	params := url.Values{
 		"field_list": {"id,name,start_year,publisher,count_of_issues,description,deck,site_detail_url,date_added,date_last_updated"},
 	}
-	var resp apiResponse[Volume]
+	// Results stay raw until the status is read: for a volume ComicVine does
+	// not have, "results" is an empty list, not an object, and decoding it
+	// straight into a Volume failed before the status was ever looked at. That
+	// hid the real answer and skipped the pacer's count of the call.
+	var resp apiResponse[json.RawMessage]
 	jobLog(ctx, JobLogInfo, "Fetching volume %d from ComicVine", cvID)
 	if err := c.get(ctx, fmt.Sprintf("/volume/4050-%d", cvID), params, &resp); err != nil {
 		return nil, err
 	}
+	if resp.StatusCode == comicVineObjectNotFound {
+		return nil, ErrVolumeNotFound{CVID: cvID}
+	}
 	if resp.StatusCode != 1 {
 		return nil, fmt.Errorf("comicvine API error %d: %s", resp.StatusCode, resp.Error)
 	}
-	return &resp.Results, nil
+	results := bytes.TrimSpace(resp.Results)
+	if len(results) == 0 || results[0] == '[' || string(results) == "null" {
+		return nil, ErrVolumeNotFound{CVID: cvID}
+	}
+	var vol Volume
+	if err := json.Unmarshal(results, &vol); err != nil {
+		return nil, fmt.Errorf("decode volume %d: %w", cvID, err)
+	}
+	return &vol, nil
+}
+
+// comicVineObjectNotFound is the API's status_code for an id it does not have.
+const comicVineObjectNotFound = 101
+
+// ErrVolumeNotFound means ComicVine has no volume with this id any more.
+type ErrVolumeNotFound struct{ CVID int }
+
+func (e ErrVolumeNotFound) Error() string {
+	return fmt.Sprintf("volume %d is not on ComicVine (deleted or merged)", e.CVID)
 }
 
 // FetchVolumeIssues fetches all issues for a volume, handling pagination.

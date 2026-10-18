@@ -3,6 +3,7 @@ package comicvine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -169,5 +170,44 @@ func TestFetchIssueDetail_HTTPError(t *testing.T) {
 	_, err := client.FetchIssueDetail(context.Background(), 1)
 	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestFetchVolume_NotFoundIsItsOwnError(t *testing.T) {
+	cases := map[string]string{
+		"status 101, empty list":         `{"status_code":101,"error":"Object Not Found","results":[]}`,
+		"status 1 but empty list":        `{"status_code":1,"error":"OK","results":[]}`,
+		"status 101, results missing":    `{"status_code":101,"error":"Object Not Found"}`,
+		"status 1 but results is null":   `{"status_code":1,"error":"OK","results":null}`,
+		"status 101, results is a plain": `{"status_code":101,"error":"Object Not Found","results":{}}`,
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			client := testClient(t, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(body)) })
+			_, err := client.FetchVolume(context.Background(), 33138)
+			var gone ErrVolumeNotFound
+			if !errors.As(err, &gone) || gone.CVID != 33138 {
+				t.Fatalf("err = %v, want ErrVolumeNotFound for 33138", err)
+			}
+		})
+	}
+}
+
+func TestFetchVolume_OtherAnswersStayDistinct(t *testing.T) {
+	client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"status_code":100,"error":"Invalid API Key","results":[]}`))
+	})
+	_, err := client.FetchVolume(context.Background(), 1)
+	var gone ErrVolumeNotFound
+	if err == nil || errors.As(err, &gone) || !strings.Contains(err.Error(), "Invalid API Key") {
+		t.Fatalf("err = %v, want the API's own error, not not-found", err)
+	}
+
+	client = testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"status_code":1,"error":"OK","results":{"id":4,"name":"Batman","start_year":"1940","count_of_issues":12}}`))
+	})
+	v, err := client.FetchVolume(context.Background(), 4)
+	if err != nil || v.ID != 4 || v.Name != "Batman" || v.CountOfIssues != 12 {
+		t.Fatalf("volume = %+v, %v", v, err)
 	}
 }
