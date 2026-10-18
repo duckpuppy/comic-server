@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.62.1](https://github.com/duckpuppy/comic-server/compare/v1.62.0...v1.62.1) (2026-10-18)
+
+
+### Bug Fixes
+
+* list a book once in Scrape Review when old jobs left extra pending rows ([#185](https://github.com/duckpuppy/comic-server/issues/185)) ([9e17f1d](https://github.com/duckpuppy/comic-server/commit/9e17f1dba55c6fc910fc960faacc1a3b1879b0b4))
+* treat a ComicVine volume that no longer exists as missing, not as a failure ([#186](https://github.com/duckpuppy/comic-server/issues/186)) ([afc17ce](https://github.com/duckpuppy/comic-server/commit/afc17ce06f78df620ca103c6c5c6e4e1c37b83a7))
+
 ## [1.62.0](https://github.com/duckpuppy/comic-server/compare/v1.61.0...v1.62.0) (2026-10-17)
 
 
