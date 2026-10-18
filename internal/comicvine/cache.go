@@ -502,13 +502,18 @@ func (c *Cache) GetScrapeJobBooks(jobID string) (map[string]*BookScrapeResult, e
 // GetPendingReviewBooks returns books awaiting manual review. If jobID is
 // non-empty, results are limited to that job.
 func (c *Cache) GetPendingReviewBooks(jobID string) ([]*BookScrapeResult, error) {
-	query := `SELECT book_id, filename, series, status, volume_cv_id, issue_cv_id,
-		COALESCE(error,''), COALESCE(candidates_json,'') FROM scrape_job_books WHERE status = ?`
+	// Oldest job first, so a later row for the same book can replace an
+	// earlier one below.
+	query := `SELECT b.book_id, b.filename, b.series, b.status, b.volume_cv_id, b.issue_cv_id,
+		COALESCE(b.error,''), COALESCE(b.candidates_json,'')
+		FROM scrape_job_books b LEFT JOIN scrape_jobs j ON j.job_id = b.job_id
+		WHERE b.status = ?`
 	args := []any{BookStatusPendingReview}
 	if jobID != "" {
-		query += " AND job_id = ?"
+		query += " AND b.job_id = ?"
 		args = append(args, jobID)
 	}
+	query += " ORDER BY j.started_at, b.rowid"
 
 	rows, err := c.db.Query(query, args...)
 	if err != nil {
@@ -516,7 +521,13 @@ func (c *Cache) GetPendingReviewBooks(jobID string) ([]*BookScrapeResult, error)
 	}
 	defer rows.Close()
 
+	// One entry per book. A book can hold pending rows in several jobs (rows
+	// saved before UpsertScrapeJobBook started replacing them are never
+	// cleaned up), and listing each shows the same book twice, the old one
+	// with stale candidates. The newest job's row wins and keeps the book's
+	// first position in the list.
 	var results []*BookScrapeResult
+	at := map[string]int{}
 	for rows.Next() {
 		r, candidatesJSON, err := scanScrapeJobBookRow(rows)
 		if err != nil {
@@ -525,6 +536,11 @@ func (c *Cache) GetPendingReviewBooks(jobID string) ([]*BookScrapeResult, error)
 		if err := decodeCandidates(r, candidatesJSON); err != nil {
 			return nil, err
 		}
+		if i, seen := at[r.BookID]; seen {
+			results[i] = r
+			continue
+		}
+		at[r.BookID] = len(results)
 		results = append(results, r)
 	}
 	return results, rows.Err()
