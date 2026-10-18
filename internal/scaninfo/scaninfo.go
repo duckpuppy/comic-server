@@ -21,7 +21,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/dlclark/regexp2"
+	"github.com/dlclark/regexp2/v2"
 )
 
 // Detector holds the compiled matching state for one set of scanners/
