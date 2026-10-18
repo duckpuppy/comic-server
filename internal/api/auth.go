@@ -278,3 +278,48 @@ func (s *Server) handleAuthTokenItem(w http.ResponseWriter, r *http.Request) {
 	log.Info().Str("ip", s.auth.ClientIP(r)).Int64("token_id", id).Msg("API token revoked")
 	s.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
+
+// trustedProxiesView is the body of GET /api/auth/trusted-proxies.
+type trustedProxiesView struct {
+	Proxies []string  `json:"proxies"`
+	Source  string    `json:"source"` // "saved" (Settings) or "config" (config.yaml / env)
+	Config  []string  `json:"config"` // what config.yaml / env say, used when nothing is saved
+	Seen    auth.Peek `json:"seen"`   // how THIS request looks to the server
+}
+
+// handleTrustedProxies GET|PUT|DELETE /api/auth/trusted-proxies (tracker #24).
+// PUT {proxies:[...]} saves a list (an empty one means trust no proxy) and it
+// applies at once; DELETE forgets the saved list so config.yaml / env apply.
+func (s *Server) handleTrustedProxies(w http.ResponseWriter, r *http.Request) {
+	if !s.authReady(w) {
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+	case http.MethodPut:
+		var body struct {
+			Proxies []string `json:"proxies"`
+		}
+		if !decodeSmallJSON(w, r, &body) {
+			return
+		}
+		saved, err := s.auth.SaveTrustedProxies(body.Proxies)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		log.Info().Str("ip", s.auth.ClientIP(r)).Strs("proxies", saved).Msg("Trusted proxy list saved")
+	case http.MethodDelete:
+		if err := s.auth.ClearTrustedProxies(); err != nil {
+			http.Error(w, "could not clear the saved list", http.StatusInternalServerError)
+			return
+		}
+		log.Info().Str("ip", s.auth.ClientIP(r)).Msg("Saved trusted proxy list cleared; config.yaml / env apply")
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	list, source := s.auth.TrustedProxies()
+	w.Header().Set("Cache-Control", "no-store")
+	s.writeJSON(w, http.StatusOK, trustedProxiesView{Proxies: list, Source: source, Config: s.auth.ConfigProxies(), Seen: s.auth.Peek(r)})
+}

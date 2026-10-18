@@ -236,3 +236,15 @@ func TestResolveLibraryFilePath_FoldsCase(t *testing.T) {
 		t.Errorf("stored path = %q, want %q", got, real)
 	}
 }
+
+func TestParseTrustedProxies(t *testing.T) {
+	got, err := ParseTrustedProxies([]string{" 10.0.0.1 ", "172.18.0.0/16", "", "::ffff:10.0.0.2", "fd00::/8"})
+	if err != nil || len(got) != 4 {
+		t.Fatalf("got %v, %v", got, err)
+	}
+	for _, bad := range []string{"nope", "10.0.0.256", "0.0.0.0/0", "::/0", "10.0.0.1/33"} {
+		if _, err := ParseTrustedProxies([]string{bad}); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}

@@ -622,6 +622,11 @@ func ParseTrustedProxies(list []string) ([]netip.Prefix, error) {
 			continue
 		}
 		if p, err := netip.ParsePrefix(raw); err == nil {
+			// 0.0.0.0/0 would believe every client's own headers, which
+			// defeats the point of the list.
+			if p.Bits() == 0 {
+				return nil, fmt.Errorf("%q would trust every address on the internet", raw)
+			}
 			out = append(out, p.Masked())
 			continue
 		}
