@@ -45,6 +45,12 @@ class BrowsePage {
         this.groupLabel = '';
         this.stacks = [];
         this.totalBooks = 0;
+        // CSV export (tracker #13): the column list comes from the server.
+        this.exportOpen = false;
+        this.exportCatalog = null;
+        this.exportCols = null; // Set of chosen column keys
+        this.exportBusy = false;
+        this.exportError = '';
         this.view = 'table';
         try { this.view = localStorage.getItem('browse-view') || 'table'; } catch (e) { /* storage blocked */ }
         this.results = [];
@@ -201,12 +207,14 @@ class BrowsePage {
                                 .map(([v, l]) => `<option value="${v}" ${this.groupBy === v ? 'selected' : ''}>${l}</option>`).join('')}
                         </select>
                         <label class="browse-sort-desc"><input type="checkbox" id="browse-sort-desc" ${this.sortDesc ? 'checked' : ''}> Descending</label>
+                        <button class="btn btn-small btn-secondary" id="browse-export-btn" ${this.total > 0 ? '' : 'disabled'} aria-expanded="${this.exportOpen}">Export CSV…</button>
                         <div class="browse-view-toggle" role="group" aria-label="View">
                             ${[['table', 'Table'], ['grid', 'Grid'], ['compact', 'Compact']].map(([v, l]) =>
                                 `<button class="btn btn-small ${this.view === v ? 'btn-primary' : 'btn-secondary'} browse-view-btn" data-view="${v}" aria-pressed="${this.view === v}">${l}</button>`).join('')}
                         </div>
                     </div>
                     ${this.renderChips()}
+                    ${this.renderExport()}
                     <div id="bulk-host">${this.bulk ? this.bulk.render() : ''}</div>
                     ${this.renderResults()}
                   </div>
@@ -425,6 +433,79 @@ class BrowsePage {
         return html;
     }
 
+    // renderExport is the CSV export panel: pick columns, download every book
+    // the current filter matches (not just the loaded page).
+    renderExport() {
+        if (!this.exportOpen) return '';
+        if (!this.exportCatalog) return '<div class="panel browse-export"><p class="empty-message">Loading columns…</p></div>';
+        const books = this.groupBy && !this.groupKey ? this.totalBooks : this.total;
+        const boxes = this.exportCatalog.map(c => `<label class="browse-export-col"><input type="checkbox" class="browse-export-check" data-key="${this.escapeAttr(c.key)}" ${this.exportCols.has(c.key) ? 'checked' : ''}> ${this.escapeHtml(c.label)}</label>`).join('');
+        return `<div class="panel browse-export">
+            <p><strong>Export ${books} book${books === 1 ? '' : 's'} as CSV</strong> (everything the filter matches, in the order shown). Choose the columns:</p>
+            <div class="browse-export-cols">${boxes}</div>
+            ${this.exportError ? `<p class="datamanager-errors">${this.escapeHtml(this.exportError)}</p>` : ''}
+            <p><button class="btn btn-primary" id="browse-export-go" ${this.exportBusy || !this.exportCols.size ? 'disabled' : ''}>${this.exportBusy ? 'Preparing…' : 'Download CSV'}</button>
+               <button class="btn btn-small btn-secondary" id="browse-export-defaults">Default columns</button>
+               <button class="btn btn-small btn-secondary" id="browse-export-close">Close</button></p>
+        </div>`;
+    }
+
+    async toggleExport() {
+        this.exportOpen = !this.exportOpen;
+        this.exportError = '';
+        if (this.exportOpen && !this.exportCatalog) {
+            this.renderAndReattach();
+            try {
+                const res = await fetch('/api/library/browse/export-columns');
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                this.exportCatalog = (await res.json()).columns || [];
+                let saved = null;
+                try { saved = JSON.parse(localStorage.getItem('browse-export-cols') || 'null'); } catch (e) { /* storage blocked */ }
+                const known = new Set(this.exportCatalog.map(c => c.key));
+                const chosen = Array.isArray(saved) ? saved.filter(k => known.has(k)) : [];
+                this.exportCols = new Set(chosen.length ? chosen : this.exportCatalog.filter(c => c.default).map(c => c.key));
+            } catch (e) {
+                this.exportOpen = false;
+                this.error = `Could not load the export columns: ${e.message}`;
+            }
+        }
+        this.renderAndReattach();
+    }
+
+    async downloadCSV() {
+        if (this.exportBusy || !this.exportCols.size) return;
+        // Keep the catalog's order, not the click order.
+        const columns = this.exportCatalog.map(c => c.key).filter(k => this.exportCols.has(k));
+        try { localStorage.setItem('browse-export-cols', JSON.stringify(columns)); } catch (e) { /* storage blocked */ }
+        this.exportBusy = true;
+        this.exportError = '';
+        this.renderAndReattach();
+        try {
+            const res = await fetch('/api/library/browse/export-csv', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    browse: { matcher_mode: this.matcherMode, matchers: this.matchers, show_all: this.showAll, query: this.query, sort: this.sortField, sort_desc: this.sortDesc, facets: this.facets, ...this.groupScope() },
+                    columns,
+                }),
+            });
+            if (!res.ok) throw new Error(friendlyErrorText(res, await res.text(), `HTTP ${res.status}`));
+            const blob = await res.blob();
+            const m = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') || '');
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = m ? m[1] : 'comic-server-books.csv';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+        } catch (e) {
+            this.exportError = `Export failed: ${e.message}`;
+        }
+        this.exportBusy = false;
+        this.renderAndReattach();
+    }
+
     // renderStacks draws the grouped result: one card per stack, cover of its
     // first issue, a click opens the stack. Bulk edit does not apply here
     // (it acts on books), so no checkboxes.
@@ -472,6 +553,21 @@ class BrowsePage {
             this.sortField = sortSel.value;
             this.search(true);
         });
+        const exportBtn = document.getElementById('browse-export-btn');
+        if (exportBtn) exportBtn.addEventListener('click', () => this.toggleExport());
+        document.querySelectorAll('.browse-export-check').forEach(el => el.addEventListener('change', () => {
+            if (el.checked) this.exportCols.add(el.dataset.key); else this.exportCols.delete(el.dataset.key);
+            this.renderAndReattach();
+        }));
+        const exportGo = document.getElementById('browse-export-go');
+        if (exportGo) exportGo.addEventListener('click', () => this.downloadCSV());
+        const exportDefaults = document.getElementById('browse-export-defaults');
+        if (exportDefaults) exportDefaults.addEventListener('click', () => {
+            this.exportCols = new Set(this.exportCatalog.filter(c => c.default).map(c => c.key));
+            this.renderAndReattach();
+        });
+        const exportClose = document.getElementById('browse-export-close');
+        if (exportClose) exportClose.addEventListener('click', () => { this.exportOpen = false; this.renderAndReattach(); });
         const groupSel = document.getElementById('browse-group');
         if (groupSel) groupSel.addEventListener('change', () => {
             this.groupBy = groupSel.value;
