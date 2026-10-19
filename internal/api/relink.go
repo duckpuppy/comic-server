@@ -49,6 +49,30 @@ type RelinkOutcome struct {
 	// StartDir is where the manual file picker should open: the book's old
 	// folder, or its nearest parent that still exists. Empty = no good guess.
 	StartDir string `json:"start_dir,omitempty"`
+	// TakenBy names the other book that already uses the file the relink
+	// would point at (comic-server-2rz8). Set with status pick_taken, and with
+	// not_found when the old-folder search found a fitting file that another
+	// book owns. Lets the UI link to that record instead of a bare error.
+	TakenBy *RelinkTakenBy `json:"taken_by,omitempty"`
+}
+
+// RelinkTakenBy identifies the book that holds a file a relink wanted.
+type RelinkTakenBy struct {
+	BookID string `json:"book_id"`
+	Series string `json:"series,omitempty"`
+	Number string `json:"number,omitempty"`
+	Title  string `json:"title,omitempty"`
+	// Path is the file both books point at, as the other book stores it.
+	Path string `json:"path,omitempty"`
+}
+
+// takenBy looks up the book that owns a file. Nil when it cannot be read.
+func (c *relinkContext) takenBy(id string) *RelinkTakenBy {
+	other, err := c.s.backend.GetBook(id)
+	if err != nil || other == nil {
+		return &RelinkTakenBy{BookID: id}
+	}
+	return &RelinkTakenBy{BookID: id, Series: other.Series, Number: other.Number, Title: other.Title, Path: other.FilePath}
 }
 
 // nearestExistingDir walks up from dir to the first folder that exists. It
@@ -139,6 +163,13 @@ func (c *relinkContext) find(book *library.ComicBook) RelinkOutcome {
 		out.Candidates = res.Candidates
 	default:
 		out.Status = relinkNotFound
+		// Would a file have fit if another book did not already own it? Say so.
+		if alt := relink.Find(oldName, book, names, nil); alt.Outcome == relink.Found {
+			if id, ok := c.used[filepath.Clean(filepath.Join(dir, alt.Match))]; ok && id != book.ID {
+				out.TakenBy = c.takenBy(id)
+				out.Reason = "A fitting file exists, but another book already uses it."
+			}
+		}
 	}
 	return out
 }
@@ -221,6 +252,7 @@ func (c *relinkContext) pick(book *library.ComicBook, picked string) RelinkOutco
 	}
 	if id, used := c.used[filepath.Clean(c.s.resolveBookFilePath(raw))]; used && id != book.ID {
 		out.Status, out.Reason = relinkPickTaken, "Another book already uses that file."
+		out.TakenBy = c.takenBy(id)
 		return out
 	}
 	out.Status = relinkFound

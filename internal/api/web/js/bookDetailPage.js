@@ -451,6 +451,10 @@ class BookDetailPage {
                     dialogs.toast(p.status === 'no_file' ? 'This book has no file.' : 'The file is on disk; nothing to relink.', 'info', 9000);
                     return;
                 }
+                if (p.status !== 'found' && p.taken_by) {
+                    this.showTakenDialog(p);
+                    return;
+                }
                 if (p.status !== 'found') {
                     const why = {
                         not_found: 'No file in the old folder fits this book.',
@@ -466,6 +470,10 @@ class BookDetailPage {
                     picked = await dialogs.browseServerFile({ title: 'Pick the file for this book', startPath: p.start_dir || '/' });
                     if (!picked) return;
                     p = await this.postJSON(url, { apply: false, file_path: picked });
+                    if (p.status !== 'found' && p.taken_by) {
+                        this.showTakenDialog(p);
+                        return;
+                    }
                     if (p.status !== 'found') {
                         dialogs.toast(p.reason || `Not relinked (${p.status}).`, 'error', 9000);
                         return;
@@ -482,6 +490,32 @@ class BookDetailPage {
             } catch (e) {
                 dialogs.toast(`Relink failed: ${e.message}`, 'error', 8000);
             }
+        });
+    }
+
+    // The file a relink wanted already belongs to another record
+    // (comic-server-2rz8). Name that record, link to it, and offer to remove
+    // this one (the one with the missing file - often a stale leftover).
+    showTakenDialog(p) {
+        const t = p.taken_by;
+        const esc = (x) => this.escapeHtml(String(x == null ? '' : x));
+        const name = [t.series, t.number ? `#${t.number}` : '', t.title && !t.title.startsWith(t.series || '') ? `- ${t.title}` : ''].filter(Boolean).join(' ') || t.book_id;
+        const close = dialogs.custom({
+            title: 'File already used by another book',
+            bodyHTML: `
+                <p>${esc(p.reason || 'Another book already uses that file.')}</p>
+                <p>Used by: <a id="bd-taken-link" href="/books/${encodeURIComponent(t.book_id)}" data-route>${esc(name)}</a></p>
+                ${t.path ? `<p class="empty-message">${esc(t.path)}</p>` : ''}
+                <p class="empty-message">If that record is the real one and this one is a leftover, remove this record. Nothing is changed until you choose.</p>`,
+            footerHTML: `
+                <button class="btn btn-secondary" data-action="cancel">Close</button>
+                <button class="btn btn-danger" id="bd-taken-remove">Remove this record…</button>`,
+            onOpen: () => {
+                const link = document.getElementById('bd-taken-link');
+                if (link) link.addEventListener('click', () => close());
+                const rm = document.getElementById('bd-taken-remove');
+                if (rm) rm.addEventListener('click', () => { close(); this.removeRecord(); });
+            },
         });
     }
 
