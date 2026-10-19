@@ -1,9 +1,13 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/duckpuppy/comic-server/internal/audit"
 	"github.com/duckpuppy/comic-server/internal/comicvine"
@@ -74,7 +78,7 @@ func (s *Server) handleCVMatch(w http.ResponseWriter, r *http.Request) {
 		}
 		if ref.Kind == "volume" {
 			if issueID == 0 {
-				vp, err := s.scraper.PreviewVolume(r.Context(), ref.ID)
+				vp, err := s.scraper.PreviewVolume(cvInteractiveCtx(r), ref.ID)
 				if err != nil {
 					s.writeCVError(w, err)
 					return
@@ -93,7 +97,7 @@ func (s *Server) handleCVMatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !req.Apply {
-		ip, err := s.scraper.PreviewIssue(r.Context(), issueID)
+		ip, err := s.scraper.PreviewIssue(cvInteractiveCtx(r), issueID)
 		if err != nil {
 			s.writeCVError(w, err)
 			return
@@ -107,21 +111,38 @@ func (s *Server) handleCVMatch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "this book has no file; there is nothing to tag", http.StatusConflict)
 		return
 	}
-	result, err := s.scraper.ApplyIssue(r.Context(), s.audited(audit.ActionCVMatch), id, issueID)
+	result, err := s.scraper.ApplyIssue(cvInteractiveCtx(r), s.audited(audit.ActionCVMatch), id, issueID)
 	if err != nil {
 		s.writeCVError(w, err)
 		return
 	}
 	s.InvalidateWorkflowCache()
-	if ip, err := s.scraper.PreviewIssue(r.Context(), result.IssueID); err == nil {
+	if ip, err := s.scraper.PreviewIssue(cvInteractiveCtx(r), result.IssueID); err == nil {
 		resp.Issue = ip
 	}
 	resp.Kind, resp.Applied = "issue", true
 	s.writeJSON(w, http.StatusOK, resp)
 }
 
+// cvPaceWaitLimit is the longest a web request waits for ComicVine pacing. A
+// reverse proxy gives up after about a minute (the person then sees a bare
+// 504 and the log only "context canceled"), so a longer pause is reported at
+// once instead (comicvine.ErrPaceWait).
+const cvPaceWaitLimit = 20 * time.Second
+
+func cvInteractiveCtx(r *http.Request) context.Context {
+	return comicvine.WithMaxWait(r.Context(), cvPaceWaitLimit)
+}
+
 // writeCVError maps a ComicVine failure to a status the page can show.
 func (s *Server) writeCVError(w http.ResponseWriter, err error) {
+	var pace comicvine.ErrPaceWait
+	if errors.As(err, &pace) {
+		w.Header().Set("Retry-After", strconv.Itoa(int(pace.After.Seconds())+1))
+		http.Error(w, fmt.Sprintf("ComicVine only allows so many requests at a time, and the next one can go in about %s (%s limit). Try again then.",
+			pace.After.Round(time.Second), pace.Reason), http.StatusTooManyRequests)
+		return
+	}
 	var open comicvine.ErrCircuitOpen
 	if errors.As(err, &open) {
 		http.Error(w, "ComicVine is backing off after an error; try again later ("+err.Error()+")", http.StatusServiceUnavailable)

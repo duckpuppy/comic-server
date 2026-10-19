@@ -27,7 +27,7 @@ class CVMatchBox {
             body: JSON.stringify(body),
         });
         const text = await res.text();
-        if (!res.ok) throw new Error(text.trim() || `HTTP ${res.status}`);
+        if (!res.ok) throw new Error(friendlyErrorText(res, text, `HTTP ${res.status}`));
         return JSON.parse(text);
     }
 

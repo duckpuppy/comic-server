@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -364,8 +365,13 @@ func (s *Server) handleScrapeReviewResolve(w http.ResponseWriter, r *http.Reques
 		jobID = job.ID
 	}
 
-	result, err := s.scraper.AcceptReview(r.Context(), jobID, bookID, req.VolumeCVID)
+	result, err := s.scraper.AcceptReview(cvInteractiveCtx(r), jobID, bookID, req.VolumeCVID)
 	if err != nil {
+		var pace comicvine.ErrPaceWait
+		if errors.As(err, &pace) {
+			s.writeCVError(w, err)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
