@@ -65,6 +65,18 @@ func WithSharedPersistentLimits(store StateStore) ClientOption {
 	return func(cl *Client) { cl.pacer, cl.circuit = p, cb }
 }
 
+// SharedPacingStatus reports the process-wide pacer and circuit breaker that
+// WithSharedPersistentLimits created; ok is false until a client has used them.
+func SharedPacingStatus() (st PacingStatus, circuit CircuitState, circuitUntil time.Time, ok bool) {
+	sharedMu.Lock()
+	p, cb := sharedPacer, sharedCircuit
+	sharedMu.Unlock()
+	if p == nil || cb == nil {
+		return PacingStatus{}, CircuitClosed, time.Time{}, false
+	}
+	return p.Status(), cb.State(), cb.BackoffUntil(), true
+}
+
 // Circuit returns the client's circuit breaker.
 func (c *Client) Circuit() *CircuitBreaker { return c.circuit }
 

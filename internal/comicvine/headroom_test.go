@@ -154,3 +154,22 @@ func TestClient_GetReturnsPaceWaitWithoutCallingComicVine(t *testing.T) {
 		t.Fatalf("err = %v, hits = %d; want ErrPaceWait and no request", err, hits)
 	}
 }
+
+func TestPacer_StatusReportsWaitAndCounts(t *testing.T) {
+	p := NewPacer(WithBurstSize(4), WithBurstPause(time.Hour), WithWindowSize(1000), WithBackgroundHeadroom(1, 0, 0))
+	if st := p.Status(); st.WaitSeconds != 0 || st.RequestsLastHour != 0 || st.BurstSize != 4 {
+		t.Fatalf("idle status = %+v", st)
+	}
+	for i := 0; i < 3; i++ {
+		p.RecordRequest()
+	}
+	st := p.Status()
+	// 3 of 4: interactive may still go, the background (4-1 = 3) may not.
+	if st.WaitSeconds != 0 || st.BackgroundWaitSeconds < 3500 || st.BackgroundReason != "burst" || st.RequestsLastHour != 3 || st.BurstUsed != 3 {
+		t.Fatalf("status = %+v", st)
+	}
+	p.RecordRequest()
+	if st := p.Status(); st.WaitSeconds < 3500 || st.Reason != "burst" {
+		t.Fatalf("full burst status = %+v", st)
+	}
+}

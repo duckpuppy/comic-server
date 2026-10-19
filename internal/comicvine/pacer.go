@@ -315,3 +315,45 @@ func (p *Pacer) Stats() (burstCount, windowCount int) {
 	defer p.mu.Unlock()
 	return p.burstCount, p.windowCount
 }
+
+// PacingStatus is a snapshot of where the pacer and circuit stand, for the
+// status chip and the API. Counts include requests made before a restart.
+type PacingStatus struct {
+	RequestsLastHour int `json:"requests_last_hour"`
+	BackgroundCap    int `json:"background_hourly_cap"`
+	BurstUsed        int `json:"burst_used"`
+	BurstSize        int `json:"burst_size"`
+	WindowUsed       int `json:"window_used"`
+	WindowSize       int `json:"window_size"`
+	// WaitSeconds is how long until an interactive request may go out (0 = now),
+	// Reason the limit that holds it ("burst" or "window").
+	WaitSeconds int    `json:"wait_seconds"`
+	Reason      string `json:"reason,omitempty"`
+	// BackgroundWaitSeconds is the same for the background sync, which also
+	// keeps headroom and an hourly cap.
+	BackgroundWaitSeconds int    `json:"background_wait_seconds"`
+	BackgroundReason      string `json:"background_reason,omitempty"`
+}
+
+// Status returns the pacer's current state. Like a Wait, it clears a pause
+// that has already been served.
+func (p *Pacer) Status() PacingStatus {
+	now := time.Now()
+	wait, reason := p.pauseNeeded(false, now)
+	bgWait, bgReason := p.pauseNeeded(true, now)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.prune(now)
+	secs := func(d time.Duration) int {
+		if d <= 0 {
+			return 0
+		}
+		return int(d.Seconds()) + 1
+	}
+	return PacingStatus{
+		RequestsLastHour: len(p.times), BackgroundCap: p.bgHourlyCap,
+		BurstUsed: p.burstCount, BurstSize: p.burstSize, WindowUsed: p.windowCount, WindowSize: p.windowSize,
+		WaitSeconds: secs(wait), Reason: reason,
+		BackgroundWaitSeconds: secs(bgWait), BackgroundReason: bgReason,
+	}
+}
