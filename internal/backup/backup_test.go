@@ -3,6 +3,7 @@ package backup
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -202,5 +203,35 @@ func TestSchedule(t *testing.T) {
 		if bad.Validate() == nil {
 			t.Errorf("%+v validated", bad)
 		}
+	}
+}
+
+func TestDelete_OnlyCompleteBackups(t *testing.T) {
+	dir := t.TempDir()
+	mk := func(name string, manifest bool) {
+		_ = os.MkdirAll(filepath.Join(dir, name), 0o700)
+		if manifest {
+			_ = os.WriteFile(filepath.Join(dir, name, ManifestName), []byte(`{"created_at":"2026-01-01T00:00:00Z"}`), 0o600)
+		}
+	}
+	mk(NamePrefix+"20260101-000000", true)
+	mk(NamePrefix+"20260102-000000", false) // no manifest: not a complete backup
+	mk(".partial-x", true)
+	mk("other", true)
+	for _, bad := range []string{NamePrefix + "20260102-000000", ".partial-x", "other", "../" + NamePrefix + "x", ""} {
+		if err := Delete(dir, bad); !errors.Is(err, ErrNotABackup) {
+			t.Errorf("Delete(%q) = %v, want ErrNotABackup", bad, err)
+		}
+	}
+	for _, keep := range []string{NamePrefix + "20260102-000000", ".partial-x", "other"} {
+		if _, err := os.Stat(filepath.Join(dir, keep)); err != nil {
+			t.Errorf("%s was removed", keep)
+		}
+	}
+	if err := Delete(dir, NamePrefix+"20260101-000000"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := List(dir); len(got) != 0 {
+		t.Errorf("backup still listed: %d", len(got))
 	}
 }
