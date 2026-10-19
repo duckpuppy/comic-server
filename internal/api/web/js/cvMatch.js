@@ -11,6 +11,8 @@ class CVMatchBox {
         this.state = null; // last preview response
         this.busy = false;
         this.error = '';
+        this.wait = null;  // {until, body}: ComicVine pacing says try again at `until`
+        this.timer = null;
         this.render();
     }
 
@@ -27,7 +29,12 @@ class CVMatchBox {
             body: JSON.stringify(body),
         });
         const text = await res.text();
-        if (!res.ok) throw new Error(friendlyErrorText(res, text, `HTTP ${res.status}`));
+        if (!res.ok) {
+            const err = new Error(friendlyErrorText(res, text, `HTTP ${res.status}`));
+            // 429 = ComicVine pacing: Retry-After says when the next request may go out.
+            if (res.status === 429) err.retryAfter = parseInt(res.headers.get('Retry-After'), 10) || 0;
+            throw err;
+        }
         return JSON.parse(text);
     }
 
@@ -48,12 +55,47 @@ class CVMatchBox {
             }
             this.state = r;
         } catch (e) {
-            this.error = e.message;
             this.state = null;
+            if (e.retryAfter > 0) {
+                this.startWait(e.retryAfter, body);
+                this.busy = false;
+                this.render();
+                return;
+            }
+            this.error = e.message;
         }
         this.busy = false;
         this.render();
     }
+
+    // startWait counts down to the time ComicVine pacing allows the next
+    // request, then repeats the same call. Nothing is queued on the server: if
+    // the page is left the timer simply stops, and clicking again later works.
+    startWait(seconds, body) {
+        this.stopWait();
+        this.wait = { until: Date.now() + seconds * 1000, body };
+        this.timer = setInterval(() => {
+            if (!this.host.isConnected) { this.stopWait(); return; }
+            const left = this.secondsLeft();
+            const el = this.host.querySelector('.cvm-countdown-time');
+            if (el) el.textContent = this.clock(left);
+            if (left <= 0) {
+                const b = this.wait.body;
+                this.stopWait();
+                this.run(b);
+            }
+        }, 1000);
+    }
+
+    stopWait() {
+        if (this.timer) clearInterval(this.timer);
+        this.timer = null;
+        this.wait = null;
+    }
+
+    secondsLeft() { return this.wait ? Math.max(0, Math.ceil((this.wait.until - Date.now()) / 1000)) : 0; }
+
+    clock(sec) { return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`; }
 
     renderPreview() {
         const r = this.state;
@@ -94,6 +136,8 @@ class CVMatchBox {
                     <input type="text" class="cvm-input" placeholder="ComicVine issue or volume link, or issue id" aria-label="ComicVine link or id" ${this.busy ? 'disabled' : ''}>
                     <button class="btn btn-secondary cvm-go" ${this.busy ? 'disabled' : ''}>${this.busy ? 'Working…' : 'Look up'}</button>
                 </div>
+                ${this.wait ? `<p class="cvm-countdown">ComicVine spaces its requests out. Next request in <strong class="cvm-countdown-time">${this.clock(this.secondsLeft())}</strong>; this repeats on its own.
+                    <button class="btn btn-small btn-secondary cvm-cancel-wait">Cancel</button></p>` : ''}
                 ${this.error ? `<p class="cvm-error">${this.esc(this.error)}</p>` : ''}
                 ${this.renderPreview()}
             </div>`;
@@ -102,6 +146,8 @@ class CVMatchBox {
         const go = () => { this.ref = input.value.trim(); this.run({ ref: this.ref }); };
         this.host.querySelector('.cvm-go').addEventListener('click', go);
         input.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+        const cancel = this.host.querySelector('.cvm-cancel-wait');
+        if (cancel) cancel.addEventListener('click', () => { this.stopWait(); this.render(); });
         this.host.querySelectorAll('.cvm-pick').forEach(btn =>
             btn.addEventListener('click', () => this.run({ issue_id: parseInt(btn.dataset.issue, 10) })));
         this.host.querySelectorAll('.cvm-confirm').forEach(btn =>
