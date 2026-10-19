@@ -21,6 +21,8 @@ import (
 //     values that are not comic_server_ bookkeeping are undoable.
 //   - Slice/map fields (recorded as "N items"), file fields, dirty flags and
 //     any comic_server_ custom value are refused with a reason.
+//   - A field the user locked on the book (fieldlock.go) is never restored,
+//     not even with force.
 //   - The current value must still equal the entry's new value; otherwise the
 //     field is a conflict and is only restored with force.
 //   - Every restore is checked by reading the value back, so a field the
@@ -32,6 +34,7 @@ const (
 	undoConflict    = "conflict"    // changed since; restored only with force
 	undoUnchanged   = "unchanged"   // already equals the old value
 	undoUnsupported = "unsupported" // cannot be undone, see Reason
+	undoLocked      = "locked"      // the user locked this field on the book; never restored (tracker #27)
 )
 
 // UndoItem is one field of an entry in an undo preview/result.
@@ -70,8 +73,19 @@ const customPrefix = "custom:"
 // planUndo classifies each change of an entry against the book as it is now.
 func planUndo(book *library.ComicBook, changes []audit.Change) []UndoItem {
 	items := make([]UndoItem, 0, len(changes))
+	locked := lockedFields(book)
 	for _, c := range changes {
 		it := UndoItem{Field: c.Field, Old: c.Old, New: c.New}
+		if slices.Contains(locked, c.Field) {
+			it.Status, it.Reason = undoLocked, "locked on this book"
+			if key, ok := strings.CutPrefix(c.Field, customPrefix); ok {
+				it.Current = library.CustomValuesMap(book.CustomValuesStore)[key]
+			} else {
+				it.Current, _ = audit.FieldValue(book, c.Field)
+			}
+			items = append(items, it)
+			continue
+		}
 		if key, ok := strings.CutPrefix(c.Field, customPrefix); ok {
 			it.Current = library.CustomValuesMap(book.CustomValuesStore)[key]
 			if strings.HasPrefix(key, "comic_server_") {
@@ -192,7 +206,7 @@ func (s *Server) handleAuditUndo(w http.ResponseWriter, r *http.Request) {
 	comicInfo, organize, n := false, false, 0
 	for i := range items {
 		it := &items[i]
-		if it.Status == undoUnsupported || it.Status == undoUnchanged || (it.Status == undoConflict && !req.Force) {
+		if it.Status == undoUnsupported || it.Status == undoLocked || it.Status == undoUnchanged || (it.Status == undoConflict && !req.Force) {
 			continue
 		}
 		ci, org, err := restoreField(book, *it)
