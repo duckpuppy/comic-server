@@ -159,7 +159,7 @@ class BrowseBulk {
     scopeBody() {
         const p = this.page;
         if (this.allMatching) {
-            return { browse: { matcher_mode: p.matcherMode, matchers: p.matchers, show_all: p.showAll, query: p.query, facets: p.facets } };
+            return { browse: { matcher_mode: p.matcherMode, matchers: p.matchers, show_all: p.showAll, query: p.query, facets: p.facets, ...p.groupScope() } };
         }
         return { book_ids: Array.from(this.ids) };
     }
