@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.66.0](https://github.com/duckpuppy/comic-server/compare/v1.65.1...v1.66.0) (2026-10-19)
+
+
+### Features
+
+* ComicVine pacing chip and a live countdown in the match box ([#213](https://github.com/duckpuppy/comic-server/issues/213)) ([1be21f8](https://github.com/duckpuppy/comic-server/commit/1be21f8b679b09aa1c9ee8167dacdbf935ef67c8))
+
+
+### Bug Fixes
+
+* answer a long ComicVine pacing pause at once instead of timing out ([#210](https://github.com/duckpuppy/comic-server/issues/210)) ([4d7d7ee](https://github.com/duckpuppy/comic-server/commit/4d7d7eebb4afbc0c59ea95fecea6f710aa18a94b))
+
 ## [1.65.1](https://github.com/duckpuppy/comic-server/compare/v1.65.0...v1.65.1) (2026-10-19)
 
 
