@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.63.3](https://github.com/duckpuppy/comic-server/compare/v1.63.2...v1.63.3) (2026-10-19)
+
+
+### Bug Fixes
+
+* keep the ComicVine pacer and circuit breaker across restarts ([#195](https://github.com/duckpuppy/comic-server/issues/195)) ([e703007](https://github.com/duckpuppy/comic-server/commit/e7030079dd13b76f92c3ef59402fa6f80eb2aeb4))
+
 ## [1.63.2](https://github.com/duckpuppy/comic-server/compare/v1.63.1...v1.63.2) (2026-10-18)
 
 
