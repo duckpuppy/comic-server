@@ -366,3 +366,24 @@ func TestBookCollects_SetShowClearAuditedAndKeepsKindApart(t *testing.T) {
 		t.Errorf("after clear: %+v", d.Collects)
 	}
 }
+
+func TestBookCollects_PreviewSavesNothingAndLookupNeedsScraper(t *testing.T) {
+	books := []library.ComicBook{{ID: "b1", Series: "Lazarus", Number: "3", FilePath: "a.cbz"}}
+	s := newDuplicatesTestServer(t, t.TempDir(), books)
+	w := httptest.NewRecorder()
+	body := `{"preview":true,"entries":[{"series":"Ghost Rider","from":"5","to":"1"}]}`
+	s.handleBooksRouter(w, httptest.NewRequest(http.MethodPost, "/api/library/books/b1/collects", strings.NewReader(body)))
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "backwards") {
+		t.Fatalf("preview: %d %s", w.Code, w.Body.String())
+	}
+	var d BookDetail
+	getJSON(t, s, "/api/library/books/b1", &d)
+	if len(d.Collects) != 0 {
+		t.Errorf("preview saved links: %+v", d.Collects)
+	}
+	w = httptest.NewRecorder()
+	s.handleBooksRouter(w, httptest.NewRequest(http.MethodPost, "/api/library/books/b1/collects/lookup", strings.NewReader(`{"ref":"4050-1"}`)))
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("lookup without scraper: %d", w.Code)
+	}
+}
