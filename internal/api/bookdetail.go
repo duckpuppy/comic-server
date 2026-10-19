@@ -68,6 +68,7 @@ type BookDetail struct {
 	StageLabel   string               `json:"stage_label,omitempty"`
 	Flags        []BookDetailFlag     `json:"flags"`
 	Accepted     []BookDetailFlag     `json:"accepted_flags"` // flags the user hid on this book
+	LockedFields []string             `json:"locked_fields"`  // fields undo must not change (tracker #27)
 	File         *BookDetailFile      `json:"file,omitempty"` // nil for a fileless book
 	ComicVine    *BookDetailComicVine `json:"comicvine,omitempty"`
 	NoCVMatch    *BookDetailNoCVMatch `json:"cv_nomatch,omitempty"` // user marked: not in ComicVine
@@ -162,6 +163,7 @@ func (s *Server) handleBookDetail(w http.ResponseWriter, r *http.Request) {
 		CustomValues: library.CustomValuesMap(book.CustomValuesStore),
 		Flags:        []BookDetailFlag{},
 		Accepted:     []BookDetailFlag{},
+		LockedFields: lockedFields(book),
 		CoverURL:     "/api/library/books/" + book.ID + "/cover",
 		Kind:         bookKind(book),
 	}

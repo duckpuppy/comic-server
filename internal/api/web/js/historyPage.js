@@ -11,7 +11,7 @@ class HistoryPage {
         this.loading = true;
         this.error = '';
         this.message = '';
-        this.undo = null; // {entry, items, force} while the undo preview is open
+        this.undo = null; // {entry, items, force, picked:Set} while the undo preview is open
     }
 
     async init(ctx) {
@@ -151,6 +151,18 @@ class HistoryPage {
         document.querySelectorAll('.history-undo-btn').forEach(btn => btn.addEventListener('click', () => this.openUndo(Number(btn.dataset.entry))));
         const uForce = document.getElementById('history-undo-force');
         if (uForce) uForce.addEventListener('change', () => { this.undo.force = uForce.checked; this.render(); });
+        document.querySelectorAll('.history-undo-pick').forEach(el => el.addEventListener('change', () => {
+            if (el.checked) this.undo.picked.add(el.dataset.field); else this.undo.picked.delete(el.dataset.field);
+            this.render();
+        }));
+        const tickAll = document.getElementById('history-undo-all');
+        if (tickAll) tickAll.addEventListener('click', () => {
+            this.undo.items.filter(it => it.status === 'ok' || (it.status === 'conflict' && this.undo.force)).forEach(it => this.undo.picked.add(it.field));
+            this.render();
+        });
+        const tickNone = document.getElementById('history-undo-none');
+        if (tickNone) tickNone.addEventListener('click', () => { this.undo.picked.clear(); this.render(); });
+        document.querySelectorAll('.history-undo-lock').forEach(el => el.addEventListener('click', () => this.lockField(el.dataset.field, el.dataset.lock === '1')));
         const uApply = document.getElementById('history-undo-apply');
         if (uApply) uApply.addEventListener('click', () => this.applyUndo());
         const uCancel = document.getElementById('history-undo-cancel');
@@ -162,27 +174,45 @@ class HistoryPage {
         }));
     }
 
+    // A field is restored when it is ticked and restorable: ok, or a
+    // conflict while "overwrite" is on. Locked, unchanged and unsupported
+    // fields are never restored.
     undoable(it) {
-        return it.status === 'ok' || (it.status === 'conflict' && this.undo.force);
+        return this.undo.picked.has(it.field) && (it.status === 'ok' || (it.status === 'conflict' && this.undo.force));
     }
 
     renderUndo() {
         if (!this.undo) return '';
         const u = this.undo;
+        const statusText = it => it.status === 'ok' ? 'will restore'
+            : it.status === 'conflict' ? 'changed since this entry'
+            : it.status === 'unchanged' ? 'already the old value'
+            : it.status === 'locked' ? 'locked: undo skips this field'
+            : 'cannot undo: ' + this.escapeHtml(it.reason);
+        const lockBtn = it => it.status === 'locked'
+            ? `<button class="btn btn-small btn-secondary history-undo-lock" data-field="${this.escapeAttr(it.field)}" data-lock="0">Unlock</button>`
+            : (it.status === 'unsupported' ? '' : `<button class="btn btn-small btn-secondary history-undo-lock" data-field="${this.escapeAttr(it.field)}" data-lock="1" title="Undo will never change this field on this book">Lock</button>`);
         const rows = u.items.map(it => `
             <tr class="history-undo-${this.escapeAttr(it.status)}">
+                <td>${it.status === 'ok' || it.status === 'conflict'
+                    ? `<input type="checkbox" class="history-undo-pick" data-field="${this.escapeAttr(it.field)}" ${u.picked.has(it.field) ? 'checked' : ''} ${it.status === 'conflict' && !u.force ? 'disabled' : ''} aria-label="Restore ${this.escapeAttr(it.field)}">`
+                    : ''}</td>
                 <td>${this.escapeHtml(it.field)}</td>
                 <td>${this.escapeHtml(it.current) || '∅'}</td>
                 <td>${this.escapeHtml(it.old) || '∅'}</td>
-                <td>${it.status === 'ok' ? 'will restore' : it.status === 'conflict' ? 'changed since this entry' : it.status === 'unchanged' ? 'already the old value' : 'cannot undo: ' + this.escapeHtml(it.reason)}</td>
+                <td>${statusText(it)}</td>
+                <td>${lockBtn(it)}</td>
             </tr>`).join('');
         const n = u.items.filter(it => this.undoable(it)).length;
         const hasConflict = u.items.some(it => it.status === 'conflict');
         return `
             <div class="panel" id="history-undo-panel">
                 <h2>Undo values: ${this.escapeHtml(u.entry.action)} on ${this.escapeHtml(u.entry.series || u.entry.book_id)} ${this.escapeHtml(u.entry.number ? '#' + u.entry.number : '')}</h2>
-                <table class="history-table"><thead><tr><th>Field</th><th>Now</th><th>Restore to</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+                <table class="history-table"><thead><tr><th></th><th>Field</th><th>Now</th><th>Restore to</th><th></th><th></th></tr></thead><tbody>${rows}</tbody></table>
                 ${hasConflict ? `<label><input type="checkbox" id="history-undo-force" ${u.force ? 'checked' : ''}> Also overwrite values that changed since this entry</label>` : ''}
+                <p class="history-subtitle">Tick the fields to restore. Locking a field makes every undo skip it on this book; unlock it from here or from the book page.
+                    <button class="btn btn-small btn-secondary" id="history-undo-all">Tick all</button>
+                    <button class="btn btn-small btn-secondary" id="history-undo-none">Tick none</button></p>
                 <p>
                     <button class="btn" id="history-undo-apply" ${n ? '' : 'disabled'}>Restore ${n} field${n === 1 ? '' : 's'}</button>
                     <button class="btn btn-secondary" id="history-undo-cancel">Cancel</button>
@@ -200,12 +230,31 @@ class HistoryPage {
             });
             if (!res.ok) throw new Error((await res.text()).trim() || res.status);
             const data = await res.json();
-            this.undo = { entry, items: data.items || [], force: false };
+            const items = data.items || [];
+            this.undo = { entry, items, force: false, picked: new Set(items.filter(it => it.status === 'ok').map(it => it.field)) };
             this.message = '';
         } catch (e) {
             this.message = `Could not preview undo: ${e.message || e}`;
         }
         this.render();
+    }
+
+    // lockField locks or unlocks one field of the entry's book, then shows the
+    // preview again so the row reflects it.
+    async lockField(field, locked) {
+        const u = this.undo;
+        try {
+            const res = await fetch(`/api/library/books/${encodeURIComponent(u.entry.book_id)}/lock-field`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ field, locked }),
+            });
+            if (!res.ok) throw new Error((await res.text()).trim() || res.status);
+            this.message = '';
+        } catch (e) {
+            this.message = `Could not ${locked ? 'lock' : 'unlock'} ${field}: ${e.message || e}`;
+        }
+        await this.openUndo(u.entry.id);
     }
 
     async applyUndo() {

@@ -576,6 +576,18 @@ class BookDetailPage {
         return `<div class="panel attention-panel"><h2>Needs attention</h2>${rows ? `<ul class="attention-list">${rows}</ul>` : ''}${hidden}</div>`;
     }
 
+    // setFieldLock saves a lock at once, without re-rendering, so unsaved
+    // edits in the form are kept (tracker #27).
+    async setFieldLock(field, locked, box) {
+        try {
+            const data = await this.postJSON(`/api/library/books/${encodeURIComponent(this.bookId)}/lock-field`, { field, locked });
+            if (this.detail) this.detail.locked_fields = data.locked_fields || [];
+        } catch (e) {
+            box.checked = !locked;
+            dialogs.toast(`Could not ${locked ? 'lock' : 'unlock'} ${field}: ${e.message}`, 'error', 6000);
+        }
+    }
+
     async setAccepted(flag, accepted) {
         await this.runAction(async () => {
             try {
@@ -694,7 +706,7 @@ class BookDetailPage {
         if (type === 'textarea') {
             input = `<textarea ${attrs} rows="4">${this.escapeHtml(v)}</textarea>`;
         } else if (type === 'bool') {
-            return `<label class="bd-edit-check"><input type="checkbox" ${attrs} ${b[name] ? 'checked' : ''}> ${this.escapeHtml(label)}</label>`;
+            return `<label class="bd-edit-check"><input type="checkbox" ${attrs} ${b[name] ? 'checked' : ''}> ${this.escapeHtml(label)}${this.lockToggle(name)}</label>`;
         } else if (BookDetailPage.EDIT_CHOICES[type]) {
             const opts = BookDetailPage.EDIT_CHOICES[type].slice();
             if (v && !opts.some(o => o[0] === v)) opts.push([v, v]); // keep a value the list does not know
@@ -706,7 +718,14 @@ class BookDetailPage {
                 : 'type="text"';
             input = `<input ${extra} ${attrs} value="${this.escapeHtml(v)}">`;
         }
-        return `<label class="bd-edit-field${type === 'textarea' ? ' bd-edit-wide' : ''}" for="${id}"><span>${this.escapeHtml(label)}</span>${input}</label>`;
+        return `<label class="bd-edit-field${type === 'textarea' ? ' bd-edit-wide' : ''}" for="${id}"><span>${this.escapeHtml(label)}${this.lockToggle(name)}</span>${input}</label>`;
+    }
+
+    // lockToggle is the small "lock against undo" checkbox beside a field
+    // label (tracker #27). It saves at once, apart from the form's Save.
+    lockToggle(name) {
+        const locked = ((this.detail && this.detail.locked_fields) || []).includes(name);
+        return ` <span class="bd-lock" title="Lock: History undo will never change this field"><input type="checkbox" class="bd-lock-check" data-lock-field="${this.escapeHtml(name)}" ${locked ? 'checked' : ''} aria-label="Lock ${this.escapeHtml(name)} against undo"> 🔒</span>`;
     }
 
     renderEditForm(b) {
@@ -786,6 +805,8 @@ class BookDetailPage {
     }
 
     attachEditListeners() {
+        document.querySelectorAll('.bd-lock-check').forEach(el => el.addEventListener('change', () =>
+            this.setFieldLock(el.dataset.lockField, el.checked, el)));
         const form = document.getElementById('bd-edit-form');
         if (!form) return;
         form.addEventListener('submit', e => { e.preventDefault(); this.saveEdits(); });
