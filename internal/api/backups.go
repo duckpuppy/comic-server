@@ -23,7 +23,9 @@ import (
 //
 //	GET|PUT /api/settings/backups   settings + status (last run, next run, warnings)
 //	POST    /api/backups/run        back up now
-//	GET     /api/backups            existing backups, newest first
+//	GET     /api/backups            existing backups, newest first (with the last verify result)
+//	POST    /api/backups/verify     {name} check a backup against its manifest, in the background
+//	POST    /api/backups/delete     {name} remove one backup
 
 const (
 	backupCheckEvery = time.Minute
@@ -32,7 +34,16 @@ const (
 	backupRetryAfterFailure = time.Hour
 )
 
+// verifyResult is the outcome of checking one backup against its manifest.
+// Kept in memory only: it says "checked since the server started".
+type verifyResult struct {
+	State string    `json:"state"` // "running", "ok" or "failed"
+	Error string    `json:"error,omitempty"`
+	At    time.Time `json:"at"`
+}
+
 type backupState struct {
+	verify      map[string]verifyResult
 	mu          sync.Mutex
 	running     bool
 	startedAt   time.Time
@@ -356,14 +367,133 @@ func (s *Server) handleBackupList(w http.ResponseWriter, r *http.Request) {
 		AppVersion string    `json:"app_version"`
 		BookCount  int       `json:"book_count"`
 		Files      []string  `json:"files"`
+		// Verify is the last check since the server started, if any.
+		Verify *verifyResult `json:"verify,omitempty"`
 	}
 	out := make([]row, 0, len(entries))
+	s.backupState.mu.Lock()
+	verified := make(map[string]verifyResult, len(s.backupState.verify))
+	for k, v := range s.backupState.verify {
+		verified[k] = v
+	}
+	s.backupState.mu.Unlock()
 	for _, e := range entries {
 		rw := row{Name: e.Name, CreatedAt: e.Manifest.CreatedAt, Size: e.Manifest.TotalSize(), AppVersion: e.Manifest.AppVersion, BookCount: e.Manifest.BookCount}
+		if v, ok := verified[e.Name]; ok {
+			rw.Verify = &v
+		}
 		for _, f := range e.Manifest.Files {
 			rw.Files = append(rw.Files, f.Name)
 		}
 		out = append(out, rw)
 	}
 	s.writeJSON(w, http.StatusOK, map[string]any{"dir": set.Dir, "backups": out})
+}
+
+// backupNameRequest is the body of the verify and delete endpoints.
+type backupNameRequest struct {
+	Name string `json:"name"`
+}
+
+// backupDirAndName reads the request and the backup folder; it writes the
+// error response itself and returns ok false.
+func (s *Server) backupDirAndName(w http.ResponseWriter, r *http.Request) (dir, name string, ok bool) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return "", "", false
+	}
+	if s.configDB == nil {
+		http.Error(w, "Config database not available", http.StatusServiceUnavailable)
+		return "", "", false
+	}
+	var req backupNameRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil || req.Name == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return "", "", false
+	}
+	set, err := s.configDB.GetBackupSettings()
+	if err != nil || set.Dir == "" {
+		http.Error(w, "Choose a backup folder first", http.StatusBadRequest)
+		return "", "", false
+	}
+	entries, err := backup.List(set.Dir)
+	if err != nil {
+		http.Error(w, "Cannot read the backup folder: "+err.Error(), http.StatusInternalServerError)
+		return "", "", false
+	}
+	for _, e := range entries {
+		if e.Name == req.Name {
+			return set.Dir, req.Name, true
+		}
+	}
+	http.Error(w, "No such backup in the backup folder", http.StatusNotFound)
+	return "", "", false
+}
+
+// handleBackupVerify re-reads a backup and checks it against its manifest.
+// The check can take a while on a big backup (it hashes every file), so it runs
+// in the background; GET /api/backups shows the result.
+// POST /api/backups/verify
+func (s *Server) handleBackupVerify(w http.ResponseWriter, r *http.Request) {
+	dir, name, ok := s.backupDirAndName(w, r)
+	if !ok {
+		return
+	}
+	st := &s.backupState
+	st.mu.Lock()
+	if cur, found := st.verify[name]; found && cur.State == "running" {
+		st.mu.Unlock()
+		http.Error(w, "This backup is already being checked", http.StatusConflict)
+		return
+	}
+	if st.verify == nil {
+		st.verify = map[string]verifyResult{}
+	}
+	st.verify[name] = verifyResult{State: "running", At: time.Now()}
+	st.mu.Unlock()
+
+	go func() {
+		res := verifyResult{State: "ok", At: time.Now()}
+		if err := backup.Verify(dir, name); err != nil {
+			res.State, res.Error = "failed", err.Error()
+			log.Warn().Err(err).Str("backup", name).Msg("Backup verify failed")
+		} else {
+			log.Info().Str("backup", name).Msg("Backup verified")
+		}
+		st.mu.Lock()
+		st.verify[name] = res
+		st.mu.Unlock()
+	}()
+	s.writeJSON(w, http.StatusAccepted, map[string]bool{"started": true})
+}
+
+// handleBackupDelete removes one backup from the backup folder.
+// POST /api/backups/delete
+func (s *Server) handleBackupDelete(w http.ResponseWriter, r *http.Request) {
+	dir, name, ok := s.backupDirAndName(w, r)
+	if !ok {
+		return
+	}
+	st := &s.backupState
+	st.mu.Lock()
+	if cur, found := st.verify[name]; found && cur.State == "running" {
+		st.mu.Unlock()
+		http.Error(w, "This backup is being checked; try again when that is done", http.StatusConflict)
+		return
+	}
+	st.mu.Unlock()
+	if err := backup.Delete(dir, name); err != nil {
+		if errors.Is(err, backup.ErrNotABackup) {
+			http.Error(w, "No such backup in the backup folder", http.StatusNotFound)
+			return
+		}
+		log.Error().Err(err).Str("backup", name).Msg("Backup delete failed")
+		http.Error(w, "Could not delete the backup: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	st.mu.Lock()
+	delete(st.verify, name)
+	st.mu.Unlock()
+	log.Info().Str("backup", name).Msg("Backup deleted")
+	s.writeJSON(w, http.StatusOK, map[string]string{"deleted": name})
 }

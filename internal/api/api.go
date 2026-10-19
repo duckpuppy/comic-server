@@ -379,6 +379,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/settings/trash", s.handleTrashSettings)
 	s.mux.HandleFunc("/api/settings/backups", s.handleBackupSettings)
 	s.mux.HandleFunc("/api/backups/run", s.handleBackupRun)
+	s.mux.HandleFunc("/api/backups/verify", s.handleBackupVerify)
+	s.mux.HandleFunc("/api/backups/delete", s.handleBackupDelete)
 	s.mux.HandleFunc("/api/backups", s.handleBackupList)
 	s.mux.HandleFunc("/api/settings/scrape-publisher-filter", s.handleScrapePublisherFilter)
 	s.mux.HandleFunc("/api/settings/library-import", s.handleLibraryImport)

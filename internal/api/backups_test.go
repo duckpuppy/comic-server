@@ -158,3 +158,105 @@ func TestBackup_TickRunsWhenDueAndBacksOffAfterFailure(t *testing.T) {
 		t.Errorf("disabled backups ran (%d)", len(e))
 	}
 }
+
+func postBackupName(s *Server, h http.HandlerFunc, name string) *httptest.ResponseRecorder {
+	w := httptest.NewRecorder()
+	body, _ := json.Marshal(map[string]string{"name": name})
+	h(w, httptest.NewRequest(http.MethodPost, "/api/backups/x", strings.NewReader(string(body))))
+	return w
+}
+
+func backupVerifyOf(t *testing.T, s *Server, name string) *verifyResult {
+	t.Helper()
+	w := httptest.NewRecorder()
+	s.handleBackupList(w, httptest.NewRequest(http.MethodGet, "/api/backups", nil))
+	var list struct {
+		Backups []struct {
+			Name   string
+			Verify *verifyResult
+		} `json:"backups"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &list)
+	for _, b := range list.Backups {
+		if b.Name == name {
+			return b.Verify
+		}
+	}
+	return nil
+}
+
+func TestBackup_VerifyAndDelete(t *testing.T) {
+	s := backupServer(t)
+	dir := filepath.Join(t.TempDir(), "bk")
+	if code, _, body := putBackupSettings(t, s, `{"enabled":false,"dir":"`+dir+`","mode":"daily","at":"03:30","every_hours":24,"keep":5,"include_cv_cache":true,"include_config_yaml":true}`); code != 200 {
+		t.Fatalf("PUT: %d %s", code, body)
+	}
+	if err := s.runBackup(context.Background(), "manual"); err != nil {
+		t.Fatal(err)
+	}
+	entries, _ := backup.List(dir)
+	name := entries[0].Name
+
+	wait := func() *verifyResult {
+		for i := 0; i < 200; i++ {
+			if v := backupVerifyOf(t, s, name); v != nil && v.State != "running" {
+				return v
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		t.Fatal("verify did not finish")
+		return nil
+	}
+
+	// A good backup verifies; the result shows in the list.
+	if w := postBackupName(s, s.handleBackupVerify, name); w.Code != http.StatusAccepted {
+		t.Fatalf("verify status = %d: %s", w.Code, w.Body.String())
+	}
+	if v := wait(); v.State != "ok" {
+		t.Fatalf("verify = %+v, want ok", v)
+	}
+
+	// A changed file is caught.
+	files, _ := os.ReadDir(filepath.Join(dir, name))
+	for _, f := range files {
+		if f.Name() != backup.ManifestName {
+			if err := os.WriteFile(filepath.Join(dir, name, f.Name()), []byte("tampered"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			break
+		}
+	}
+	postBackupName(s, s.handleBackupVerify, name)
+	if v := wait(); v.State != "failed" || !strings.Contains(v.Error, "manifest") {
+		t.Fatalf("verify of a tampered backup = %+v, want failed", v)
+	}
+
+	// Unknown, path-like and non-backup names are refused and nothing is removed.
+	other := filepath.Join(dir, "not-a-backup")
+	_ = os.MkdirAll(other, 0o700)
+	for _, bad := range []string{"nope", "../bk", "backup-../x", "not-a-backup", ""} {
+		if w := postBackupName(s, s.handleBackupDelete, bad); w.Code == http.StatusOK {
+			t.Errorf("delete %q succeeded", bad)
+		}
+	}
+	if _, err := os.Stat(other); err != nil {
+		t.Errorf("a stray folder was removed: %v", err)
+	}
+	if got, _ := backup.List(dir); len(got) != 1 {
+		t.Fatalf("a refused delete removed a backup: %d left", len(got))
+	}
+
+	// A real backup is deleted and its verify result goes with it.
+	if w := postBackupName(s, s.handleBackupDelete, name); w.Code != http.StatusOK {
+		t.Fatalf("delete status = %d: %s", w.Code, w.Body.String())
+	}
+	if got, _ := backup.List(dir); len(got) != 0 {
+		t.Errorf("backup still listed after delete")
+	}
+	if backupVerifyOf(t, s, name) != nil {
+		t.Error("verify result outlived the backup")
+	}
+	if w := postBackupName(s, s.handleBackupVerify, name); w.Code != http.StatusNotFound {
+		t.Errorf("verify of a deleted backup = %d, want 404", w.Code)
+	}
+}

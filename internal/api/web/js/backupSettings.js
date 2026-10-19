@@ -74,11 +74,71 @@ class BackupSettings {
         return `<p class="backup-status">${bits.join(' ')}</p>`;
     }
 
+    verifyCell(b) {
+        const v = b.verify;
+        if (!v) return '<span class="form-help">not checked</span>';
+        if (v.state === 'running') return 'Checking…';
+        if (v.state === 'ok') return `<span title="${this.esc(this.fmtTime(v.at))}">✓ checked ${this.esc(this.fmtTime(v.at))}</span>`;
+        return `<span class="backup-failed" title="${this.esc(v.error)}">✗ ${this.esc(v.error)}</span>`;
+    }
+
     renderList() {
         if (!this.list.length) return '<p class="form-help">No backups in the folder yet.</p>';
-        const rows = this.list.map(b => `<tr><td>${this.esc(b.name)}</td><td>${this.esc(this.fmtTime(b.created_at))}</td>
-            <td>${this.esc(this.fmtSize(b.size))}</td><td>${this.esc(b.app_version)}</td><td>${b.book_count || ''}</td></tr>`).join('');
-        return `<table class="datamanager-diff-table"><thead><tr><th>Backup</th><th>Taken</th><th>Size</th><th>Version</th><th>Books</th></tr></thead><tbody>${rows}</tbody></table>`;
+        const rows = this.list.map(b => {
+            const running = b.verify && b.verify.state === 'running';
+            return `<tr><td>${this.esc(b.name)}</td><td>${this.esc(this.fmtTime(b.created_at))}</td>
+            <td>${this.esc(this.fmtSize(b.size))}</td><td>${this.esc(b.app_version)}</td><td>${b.book_count || ''}</td>
+            <td>${this.verifyCell(b)}</td>
+            <td><button class="btn btn-small btn-secondary backup-verify" data-name="${this.esc(b.name)}" ${running ? 'disabled' : ''}>Verify</button>
+                <button class="btn btn-small btn-secondary backup-delete" data-name="${this.esc(b.name)}" ${running ? 'disabled' : ''}>Delete…</button></td></tr>`;
+        }).join('');
+        return `<table class="datamanager-diff-table"><thead><tr><th>Backup</th><th>Taken</th><th>Size</th><th>Version</th><th>Books</th><th>Check</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    // verify starts the background check of one backup and polls until it ends.
+    async verify(name) {
+        try {
+            const res = await fetch('/api/backups/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+            if (!res.ok) throw new Error((await res.text()).trim() || `HTTP ${res.status}`);
+        } catch (e) {
+            dialogs.toast(`Could not start the check: ${e.message}`, 'error', 8000);
+            return;
+        }
+        await this.load();
+        this.pollVerify();
+    }
+
+    pollVerify() {
+        if (this.verifyTimer) return;
+        const tick = async () => {
+            this.verifyTimer = null;
+            if (!document.body.contains(this.host)) return;
+            await this.load();
+            if (this.list.some(b => b.verify && b.verify.state === 'running')) {
+                this.verifyTimer = setTimeout(tick, 2000);
+            }
+        };
+        this.verifyTimer = setTimeout(tick, 1500);
+    }
+
+    async remove(name) {
+        const last = this.list.length === 1;
+        const ok = await dialogs.confirm({
+            title: 'Delete this backup?',
+            message: `${name} will be removed from the backup folder for good.` +
+                (last ? ' It is the only backup you have.' : '') + ' This cannot be undone.',
+            confirmLabel: 'Delete',
+            danger: true,
+        });
+        if (!ok) return;
+        try {
+            const res = await fetch('/api/backups/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+            if (!res.ok) throw new Error((await res.text()).trim() || `HTTP ${res.status}`);
+            dialogs.toast('Backup deleted.', 'success');
+        } catch (e) {
+            dialogs.toast(`Could not delete the backup: ${e.message}`, 'error', 8000);
+        }
+        await this.load();
     }
 
     render() {
@@ -93,7 +153,7 @@ class BackupSettings {
             <div class="panel scan-info-panel" id="backup-panel">
                 <div class="settings-section-header">
                     <h2>Backups</h2>
-                    <p class="settings-section-description">Safe copies of comic-server's own data: edits, Wanted and paper copies, device and list settings, the history log and the ComicVine cache. Comic files are not included. Restore is not built yet; a backup is a folder you can copy back by hand with the server stopped.</p>
+                    <p class="settings-section-description">Safe copies of comic-server's own data: edits, Wanted and paper copies, device and list settings, the history log and the ComicVine cache. Comic files are not included. Restore is an offline command ("comic-server restore", with the server stopped); Verify checks a backup's files against its manifest, and Delete removes one.</p>
                 </div>
                 ${this.renderStatus()}
                 ${warn}
@@ -166,6 +226,9 @@ class BackupSettings {
         });
         v('backup-save').addEventListener('click', () => this.save());
         v('backup-run').addEventListener('click', () => this.runNow());
+        document.querySelectorAll('.backup-verify').forEach(b => b.addEventListener('click', () => this.verify(b.dataset.name)));
+        document.querySelectorAll('.backup-delete').forEach(b => b.addEventListener('click', () => this.remove(b.dataset.name)));
+        if (this.list.some(b => b.verify && b.verify.state === 'running')) this.pollVerify();
     }
 
     async save() {

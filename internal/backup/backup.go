@@ -282,6 +282,29 @@ func Prune(dir string, keep int) []string {
 	return removed
 }
 
+// ErrNotABackup is returned by Delete for a name that is not a complete
+// backup in dir.
+var ErrNotABackup = errors.New("not a backup in this folder")
+
+// Delete removes one complete backup. It only touches a directory List
+// recognises (a "backup-" name with a readable manifest), so a stray name, a
+// path, a partial copy or someone else's folder is refused.
+func Delete(dir, name string) error {
+	if name == "" || name != filepath.Base(name) || !strings.HasPrefix(name, NamePrefix) {
+		return ErrNotABackup
+	}
+	entries, err := List(dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if e.Name == name {
+			return os.RemoveAll(filepath.Join(dir, name))
+		}
+	}
+	return ErrNotABackup
+}
+
 // Verify re-reads every file of a backup and checks size and sha256 against
 // its manifest.
 func Verify(dir, name string) error {
