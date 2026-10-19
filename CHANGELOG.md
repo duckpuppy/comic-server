@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.64.0](https://github.com/duckpuppy/comic-server/compare/v1.63.3...v1.64.0) (2026-10-19)
+
+
+### Features
+
+* add a Sign out button to the header ([#198](https://github.com/duckpuppy/comic-server/issues/198)) ([79c757e](https://github.com/duckpuppy/comic-server/commit/79c757ea6be85041a5c2d49c0ff6dc8bd64082b3))
+* manual lists you fill by hand (add, remove, reorder) ([#199](https://github.com/duckpuppy/comic-server/issues/199)) ([4c42f94](https://github.com/duckpuppy/comic-server/commit/4c42f9490162146f2ed28936d3d6ccebf4930c73))
+
 ## [1.63.3](https://github.com/duckpuppy/comic-server/compare/v1.63.2...v1.63.3) (2026-10-19)
 
 
