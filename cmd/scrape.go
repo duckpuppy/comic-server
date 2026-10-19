@@ -297,7 +297,7 @@ func openScraperDeps(libraryPathOverride string) (libPath string, backend librar
 		return "", nil, nil, nil, comicvine.ScraperConfig{}, fmt.Errorf("open ComicVine cache: %w", err)
 	}
 
-	cvClient := comicvine.NewClient(cfg.Server.ComicVineAPIKey)
+	cvClient := comicvine.NewClient(cfg.Server.ComicVineAPIKey, comicvine.WithSharedPersistentLimits(cvCache))
 	scrapeCfg = comicvine.DefaultScraperConfig()
 	scrapeCfg.PublisherFilter = comicvine.PublisherFilter{
 		Allow: cfg.Server.ScrapePublisherAllow,
