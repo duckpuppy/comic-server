@@ -1,0 +1,74 @@
+# Archive Files: Writes, Conversion and Reading
+
+Every feature that writes, replaces or reads comic archive files on disk.
+
+Moved from `CLAUDE.md`. See the index there for the other developer reference files.
+
+## Safe File Replace (internal/trash/)
+
+Foundation infra (comic-server-rhe) for any feature that overwrites or deletes a comic archive file on disk. First (and currently only) caller is CBZ conversion (comic-server-43b, see below). See comic-server-1up for the full design record.
+
+**Why this exists**: comic-server had never written to or deleted a comic file before CBZ conversion - only read them. ComicRack's own "Convert to CBZ" replaces files in place, but on Windows the deleted original goes to the Recycle Bin and is recoverable. Linux (comic-server's actual deployment target) has no equivalent, so a plain `os.Remove` would be strictly riskier than what ComicRack already does.
+
+**Three primitives**, all on `*Trash`:
+- `Replace(targetPath, write, validate)` - same-path swap: write to a temp file in `targetPath`'s own directory (guarantees a same-filesystem atomic rename), validate it, quarantine whatever's currently at `targetPath` (not deleted), then atomically rename the temp file into place. On a failed final rename, best-effort moves the quarantined original back rather than leaving `targetPath` missing.
+- `WriteNew(targetPath, write, validate)` - same write/validate/atomic-rename mechanics as `Replace`, but for a path with nothing at it yet; errors if `targetPath` already exists rather than silently overwriting.
+- `Quarantine(path)` - moves an existing file into quarantine on its own, no replacement written.
+
+`Replace` alone isn't enough for a format conversion where the new file's path differs from the old one's (e.g. `.cbr` -> `.cbz` - see comic-server-43b below for why this split exists): that case pairs `WriteNew` for the new path with a separate `Quarantine` for the old one.
+
+**Cleanup** (`Trash.Sweep` / `Trash.Run`): a background sweep (hourly by default, `trash.DefaultSweepInterval`) permanently deletes quarantined files older than `TrashRetentionDays`, then prunes any directories left empty. Started in `cmd/server.go` whenever `trash_path` is configured, independent of which specific feature is enabled.
+
+**Configuration** (`ServerConfig`):
+- `trash_path` / `COMIC_SERVER_TRASH_PATH` - quarantine directory. Empty disables any feature that needs it (checked by `CBZConvertConfig.Validate`). Should be under a mounted volume in Docker deployments, same reasoning as `cover_cache_dir`.
+- `trash_retention_days` / `COMIC_SERVER_TRASH_RETENTION_DAYS` - default 30.
+
+## Convert to CBZ (internal/cbzconvert/)
+
+Port of ComicRack's native "Convert to CBZ" feature (comic-server-43b, researched in comic-server-pkk.2): repacks a comic archive's pages as-is into a new CBZ and embeds a `ComicInfo.xml` built from the book's current library metadata. comic-server's first feature that writes to and retires a comic archive file - built on `internal/trash` above.
+
+**What it does** (`cbzconvert.Convert`):
+1. Reads every image page from the source archive (`comicvine.ReadAllPages` - CBZ/CBR/CB7, shares the format-dispatch machinery `ExtractCover` already used for cover thumbnails).
+2. Drops any page the library marks `PageTypeDeleted` (matches ComicRack's own `RemovePages`/`RemovePageFilter` defaults - confirmed from `StorageProvider.GetImages` in ComicRackCE's real source, not assumed). Remaining pages are **not** reordered - export sorts strictly by original page index (`IndexedPageResult.CompareTo` in ComicRackCE), never by page `Type`; a front cover that isn't page 0 stays wherever it is. (An earlier read of this feature assumed front covers get sorted to the top on export - checked directly against the source and that's not real; the "front cover jumps to the top" behavior only exists in ComicRack's page-editor UI, not the export pipeline.)
+3. Builds `ComicInfo.xml` from the book's current metadata (`BuildComicInfoXML`) with `PageCount` reflecting the post-filter page count.
+4. Writes the new CBZ (`archive/zip`, `zip.Store` for image entries since they're already-compressed formats) and retires the original via `internal/trash` - `Replace` if the new file lands at the same path (source was already `.cbz`), or `WriteNew` + `Quarantine` if the extension changed.
+5. Returns the new raw `FilePath` and page count for the caller to apply to the library record - `Convert` itself never touches the backend, same division of responsibility as `internal/scaninfo.DetectTag`.
+
+**Optional `ComicBook.xml`** (`cbz_convert.embed_comic_book`, off by default like ComicRack's "Embed Library Info"): also writes ComicRackCE 0.9.184's `ComicBook.xml` - the full library record (read progress, custom values, catalog fields, page info) - next to `ComicInfo.xml` (`BuildComicBookXML` in `comicbook.go`; format read from `../ComicRackCE` `ComicBook.Serialize`, PR #261). Same schema as a `<Book>` in ComicDb.xml with root `<ComicBook>`; Id/File/file times+size/last-opened list/dirty flags/missing/NewPages are blanked as CE does; `Pages` and page-indexed progress are re-based after Deleted pages are dropped. ComicRack's reader lets `ComicInfo.xml` win on shared fields. Output is not verified against a real ComicRack install (this repo has no .NET/Windows), only against the library schema ComicRack already reads from ComicDb.xml. Reading `ComicBook.xml` out of archives is not implemented.
+
+**Write stale metadata back** (comic-server-os6x): `cbzconvert.UpdateMetadata` rewrites an existing CBZ's `ComicInfo.xml` (and `ComicBook.xml` with embed on) in place after library metadata changes. Page entries are raw-copied (`zip.Writer.Copy`), nothing is dropped or reordered, and the original goes to `internal/trash` via `Replace`. Staleness (`cbzconvert.IsStale`): `ComicInfoIsDirty`, or `ComicBookIsDirty` when embedding, or a mismatch with the fingerprint stored in the `comic_server_written_hash` custom value at the last write (`MarkWritten`). A book comic-server never wrote has no baseline, so it is not stale unless a dirty flag says so. Keys prefixed `comic_server_` are excluded from the fingerprint. Only CBZ/ZIP files qualify. Endpoints: `GET /api/library/workflow/stale-writes`, `POST /api/library/workflow/write-metadata`; "Out-of-date Files" card on the workflow page (only when `cbz_convert.enabled`). Reading progress is deliberately not fingerprinted.
+
+**Unknown ComicInfo.xml elements are kept** (comic-server-y95y): every write (Convert, Write Metadata, Variant covers) builds with `BuildComicInfoXMLKeeping`, which copies elements outside the schema (a tagger's lowercase `<writer>`, `<Issue>`, `<HasBeenRead>`...) from the file's existing ComicInfo.xml; a case-twin of a schema field the library writes is dropped. Schema fields still come only from the library, so clearing one in the library clears it in the file (no merge). A 200-book prod sample (2026-10-14) found no book whose file had a schema field the library lacked; 20% had non-schema elements. The book page's ComicInfo compare uses the same build. The `Pages` block (comic-server-mgac) is written like ComicRackCE's export: one `<Page>` per page the library knows (Type, Bookmark, ImageSize/Width/Height, Key), Deleted pages dropped and renumbered on Convert but kept in place on Write Metadata / Variant covers; attributes the library does not store (DoublePage, Rotation...) are copied from the file's entry for the same page; with no library page info the file's own block is kept; with neither, the old page-0 FrontCover entry is written.
+
+**Explicitly out of scope** (matches ComicRack's own defaults, not built): page re-encoding/resizing/rotation, combining multiple books into one archive.
+
+**Trigger**: `POST /api/library/lists/:listId/convert-cbz` - runs over every book currently matched by one smart list, mirroring the user's real ComicRack workflow (multi-select a smart list's results, invoke Convert to CBZ) and comic-server-pkk.1's own scan-info endpoint pattern. A "Convert this list" button on the list detail page calls it, behind a `confirm()` prompt (destructive-adjacent, unlike scan-info's metadata-only write).
+
+**Configuration** (`ServerConfig.CBZConvert`):
+- `cbz_convert.enabled` - off by default, same precedent as `scan_info.enabled`. `Config.Validate` rejects `enabled: true` without `server.trash_path` also set - this feature cannot run without a quarantine directory.
+
+## Archive Content Sniffing
+
+comic-server-0ebv. `comicvine.SniffArchive` reads a file's magic bytes (ZIP, RAR, 7z); `ExtractCover`, `ReadAllPages` and `ReadComicInfoXMLBytes` dispatch on the real container, falling back to the extension when content is unrecognised, so a RAR named `.cbz` reads instead of failing as "corrupt". Sniffing costs nothing extra: it happens only when the file is being read anyway. There is deliberately **no** bulk misnamed-archive scan - an earlier version opened every file in the disk pass and was removed (66K data reads on shared raidz disks); a `misnamed_archive` flag, if wanted, should be recorded lazily from reads that already happen. "Convert this list" repacks a misnamed archive by content. `workflow.GetStage` stays extension-only on purpose (no I/O on the 66K-book hot path), so misnamed books do not enter the Convert stage by themselves.
+
+**Decided not to build**: a hidden backup before in-place patches (`trash.Replace` already quarantines the original and restores it on a failed rename, see Safe File Replace) and a "Rezip" recovery action (needs real corrupt samples to be worth designing). Plain `.zip` rename-to-`.cbz` is not special-cased; Convert covers it. **`.cbw` is not an archive**: it is a ComicRack web-comic pointer (an XML list of remote page URLs), so it is never converted: `cbzconvert.IsWebComicPointer`, stage inference skips it, and a convert run advances any already-staged `.cbw` book past the Convert stage (reported as `skipped`). Found because a user described `.cbw` as renamed archives; the file header (`<?xml`) said otherwise - check the bytes before assuming. Unrecognised content is left to the `corrupted_archive` bead.
+
+## Variant Covers
+
+comic-server-0u48. `/variant-covers` page + `GET|POST /api/library/variant-covers/:bookId`. ComicVine's issue endpoint has an undocumented `associated_images` list (`id`, `original_url`, `caption` usually null, `image_tags` observed only as the catch-all "All Images"); nothing marks an entry as a variant cover, so the flow is **preview then apply**: the page shows every candidate with a thumbnail and the user ticks the real covers. `comicvine.Client.FetchIssueImages` (paced, circuit-broken) lists them; `DownloadImage` fetches from the CDN, restricted to https `*.gamespot.com`, 25 MB cap, content sniffed (not trusted from URL). The POST re-fetches the issue server-side and selects by id, so client-supplied URLs are never downloaded.
+
+`cbzconvert.AddVariantCovers` raw-copies the existing entries, appends `zzzz-cv-variant-<imageID>.<ext>` entries (appended, not inserted after the cover, so existing page indexes/bookmarks/progress are untouched) and rewrites ComicInfo.xml (and ComicBook.xml with embed on) with FrontCover pages at the new indexes, via `trash.Replace`. Idempotency: same entry name is skipped, and added ids are kept in the `comic_server_variant_cover_ids` custom value (`+`-joined). CBZ/ZIP only; requires `cbz_convert.enabled` + `trash_path` + a configured ComicVine key; audited as `variant_covers`. Not done: automatically guessing which images are variants (filename-suffix investigation bead), the CV main cover as a candidate (it has no id), CBR/CB7 sources, batch/scrape-time insertion.
+
+## Page Manager
+
+comic-server-j1cv. `/page-manager?book=<id>` (book page "Manage pages…") reorders, deletes and adds pages of one CBZ in a single atomic write. `GET /api/library/books/:id/pages` lists pages (name, size, library type/bookmark, plus a `version` = mtime-size of the file), `GET .../pages/:n?w=` serves a JPEG thumbnail, `POST .../pages` (multipart: `plan` JSON `{version, order:[{page:N}|{upload:K}]}` + repeated `upload` files) applies. The page stages everything client-side; a stale `version` is refused with 409 so a plan never applies to a different file than the one shown.
+
+`cbzconvert.ManagePages` raw-copies kept pages under new zero-padded names (`000.jpg`...; readers order by entry name, so renaming is what makes an order stick), drops pages left out of the plan **from the file** (original to `internal/trash` via `Replace`, decided 2026-10-15 over only marking `Deleted`), and rewrites ComicInfo.xml (and ComicBook.xml with embed on) in the same write. Page-indexed library data is **remapped, not reset**: `Pages`, `CurrentPage`, `LastPageRead`, `PreferredFrontCover` follow their page; a pointer at a deleted page moves to the nearest kept page before it; file-only page attributes (DoublePage...) are re-indexed in the existing ComicInfo.xml so they follow the page. Uploads are content-sniffed (JPEG/PNG/GIF/WebP, 25 MB each), never trusted by file name. CBZ/ZIP only; same gates as Variant Covers (`cbz_convert.enabled` + a trash path); audited as `page_manager`.
+
+`variantApplyBlocker` (shared by Variant Covers, Write metadata and Manage pages on the book page) reads the **effective** trash path (`effectiveTrashConfig`, config.db first): config.yaml's `trash_path` is cleared in memory after the config.db migration, so reading `cfg.Server.TrashPath` made every migrated install report "trash_path is not configured". Not done: PDF/CBR/CB7 sources, page-type editing in the UI, undo (the trashed original is the undo, via the Trash page).
+
+## Reader
+
+comic-server-65o8. `/reader?book=<id>&page=<n>` (book page "Read") is a basic in-browser page viewer: prev/next/first/last, arrow keys / space / Home / End, click left third = back and the rest = forward, `f` toggles fit-screen / fit-width, next and previous page preloaded, `page` kept in the URL with `replaceState`. Pages come from the Page Manager routes: `GET /api/library/books/:id/pages` (names; sizes for CBZ only) and `GET .../pages/:n?full=1` (original bytes, content-sniffed, `image/*` only, `nosniff`). `comicvine.ListPageNames` / `comicvine.ReadPage` read one entry of CBZ/CBR/CB7 by the real container (sniffed), in the same page order as `ReadAllPages`, so a page index means the same page everywhere. Reading needs none of the write gates (`cbz_convert`, trash); `BookDetailActions.reader_blocker` covers no file, `.cbw` pointers and unknown formats.
+
+**No progress write-back and no manga/RTL mode** (reading progress belongs to device sync and Komga; decided as v1 scope). A CBR page request lists the archive then reads one entry, and a solid RAR cannot be read at random (same limit as covers), so very large RARs are slow per page.

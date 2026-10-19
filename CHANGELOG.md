@@ -1276,7 +1276,7 @@
 
 ## Previous Releases
 
-For details on releases prior to v0.7, see the milestone documentation in CLAUDE.md:
+For details on releases prior to v0.7, see the milestone documentation in docs/dev/HISTORY.md:
 
 - v0.6 - Graceful device disconnect handling, pagination, device filtering
 - v0.5 - Rate limiting and Prometheus metrics
