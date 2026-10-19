@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -356,18 +357,28 @@ func TestSyncer_SyncTarget_ReadList(t *testing.T) {
 	}
 }
 
-// TestSyncer_SyncTarget_PushesReadStatus covers comic-server-bkh: when a
-// target has SyncReadStatus enabled, each resolved book's read/unread state
-// (per library.ComicBook.IsUnread) is pushed to Komga independently of the
-// read-list/collection membership push - one PATCH per read book, one
-// DELETE per unread book.
-func TestSyncer_SyncTarget_PushesReadStatus(t *testing.T) {
-	var patchedIDs, deletedIDs []string
+// runReadPush runs one pass for a read-list target with SyncReadStatus on.
+// komgaRead is the set of book IDs Komga reports as READ; listFails makes that
+// listing return HTTP 500. It returns the result plus the PATCHed and DELETEd
+// book IDs.
+func runReadPush(t *testing.T, komgaRead []string, listFails bool) (TargetResult, []string, []string) {
+	t.Helper()
+	var patched, deleted []string
 
 	c, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/v1/series":
 			json.NewEncoder(w).Encode(pageResponse[Series]{Last: true})
+		case r.URL.Path == "/api/v1/books" && r.URL.Query().Get("read_status") == "READ":
+			if listFails {
+				http.Error(w, "boom", http.StatusInternalServerError)
+				return
+			}
+			var content []Book
+			for _, id := range komgaRead {
+				content = append(content, Book{ID: id})
+			}
+			json.NewEncoder(w).Encode(pageResponse[Book]{Content: content, Last: true})
 		case r.URL.Path == "/api/v1/books":
 			json.NewEncoder(w).Encode(pageResponse[Book]{
 				Content: []Book{
@@ -380,11 +391,11 @@ func TestSyncer_SyncTarget_PushesReadStatus(t *testing.T) {
 			json.NewEncoder(w).Encode(pageResponse[readListDto]{Last: true})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/readlists":
 			json.NewEncoder(w).Encode(readListDto{ID: "new-id"})
-		case r.Method == http.MethodPatch && r.URL.Path == "/api/v1/books/b1/read-progress":
-			patchedIDs = append(patchedIDs, "b1")
+		case r.Method == http.MethodPatch && strings.HasSuffix(r.URL.Path, "/read-progress"):
+			patched = append(patched, strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/books/"), "/read-progress"))
 			w.WriteHeader(http.StatusNoContent)
-		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/books/b2/read-progress":
-			deletedIDs = append(deletedIDs, "b2")
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/read-progress"):
+			deleted = append(deleted, strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/books/"), "/read-progress"))
 			w.WriteHeader(http.StatusNoContent)
 		default:
 			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
@@ -424,24 +435,57 @@ func TestSyncer_SyncTarget_PushesReadStatus(t *testing.T) {
 		}
 		results = append(results, r)
 	})
-
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
 	if results[0].Err != nil {
 		t.Fatalf("unexpected error: %v", results[0].Err)
 	}
-	if results[0].ReadStatusPushed != 2 {
-		t.Errorf("expected 2 read-status pushes, got %d (failed: %+v)", results[0].ReadStatusPushed, results[0].ReadStatusFailed)
+	return results[0], patched, deleted
+}
+
+// TestSyncer_SyncTarget_PushesReadStatus covers comic-server-bkh, as changed
+// by tracker #32: a book read here and not yet read in Komga is PATCHed; an
+// unread book is never pushed (no DELETE), so Komga's own reads survive.
+func TestSyncer_SyncTarget_PushesReadStatus(t *testing.T) {
+	res, patched, deleted := runReadPush(t, nil, false)
+	if res.ReadStatusPushed != 1 || res.ReadStatusSkipped != 1 {
+		t.Errorf("want pushed=1 skipped=1, got pushed=%d skipped=%d (failed: %+v)", res.ReadStatusPushed, res.ReadStatusSkipped, res.ReadStatusFailed)
 	}
-	if len(results[0].ReadStatusFailed) != 0 {
-		t.Errorf("expected no read-status failures, got %+v", results[0].ReadStatusFailed)
+	if len(res.ReadStatusFailed) != 0 {
+		t.Errorf("expected no failures, got %+v", res.ReadStatusFailed)
 	}
-	if len(patchedIDs) != 1 || patchedIDs[0] != "b1" {
-		t.Errorf("expected exactly one PATCH for b1 (read), got %v", patchedIDs)
+	if len(patched) != 1 || patched[0] != "b1" {
+		t.Errorf("expected one PATCH for b1, got %v", patched)
 	}
-	if len(deletedIDs) != 1 || deletedIDs[0] != "b2" {
-		t.Errorf("expected exactly one DELETE for b2 (unread), got %v", deletedIDs)
+	if len(deleted) != 0 {
+		t.Errorf("unread must never be pushed, got DELETE for %v", deleted)
+	}
+}
+
+// A book Komga already has as READ is not pushed again.
+func TestSyncer_SyncTarget_ReadStatusSkipsAlreadyReadInKomga(t *testing.T) {
+	res, patched, deleted := runReadPush(t, []string{"b1"}, false)
+	if res.ReadStatusPushed != 0 || res.ReadStatusSkipped != 2 {
+		t.Errorf("want pushed=0 skipped=2, got pushed=%d skipped=%d", res.ReadStatusPushed, res.ReadStatusSkipped)
+	}
+	if len(patched) != 0 || len(deleted) != 0 {
+		t.Errorf("expected no writes, got PATCH %v DELETE %v", patched, deleted)
+	}
+}
+
+// If Komga's READ list cannot be fetched, nothing is pushed and the books
+// are reported as failed.
+func TestSyncer_SyncTarget_ReadStatusListFailurePushesNothing(t *testing.T) {
+	res, patched, deleted := runReadPush(t, nil, true)
+	if res.ReadStatusPushed != 0 {
+		t.Errorf("expected 0 pushes, got %d", res.ReadStatusPushed)
+	}
+	if len(res.ReadStatusFailed) != 1 {
+		t.Errorf("expected 1 failed book, got %+v", res.ReadStatusFailed)
+	}
+	if len(patched) != 0 || len(deleted) != 0 {
+		t.Errorf("expected no writes, got PATCH %v DELETE %v", patched, deleted)
 	}
 }
 

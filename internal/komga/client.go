@@ -217,6 +217,30 @@ func (c *Client) SetBookReadProgress(ctx context.Context, komgaBookID string, re
 	return c.delete(ctx, "/api/v1/books/"+komgaBookID+"/read-progress")
 }
 
+// ListReadBookIDs returns the IDs of every book Komga has as read (completed),
+// by asking for read_status=READ page by page. It costs a handful of requests
+// whatever the size of the list, instead of one request per book.
+func (c *Client) ListReadBookIDs(ctx context.Context) (map[string]bool, error) {
+	read := map[string]bool{}
+	for page := 0; ; page++ {
+		var resp pageResponse[Book]
+		params := url.Values{
+			"read_status": {"READ"},
+			"page":        {strconv.Itoa(page)},
+			"size":        {strconv.Itoa(pageSize)},
+		}
+		if err := c.get(ctx, "/api/v1/books", params, &resp); err != nil {
+			return nil, fmt.Errorf("list read books (page %d): %w", page, err)
+		}
+		for _, b := range resp.Content {
+			read[b.ID] = true
+		}
+		if resp.Last || len(resp.Content) == 0 {
+			return read, nil
+		}
+	}
+}
+
 func (c *Client) findCollectionByExactName(ctx context.Context, name string) (*collectionDto, error) {
 	page := 0
 	for {
