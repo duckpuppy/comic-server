@@ -11,6 +11,7 @@ class PageManagerPage {
         this.saving = false;
         this.message = '';
         this.error = '';
+        this.canWriteFile = false; // set after labels are saved
     }
 
     async init() {
@@ -53,7 +54,7 @@ class PageManagerPage {
         const v = encodeURIComponent(this.info.version || '');
         this.items = (this.info.pages || []).map(p => ({
             kind: 'page', index: p.index, name: p.name, size: p.size,
-            type: p.type || '', bookmark: p.bookmark || '', deleted: false,
+            type: p.type || '', bookmark: p.bookmark || '', origType: p.type || '', origBookmark: p.bookmark || '', deleted: false,
             url: `/api/library/books/${encodeURIComponent(this.bookId)}/pages/${p.index}?w=240&v=${v}`,
         }));
     }
@@ -62,6 +63,12 @@ class PageManagerPage {
         if (!this.info) return false;
         if (this.items.length !== (this.info.pages || []).length) return true;
         return this.items.some((it, i) => it.kind !== 'page' || it.deleted || it.index !== i);
+    }
+
+    // labelEdits are the pages whose type or bookmark differs from the saved
+    // record (tracker #12). Only existing pages have a record to edit.
+    labelEdits() {
+        return this.items.filter(it => it.kind === 'page' && !it.deleted && (it.type !== it.origType || it.bookmark !== it.origBookmark));
     }
 
     kept() { return this.items.filter(it => !it.deleted); }
@@ -75,6 +82,8 @@ class PageManagerPage {
         const kept = this.kept().length;
         const removed = this.items.filter(it => it.deleted && it.kind === 'page').length;
         const added = this.items.filter(it => it.kind === 'upload' && !it.deleted).length;
+        const labels = this.labelEdits().length;
+        const structural = this.isDirty();
 
         app.innerHTML = `
             <div class="page-manager-page">
@@ -94,6 +103,9 @@ class PageManagerPage {
                     <label class="btn btn-secondary ${canEdit ? '' : 'disabled'}" for="pm-add-input">Add pages…</label>
                     <input type="file" id="pm-add-input" accept="image/jpeg,image/png,image/gif,image/webp" multiple hidden ${canEdit ? '' : 'disabled'}>
                     <button class="btn btn-secondary" id="pm-reset-btn" ${canEdit && this.isDirty() ? '' : 'disabled'}>Reset</button>
+                    <button class="btn btn-secondary" id="pm-labels-btn" ${labels && !structural ? '' : 'disabled'}
+                        title="${structural ? 'Save the page order changes first' : 'Save page types and bookmarks to the library record'}">Save page labels${labels ? ` (${labels})` : ''}</button>
+                    ${this.canWriteFile ? '<button class="btn btn-secondary" id="pm-writefile-btn">Write labels to the file now</button>' : ''}
                     <button class="btn btn-primary" id="pm-save-btn" ${canEdit && this.isDirty() && kept > 0 ? '' : 'disabled'}>${this.saving ? 'Saving…' : 'Save changes'}</button>
                 </div>
                 <div class="page-manager-grid" id="pm-grid">
@@ -109,6 +121,15 @@ class PageManagerPage {
         if (it.type) badges.push(`<span class="pm-badge">${this.escapeHtml(it.type)}</span>`);
         if (it.bookmark) badges.push('<span class="pm-badge">Bookmark</span>');
         const dis = canEdit ? '' : 'disabled';
+        const types = (this.info && this.info.page_types) || [''];
+        const opts = types.includes(it.type) ? types : types.concat([it.type]); // keep a value the list does not know
+        const labelEditor = it.kind === 'page' && !it.deleted ? `
+                <div class="pm-labels">
+                    <select class="pm-type" data-pos="${i}" aria-label="Type of page ${i + 1}">
+                        ${opts.map(t => `<option value="${this.escapeHtml(t)}" ${t === it.type ? 'selected' : ''}>${t ? this.escapeHtml(t) : '(no type)'}</option>`).join('')}
+                    </select>
+                    <input type="text" class="pm-bookmark" data-pos="${i}" maxlength="200" placeholder="Bookmark" value="${this.escapeHtml(it.bookmark)}" aria-label="Bookmark of page ${i + 1}">
+                </div>` : '';
         return `
             <div class="pm-card ${it.deleted ? 'pm-card-deleted' : ''}" data-pos="${i}" draggable="${canEdit ? 'true' : 'false'}">
                 <div class="pm-thumb"><img src="${this.escapeHtml(it.url)}" alt="Page ${i + 1}" loading="lazy" draggable="false"></div>
@@ -117,6 +138,7 @@ class PageManagerPage {
                     <span class="pm-name" title="${this.escapeHtml(it.name)}">${this.escapeHtml(it.name)}</span>
                     ${badges.join('')}
                 </div>
+                ${labelEditor}
                 <div class="pm-actions">
                     <button class="btn btn-secondary pm-left" data-pos="${i}" ${dis} ${i === 0 ? 'disabled' : ''} aria-label="Move page ${i + 1} earlier">←</button>
                     <button class="btn btn-secondary pm-right" data-pos="${i}" ${dis} ${i === this.items.length - 1 ? 'disabled' : ''} aria-label="Move page ${i + 1} later">→</button>
@@ -131,6 +153,24 @@ class PageManagerPage {
             if (el) el.addEventListener(ev, fn);
         };
         on('pm-save-btn', 'click', () => this.save());
+        on('pm-labels-btn', 'click', () => this.saveLabels());
+        on('pm-writefile-btn', 'click', () => this.writeFile());
+        // Typing in a label only updates the staged value and the buttons;
+        // a full re-render would drop the caret.
+        document.querySelectorAll('.pm-type').forEach(el => el.addEventListener('change', () => {
+            this.items[+el.dataset.pos].type = el.value;
+            this.message = '';
+            this.render();
+        }));
+        document.querySelectorAll('.pm-bookmark').forEach(el => el.addEventListener('input', () => {
+            this.items[+el.dataset.pos].bookmark = el.value;
+            const btn = document.getElementById('pm-labels-btn');
+            const n = this.labelEdits().length;
+            if (btn) {
+                btn.disabled = !(n && !this.isDirty());
+                btn.textContent = `Save page labels${n ? ` (${n})` : ''}`;
+            }
+        }));
         on('pm-reset-btn', 'click', () => { this.resetItems(); this.message = ''; this.error = ''; this.render(); });
         on('pm-add-input', 'change', (e) => this.addFiles(e.target.files));
 
@@ -188,6 +228,57 @@ class PageManagerPage {
         }
         this.message = '';
         this.render();
+    }
+
+    // saveLabels sends the changed types and bookmarks. It changes the library
+    // record only and marks the file out of date; the file itself is rewritten
+    // by the Write metadata action (offered here once labels are saved).
+    async saveLabels() {
+        const edits = this.labelEdits();
+        if (this.saving || !edits.length || this.isDirty()) return;
+        this.saving = true;
+        this.error = '';
+        this.render();
+        try {
+            const res = await fetch(`/api/library/books/${encodeURIComponent(this.bookId)}/pages/meta`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ version: this.info.version, pages: edits.map(it => ({ index: it.index, type: it.type, bookmark: it.bookmark.trim() })) }),
+            });
+            if (!res.ok) throw new Error((await res.text()).trim() || `HTTP ${res.status}`);
+            const out = await res.json();
+            this.canWriteFile = !!(this.info && this.info.can_edit);
+            this.message = `Saved ${out.changed} page label${out.changed === 1 ? '' : 's'} to the library.` +
+                (this.canWriteFile ? ' The file still has the old labels until you write them.' : ' This file cannot be rewritten here (only CBZ files can).');
+            this.saving = false;
+            await this.load();
+        } catch (e) {
+            this.saving = false;
+            this.error = `Could not save labels: ${e.message}`;
+            this.render();
+        }
+    }
+
+    async writeFile() {
+        if (this.saving) return;
+        if (!window.confirm('Rewrite this file with the new labels? The original goes to the trash folder.')) return;
+        this.saving = true;
+        this.render();
+        try {
+            const res = await fetch('/api/library/workflow/write-metadata', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ book_ids: [this.bookId] }),
+            });
+            if (!res.ok) throw new Error((await res.text()).trim() || `HTTP ${res.status}`);
+            const out = await res.json();
+            if (out.written) { this.message = 'The file now has the new labels.'; this.canWriteFile = false; this.error = ''; }
+            else this.error = `Could not write the file: ${(out.errors || []).join('; ') || 'unknown error'}`;
+        } catch (e) {
+            this.error = `Could not write the file: ${e.message}`;
+        }
+        this.saving = false;
+        await this.load();
     }
 
     async save() {
