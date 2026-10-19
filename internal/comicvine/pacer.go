@@ -3,6 +3,7 @@ package comicvine
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -29,6 +30,27 @@ type backgroundKey struct{}
 // treated as interactive and may use the full limits.
 func WithBackground(ctx context.Context) context.Context {
 	return context.WithValue(ctx, backgroundKey{}, true)
+}
+
+type maxWaitKey struct{}
+
+// WithMaxWait limits how long a request may wait for pacing. A caller that
+// answers a web request cannot hold it for minutes (a reverse proxy gives up
+// after about a minute and the person sees a bare 504); with a limit, a longer
+// pause comes back at once as ErrPaceWait carrying the time to wait.
+func WithMaxWait(ctx context.Context, d time.Duration) context.Context {
+	return context.WithValue(ctx, maxWaitKey{}, d)
+}
+
+// ErrPaceWait is returned instead of waiting when the pacing pause is longer
+// than the caller's WithMaxWait.
+type ErrPaceWait struct {
+	After  time.Duration // how long until the next request is allowed
+	Reason string        // "burst", "window" or "hourly"
+}
+
+func (e ErrPaceWait) Error() string {
+	return fmt.Sprintf("ComicVine pacing (%s limit): the next request is allowed in %s", e.Reason, e.After.Round(time.Second))
 }
 
 func isBackground(ctx context.Context) bool {
@@ -197,9 +219,17 @@ func (p *Pacer) RequestsLastHour() int {
 func (p *Pacer) Wait(ctx context.Context) error {
 	bg := isBackground(ctx)
 	for {
-		pause, why := p.pauseNeeded(bg, time.Now())
+		pause, reason := p.pauseNeeded(bg, time.Now())
 		if pause <= 0 {
 			return nil
+		}
+		if limit, ok := ctx.Value(maxWaitKey{}).(time.Duration); ok && pause > limit {
+			jobLog(ctx, JobLogInfo, "Not waiting %s for the ComicVine rate limit (%s limit); try again later", pause.Round(time.Second), reason)
+			return ErrPaceWait{After: pause, Reason: reason}
+		}
+		why := ""
+		if reason == "hourly" {
+			why = " (the background sync keeps part of the hourly budget free)"
 		}
 		jobLog(ctx, JobLogInfo, "Waiting %s for the ComicVine rate limit%s", pause.Round(time.Second), why)
 		select {
@@ -232,14 +262,14 @@ func (p *Pacer) pauseNeeded(bg bool, now time.Time) (time.Duration, string) {
 
 	if p.windowCount >= windowLimit {
 		if d := served(p.windowPause); d > 0 {
-			return d, ""
+			return d, "window"
 		}
 		p.windowCount, p.burstCount = 0, 0
 		p.save()
 	}
 	if p.burstCount >= burstLimit {
 		if d := served(p.burstPause); d > 0 {
-			return d, ""
+			return d, "burst"
 		}
 		p.burstCount = 0
 		p.save()
@@ -249,7 +279,7 @@ func (p *Pacer) pauseNeeded(bg bool, now time.Time) (time.Duration, string) {
 		if n := len(p.times); n >= p.bgHourlyCap {
 			// Wait until enough of the last hour's requests have aged out.
 			d := p.times[n-p.bgHourlyCap].Add(pacerHistory).Sub(now)
-			return max(d, time.Second), " (the background sync keeps part of the hourly budget free)"
+			return max(d, time.Second), "hourly"
 		}
 	}
 	return 0, ""

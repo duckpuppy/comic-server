@@ -115,3 +115,42 @@ func TestSyncer_RunIsBackground(t *testing.T) {
 		t.Errorf("interactive fetch: %v", err)
 	}
 }
+
+func TestPacer_MaxWaitFailsFastWithTheTimeToWait(t *testing.T) {
+	p := NewPacer(WithBurstSize(2), WithBurstPause(time.Hour), WithWindowSize(1000))
+	p.RecordRequest()
+	p.RecordRequest()
+
+	start := time.Now()
+	err := p.Wait(WithMaxWait(context.Background(), 50*time.Millisecond))
+	var pace ErrPaceWait
+	if !errors.As(err, &pace) {
+		t.Fatalf("err = %v, want ErrPaceWait", err)
+	}
+	if time.Since(start) > 40*time.Millisecond {
+		t.Error("a too-long pause must come back at once")
+	}
+	if pace.Reason != "burst" || pace.After < 59*time.Minute {
+		t.Errorf("pace = %+v", pace)
+	}
+	// A pause inside the limit is simply waited out.
+	p2 := NewPacer(WithBurstSize(1), WithBurstPause(40*time.Millisecond), WithWindowSize(1000))
+	p2.RecordRequest()
+	if err := p2.Wait(WithMaxWait(context.Background(), time.Second)); err != nil {
+		t.Errorf("short pause: %v", err)
+	}
+}
+
+func TestClient_GetReturnsPaceWaitWithoutCallingComicVine(t *testing.T) {
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits++ }))
+	t.Cleanup(srv.Close)
+	pacer := NewPacer(WithBurstSize(1), WithBurstPause(time.Hour))
+	pacer.RecordRequest()
+	client := NewClient("k", WithBaseURL(srv.URL), WithPacer(pacer))
+	_, err := client.FetchIssueDetail(WithMaxWait(context.Background(), time.Second), 5)
+	var pace ErrPaceWait
+	if !errors.As(err, &pace) || hits != 0 {
+		t.Fatalf("err = %v, hits = %d; want ErrPaceWait and no request", err, hits)
+	}
+}
