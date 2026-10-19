@@ -44,13 +44,15 @@ type BookPage struct {
 
 // BookPagesInfo is the response of GET /api/library/books/:id/pages.
 type BookPagesInfo struct {
-	BookID  string     `json:"book_id"`
-	Series  string     `json:"series"`
-	Number  string     `json:"number"`
-	Version string     `json:"version"` // changes whenever the file does; echoed back by POST
-	CanEdit bool       `json:"can_edit"`
-	Reason  string     `json:"reason,omitempty"` // why CanEdit is false
-	Pages   []BookPage `json:"pages"`
+	BookID  string `json:"book_id"`
+	Series  string `json:"series"`
+	Number  string `json:"number"`
+	Version string `json:"version"` // changes whenever the file does; echoed back by POST
+	CanEdit bool   `json:"can_edit"`
+	// PageTypes are the values the type menu offers ("" = none).
+	PageTypes []string   `json:"page_types"`
+	Reason    string     `json:"reason,omitempty"` // why CanEdit is false
+	Pages     []BookPage `json:"pages"`
 }
 
 // pagePlanRequest is the JSON `plan` field of the POST.
@@ -107,6 +109,8 @@ func (s *Server) handleBookPages(w http.ResponseWriter, r *http.Request) {
 		s.pagesList(w, book)
 	case rest == "" && r.Method == http.MethodPost:
 		s.pagesApply(w, r, book)
+	case rest == "meta" && r.Method == http.MethodPost:
+		s.pagesMeta(w, r, book)
 	case rest != "" && r.Method == http.MethodGet:
 		n, err := strconv.Atoi(rest)
 		if err != nil || n < 0 {
@@ -126,31 +130,34 @@ func (s *Server) pageManagerBlocker(book *library.ComicBook) string {
 
 func zipPageFiles(zr *zip.ReadCloser) []*zip.File { return comicvine.SortedZipImageFiles(zr.File) }
 
-func (s *Server) pagesList(w http.ResponseWriter, book *library.ComicBook) {
-	info := BookPagesInfo{BookID: book.ID, Series: book.Series, Number: book.Number, Pages: []BookPage{}}
+// pageNames lists the book's page entry names (and sizes for a CBZ), in page order.
+func (s *Server) pageNames(book *library.ComicBook) (names []string, sizes []int64, err error) {
 	path := s.resolveBookFilePath(book.FilePath)
-	var names []string
-	var sizes []int64
 	if cbzconvert.IsZipPath(book.FilePath) {
 		zr, err := zip.OpenReader(path)
 		if err != nil {
-			log.Warn().Err(err).Str("book_id", book.ID).Msg("Page list could not open archive")
-			http.Error(w, "Could not open the archive", http.StatusNotFound)
-			return
+			return nil, nil, err
 		}
 		defer zr.Close()
 		for _, f := range zipPageFiles(zr) {
 			names = append(names, f.Name)
 			sizes = append(sizes, int64(f.UncompressedSize64))
 		}
-	} else {
-		// CBR/CB7: names only (the reader needs the count, not sizes).
-		var err error
-		if names, err = comicvine.ListPageNames(path); err != nil {
-			log.Warn().Err(err).Str("book_id", book.ID).Msg("Page list could not open archive")
-			http.Error(w, "Could not open the archive", http.StatusNotFound)
-			return
-		}
+		return names, sizes, nil
+	}
+	// CBR/CB7: names only (the reader needs the count, not sizes).
+	names, err = comicvine.ListPageNames(path)
+	return names, nil, err
+}
+
+func (s *Server) pagesList(w http.ResponseWriter, book *library.ComicBook) {
+	info := BookPagesInfo{BookID: book.ID, Series: book.Series, Number: book.Number, Pages: []BookPage{}, PageTypes: pageTypes}
+	path := s.resolveBookFilePath(book.FilePath)
+	names, sizes, err := s.pageNames(book)
+	if err != nil {
+		log.Warn().Err(err).Str("book_id", book.ID).Msg("Page list could not open archive")
+		http.Error(w, "Could not open the archive", http.StatusNotFound)
+		return
 	}
 	info.Version = fileVersion(path)
 	byImage := map[int]library.ComicPageInfo{}

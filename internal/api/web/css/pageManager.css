@@ -26,3 +26,6 @@
     content: "Will be removed"; position: absolute; top: 40%; left: 0; right: 0;
     text-align: center; color: #c0392b; font-weight: bold; pointer-events: none;
 }
+
+.pm-labels { display: flex; flex-direction: column; gap: 0.25rem; margin: 0.35rem 0; }
+.pm-labels select, .pm-labels input { width: 100%; font-size: 0.85rem; }
