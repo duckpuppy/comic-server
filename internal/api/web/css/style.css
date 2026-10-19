@@ -219,6 +219,13 @@ input, select, textarea {
     border-color: var(--primary-color);
 }
 
+/* Header Sign out (tracker #25): same frame as the theme toggle. */
+#auth-signout-btn {
+    font-size: 0.875rem;
+    white-space: nowrap;
+    color: var(--text-primary);
+}
+
 .status-indicator {
     width: 10px;
     height: 10px;

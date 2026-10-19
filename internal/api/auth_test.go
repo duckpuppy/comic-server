@@ -334,6 +334,19 @@ func TestOIDCFullTripThroughHTTP(t *testing.T) {
 	if w := do(s, http.MethodGet, "/api/stats", "", nil, sso); w.Code == http.StatusUnauthorized {
 		t.Error("single sign-on session not accepted")
 	}
+	// Sign out (tracker #25) ends a single sign-on session the same way as a
+	// password one, and clears the cookie in the browser.
+	w = do(s, http.MethodPost, "/api/auth/logout", "", nil, sso)
+	cleared := false
+	for _, ck := range w.Result().Cookies() {
+		cleared = cleared || (ck.Name == auth.CookieName && ck.Value == "" && ck.MaxAge < 0)
+	}
+	if w.Code != http.StatusOK || !cleared {
+		t.Errorf("logout: %d, cookie cleared %v", w.Code, cleared)
+	}
+	if w := do(s, http.MethodGet, "/api/stats", "", nil, sso); w.Code != http.StatusUnauthorized {
+		t.Errorf("single sign-on session still valid after logout: %d", w.Code)
+	}
 
 	idp.InfoGroups = []string{"guests"}
 	w = trip()

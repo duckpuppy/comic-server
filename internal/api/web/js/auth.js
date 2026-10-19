@@ -122,12 +122,26 @@
         }
     }
 
+    // The header's Sign out button (tracker #25) shows only while login is on
+    // and this browser is signed in. Password and single sign-on both end in
+    // the same session cookie, so one logout call covers both.
+    function showSignOut(on) {
+        const btn = document.getElementById('auth-signout-btn');
+        if (!btn) return;
+        btn.hidden = !on;
+        if (!btn.dataset.bound) {
+            btn.dataset.bound = '1';
+            btn.addEventListener('click', logout);
+        }
+    }
+
     async function check() {
         try {
             const res = await realFetch('/api/auth/status');
             if (!res.ok) return;
             const st = await res.json();
             if (st.enabled && !st.authenticated) showLogin();
+            showSignOut(st.enabled && st.authenticated);
         } catch (e) { /* the server may be starting; the next 401 will raise the form */ }
     }
 
