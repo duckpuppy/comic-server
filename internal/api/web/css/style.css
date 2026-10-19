@@ -151,6 +151,20 @@ body {
     line-height: 1.6;
 }
 
+/* Plain links (no class) used to fall back to the browser's own blue and
+   purple, which is hard to read on the dark theme (tracker #45). One rule
+   on the theme tokens covers every bare anchor. :where() keeps the rule at
+   zero specificity, so any class that sets a link colour (nav, .btn,
+   a.book-link) still wins, visited or not. */
+:where(a),
+:where(a:visited) {
+    color: var(--primary-color);
+}
+
+:where(a:hover) {
+    color: var(--primary-hover);
+}
+
 /* No page in this app ever set an explicit background/color for form
    controls (every input/select/textarea across every page/panel relies
    on the browser's own default rendering - a plain white box with black
