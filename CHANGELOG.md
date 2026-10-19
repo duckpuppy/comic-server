@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.67.1](https://github.com/duckpuppy/comic-server/compare/v1.67.0...v1.67.1) (2026-10-19)
+
+
+### Bug Fixes
+
+* **komga:** push read status as read-only, skip books Komga already has as read ([#217](https://github.com/duckpuppy/comic-server/issues/217)) ([e5762b6](https://github.com/duckpuppy/comic-server/commit/e5762b6843a5d3931088127e8500816e69a2cd13))
+
 ## [1.67.0](https://github.com/duckpuppy/comic-server/compare/v1.66.0...v1.67.0) (2026-10-19)
 
 
