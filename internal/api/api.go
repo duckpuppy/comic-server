@@ -258,6 +258,7 @@ func (s *Server) registerRoutes() {
 	// API endpoints
 	s.mux.HandleFunc("/api/health", s.handleHealth)
 	s.mux.HandleFunc("/api/version", s.handleVersion)
+	s.mux.HandleFunc("/api/comicvine/pacing", s.handleCVPacing)
 	s.mux.HandleFunc("/api/auth/status", s.handleAuthStatus)
 	s.mux.HandleFunc("/api/auth/login", s.handleAuthLogin)
 	s.mux.HandleFunc("/api/auth/logout", s.handleAuthLogout)
