@@ -1518,3 +1518,7 @@
     border-color: var(--danger-color, #c0392b);
     color: var(--danger-color, #c0392b);
 }
+
+.browse-export { margin: 0.5rem 0; }
+.browse-export-cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 0.25rem 1rem; margin: 0.5rem 0; }
+.browse-export-col { font-size: 0.9rem; }

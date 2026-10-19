@@ -286,6 +286,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/library/browse/datamanager-preview", s.handleBrowseDataManagerPreview)
 	s.mux.HandleFunc("/api/library/browse/datamanager-apply", s.handleBrowseDataManagerApply)
 	s.mux.HandleFunc("/api/library/browse/bulk-edit", s.handleBulkEdit)
+	s.mux.HandleFunc("/api/library/browse/export-columns", s.handleBrowseExportColumns)
+	s.mux.HandleFunc("/api/library/browse/export-csv", s.handleBrowseExportCSV)
 
 	// Data Manager whole-library endpoints (comic-server-dpq's "Apply
 	// All" - the list-scoped equivalents are under /api/library/lists/).
