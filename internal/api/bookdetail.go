@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"encoding/xml"
+	"github.com/duckpuppy/comic-server/internal/collects"
 	"io"
 	"net/http"
 	"os"
@@ -69,6 +70,7 @@ type BookDetail struct {
 	Flags        []BookDetailFlag     `json:"flags"`
 	Accepted     []BookDetailFlag     `json:"accepted_flags"` // flags the user hid on this book
 	LockedFields []string             `json:"locked_fields"`  // fields undo must not change (tracker #27)
+	Collects     []collects.Entry     `json:"collects"`       // issues this collected edition contains (tracker #38)
 	File         *BookDetailFile      `json:"file,omitempty"` // nil for a fileless book
 	ComicVine    *BookDetailComicVine `json:"comicvine,omitempty"`
 	NoCVMatch    *BookDetailNoCVMatch `json:"cv_nomatch,omitempty"` // user marked: not in ComicVine
@@ -164,6 +166,7 @@ func (s *Server) handleBookDetail(w http.ResponseWriter, r *http.Request) {
 		Flags:        []BookDetailFlag{},
 		Accepted:     []BookDetailFlag{},
 		LockedFields: lockedFields(book),
+		Collects:     collectsOrEmpty(book),
 		CoverURL:     "/api/library/books/" + book.ID + "/cover",
 		Kind:         bookKind(book),
 	}

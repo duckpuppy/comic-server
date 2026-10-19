@@ -353,3 +353,20 @@ a.book-link {
     min-width: 0;
     overflow-wrap: anywhere;
 }
+
+/* Issues a collected edition contains (tracker #38). */
+.bd-collects {
+    list-style: none;
+}
+
+.bd-collects-row {
+    padding: 0.25rem 0;
+}
+
+.bd-collects-note {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    padding: 0 0.5rem;
+}
