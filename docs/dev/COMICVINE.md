@@ -31,6 +31,8 @@ ComicVine's API is burst-hostile — sustained requests at any rate will eventua
 - **Burst-and-pause pacing**: 20 requests, then 5-minute pause. After 200 requests, 30-minute cooldown.
 - **Circuit breaker**: On ANY failure (timeout, 429, 5xx), immediately stops all requests. Minimum 1-hour backoff with exponential increase up to 24-hour cap.
 - **Resumable sync**: Progress tracked in SQLite. Survives server restarts, backoff pauses, and interruptions.
+- **State survives restarts** (tracker #26): the pacer's counters and last-hour request times, and the circuit's open state, are saved in `cv_sync_state` (`pacer_state`, `circuit_state`). The sync, the scraper and the CLI share one pacer and one circuit (`WithSharedPersistentLimits`). A pause counts from the last request, so time served before a restart counts. The sync start line and a 420/429 line log the requests of the last hour.
+- **Headroom for people** (tracker #26 follow-up): the background sync (`Syncer.Run` marks its context with `WithBackground`) stops 5 requests short of the burst limit, 20 short of the window limit, and uses at most 120 requests an hour (`defaultBackgroundHourlyCap`; ComicVine allows about 200). A re-scrape or match started from the UI is interactive and may use the full limits, so it finds free slots instead of queueing behind the sync's burst pause. Before this the sync alone used about 200 requests an hour and a re-scrape waited up to 5 minutes. The cost is a slower initial sync (about 40% fewer requests per hour). Constants, not config; change them in `internal/comicvine/pacer.go`.
 
 Initial sync of ~12K volumes takes approximately 2 weeks at conservative pacing.
 

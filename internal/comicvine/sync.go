@@ -61,6 +61,9 @@ func BuildOwnedCounts(customValuesStores []string) map[int]int {
 // respecting the pacer and circuit breaker. Returns when the context is cancelled
 // or all volumes are synced.
 func (s *Syncer) Run(ctx context.Context, owned map[int]int) error {
+	// The sync is a background job: its requests leave headroom for a scrape
+	// or match a person starts (see Pacer).
+	ctx = WithBackground(ctx)
 	for {
 		if ctx.Err() != nil {
 			return ctx.Err()

@@ -12,7 +12,29 @@ const (
 	defaultBurstPause  = 5 * time.Minute
 	defaultWindowSize  = 200
 	defaultWindowPause = 30 * time.Minute
+
+	// Background callers (the volume sync) leave headroom so a person who
+	// starts a scrape or a match is not queued behind them: they stop short of
+	// the burst and window limits and share only part of the hourly budget
+	// (ComicVine allows about 200 requests an hour).
+	defaultBackgroundBurstReserve  = 5
+	defaultBackgroundWindowReserve = 20
+	defaultBackgroundHourlyCap     = 120
 )
+
+type backgroundKey struct{}
+
+// WithBackground marks ctx as belonging to a background job. Its requests
+// are paced with headroom (see defaultBackgroundHourlyCap); anything else is
+// treated as interactive and may use the full limits.
+func WithBackground(ctx context.Context) context.Context {
+	return context.WithValue(ctx, backgroundKey{}, true)
+}
+
+func isBackground(ctx context.Context) bool {
+	v, _ := ctx.Value(backgroundKey{}).(bool)
+	return v
+}
 
 // Pacer implements burst-and-pause rate limiting to avoid triggering ComicVine's
 // velocity detection. Rather than a steady drip of requests, it allows short bursts
@@ -28,6 +50,10 @@ type Pacer struct {
 	windowPause time.Duration
 	burstCount  int // requests in current burst
 	windowCount int // requests in current window
+
+	bgBurstReserve  int
+	bgWindowReserve int
+	bgHourlyCap     int
 
 	// last and times are kept so a restart can carry the pacing over: ComicVine
 	// counts requests on its side, so a restart must not give a fresh count.
@@ -63,6 +89,14 @@ func WithPacerStore(s StateStore) PacerOption {
 // PacerOption configures a Pacer.
 type PacerOption func(*Pacer)
 
+// WithBackgroundHeadroom sets how many burst and window slots, and how many
+// requests an hour, background callers leave to everyone else.
+func WithBackgroundHeadroom(burstReserve, windowReserve, hourlyCap int) PacerOption {
+	return func(p *Pacer) {
+		p.bgBurstReserve, p.bgWindowReserve, p.bgHourlyCap = burstReserve, windowReserve, hourlyCap
+	}
+}
+
 func WithBurstSize(n int) PacerOption {
 	return func(p *Pacer) { p.burstSize = n }
 }
@@ -86,6 +120,10 @@ func NewPacer(opts ...PacerOption) *Pacer {
 		burstPause:  defaultBurstPause,
 		windowSize:  defaultWindowSize,
 		windowPause: defaultWindowPause,
+
+		bgBurstReserve:  defaultBackgroundBurstReserve,
+		bgWindowReserve: defaultBackgroundWindowReserve,
+		bgHourlyCap:     defaultBackgroundHourlyCap,
 	}
 	for _, o := range opts {
 		o(p)
@@ -153,46 +191,68 @@ func (p *Pacer) RequestsLastHour() int {
 	return len(p.times)
 }
 
-// Wait blocks until the next request is allowed, respecting burst and window limits.
-// Returns an error if the context is cancelled while waiting.
+// Wait blocks until the next request is allowed, respecting burst, window and
+// (for background callers) hourly limits. Returns an error if the context is
+// cancelled while waiting.
 func (p *Pacer) Wait(ctx context.Context) error {
-	p.mu.Lock()
-	var pause time.Duration
-
-	if p.windowCount > 0 && p.windowCount%p.windowSize == 0 {
-		pause = p.windowPause
-	} else if p.burstCount > 0 && p.burstCount%p.burstSize == 0 {
-		pause = p.burstPause
-	}
-	// The pause runs from the last request, so time already served (before a
-	// restart, say) counts.
-	if pause > 0 && !p.last.IsZero() {
-		pause -= time.Since(p.last)
-	}
-	p.mu.Unlock()
-
-	if pause > 0 {
-		jobLog(ctx, JobLogInfo, "Waiting %s for the ComicVine rate limit", pause.Round(time.Second))
+	bg := isBackground(ctx)
+	for {
+		pause, why := p.pauseNeeded(bg, time.Now())
+		if pause <= 0 {
+			return nil
+		}
+		jobLog(ctx, JobLogInfo, "Waiting %s for the ComicVine rate limit%s", pause.Round(time.Second), why)
 		select {
 		case <-time.After(pause):
 		case <-ctx.Done():
 			return ctx.Err()
 		}
+		// Look again: the counters may have moved while waiting.
 	}
+}
 
-	// The pause is over (or was never needed): start a fresh burst. This is
-	// done after the wait so a restart during the pause does not lose it.
+// pauseNeeded returns how long to wait before the next request, 0 for none.
+// A limit whose pause has already been served (measured from the last request,
+// so time before a restart counts) is cleared here.
+func (p *Pacer) pauseNeeded(bg bool, now time.Time) (time.Duration, string) {
 	p.mu.Lock()
-	if p.burstCount > 0 && p.burstCount%p.burstSize == 0 {
-		p.burstCount = 0
+	defer p.mu.Unlock()
+
+	burstLimit, windowLimit := p.burstSize, p.windowSize
+	if bg {
+		burstLimit = max(p.burstSize-p.bgBurstReserve, 1)
+		windowLimit = max(p.windowSize-p.bgWindowReserve, 1)
+	}
+	served := func(pause time.Duration) time.Duration {
+		if p.last.IsZero() {
+			return 0
+		}
+		return pause - now.Sub(p.last)
+	}
+
+	if p.windowCount >= windowLimit {
+		if d := served(p.windowPause); d > 0 {
+			return d, ""
+		}
+		p.windowCount, p.burstCount = 0, 0
 		p.save()
-	} else if p.windowCount > 0 && p.windowCount%p.windowSize == 0 {
+	}
+	if p.burstCount >= burstLimit {
+		if d := served(p.burstPause); d > 0 {
+			return d, ""
+		}
 		p.burstCount = 0
 		p.save()
 	}
-	p.mu.Unlock()
-
-	return nil
+	if bg && p.bgHourlyCap > 0 {
+		p.prune(now)
+		if n := len(p.times); n >= p.bgHourlyCap {
+			// Wait until enough of the last hour's requests have aged out.
+			d := p.times[n-p.bgHourlyCap].Add(pacerHistory).Sub(now)
+			return max(d, time.Second), " (the background sync keeps part of the hourly budget free)"
+		}
+	}
+	return 0, ""
 }
 
 // RecordRequest increments the burst and window counters. Call after a successful request.
