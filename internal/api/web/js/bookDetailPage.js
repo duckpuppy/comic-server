@@ -102,22 +102,6 @@ class BookDetailPage {
         }
     }
 
-    // Issues this collected edition contains (tracker #38). Read-only here;
-    // the linking screen comes with tracker #39.
-    renderCollects(entries) {
-        const rows = entries.map(e => {
-            const label = e.series || `ComicVine volume ${e.volume}`;
-            const name = e.volume
-                ? `<a href="https://comicvine.gamespot.com/volume/4050-${e.volume}/" target="_blank" rel="noopener noreferrer">${this.escapeHtml(label)}</a>`
-                : this.escapeHtml(label);
-            const range = e.to ? `#${this.escapeHtml(e.from)}\u2013#${this.escapeHtml(e.to)}` : `#${this.escapeHtml(e.from)}`;
-            const notes = [e.kind === 'backup' ? 'backup story' : '', e.partial ? 'partial' : '', e.source === 'suggested' ? 'suggested' : '']
-                .filter(Boolean).map(n => `<span class="bd-collects-note">${n}</span>`).join(' ');
-            return `<li class="bd-collects-row">${name} ${range} ${notes}</li>`;
-        }).join('');
-        return `<ul class="bd-collects">${rows}</ul>`;
-    }
-
     renderLists() {
         if (!this.lists) return '';
         const mine = this.lists.filter(l => l.contains);
@@ -284,7 +268,7 @@ class BookDetailPage {
                     ['Last opened', this.formatTime(b.OpenedTime)],
                     ['Rating', b.Rating],
                 ]))}
-                ${(d.collects || []).length ? this.section('Collects', this.renderCollects(d.collects)) : ''}
+                ${this.section('Collects', '<div id="bd-collects-host"></div>', (d.collects || []).length > 0 || (d.cv_nomatch && d.cv_nomatch.reason === 'collected'))}
                 ${this.section('Lists', this.renderLists())}
                 ${this.section('Custom values', this.renderCustomValues(d.custom_values), false)}
                 ${this.section('History', this.renderHistory())}
@@ -857,6 +841,10 @@ class BookDetailPage {
             this.setAccepted(el.dataset.flag, el.dataset.accept === '1')));
         on('bd-write-btn', () => this.writeMetadata());
         on('bd-rollback-btn', () => this.rollback());
+        const cxHost = document.getElementById('bd-collects-host');
+        if (cxHost && typeof CollectsEditor !== 'undefined') {
+            new CollectsEditor(this.bookId, cxHost, this.detail.collects || [], entries => { this.detail.collects = entries; });
+        }
         const cvHost = document.getElementById('bd-cvmatch-host');
         if (cvHost && typeof CVMatchBox !== 'undefined') {
             new CVMatchBox(this.bookId, cvHost, () => this.runAction(async () => {}));

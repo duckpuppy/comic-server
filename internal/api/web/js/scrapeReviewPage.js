@@ -154,6 +154,7 @@ class ScrapeReviewPage {
                     <button class="btn btn-small btn-secondary scrape-review-rescrape" data-book="${this.escapeHtml(item.book_id)}" ${busy ? 'disabled' : ''} title="Search ComicVine again and replace these candidates">Re-scrape</button>
                 </div>
                 <details class="scrape-review-cvmatch" ${this.matchBoxes && this.matchBoxes[item.book_id] && this.matchBoxes[item.book_id].state ? 'open' : ''}><summary>Match by ComicVine link or ID</summary><div class="scrape-review-cvmatch-host" data-book="${this.escapeHtml(item.book_id)}"></div></details>
+                <details class="scrape-review-collects"><summary>This is a collected edition: link the issues it contains</summary><div class="scrape-review-collects-host" data-book="${this.escapeHtml(item.book_id)}"></div></details>
                 <table class="scrape-review-table">
                     <thead><tr><th>Cover</th><th>Volume</th><th>Start year</th><th>Issues</th><th>Publisher</th><th>Score</th><th>Confidence</th><th></th></tr></thead>
                     <tbody>${rows}</tbody>
@@ -204,6 +205,13 @@ class ScrapeReviewPage {
             });
             if (prior) { box.ref = prior.ref; box.state = prior.state; box.render(); }
             (this.matchBoxes = this.matchBoxes || {})[bookId] = box;
+        });
+        document.querySelectorAll('.scrape-review-collects-host').forEach(host => {
+            if (typeof CollectsEditor === 'undefined') return;
+            // Load the current links only when the section is first opened.
+            const details = host.closest('details');
+            const start = () => { if (!host.dataset.started) { host.dataset.started = '1'; new CollectsEditor(host.dataset.book, host); } };
+            if (details.open) start(); else details.addEventListener('toggle', start, { once: true });
         });
         document.querySelectorAll('.scrape-review-nomatch-btn').forEach(btn => {
             btn.addEventListener('click', () => {
