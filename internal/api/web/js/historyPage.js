@@ -11,6 +11,7 @@ class HistoryPage {
         this.loading = true;
         this.error = '';
         this.message = '';
+        this.undo = null; // {entry, items, force} while the undo preview is open
     }
 
     async init(ctx) {
@@ -81,7 +82,7 @@ class HistoryPage {
                 <td><a href="#" class="history-book-link" data-book="${this.escapeAttr(e.book_id)}">${this.escapeHtml(e.series || e.book_id)} ${this.escapeHtml(e.number ? '#' + e.number : '')}</a> <a class="book-link" title="Book details" href="/books/${encodeURIComponent(e.book_id)}" data-route>&#8599;</a></td>
                 <td>${stage}</td>
                 <td>${this.renderChanges(e.changes)}</td>
-                <td>${canRollBack ? `<button class="btn btn-secondary history-rollback-btn" data-book="${this.escapeAttr(e.book_id)}" data-stage="${this.escapeAttr(e.stage_before)}">Roll back to ${this.escapeHtml(e.stage_before)}</button>` : ''}</td>
+                <td>${(e.changes && e.changes.length && e.action !== 'rollback' && e.action !== 'undo') ? `<button class="btn btn-secondary history-undo-btn" data-entry="${e.id}">Undo values…</button> ` : ''}${canRollBack ? `<button class="btn btn-secondary history-rollback-btn" data-book="${this.escapeAttr(e.book_id)}" data-stage="${this.escapeAttr(e.stage_before)}">Roll back to ${this.escapeHtml(e.stage_before)}</button>` : ''}</td>
             </tr>`;
     }
 
@@ -109,12 +110,12 @@ class HistoryPage {
                     <button class="btn btn-secondary" id="history-next" ${this.offset + this.entries.length >= this.total ? 'disabled' : ''}>Older &rarr;</button>
                 </div>`;
         }
-        const actions = ['convert_cbz', 'write_metadata', 'scan_info', 'data_manager', 'organize', 'scrape', 'link_wanted', 'rollback', 'edit'];
+        const actions = ['convert_cbz', 'write_metadata', 'scan_info', 'data_manager', 'organize', 'scrape', 'link_wanted', 'rollback', 'undo', 'edit'];
         app.innerHTML = `
             <div class="history-page">
                 <div class="history-header">
                     <h1>History</h1>
-                    <p class="history-subtitle">What each pipeline action changed. Rolling back resets a book's stage so the pipeline runs it again; it does not undo field values or file moves.</p>
+                    <p class="history-subtitle">What each pipeline action changed. Rolling back resets a book's stage so the pipeline runs it again; "Undo values…" restores the old values an entry recorded in full (after a preview); file moves are never undone.</p>
                 </div>
                 <div class="history-filters">
                     <select id="history-action">
@@ -123,6 +124,7 @@ class HistoryPage {
                     </select>
                     ${this.bookId ? `<span class="history-filter-chip">Book ${this.escapeHtml(this.bookId)} <button class="btn btn-secondary" id="history-clear-book">Clear</button></span>` : ''}
                 </div>
+                ${this.renderUndo()}
                 ${this.message ? `<div class="panel"><p>${this.escapeHtml(this.message)}</p></div>` : ''}
                 ${body}
             </div>`;
@@ -146,11 +148,83 @@ class HistoryPage {
             this.bookId = a.dataset.book;
             this.reload(true);
         }));
+        document.querySelectorAll('.history-undo-btn').forEach(btn => btn.addEventListener('click', () => this.openUndo(Number(btn.dataset.entry))));
+        const uForce = document.getElementById('history-undo-force');
+        if (uForce) uForce.addEventListener('change', () => { this.undo.force = uForce.checked; this.render(); });
+        const uApply = document.getElementById('history-undo-apply');
+        if (uApply) uApply.addEventListener('click', () => this.applyUndo());
+        const uCancel = document.getElementById('history-undo-cancel');
+        if (uCancel) uCancel.addEventListener('click', () => { this.undo = null; this.render(); });
         document.querySelectorAll('.history-rollback-btn').forEach(btn => btn.addEventListener('click', () => {
             if (confirm(`Reset this book to the "${btn.dataset.stage}" stage? Field values and files are not changed.`)) {
                 this.rollback(btn.dataset.book, btn.dataset.stage);
             }
         }));
+    }
+
+    undoable(it) {
+        return it.status === 'ok' || (it.status === 'conflict' && this.undo.force);
+    }
+
+    renderUndo() {
+        if (!this.undo) return '';
+        const u = this.undo;
+        const rows = u.items.map(it => `
+            <tr class="history-undo-${this.escapeAttr(it.status)}">
+                <td>${this.escapeHtml(it.field)}</td>
+                <td>${this.escapeHtml(it.current) || '∅'}</td>
+                <td>${this.escapeHtml(it.old) || '∅'}</td>
+                <td>${it.status === 'ok' ? 'will restore' : it.status === 'conflict' ? 'changed since this entry' : it.status === 'unchanged' ? 'already the old value' : 'cannot undo: ' + this.escapeHtml(it.reason)}</td>
+            </tr>`).join('');
+        const n = u.items.filter(it => this.undoable(it)).length;
+        const hasConflict = u.items.some(it => it.status === 'conflict');
+        return `
+            <div class="panel" id="history-undo-panel">
+                <h2>Undo values: ${this.escapeHtml(u.entry.action)} on ${this.escapeHtml(u.entry.series || u.entry.book_id)} ${this.escapeHtml(u.entry.number ? '#' + u.entry.number : '')}</h2>
+                <table class="history-table"><thead><tr><th>Field</th><th>Now</th><th>Restore to</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+                ${hasConflict ? `<label><input type="checkbox" id="history-undo-force" ${u.force ? 'checked' : ''}> Also overwrite values that changed since this entry</label>` : ''}
+                <p>
+                    <button class="btn" id="history-undo-apply" ${n ? '' : 'disabled'}>Restore ${n} field${n === 1 ? '' : 's'}</button>
+                    <button class="btn btn-secondary" id="history-undo-cancel">Cancel</button>
+                </p>
+            </div>`;
+    }
+
+    async openUndo(entryId) {
+        const entry = this.entries.find(e => e.id === entryId);
+        try {
+            const res = await fetch('/api/library/audit/undo', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entry_id: entryId, apply: false }),
+            });
+            if (!res.ok) throw new Error((await res.text()).trim() || res.status);
+            const data = await res.json();
+            this.undo = { entry, items: data.items || [], force: false };
+            this.message = '';
+        } catch (e) {
+            this.message = `Could not preview undo: ${e.message || e}`;
+        }
+        this.render();
+    }
+
+    async applyUndo() {
+        const u = this.undo;
+        const fields = u.items.filter(it => this.undoable(it)).map(it => it.field);
+        try {
+            const res = await fetch('/api/library/audit/undo', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ entry_id: u.entry.id, fields, apply: true, force: u.force }),
+            });
+            this.message = res.ok
+                ? `Restored ${fields.length} field${fields.length === 1 ? '' : 's'}.`
+                : `Could not undo: ${(await res.text()).trim() || res.status}`;
+        } catch (e) {
+            this.message = 'Could not undo (network error).';
+        }
+        this.undo = null;
+        await this.reload(true);
     }
 
     async reload(resetOffset) {

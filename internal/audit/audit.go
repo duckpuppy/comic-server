@@ -39,6 +39,7 @@ const (
 	ActionScrape            = "scrape"
 	ActionLinkWanted        = "link_wanted"
 	ActionRollback          = "rollback"
+	ActionUndo              = "undo"
 	ActionDuplicateTrash    = "duplicate_trash"
 	ActionVariantCovers     = "variant_covers"
 	ActionWantedFromMissing = "wanted_from_missing"
@@ -114,6 +115,17 @@ func Diff(before, after *library.ComicBook) []Change {
 		out = append(out, Change{"custom:" + k, bc[k], ac[k]})
 	}
 	return out
+}
+
+// FieldValue returns the book's field as the audit diff would record it, so a
+// current value can be compared with an entry's old/new text. ok is false
+// for an unknown field name.
+func FieldValue(book *library.ComicBook, name string) (string, bool) {
+	v := reflect.ValueOf(*book).FieldByName(name)
+	if !v.IsValid() {
+		return "", false
+	}
+	return scalar(v), true
 }
 
 func scalar(v reflect.Value) string {
