@@ -3,6 +3,8 @@ package duplicates
 import (
 	"testing"
 
+	"github.com/duckpuppy/comic-server/internal/collects"
+
 	"github.com/duckpuppy/comic-server/internal/library"
 )
 
@@ -139,5 +141,20 @@ func TestNormalizeNumber(t *testing.T) {
 		if got := normalizeNumber(in); got != want {
 			t.Errorf("normalizeNumber(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestDetect_CollectedEditionNeverGroupsWithSingleIssue(t *testing.T) {
+	single := bk("a", "Lazarus", "3", "/a.cbz", 30)
+	tpb := bk("b", "Lazarus", "3", "/b.cbz", 30)
+	tpb.CustomValuesStore = library.SetCustomValue("", collects.Key, collects.Encode([]collects.Entry{{Volume: 9, From: "10", To: "15"}}))
+	if g := Detect([]*library.ComicBook{single, tpb}, Options{}); len(g) != 0 {
+		t.Fatalf("collected edition grouped with a single issue: %+v", g)
+	}
+	// Two copies of the same collected edition still group.
+	tpb2 := bk("c", "Lazarus", "3", "/c.cbz", 30)
+	tpb2.CustomValuesStore = tpb.CustomValuesStore
+	if g := Detect([]*library.ComicBook{tpb, tpb2}, Options{}); len(g) != 1 {
+		t.Fatalf("two copies of the collected edition should group: %+v", g)
 	}
 }

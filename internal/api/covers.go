@@ -29,6 +29,10 @@ func (s *Server) handleBooksRouter(w http.ResponseWriter, r *http.Request) {
 		s.handleAcceptFlag(w, r)
 		return
 	}
+	if strings.HasSuffix(suffix, "/collects") {
+		s.handleBookCollects(w, r)
+		return
+	}
 	if strings.HasSuffix(suffix, "/lock-field") {
 		s.handleLockField(w, r)
 		return

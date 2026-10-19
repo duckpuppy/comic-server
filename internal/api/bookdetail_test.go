@@ -333,3 +333,36 @@ func TestCVNoMatchBulk_MarksListsAndUndoes(t *testing.T) {
 		t.Errorf("b1 after undo: stage %q mark %+v", d.Stage, d.NoCVMatch)
 	}
 }
+
+func TestBookCollects_SetShowClearAuditedAndKeepsKindApart(t *testing.T) {
+	books := []library.ComicBook{{ID: "b1", Series: "Lazarus", Number: "3", FilePath: "a.cbz"}}
+	s := newDuplicatesTestServer(t, t.TempDir(), books)
+	post := func(body string) (int, string) {
+		w := httptest.NewRecorder()
+		s.handleBooksRouter(w, httptest.NewRequest(http.MethodPost, "/api/library/books/b1/collects", strings.NewReader(body)))
+		return w.Code, w.Body.String()
+	}
+	if code, _ := post(`{"entries":[{"from":"1"}]}`); code != http.StatusBadRequest {
+		t.Errorf("entry without volume or series: status %d", code)
+	}
+	body := `{"entries":[{"volume":4050,"series":"Ghost Rider","from":"1","to":"5"},{"series":"Heaven's On Fire","from":"1","to":"6"}]}`
+	if code, out := post(body); code != http.StatusOK {
+		t.Fatalf("set: status %d %s", code, out)
+	}
+	var d BookDetail
+	getJSON(t, s, "/api/library/books/b1", &d)
+	if len(d.Collects) != 2 || d.Collects[0].Volume != 4050 || d.Collects[1].To != "6" {
+		t.Errorf("collects = %+v", d.Collects)
+	}
+	rows, _, _ := s.configDB.ListAudit(configdb.AuditFilter{BookID: "b1", Limit: 10})
+	if len(rows) != 1 || rows[0].Action != "collects" {
+		t.Errorf("audit rows = %+v", rows)
+	}
+	if code, _ := post(`{"entries":[]}`); code != http.StatusOK {
+		t.Fatalf("clear: status %d", code)
+	}
+	getJSON(t, s, "/api/library/books/b1", &d)
+	if len(d.Collects) != 0 {
+		t.Errorf("after clear: %+v", d.Collects)
+	}
+}

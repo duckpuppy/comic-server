@@ -21,6 +21,7 @@ package duplicates
 import (
 	"crypto/sha1"
 	"encoding/hex"
+	"github.com/duckpuppy/comic-server/internal/collects"
 	"math/bits"
 	"path"
 	"regexp"
@@ -276,14 +277,21 @@ func Detect(books []*library.ComicBook, opt Options) []Group {
 	return out
 }
 
-// kind prefixes a bucket key so fileless and file-backed books never share
-// a bucket. The cover and filename signals need a file, so they cannot
+// kind prefixes a bucket key so fileless and file-backed books (and
+// collected editions) never share a bucket. The cover and filename signals need a file, so they cannot
 // mix the two kinds anyway.
 func kind(b *library.ComicBook) string {
+	k := "f\x00"
 	if b.FilePath == "" {
-		return "p\x00"
+		k = "p\x00"
 	}
-	return "f\x00"
+	// A collected edition carries links to the issues it contains (tracker
+	// #38). It is never a duplicate of a single issue, even when the series
+	// and number match, so it gets its own bucket.
+	if collects.Has(b) {
+		k = "c" + k
+	}
+	return k
 }
 
 func itoa(n int) string {
