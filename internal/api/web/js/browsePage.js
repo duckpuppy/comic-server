@@ -39,6 +39,12 @@ class BrowsePage {
         // server's option counts, and the result view.
         this.facets = { publishers: [], formats: [], stages: [], flags: [] };
         this.facetCounts = null;
+        // Stacks (tracker #11): groupBy shows stacks; groupKey opens one.
+        this.groupBy = '';
+        this.groupKey = '';
+        this.groupLabel = '';
+        this.stacks = [];
+        this.totalBooks = 0;
         this.view = 'table';
         try { this.view = localStorage.getItem('browse-view') || 'table'; } catch (e) { /* storage blocked */ }
         this.results = [];
@@ -93,6 +99,9 @@ class BrowsePage {
         this.query = p.get('q') || '';
         this.sortField = p.get('sort') || '';
         this.sortDesc = p.get('desc') === '1';
+        this.groupBy = ['series', 'publisher', 'year', 'format'].includes(p.get('group')) ? p.get('group') : '';
+        this.groupKey = this.groupBy ? (p.get('gk') || '') : '';
+        this.groupLabel = this.groupKey ? (p.get('gl') || this.groupKey) : '';
         this.matcherMode = p.get('mode') === 'Or' ? 'Or' : 'And';
         try { this.matchers = JSON.parse(p.get('m') || '[]'); } catch (e) { this.matchers = []; }
         if (!Array.isArray(this.matchers)) this.matchers = [];
@@ -112,6 +121,8 @@ class BrowsePage {
         if (this.query) p.set('q', this.query);
         if (this.sortField) p.set('sort', this.sortField);
         if (this.sortDesc) p.set('desc', '1');
+        if (this.groupBy) p.set('group', this.groupBy);
+        if (this.groupBy && this.groupKey) { p.set('gk', this.groupKey); p.set('gl', this.groupLabel); }
         for (const [key, facet] of [['pub', 'publishers'], ['fmt', 'formats'], ['stage', 'stages'], ['flag', 'flags']]) {
             for (const v of this.facets[facet]) p.append(key, v);
         }
@@ -181,7 +192,13 @@ class BrowsePage {
                         <select id="browse-sort" title="Sort results">
                             ${[['', 'Library order'], ['series', 'Series'], ['number', 'Issue number'], ['title', 'Title'],
                                ['publisher', 'Publisher'], ['year', 'Year'], ['volume', 'Volume'], ['pages', 'Page count']]
+                                .concat(this.groupBy && !this.groupKey ? [['count', 'Books per stack']] : [])
                                 .map(([v, l]) => `<option value="${v}" ${this.sortField === v ? 'selected' : ''}>${l}</option>`).join('')}
+                        </select>
+                        <select id="browse-group" title="Group results into stacks">
+                            ${[['', 'No stacks'], ['series', 'Stack by series'], ['publisher', 'Stack by publisher'],
+                               ['year', 'Stack by year'], ['format', 'Stack by format']]
+                                .map(([v, l]) => `<option value="${v}" ${this.groupBy === v ? 'selected' : ''}>${l}</option>`).join('')}
                         </select>
                         <label class="browse-sort-desc"><input type="checkbox" id="browse-sort-desc" ${this.sortDesc ? 'checked' : ''}> Descending</label>
                         <div class="browse-view-toggle" role="group" aria-label="View">
@@ -362,7 +379,12 @@ class BrowsePage {
             return `<p class="empty-message">Searching…</p>`;
         }
 
+        if (this.groupBy && !this.groupKey) return this.renderStacks();
+
         let html = `<p class="datamanager-summary">${this.total} book${this.total === 1 ? '' : 's'} matched.</p>`;
+        if (this.groupBy && this.groupKey) {
+            html = `<p class="datamanager-summary"><button id="browse-stack-back" class="btn btn-small btn-secondary">← All stacks</button> <strong>${this.escapeHtml(this.groupLabel)}</strong> · ${this.total} book${this.total === 1 ? '' : 's'}</p>`;
+        }
         if (this.results.length === 0) {
             return html;
         }
@@ -403,6 +425,30 @@ class BrowsePage {
         return html;
     }
 
+    // renderStacks draws the grouped result: one card per stack, cover of its
+    // first issue, a click opens the stack. Bulk edit does not apply here
+    // (it acts on books), so no checkboxes.
+    renderStacks() {
+        const word = { series: 'series', publisher: 'publishers', year: 'years', format: 'formats' }[this.groupBy];
+        let html = `<p class="datamanager-summary">${this.total} ${this.groupBy === 'series' ? 'stacks' : word} (${this.totalBooks} book${this.totalBooks === 1 ? '' : 's'}).</p>`;
+        if (this.stacks.length === 0) return html;
+        html += '<div class="comics-grid browse-grid">' + this.stacks.map(s => `
+            <a class="comic-card browse-stack${s.unread ? '' : ' comic-read'}" href="#" data-key="${this.escapeAttr(s.key)}" data-label="${this.escapeAttr(s.label + (s.sub ? ' · ' + s.sub : ''))}">
+                <div class="comic-cover">
+                    <div class="comic-placeholder">📚</div>
+                    <img class="comic-cover-img" alt="" loading="lazy" src="/api/library/books/${encodeURIComponent(s.cover_id)}/cover"
+                         onload="this.classList.add('loaded'); this.previousElementSibling.style.display='none';"
+                         onerror="this.style.display='none';">
+                </div>
+                <div class="comic-info">
+                    <div class="comic-series">${this.escapeHtml(s.label)}</div>
+                    <div class="comic-number">${s.sub ? this.escapeHtml(s.sub) + ' · ' : ''}${s.count} book${s.count === 1 ? '' : 's'}${s.unread ? ` · ${s.unread} unread` : ''}</div>
+                </div>
+            </a>`).join('') + '</div>';
+        if (this.hasMore) html += `<div class="load-more-container"><button id="browse-load-more-btn" class="btn btn-secondary">Load More</button></div>`;
+        return html;
+    }
+
     attachListeners() {
         const modeSelect = document.getElementById('browse-matcher-mode');
         if (modeSelect) modeSelect.addEventListener('change', () => {
@@ -424,6 +470,27 @@ class BrowsePage {
         const sortSel = document.getElementById('browse-sort');
         if (sortSel) sortSel.addEventListener('change', () => {
             this.sortField = sortSel.value;
+            this.search(true);
+        });
+        const groupSel = document.getElementById('browse-group');
+        if (groupSel) groupSel.addEventListener('change', () => {
+            this.groupBy = groupSel.value;
+            this.groupKey = '';
+            this.groupLabel = '';
+            if (this.sortField === 'count' && !this.groupBy) this.sortField = '';
+            this.search(true);
+        });
+        document.querySelectorAll('.browse-stack').forEach(el => el.addEventListener('click', e => {
+            e.preventDefault();
+            this.groupKey = el.dataset.key;
+            this.groupLabel = el.dataset.label;
+            if (this.sortField === 'count') this.sortField = '';
+            this.search(true);
+        }));
+        const stackBack = document.getElementById('browse-stack-back');
+        if (stackBack) stackBack.addEventListener('click', () => {
+            this.groupKey = '';
+            this.groupLabel = '';
             this.search(true);
         });
         const sortDesc = document.getElementById('browse-sort-desc');
@@ -564,6 +631,7 @@ class BrowsePage {
         if (reset) {
             this.offset = 0;
             this.results = [];
+            this.stacks = [];
             // The filter changed, so a selection (or "all matching") no longer means the same books.
             if (this.bulk) this.bulk.reset();
         }
@@ -573,7 +641,7 @@ class BrowsePage {
             const response = await fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ matcher_mode: this.matcherMode, matchers: this.matchers, show_all: this.showAll, query: this.query, sort: this.sortField, sort_desc: this.sortDesc, facets: this.facets }),
+                body: JSON.stringify({ matcher_mode: this.matcherMode, matchers: this.matchers, show_all: this.showAll, query: this.query, sort: this.sortField, sort_desc: this.sortDesc, facets: this.facets, ...this.groupScope() }),
             });
             const text = await response.text();
             if (!response.ok) {
@@ -583,8 +651,15 @@ class BrowsePage {
             if (result.facets) this.facetCounts = result.facets;
             this.total = result.total || 0;
             this.hasMore = !!result.has_more;
+            if (result.stacks) {
+                this.totalBooks = result.total_books || 0;
+                this.stacks = reset ? result.stacks : this.stacks.concat(result.stacks);
+                this.results = [];
+            } else {
+                this.stacks = [];
+            }
             const page = result.comics || [];
-            this.results = reset ? page : this.results.concat(page);
+            this.results = result.stacks ? [] : (reset ? page : this.results.concat(page));
             this.offset += this.limit;
         } catch (error) {
             console.error('Failed to browse library:', error);
@@ -793,7 +868,15 @@ class BrowsePage {
     // Browse-scoped Data Manager request sends, so the run always matches
     // exactly what the browse table above is currently showing.
     dmScopeBody() {
-        return { matcher_mode: this.matcherMode, matchers: this.matchers, show_all: this.showAll, query: this.query, facets: this.facets };
+        return { matcher_mode: this.matcherMode, matchers: this.matchers, show_all: this.showAll, query: this.query, facets: this.facets, ...this.groupScope() };
+    }
+
+    // groupScope is the stack part of a request: group_by always (it decides
+    // stacks vs books), group_key only once a stack is open. Bulk edit and
+    // Data Manager send only an open stack, since they act on books.
+    groupScope() {
+        if (!this.groupBy) return {};
+        return this.groupKey ? { group_by: this.groupBy, group_key: this.groupKey } : { group_by: this.groupBy };
     }
 
     async dmPreview(reset) {

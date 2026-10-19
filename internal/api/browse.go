@@ -49,6 +49,13 @@ type BrowseRequest struct {
 
 	// Facets narrows further by publisher/format/stage/flag (comic-server-j6lk).
 	Facets BrowseFacets `json:"facets,omitempty"`
+
+	// GroupBy shows stacks instead of books (tracker #11): series, publisher,
+	// year or format. GroupKey opens one stack (a key from an earlier answer)
+	// and the response is that stack's books, paged like any other. Sort
+	// "count" orders the stacks by size.
+	GroupBy  string `json:"group_by,omitempty"`
+	GroupKey string `json:"group_key,omitempty"`
 }
 
 // handleBrowse evaluates an ad-hoc matcher set against the WHOLE library
@@ -94,6 +101,33 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 		flags = s.bookFlagIndex()
 	}
 	matches := applyFacets(base, req.Facets, flags)
+
+	if browseGroupBys[req.GroupBy] {
+		if req.GroupKey != "" {
+			matches = filterToStack(matches, req.GroupBy, req.GroupKey)
+			if req.Sort == "" {
+				req.Sort = "number" // inside a stack, issue order is the useful one
+			}
+		} else {
+			stacks := buildStacks(matches, req.GroupBy, req.Sort, req.SortDesc)
+			total := len(stacks)
+			start := min(offset, total)
+			end := min(start+limit, total)
+			resp := map[string]any{
+				"stacks":      stacks[start:end],
+				"total":       total,
+				"total_books": len(matches),
+				"limit":       limit,
+				"offset":      offset,
+				"has_more":    end < total,
+			}
+			if withFacets {
+				resp["facets"] = countFacets(base, flags)
+			}
+			s.writeJSON(w, http.StatusOK, resp)
+			return
+		}
+	}
 
 	sortBrowseResults(matches, req.Sort, req.SortDesc)
 
@@ -142,14 +176,22 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 // zero matchers still means zero results (comic-server-haz).
 func (s *Server) resolveBrowseCandidates(req BrowseRequest) ([]*library.ComicBook, error) {
 	books, err := s.resolveBrowseBase(req)
-	if err != nil || req.Facets.empty() {
+	if err != nil {
 		return books, err
 	}
-	var flags map[string][]attention.Flag
-	if len(req.Facets.Flags) > 0 {
-		flags = s.bookFlagIndex()
+	if !req.Facets.empty() {
+		var flags map[string][]attention.Flag
+		if len(req.Facets.Flags) > 0 {
+			flags = s.bookFlagIndex()
+		}
+		books = applyFacets(books, req.Facets, flags)
 	}
-	return applyFacets(books, req.Facets, flags), nil
+	// An open stack is part of what the page shows, so bulk edit and Data
+	// Manager scopes must act on just that stack.
+	if browseGroupBys[req.GroupBy] && req.GroupKey != "" {
+		books = filterToStack(books, req.GroupBy, req.GroupKey)
+	}
+	return books, nil
 }
 
 // resolveBrowseBase is resolveBrowseCandidates before facets: matchers (or
