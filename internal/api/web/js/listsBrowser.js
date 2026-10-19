@@ -176,7 +176,8 @@ class ListsBrowser {
                 <button id="fb-up-btn" class="fb-up-btn" title="Up one level" aria-label="Up one level"${isAtRoot ? ' disabled' : ''}>&#8592;</button>
                 ${this.renderBreadcrumb()}
                 <div class="fb-toolbar-actions">
-                    <button id="new-list-btn" class="btn btn-primary btn-small">+ New List</button>
+                    <button id="new-list-btn" class="btn btn-primary btn-small">+ New Smart List</button>
+                    <button id="new-manual-list-btn" class="btn btn-secondary btn-small" title="A list you fill by hand from Browse or a book's page">+ New Manual List</button>
                     <button id="new-folder-btn" class="btn btn-secondary btn-small">+ New Folder</button>
                 </div>
                 <div class="fb-view-toggle">
@@ -331,7 +332,7 @@ class ListsBrowser {
     renderDetailList(list) {
         const isIdList = list.type && list.type.includes('IdListItem');
         const isReadingList = list.type === 'ComicReadingList';
-        const typeLabel = isIdList ? 'ID List' : isReadingList ? 'Reading List' : 'Smart List';
+        const typeLabel = isIdList ? 'Manual List' : isReadingList ? 'Reading List' : 'Smart List';
         const typeClass = isIdList ? 'fb-type-idlist' : isReadingList ? 'fb-type-reading' : 'fb-type-smart';
         const iconClass = isIdList ? 'fb-row-idlist-icon' : 'fb-row-list-icon';
         const total = list.book_count || 0;
@@ -390,6 +391,7 @@ class ListsBrowser {
         });
 
         document.getElementById('new-list-btn')?.addEventListener('click', () => this.showNewListDialog());
+        document.getElementById('new-manual-list-btn')?.addEventListener('click', () => this.showNewListDialog(true));
         document.getElementById('new-folder-btn')?.addEventListener('click', () => this.showNewFolderDialog());
 
         document.querySelectorAll('[data-action]').forEach(btn => {
@@ -437,8 +439,14 @@ class ListsBrowser {
         this.renderContent();
     }
 
-    async showNewListDialog() {
-        const name = await dialogs.prompt({ title: 'New Smart List', placeholder: 'e.g. Currently Reading' });
+    // manual: a ComicIdListItem filled by hand (tracker #9) instead of a
+    // smart list.
+    async showNewListDialog(manual = false) {
+        const name = await dialogs.prompt({
+            title: manual ? 'New Manual List' : 'New Smart List',
+            message: manual ? 'Add books to it from Browse or a book\'s page.' : '',
+            placeholder: manual ? 'e.g. Read next' : 'e.g. Currently Reading',
+        });
         if (!name) return;
 
         const parentID = this.currentFolderID();
@@ -446,7 +454,9 @@ class ListsBrowser {
             const resp = await fetch('/api/library/lists', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: name, type: 'ComicSmartListItem', matcher_mode: 'And', matchers: [] })
+                body: JSON.stringify(manual
+                    ? { name: name, type: 'ComicIdListItem' }
+                    : { name: name, type: 'ComicSmartListItem', matcher_mode: 'And', matchers: [] })
             });
             if (!resp.ok) throw new Error(await resp.text() || 'Create failed');
             const created = await resp.json();

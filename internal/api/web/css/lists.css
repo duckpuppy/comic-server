@@ -1467,3 +1467,54 @@
 .bulk-editor-buttons { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 .bulk-sample { margin: 0.25rem 0; padding-left: 1.25rem; max-height: 10rem; overflow: auto; }
 @media (max-width: 700px) { .bulk-row { grid-template-columns: 1fr; } }
+
+/* Manual lists (tracker #9): position and reorder/remove controls on the
+   list page's preview cards. */
+.comic-position {
+    position: absolute;
+    top: 0.4rem;
+    left: 0.4rem;
+    min-width: 1.25rem;
+    padding: 0 0.3rem;
+    height: 1.25rem;
+    line-height: 1.25rem;
+    border-radius: 0.625rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    z-index: 1;
+}
+
+.comic-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.25rem;
+    margin-top: 0.5rem;
+}
+
+.comic-card-actions .btn-icon {
+    min-width: 1.9rem;
+    height: 1.9rem;
+    padding: 0 0.4rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.25rem;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.comic-card-actions .btn-icon:hover:not(:disabled) {
+    border-color: var(--primary-color);
+}
+
+.comic-card-actions .btn-icon:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.comic-card-actions .manual-remove-btn:hover:not(:disabled) {
+    border-color: var(--danger-color, #c0392b);
+    color: var(--danger-color, #c0392b);
+}
