@@ -676,7 +676,16 @@ func (db *DB) UpdateListRecord(list *library.ComicListItem) error {
 	}
 	defer tx.Rollback()
 
-	if err := db.updateList(tx, list, "", ""); err != nil {
+	// Keep the list in its folder: updateList writes parent_id, and
+	// passing "" moved a list to the root on every edit.
+	var parentID sql.NullString
+	if err := tx.QueryRow("SELECT parent_id FROM lists WHERE id = ?", list.ID).Scan(&parentID); err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("list not found: %s", list.ID)
+		}
+		return fmt.Errorf("read list %s: %w", list.ID, err)
+	}
+	if err := db.updateList(tx, list, parentID.String, ""); err != nil {
 		return err
 	}
 	return tx.Commit()

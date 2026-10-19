@@ -127,11 +127,13 @@ func (b *XMLBackend) DeleteList(id string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	original := len(b.library.ComicLists)
-	b.library.ComicLists = deleteListRecursive(b.library.ComicLists, id)
-	if len(b.library.ComicLists) == original {
+	// FindListByID searches folders too; checking the top-level length
+	// alone reported a list inside a folder as not found (and skipped the
+	// flush) even though it had been removed.
+	if b.library.FindListByID(id) == nil {
 		return fmt.Errorf("list not found: %s", id)
 	}
+	b.library.ComicLists = deleteListRecursive(b.library.ComicLists, id)
 	return b.flushLocked()
 }
 

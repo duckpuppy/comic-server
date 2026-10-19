@@ -218,6 +218,10 @@ class ListDetail {
                         <button id="delete-list-btn" class="btn btn-danger">Delete</button>
                     </div>` : ''}
                 </div>
+                ${this.isManualList() ? `
+                <p class="list-cbl-note">
+                    A list you fill by hand. Add books from Browse or a book's page; reorder or remove them below.
+                </p>` : ''}
                 ${this.list.cbl_imported ? `
                 <p class="list-cbl-note">
                     Book membership for this list comes from a CBL import and is reimport-only
@@ -258,12 +262,13 @@ class ListDetail {
                 <!-- Matchers Panel -->
                 <div class="panel matchers-panel${this.tabPanelActiveClass('matchers')}" data-tab-panel="matchers">
                     <h2>Matchers</h2>
+                    ${this.isManualList() ? '<p class="empty-message">None: the books in this list were picked by hand.</p>' : `
                     <div class="matcher-mode">
                         ${this.list.matcher_mode_formatted}
                     </div>
                     <ul class="matchers-list">
                         ${this.renderMatchers()}
-                    </ul>
+                    </ul>`}
                 </div>
 
                 <!-- CBL Match-Correction Panel (comic-server-a2hz) -->
@@ -324,6 +329,13 @@ class ListDetail {
         return this.list && this.list.type === 'ComicReadingList';
     }
 
+    // Manual lists (tracker #9): ComicRack's plain "List" (ComicIdListItem),
+    // an ordered set of books picked by hand. No matchers; the preview gets
+    // reorder and remove controls.
+    isManualList() {
+        return !!(this.list && this.list.type && this.list.type.includes('IdListItem'));
+    }
+
     renderEditView() {
         const state = this.editState;
         const detailsPanel = `
@@ -353,7 +365,7 @@ class ListDetail {
                 </div>
             </div>
 
-            ${this.isReadingList() ? detailsPanel : `
+            ${this.isReadingList() || this.isManualList() ? detailsPanel : `
             ${detailsPanel}
             <!-- Matchers Editor -->
             <div class="panel matchers-panel">
@@ -583,8 +595,10 @@ class ListDetail {
             return '<p class="empty-message">No comics to preview</p>';
         }
 
-        return this.preview.map(comic => `
+        const manual = this.isManualList();
+        return this.preview.map((comic, i) => `
             <div class="comic-card${comic.unread ? '' : ' comic-read'}" title="${comic.unread ? '' : 'Read'}">
+                ${manual ? `<div class="comic-position" title="Position in the list">${i + 1}</div>` : ''}
                 ${comic.unread ? '' : '<div class="comic-read-badge" title="Read">✓</div>'}
                 <div class="comic-cover">
                     <div class="comic-placeholder">📖</div>
@@ -599,8 +613,76 @@ class ListDetail {
                     <div class="comic-number">#${this.escapeHtml(comic.number)}</div>
                     ${comic.title ? `<div class="comic-title">${this.escapeHtml(comic.title)}</div>` : ''}
                 </div>
+                ${manual ? this.renderManualControls(comic, i) : ''}
             </div>
         `).join('');
+    }
+
+    renderManualControls(comic, i) {
+        const id = this.escapeHtml(comic.id);
+        const dis = cond => (cond || this.manualBusy) ? 'disabled' : '';
+        const last = this.previewTotal - 1;
+        return `<div class="comic-card-actions">
+                <button class="btn-icon manual-move-btn" data-id="${id}" data-index="0" ${dis(i === 0)} title="Move to the top" aria-label="Move to the top">⤒</button>
+                <button class="btn-icon manual-move-btn" data-id="${id}" data-index="${i - 1}" ${dis(i === 0)} title="Move up" aria-label="Move up">↑</button>
+                <button class="btn-icon manual-move-btn" data-id="${id}" data-index="${i + 1}" ${dis(i >= last)} title="Move down" aria-label="Move down">↓</button>
+                <button class="btn-icon manual-move-to-btn" data-id="${id}" data-index="${i}" ${dis(false)} title="Move to a position" aria-label="Move to a position">#</button>
+                <button class="btn-icon manual-remove-btn" data-id="${id}" ${dis(false)} title="Remove from this list" aria-label="Remove from this list">✕</button>
+            </div>`;
+    }
+
+    // Membership changes update the loaded preview in place (the server
+    // applies the same move/remove to the same order), then refresh counts.
+    async manualAction(fn) {
+        if (this.manualBusy) return;
+        this.manualBusy = true;
+        this.render();
+        this.attachListeners();
+        try {
+            await fn();
+            await this.loadListDetail();
+        } catch (e) {
+            dialogs.toast(e.message, 'error');
+        }
+        this.manualBusy = false;
+        this.render();
+        this.attachListeners();
+    }
+
+    moveBook(bookId, index) {
+        return this.manualAction(async () => {
+            const res = await ManualLists.move(this.listId, bookId, index);
+            const from = this.preview.findIndex(c => c.id === bookId);
+            if (from < 0) return;
+            const [comic] = this.preview.splice(from, 1);
+            if (res.position < this.preview.length || this.preview.length + 1 >= this.previewTotal) {
+                this.preview.splice(res.position, 0, comic);
+            }
+        });
+    }
+
+    async moveBookTo(bookId, current) {
+        const answer = await dialogs.prompt({
+            title: 'Move to position',
+            message: `A number from 1 to ${this.previewTotal}.`,
+            defaultValue: String(current + 1),
+            confirmLabel: 'Move',
+        });
+        if (answer === null) return;
+        const n = parseInt(answer, 10);
+        if (!Number.isFinite(n) || n < 1) {
+            dialogs.toast('Enter a position number.', 'error');
+            return;
+        }
+        await this.moveBook(bookId, n - 1);
+    }
+
+    removeBook(bookId) {
+        return this.manualAction(async () => {
+            await ManualLists.remove(this.listId, [bookId]);
+            this.preview = this.preview.filter(c => c.id !== bookId);
+            this.previewTotal = Math.max(0, this.previewTotal - 1);
+        });
     }
 
     renderLoadMore() {
@@ -1044,8 +1126,16 @@ class ListDetail {
                 this.previewOffset += this.previewLimit;
                 await this.loadPreview();
                 this.render();
+                this.attachListeners();
             });
         }
+
+        document.querySelectorAll('.manual-move-btn').forEach(btn => btn.addEventListener('click', () =>
+            this.moveBook(btn.dataset.id, parseInt(btn.dataset.index, 10))));
+        document.querySelectorAll('.manual-move-to-btn').forEach(btn => btn.addEventListener('click', () =>
+            this.moveBookTo(btn.dataset.id, parseInt(btn.dataset.index, 10))));
+        document.querySelectorAll('.manual-remove-btn').forEach(btn => btn.addEventListener('click', () =>
+            this.removeBook(btn.dataset.id)));
 
         const editBtn = document.getElementById('edit-list-btn');
         if (editBtn) {
