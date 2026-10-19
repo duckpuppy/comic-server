@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.65.0](https://github.com/duckpuppy/comic-server/compare/v1.64.0...v1.65.0) (2026-10-19)
+
+
+### Features
+
+* edit page types and bookmarks in Page Manager ([#207](https://github.com/duckpuppy/comic-server/issues/207)) ([21cf3e6](https://github.com/duckpuppy/comic-server/commit/21cf3e672e197c047e682a8b1f6a959f20682374))
+* explain 'file already used by another book' in a relink dialog ([#204](https://github.com/duckpuppy/comic-server/issues/204)) ([a86c440](https://github.com/duckpuppy/comic-server/commit/a86c440839e6e709a84e34636619b5385c8d96e2))
+* group Browse results into stacks by series, publisher, year or format ([#202](https://github.com/duckpuppy/comic-server/issues/202)) ([e838d49](https://github.com/duckpuppy/comic-server/commit/e838d49f3a5f5094b1068fed7e332e042f34a247))
+* pick which fields to undo and lock fields against undo ([#206](https://github.com/duckpuppy/comic-server/issues/206)) ([568cffb](https://github.com/duckpuppy/comic-server/commit/568cffbd69ff07370b5adaaf401b6aef1ef5eb2f))
+* undo field values from the audit log ([#205](https://github.com/duckpuppy/comic-server/issues/205)) ([341755b](https://github.com/duckpuppy/comic-server/commit/341755bb78df6db7407308ae505f87f67ebe0da5))
+
 ## [1.64.0](https://github.com/duckpuppy/comic-server/compare/v1.63.3...v1.64.0) (2026-10-19)
 
 
