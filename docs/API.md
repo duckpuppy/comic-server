@@ -654,6 +654,33 @@ curl http://localhost:7620/api/library/lists/list-guid-123/devices
 
 ---
 
+### Manual lists
+
+A manual list is ComicRack's plain "List" (`ComicIdListItem`): an ordered set
+of books picked by hand. Create one with `POST /api/library/lists`
+`{"name": "Read next", "type": "ComicIdListItem"}`; rename it with
+`PUT /api/library/lists/:listId` and delete it with
+`DELETE /api/library/lists/:listId`, as for any list. Membership:
+
+- `POST /api/library/lists/:listId/books` `{"book_ids": [...], "index": 0}`
+  adds books (`index` omitted = the end). Instead of `book_ids`, `browse`
+  takes the same filter body as `POST /api/library/browse` and adds every
+  book it matches (at most 10,000). Books already in the list stay where they
+  are. Response: `{id, name, book_count, added, already, unknown}`.
+- `POST /api/library/lists/:listId/books/remove` `{"book_ids": [...]}`.
+- `POST /api/library/lists/:listId/books/move` `{"book_id": "...", "index": 3}`
+  moves one book so it ends up at `index` (0-based, clamped). Response carries
+  its `position`.
+- `GET /api/library/manual-lists?book_id=` lists every manual list, sorted by
+  name; with `book_id`, `contains` says whether that book is in it.
+
+Smart lists and CBL reading lists answer 409. Each write drops members that
+no longer resolve to a book and repeated members first (as ComicRack does), so
+positions match the list preview. Adds and removes are recorded in each
+book's history (action `reading_list`).
+
+---
+
 ### GET /api/stats
 
 Get server statistics and configuration.

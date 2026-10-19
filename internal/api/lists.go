@@ -328,6 +328,13 @@ func (s *Server) handleListsRouter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// /api/library/lists/:listId/books[/remove|/move] (manual lists)
+	if idx := strings.Index(suffix, "/books"); idx != -1 {
+		if s.routeManualListBooks(w, r, suffix[:idx], suffix[idx+len("/books"):]) {
+			return
+		}
+	}
+
 	// /api/library/lists/:listId/raw
 	if strings.HasSuffix(path, "/raw") {
 		s.handleGetListRaw(w, r)
@@ -770,6 +777,11 @@ func (s *Server) handleUpdateList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "name is required", http.StatusBadRequest)
 		return
 	}
+
+	// Same lock as manual list membership edits: this writes the whole
+	// list back, members included, so an add in between would be lost.
+	s.manualListMu.Lock()
+	defer s.manualListMu.Unlock()
 
 	existing, err := s.backend.FindListByID(listID)
 	if err != nil || existing == nil {

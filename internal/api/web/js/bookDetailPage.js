@@ -12,6 +12,7 @@ class BookDetailPage {
         this.loading = true;
         this.openSections = {};
         this.completeness = null; // series-completeness of the book's CV volume
+        this.lists = null; // manual lists, each with `contains` for this book
     }
 
     async init(ctx, bookId) {
@@ -23,10 +24,11 @@ class BookDetailPage {
         this.loading = true;
         this.openSections = {};
         this.completeness = null;
+        this.lists = null;
         this.busy = false;
         this.editing = false;
         this.render();
-        await Promise.all([this.loadDetail(), this.loadHistory()]);
+        await Promise.all([this.loadDetail(), this.loadHistory(), this.loadLists()]);
         if (ctx && ctx.aborted) return;
         this.loading = false;
         this.render();
@@ -88,6 +90,43 @@ class BookDetailPage {
             console.error('Failed to load book:', e);
             this.error = String(e.message || e);
         }
+    }
+
+    // Manual lists (tracker #9): which ones hold this book.
+    async loadLists() {
+        try {
+            this.lists = await ManualLists.lists(this.bookId);
+        } catch (e) {
+            console.error('Failed to load lists:', e);
+            this.lists = null;
+        }
+    }
+
+    renderLists() {
+        if (!this.lists) return '';
+        const mine = this.lists.filter(l => l.contains);
+        const rows = mine.map(l => `<li class="bd-list-row">
+                <a href="/lists/${encodeURIComponent(l.id)}" data-route>${this.escapeHtml(l.name)}</a>
+                <button class="btn btn-small btn-secondary bd-list-remove" data-list-id="${this.escapeHtml(l.id)}" data-list-name="${this.escapeHtml(l.name)}" ${this.busy ? 'disabled' : ''}>Remove</button>
+            </li>`).join('');
+        return `${mine.length ? `<ul class="bd-lists">${rows}</ul>` : '<p class="empty-message">This book is not in any list.</p>'}
+            <button class="btn btn-secondary" id="bd-add-list-btn" ${this.busy ? 'disabled' : ''}>Add to list…</button>`;
+    }
+
+    async addToList() {
+        const res = await ManualLists.pickAndAdd({ scope: { book_ids: [this.bookId] }, count: 1, bookId: this.bookId });
+        if (res) await this.runAction(async () => {});
+    }
+
+    async removeFromList(listId, name) {
+        await this.runAction(async () => {
+            try {
+                await ManualLists.remove(listId, [this.bookId]);
+                dialogs.toast(`Removed from "${name}".`, 'success');
+            } catch (e) {
+                dialogs.toast(`Could not remove from list: ${e.message}`, 'error');
+            }
+        });
     }
 
     async loadHistory() {
@@ -229,6 +268,7 @@ class BookDetailPage {
                     ['Last opened', this.formatTime(b.OpenedTime)],
                     ['Rating', b.Rating],
                 ]))}
+                ${this.section('Lists', this.renderLists())}
                 ${this.section('Custom values', this.renderCustomValues(d.custom_values), false)}
                 ${this.section('History', this.renderHistory())}
                 ${d.file ? this.section('ComicInfo.xml in the file', this.renderComicInfo(), false) : ''}
@@ -336,7 +376,7 @@ class BookDetailPage {
             await fn();
         } finally {
             this.busy = false;
-            await Promise.all([this.loadDetail(), this.loadHistory()]);
+            await Promise.all([this.loadDetail(), this.loadHistory(), this.loadLists()]);
             if (this.comicInfo && this.comicInfo !== 'loading') this.comicInfo = null; // file may have changed
             this.render();
         }
@@ -758,6 +798,9 @@ class BookDetailPage {
         on('bd-pages-btn', () => router.navigate(`/page-manager?book=${encodeURIComponent(this.bookId)}`));
         on('bd-relink-btn', () => this.relinkFile());
         on('bd-remove-record-btn', () => this.removeRecord());
+        on('bd-add-list-btn', () => this.addToList());
+        document.querySelectorAll('.bd-list-remove').forEach(el => el.addEventListener('click', () =>
+            this.removeFromList(el.dataset.listId, el.dataset.listName)));
         const ciBtn = document.getElementById('bd-comicinfo-btn');
         if (ciBtn) ciBtn.addEventListener('click', () => this.loadComicInfo());
         document.querySelectorAll('.bd-section').forEach(el => el.addEventListener('toggle', () => {

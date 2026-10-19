@@ -52,6 +52,7 @@ const (
 	ActionCVNoMatch         = "cv_nomatch"
 	ActionCVMatch           = "cv_match"
 	ActionEdit              = "edit"
+	ActionReadingList       = "reading_list"
 )
 
 // Change is one field's before/after.

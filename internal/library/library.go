@@ -348,8 +348,15 @@ func (l *ComicLibrary) GetBooksByList(list *ComicListItem) []*ComicBook {
 	}
 
 	if strings.Contains(list.Type, "IdListItem") {
+		// A repeated id counts once, as in ComicRack's
+		// ComicIdListItem.OnGetBooks.
 		books := make([]*ComicBook, 0, len(list.BookIds))
+		seen := make(map[string]bool, len(list.BookIds))
 		for _, id := range list.BookIds {
+			if seen[id] {
+				continue
+			}
+			seen[id] = true
 			if book := l.GetBook(id); book != nil {
 				books = append(books, book)
 			}

@@ -68,6 +68,7 @@ class BrowseBulk {
                 <button class="btn btn-small btn-primary" id="bulk-edit-btn" ${this.busy ? 'disabled' : ''}>Edit…</button>
                 <button class="btn btn-small btn-secondary" id="bulk-read-btn" ${this.busy ? 'disabled' : ''}>Mark read</button>
                 <button class="btn btn-small btn-secondary" id="bulk-unread-btn" ${this.busy ? 'disabled' : ''}>Mark unread</button>
+                <button class="btn btn-small btn-secondary" id="bulk-list-btn" ${this.busy ? 'disabled' : ''}>Add to list…</button>
                 <button class="btn btn-small btn-secondary" id="bulk-clear-btn">Clear</button>
             </div>
             ${banner ? `<p class="bulk-banner">${banner}</p>` : ''}
@@ -263,6 +264,7 @@ class BrowseBulk {
         on('bulk-edit-btn', () => { this.editing = !this.editing; this.redraw(); });
         on('bulk-read-btn', () => this.apply({ read: 'read' }, 'Mark read'));
         on('bulk-unread-btn', () => this.apply({ read: 'unread' }, 'Mark unread'));
+        on('bulk-list-btn', () => ManualLists.pickAndAdd({ scope: this.scopeBody(), count: this.count() }));
         on('bulk-clear-btn', () => { this.reset(); this.redraw(); });
         on('bulk-close-btn', () => { this.editing = false; this.redraw(); });
         on('bulk-preview-btn', () => this.runPreview());

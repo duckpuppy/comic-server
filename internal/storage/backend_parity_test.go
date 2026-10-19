@@ -2,6 +2,7 @@ package storage
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/duckpuppy/comic-server/internal/library"
@@ -17,11 +18,10 @@ import (
 // bottom of this file for what actually happens on each backend):
 //   - CreateList with a duplicate ID: both return an error, but the message
 //     differs (XML pre-checks; SQLite relies on the PK constraint).
-//   - UpdateList/DeleteList/MoveList with a nonexistent ID: XMLBackend
-//     returns an error; SQLiteBackend's UPDATE/DELETE affects zero rows and
-//     returns nil. This is a real behavioral gap (SQLite silently no-ops),
-//     not a deliberate design choice - tracked here rather than silently
-//     assumed away.
+//   - DeleteList/MoveList with a nonexistent ID: XMLBackend returns an
+//     error; SQLiteBackend's DELETE/UPDATE affects zero rows and returns
+//     nil. This is a real behavioral gap (SQLite silently no-ops), not a
+//     deliberate design choice. UpdateList now errors on both.
 // BaseListId scoping (comic-server-hha) used to diverge here too - fixed by
 // including ComicLists in the temporary library MatchBooks/GetBooksForList
 // build, so it's covered by the shared suite (TestBackend_MatchBooks) now.
@@ -554,17 +554,72 @@ func TestBackend_CVDataMatchers(t *testing.T) {
 	}
 }
 
-// TestBackend_UpdateList_MissingID documents that the two backends diverge
-// on updating a list ID that doesn't exist: XMLBackend returns an error,
-// SQLiteBackend's UPDATE affects zero rows and returns nil.
+// TestBackend_UpdateList_MissingID: both backends refuse to update a list
+// that does not exist (SQLite used to affect zero rows and return nil).
 func TestBackend_UpdateList_MissingID(t *testing.T) {
-	xmlBackend := newXMLBackendFixture(t)
-	if err := xmlBackend.UpdateList(&library.ComicListItem{ID: "does-not-exist", Name: "X"}); err == nil {
-		t.Error("expected XMLBackend.UpdateList to error for a nonexistent list ID")
+	for name, newBackend := range backendFixtures() {
+		t.Run(name, func(t *testing.T) {
+			backend := newBackend(t)
+			if err := backend.UpdateList(&library.ComicListItem{ID: "does-not-exist", Name: "X"}); err == nil {
+				t.Error("expected UpdateList to error for a nonexistent list ID")
+			}
+		})
 	}
+}
 
-	sqliteBackend := newSQLiteBackendFixture(t)
-	if err := sqliteBackend.UpdateList(&library.ComicListItem{ID: "does-not-exist", Name: "X"}); err != nil {
-		t.Errorf("SQLiteBackend.UpdateList unexpectedly errored for a nonexistent list ID (behavior may have changed - update the divergence comment if so): %v", err)
+// TestBackend_IdListInFolder: an id list inside a folder keeps its folder
+// and its member order across UpdateList, and can be deleted from there.
+// SQLite used to move any updated list to the root; XML used to report a
+// nested list as not found on delete.
+func TestBackend_IdListInFolder(t *testing.T) {
+	for name, newBackend := range backendFixtures() {
+		t.Run(name, func(t *testing.T) {
+			backend := newBackend(t)
+			list := &library.ComicListItem{Type: "ComicIdListItem", ID: "list-id-new", Name: "Manual", BookIds: []string{"book-3", "book-1"}}
+			if err := backend.CreateList(list); err != nil {
+				t.Fatalf("CreateList: %v", err)
+			}
+			if err := backend.MoveList("list-id-new", "list-folder-1"); err != nil {
+				t.Fatalf("MoveList: %v", err)
+			}
+			found, err := backend.FindListByID("list-id-new")
+			if err != nil || found == nil {
+				t.Fatalf("FindListByID: %+v %v", found, err)
+			}
+			updated := *found
+			updated.BookIds = []string{"book-1", "book-2", "book-3"}
+			if err := backend.UpdateList(&updated); err != nil {
+				t.Fatalf("UpdateList: %v", err)
+			}
+
+			lists, err := backend.GetAllLists()
+			if err != nil {
+				t.Fatalf("GetAllLists: %v", err)
+			}
+			for _, l := range lists {
+				if l.ID == "list-id-new" {
+					t.Fatal("UpdateList moved the list out of its folder")
+				}
+			}
+			got, _ := backend.FindListByID("list-id-new")
+			books, err := backend.GetBooksForList(got)
+			if err != nil {
+				t.Fatalf("GetBooksForList: %v", err)
+			}
+			var ids []string
+			for _, b := range books {
+				ids = append(ids, b.ID)
+			}
+			if strings.Join(ids, ",") != "book-1,book-2,book-3" {
+				t.Errorf("members = %v, want book-1,book-2,book-3 in that order", ids)
+			}
+
+			if err := backend.DeleteList("list-id-new"); err != nil {
+				t.Fatalf("DeleteList of a list in a folder: %v", err)
+			}
+			if gone, _ := backend.FindListByID("list-id-new"); gone != nil {
+				t.Errorf("list still there after DeleteList: %+v", gone)
+			}
+		})
 	}
 }

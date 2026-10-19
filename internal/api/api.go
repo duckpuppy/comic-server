@@ -50,6 +50,7 @@ type Server struct {
 	config            *config.Config
 	configPath        string       // Path to config file for saving
 	configMu          sync.RWMutex // Protects config modifications
+	manualListMu      sync.Mutex   // serializes manual list membership edits (read-modify-write)
 	configDB          *configdb.DB // Device registrations + list assignments (comic-server-3ek)
 	version           VersionInfo
 	backupState       backupState // scheduled/manual backups (comic-server-yzdt)
@@ -275,6 +276,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/library/lists/tree", s.handleGetListTree)
 	s.mux.HandleFunc("/api/library/lists", s.handleGetLists)
 	s.mux.HandleFunc("/api/library/lists/", s.handleListsRouter)
+	s.mux.HandleFunc("/api/library/manual-lists", s.handleManualLists)
 
 	// Ad-hoc filtered browsing (comic-server-joj) - the same matcher
 	// engine every saved smart list uses, evaluated on the fly with
