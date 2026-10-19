@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.67.0](https://github.com/duckpuppy/comic-server/compare/v1.66.0...v1.67.0) (2026-10-19)
+
+
+### Features
+
+* export what Browse shows as a CSV file ([#216](https://github.com/duckpuppy/comic-server/issues/216)) ([9ed1f40](https://github.com/duckpuppy/comic-server/commit/9ed1f404ffa16d551d0c2dd85e99fcbc8a00bc1c))
+* verify and delete a single backup from the UI ([#214](https://github.com/duckpuppy/comic-server/issues/214)) ([b9d2233](https://github.com/duckpuppy/comic-server/commit/b9d22331d55c9deec8d924d433ce0226f7681261))
+
 ## [1.66.0](https://github.com/duckpuppy/comic-server/compare/v1.65.1...v1.66.0) (2026-10-19)
 
 
