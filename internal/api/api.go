@@ -343,6 +343,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/library/series-completeness/", s.handleSeriesCompletenessDetail)
 	s.mux.HandleFunc("/api/library/audit", s.handleAuditList)
 	s.mux.HandleFunc("/api/library/audit/rollback", s.handleAuditRollback)
+	s.mux.HandleFunc("/api/library/audit/undo", s.handleAuditUndo)
 	s.mux.HandleFunc("/api/library/attention", s.handleAttentionSummary)
 	s.mux.HandleFunc("/api/library/attention/", s.handleAttentionFlagBooks)
 

@@ -1,6 +1,8 @@
 package configdb
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -141,6 +143,26 @@ func (db *DB) ListAudit(f AuditFilter) ([]AuditRow, int, error) {
 		out = append(out, r)
 	}
 	return out, total, rows.Err()
+}
+
+// GetAudit returns one row by id; ok is false when it does not exist (it may
+// have been pruned).
+func (db *DB) GetAudit(id int64) (AuditRow, bool, error) {
+	if err := db.ensureAuditTable(); err != nil {
+		return AuditRow{}, false, err
+	}
+	var r AuditRow
+	var at string
+	err := db.QueryRow(`SELECT id, at, book_id, action, series, number, stage_before, stage_after, changes
+		FROM audit_log WHERE id = ?`, id).Scan(&r.ID, &at, &r.BookID, &r.Action, &r.Series, &r.Number, &r.StageBefore, &r.StageAfter, &r.Changes)
+	if errors.Is(err, sql.ErrNoRows) {
+		return AuditRow{}, false, nil
+	}
+	if err != nil {
+		return AuditRow{}, false, fmt.Errorf("get audit row: %w", err)
+	}
+	r.At, _ = time.Parse(time.RFC3339, at)
+	return r, true, nil
 }
 
 // PruneAudit deletes rows older than cutoff and returns how many went.
