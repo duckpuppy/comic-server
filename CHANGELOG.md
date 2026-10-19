@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.65.1](https://github.com/duckpuppy/comic-server/compare/v1.65.0...v1.65.1) (2026-10-19)
+
+
+### Bug Fixes
+
+* **deps:** update all non-major dependencies ([#196](https://github.com/duckpuppy/comic-server/issues/196)) ([6ba6bdf](https://github.com/duckpuppy/comic-server/commit/6ba6bdffffc86efd2351a080248f6192b20246b9))
+* leave ComicVine headroom for scrapes the person starts ([#208](https://github.com/duckpuppy/comic-server/issues/208)) ([2d9743e](https://github.com/duckpuppy/comic-server/commit/2d9743e60568d3d15ce11a98395afa24f56a08bf))
+
 ## [1.65.0](https://github.com/duckpuppy/comic-server/compare/v1.64.0...v1.65.0) (2026-10-19)
 
 
