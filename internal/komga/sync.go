@@ -172,7 +172,10 @@ type TargetResult struct {
 	// the same way Unmatched tracks membership failures without failing
 	// the whole target.
 	ReadStatusPushed int
-	ReadStatusFailed []UnmatchedBook
+	// ReadStatusSkipped counts books not pushed: unread here (never pushed) or
+	// already read in Komga.
+	ReadStatusSkipped int
+	ReadStatusFailed  []UnmatchedBook
 
 	Err error
 }
@@ -267,28 +270,59 @@ func (s *Syncer) syncTarget(ctx context.Context, idx *Index, target Target) Targ
 	result := TargetResult{Target: target, MatchedCount: len(matched), SourceBookCount: len(books), Unmatched: unmatched, Err: err}
 
 	if target.SyncReadStatus {
-		result.ReadStatusPushed, result.ReadStatusFailed = s.pushReadStatus(ctx, idx, books)
+		result.ReadStatusPushed, result.ReadStatusSkipped, result.ReadStatusFailed = s.pushReadStatus(ctx, idx, books)
 	}
 
 	return result
 }
 
-// pushReadStatus pushes comic-server's known read/unread status (see
-// library.ComicBook.IsUnread, the same logic already used for read/unread
-// badges elsewhere in the UI) to Komga for each book in the list, one-way.
-// Independent of the collection/read-list membership push above: even a
-// Collection target (series-level grouping) needs the underlying per-BOOK
-// Komga ID here, since read status is inherently per-issue.
-func (s *Syncer) pushReadStatus(ctx context.Context, idx *Index, books []*library.ComicBook) (pushed int, failed []UnmatchedBook) {
+// pushReadStatus pushes comic-server's known READ status to Komga for each
+// book in the list (see library.ComicBook.IsUnread, the same logic already
+// used for read/unread badges elsewhere in the UI). Independent of the
+// collection/read-list membership push above: even a Collection target
+// (series-level grouping) needs the underlying per-BOOK Komga ID here, since
+// read status is inherently per-issue.
+//
+// It only ever marks books READ, and only those Komga does not already have
+// as read. It never sends "unread": comic-server cannot yet tell "never read"
+// from "read somewhere else", so pushing unread used to reset every book read
+// in Komga on the next pass (tracker #32, phase 1 of #2). Unread therefore
+// does not propagate until the two-way merge exists (phase 2).
+func (s *Syncer) pushReadStatus(ctx context.Context, idx *Index, books []*library.ComicBook) (pushed, skipped int, failed []UnmatchedBook) {
 	matched, unmatched := idx.ResolveBookReadStatus(books, s.localRoot(), s.opts.RemoteRoot)
 	failed = append(failed, unmatched...)
 
+	toPush := matched[:0:0]
 	for _, rs := range matched {
-		if err := s.client.SetBookReadProgress(ctx, rs.KomgaBookID, rs.Read); err != nil {
+		if rs.Read {
+			toPush = append(toPush, rs)
+		} else {
+			skipped++ // unread here: leave whatever Komga has
+		}
+	}
+	if len(toPush) == 0 {
+		return 0, skipped, failed
+	}
+
+	komgaRead, err := s.client.ListReadBookIDs(ctx)
+	if err != nil {
+		// Without Komga's own state nothing is safe to push.
+		for _, rs := range toPush {
+			failed = append(failed, UnmatchedBook{Book: rs.Book, Reason: fmt.Sprintf("read status not pushed: %v", err)})
+		}
+		return 0, skipped, failed
+	}
+
+	for _, rs := range toPush {
+		if komgaRead[rs.KomgaBookID] {
+			skipped++ // Komga already has it as read
+			continue
+		}
+		if err := s.client.SetBookReadProgress(ctx, rs.KomgaBookID, true); err != nil {
 			failed = append(failed, UnmatchedBook{Book: rs.Book, Reason: fmt.Sprintf("push read status: %v", err)})
 			continue
 		}
 		pushed++
 	}
-	return pushed, failed
+	return pushed, skipped, failed
 }

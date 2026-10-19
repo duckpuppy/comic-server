@@ -79,6 +79,7 @@ Feature and subsystem notes live under `docs/dev/`. Read a file when the task to
 | [docs/dev/SMART_LISTS.md](docs/dev/SMART_LISTS.md) | you work on smart list evaluation or sync filtering, or on the ComicVine, Expression, Virtual Tag or Duplicate matchers. |
 | [docs/dev/AUTH.md](docs/dev/AUTH.md) | you touch login, sessions, API tokens, CSRF, trusted proxies, OIDC single sign-on, or add a route that must stay open. |
 | [docs/dev/WEB_UI.md](docs/dev/WEB_UI.md) | you change `internal/api/web/`: routes, navigation groups, the book page, WebSocket events. |
+| [docs/dev/KOMGA.md](docs/dev/KOMGA.md) | you touch `internal/komga`: the Komga sync pass, collection/read-list targets, read status push. |
 | [docs/dev/HISTORY.md](docs/dev/HISTORY.md) | you need what shipped in the v0.2 to v1.0 milestones. Historical only; the tracker holds current work. |
 
 User-facing docs are the other files in `docs/` (API.md, CONFIGURATION.md, ARCHITECTURE.md, RELEASE_PROCESS.md, WIRELESS_SYNC_PROTOCOL.md...).
