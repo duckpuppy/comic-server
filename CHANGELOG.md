@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.68.0](https://github.com/duckpuppy/comic-server/compare/v1.67.1...v1.68.0) (2026-10-19)
+
+
+### Features
+
+* collected editions data model (links to the issues a TPB contains) ([#220](https://github.com/duckpuppy/comic-server/issues/220)) ([baa9e13](https://github.com/duckpuppy/comic-server/commit/baa9e130601f6977823935652e72fc92fffccea5))
+* **web:** link the issues a collected edition contains ([#39](https://github.com/duckpuppy/comic-server/issues/39)) ([#222](https://github.com/duckpuppy/comic-server/issues/222)) ([df70430](https://github.com/duckpuppy/comic-server/commit/df704300985f046d8f77a36b82951eec666abe90))
+
+
+### Bug Fixes
+
+* **web:** style plain links with the theme colour ([#219](https://github.com/duckpuppy/comic-server/issues/219)) ([d03856f](https://github.com/duckpuppy/comic-server/commit/d03856f6f92144d11966c00bdaa15a3b1fc3d977))
+
 ## [1.67.1](https://github.com/duckpuppy/comic-server/compare/v1.67.0...v1.67.1) (2026-10-19)
 
 
