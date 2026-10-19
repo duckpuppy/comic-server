@@ -236,3 +236,34 @@ func TestNearestExistingDir(t *testing.T) {
 		}
 	}
 }
+
+func TestRelink_TakenByNamesTheOtherBook(t *testing.T) {
+	s, dir := relinkFixture(t, []string{"Owned.cbz", "Batman 005.cbz"}, []library.ComicBook{
+		{ID: "b1", Series: "Batman", Number: "5", FilePath: "gone.cbr"},
+		{ID: "b2", Series: "Other", Number: "1", Title: "Real One", FilePath: "Owned.cbz"},
+		{ID: "b3", Series: "Batman", Number: "5", Title: "Real Batman", FilePath: "Batman 005.cbz"},
+	})
+	post := func(id string, body map[string]any) RelinkOutcome {
+		w := postJSONTo(s, s.handleBooksRouter, "/api/library/books/"+id+"/relink", body)
+		var out RelinkOutcome
+		_ = json.Unmarshal(w.Body.Bytes(), &out)
+		return out
+	}
+	out := post("b1", map[string]any{"file_path": filepath.Join(dir, "Owned.cbz")})
+	if out.Status != relinkPickTaken || out.TakenBy == nil || out.TakenBy.BookID != "b2" || out.TakenBy.Title != "Real One" || out.TakenBy.Series != "Other" {
+		t.Errorf("pick = %+v", out)
+	}
+	// Folder search: the only fitting file is owned by b3.
+	out = post("b1", map[string]any{})
+	if out.Status != relinkNotFound || out.TakenBy == nil || out.TakenBy.BookID != "b3" {
+		t.Errorf("search = %+v", out)
+	}
+	// A plain miss carries no taken_by.
+	s2, _ := relinkFixture(t, nil, []library.ComicBook{{ID: "b1", Series: "X", Number: "1", FilePath: "gone.cbr"}})
+	w := postJSONTo(s2, s2.handleBooksRouter, "/api/library/books/b1/relink", map[string]any{})
+	var plain RelinkOutcome
+	_ = json.Unmarshal(w.Body.Bytes(), &plain)
+	if plain.TakenBy != nil {
+		t.Errorf("plain miss has taken_by: %+v", plain)
+	}
+}
