@@ -261,16 +261,17 @@ func TestHandleDeleteBookCoverCache_ForcesReExtraction(t *testing.T) {
 		t.Fatalf("DELETE expected 200, got %d: %s", deleteW.Code, deleteW.Body.String())
 	}
 
-	if err := os.Chmod(cbzPath, 0000); err != nil {
-		t.Fatalf("chmod: %v", err)
+	// Remove the source file rather than chmod it: root ignores file modes,
+	// so a chmod-based check passed the read and failed this test.
+	if err := os.Remove(cbzPath); err != nil {
+		t.Fatalf("remove: %v", err)
 	}
-	t.Cleanup(func() { os.Chmod(cbzPath, 0644) })
 
 	getAfterDeleteReq := httptest.NewRequest(http.MethodGet, "/api/library/books/book-1/cover", nil)
 	getAfterDeleteW := httptest.NewRecorder()
 	server.handleBooksRouter(getAfterDeleteW, getAfterDeleteReq)
 	if getAfterDeleteW.Code != http.StatusNotFound {
-		t.Errorf("expected GET after DELETE+chmod to fail (proving re-extraction was attempted, not served from a stale cache), got %d", getAfterDeleteW.Code)
+		t.Errorf("expected GET after DELETE+remove to fail (proving re-extraction was attempted, not served from a stale cache), got %d", getAfterDeleteW.Code)
 	}
 }
 
