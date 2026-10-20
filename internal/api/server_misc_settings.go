@@ -21,6 +21,9 @@ type ServerMiscSettingsResponse struct {
 	// CountCoveredAsOwned: issues a collected edition contains count as
 	// owned in Missing Issues and the CV smart-list matchers (tracker #46).
 	CountCoveredAsOwned bool `json:"count_covered_as_owned"`
+	// LocalIdentityRecheck: slow background ComicVine search for books with a
+	// local identity, queued as Scrape Review suggestions (tracker #47).
+	LocalIdentityRecheck bool `json:"local_identity_recheck"`
 }
 
 // handleServerMiscSettings serves GET/PUT /api/settings/server-misc.
@@ -52,6 +55,7 @@ func (s *Server) handleGetServerMiscSettings(w http.ResponseWriter, r *http.Requ
 		resp.IgnoreDevices = stored.IgnoreDevices
 		resp.AutoSync = stored.AutoSync
 		resp.CountCoveredAsOwned = stored.CountCoveredAsOwned
+		resp.LocalIdentityRecheck = stored.LocalIdentityRecheck
 	} else {
 		// Never migrated (e.g. a fresh install with nothing in config.yaml
 		// either) - fall back to whatever's currently in effect in memory,
@@ -78,10 +82,11 @@ func (s *Server) handlePutServerMiscSettings(w http.ResponseWriter, r *http.Requ
 
 	before := s.countCoveredAsOwned()
 	if err := s.configDB.UpsertServerMiscSettings(configdb.ServerMiscSettings{
-		CBZConvertEnabled:   req.CBZConvertEnabled,
-		IgnoreDevices:       req.IgnoreDevices,
-		AutoSync:            req.AutoSync,
-		CountCoveredAsOwned: req.CountCoveredAsOwned,
+		CBZConvertEnabled:    req.CBZConvertEnabled,
+		IgnoreDevices:        req.IgnoreDevices,
+		AutoSync:             req.AutoSync,
+		CountCoveredAsOwned:  req.CountCoveredAsOwned,
+		LocalIdentityRecheck: req.LocalIdentityRecheck,
 	}); err != nil {
 		log.Error().Err(err).Msg("Failed to save server misc settings")
 		http.Error(w, "Failed to save server misc settings", http.StatusInternalServerError)

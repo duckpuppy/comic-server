@@ -84,7 +84,7 @@ class ScrapeReviewPage {
     // Bulk "not in ComicVine" for the ticked items (comic-server-5wer phase 5).
     renderBulkBar() {
         const n = this.selected.size;
-        const all = n > 0 && n === this.items.length;
+        const all = n > 0 && n === this.items.filter(i => !i.local_recheck).length;
         return `
             <div class="scrape-review-bulk">
                 <label><input type="checkbox" id="scrape-review-select-all" ${all ? 'checked' : ''}> Select all</label>
@@ -137,7 +137,7 @@ class ScrapeReviewPage {
         return `
             <section class="scrape-review-item" data-book="${this.escapeHtml(item.book_id)}">
                 <div class="scrape-review-book">
-                    <input type="checkbox" class="scrape-review-select" data-book="${this.escapeHtml(item.book_id)}" ${this.selected.has(item.book_id) ? 'checked' : ''} aria-label="Select for bulk action">
+                    ${item.local_recheck ? '' : `<input type="checkbox" class="scrape-review-select" data-book="${this.escapeHtml(item.book_id)}" ${this.selected.has(item.book_id) ? 'checked' : ''} aria-label="Select for bulk action">`}
                     <img class="scrape-review-cover" src="/api/library/books/${encodeURIComponent(item.book_id)}/cover" alt="" loading="lazy">
                     <div>
                         <h2><a href="/books/${encodeURIComponent(item.book_id)}" data-route>${this.escapeHtml(item.series || item.filename)}</a></h2>
@@ -146,13 +146,16 @@ class ScrapeReviewPage {
                     </div>
                 </div>
                 ${item.needs_issue ? '<p class="scrape-review-hint">This book has no issue number, so it is never matched on its own. Choose the volume, then the issue.</p>' : ''}
+                ${item.local_recheck ? `
+                <p class="scrape-review-hint scrape-review-recheck">Suggestion from the background re-check: this book has a local identity, and ComicVine may now list it. Accepting replaces the local identity with the ComicVine tags; nothing changes until you accept.
+                    <button class="btn btn-small btn-secondary scrape-review-recheck-dismiss" data-book="${this.escapeHtml(item.book_id)}" ${busy ? 'disabled' : ''} title="Keep the local identity and do not suggest this book again">Dismiss - keep local identity</button></p>` : `
                 <div class="scrape-review-nomatch">
                     <select class="scrape-review-reason" aria-label="Why it is not in ComicVine">
                         ${ScrapeReviewPage.NO_MATCH_REASONS.map(r => `<option value="${r[0]}">${r[1]}</option>`).join('')}
                     </select>
                     <button class="btn btn-small btn-secondary scrape-review-nomatch-btn" data-book="${this.escapeHtml(item.book_id)}" ${busy ? 'disabled' : ''}>None of these - not in ComicVine</button>
                     <button class="btn btn-small btn-secondary scrape-review-rescrape" data-book="${this.escapeHtml(item.book_id)}" ${busy ? 'disabled' : ''} title="Search ComicVine again and replace these candidates">Re-scrape</button>
-                </div>
+                </div>`}
                 <details class="scrape-review-cvmatch" ${this.matchBoxes && this.matchBoxes[item.book_id] && this.matchBoxes[item.book_id].state ? 'open' : ''}><summary>Match by ComicVine link or ID</summary><div class="scrape-review-cvmatch-host" data-book="${this.escapeHtml(item.book_id)}"></div></details>
                 <details class="scrape-review-collects"><summary>This is a collected edition: link the issues it contains</summary><div class="scrape-review-collects-host" data-book="${this.escapeHtml(item.book_id)}"></div></details>
                 <table class="scrape-review-table">
@@ -187,7 +190,7 @@ class ScrapeReviewPage {
         });
         const all = document.getElementById('scrape-review-select-all');
         if (all) all.addEventListener('change', () => {
-            this.selected = all.checked ? new Set(this.items.map(i => i.book_id)) : new Set();
+            this.selected = all.checked ? new Set(this.items.filter(i => !i.local_recheck).map(i => i.book_id)) : new Set();
             this.render();
         });
         const reason = document.getElementById('scrape-review-bulk-reason');
@@ -219,6 +222,9 @@ class ScrapeReviewPage {
                 this.markNoMatch(btn.dataset.book, sel ? sel.value : 'other');
             });
         });
+        document.querySelectorAll('.scrape-review-recheck-dismiss').forEach(btn => {
+            btn.addEventListener('click', () => this.dismissRecheck(btn.dataset.book));
+        });
         document.querySelectorAll('.scrape-review-rescrape').forEach(btn => {
             btn.addEventListener('click', () => this.rescrape(btn.dataset.book));
         });
@@ -226,6 +232,27 @@ class ScrapeReviewPage {
             btn.addEventListener('click', () =>
                 this.accept(btn.dataset.book, parseInt(btn.dataset.volume, 10)));
         });
+    }
+
+    // Dismiss a background re-check suggestion: the local identity stays and
+    // the book is not suggested again (tracker #47).
+    async dismissRecheck(bookId) {
+        if (this.busy.has(bookId)) return;
+        this.busy.add(bookId);
+        this.render();
+        try {
+            const res = await fetch(`/api/scrape/recheck/dismiss/${encodeURIComponent(bookId)}`, { method: 'POST' });
+            if (!res.ok) throw new Error((await res.text()).trim() || `HTTP ${res.status}`);
+            this.items = this.items.filter(i => i.book_id !== bookId);
+            this.selected.delete(bookId);
+            if (typeof dialogs !== 'undefined') dialogs.toast('Dismissed. The local identity stays.', 'success');
+            if (typeof navigation !== 'undefined') navigation.updateBadge('scrape-review', this.items.length);
+        } catch (e) {
+            if (typeof dialogs !== 'undefined') dialogs.toast(`Could not dismiss: ${e.message}`, 'error', 8000);
+        } finally {
+            this.busy.delete(bookId);
+            this.render();
+        }
     }
 
     // "None of these": record the decision (comic-server-5wer) and drop the item.

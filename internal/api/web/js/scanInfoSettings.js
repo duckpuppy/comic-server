@@ -323,10 +323,10 @@ class ScanInfoSettings {
             const response = await fetch('/api/settings/server-misc');
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json();
-            this.serverMisc = { cbz_convert_enabled: !!data.cbz_convert_enabled, ignore_devices: data.ignore_devices || [], auto_sync: !!data.auto_sync, count_covered_as_owned: !!data.count_covered_as_owned };
+            this.serverMisc = { cbz_convert_enabled: !!data.cbz_convert_enabled, ignore_devices: data.ignore_devices || [], auto_sync: !!data.auto_sync, count_covered_as_owned: !!data.count_covered_as_owned, local_identity_recheck: !!data.local_identity_recheck };
         } catch (error) {
             console.error('Failed to load server settings:', error);
-            this.serverMisc = { cbz_convert_enabled: false, ignore_devices: [], auto_sync: false, count_covered_as_owned: false };
+            this.serverMisc = { cbz_convert_enabled: false, ignore_devices: [], auto_sync: false, count_covered_as_owned: false, local_identity_recheck: false };
         }
     }
 
@@ -873,7 +873,7 @@ class ScanInfoSettings {
     }
 
     renderServerMisc() {
-        const m = this.serverMisc || { cbz_convert_enabled: false, ignore_devices: [], auto_sync: false, count_covered_as_owned: false };
+        const m = this.serverMisc || { cbz_convert_enabled: false, ignore_devices: [], auto_sync: false, count_covered_as_owned: false, local_identity_recheck: false };
         return `
             <div class="panel scan-info-panel">
                 <div class="settings-section-header">
@@ -906,6 +906,15 @@ class ScanInfoSettings {
                     </label>
                     <span class="form-label-inline">Count collected-edition issues as owned</span>
                     <div class="form-help">Off: an issue that only a collected edition (TPB, omnibus) contains shows as "covered" in Missing Issues and is not counted as owned. On: it counts as owned in Missing Issues and in the ComicVine smart-list matchers (series complete, missing count, percent owned).</div>
+                </div>
+
+                <div class="form-group">
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="server-misc-local-recheck" ${m.local_identity_recheck ? 'checked' : ''}>
+                        <span class="toggle-slider"></span>
+                    </label>
+                    <span class="form-label-inline">Re-check local-identity books on ComicVine</span>
+                    <div class="form-help">Once a day, searches ComicVine for a few books that have a local identity (at most 5 searches, only in the background headroom, stopping at the first error). If ComicVine now lists one, it appears in Scrape Review as a suggestion. Nothing is applied until you accept. Off by default.</div>
                 </div>
 
                 <div class="form-group scan-info-list-group">
@@ -1278,6 +1287,13 @@ class ScanInfoSettings {
         if (coveredToggle) {
             coveredToggle.addEventListener('change', (e) => {
                 this.serverMisc.count_covered_as_owned = e.target.checked;
+                this.saveServerMisc();
+            });
+        }
+        const recheckToggle = document.getElementById('server-misc-local-recheck');
+        if (recheckToggle) {
+            recheckToggle.addEventListener('change', (e) => {
+                this.serverMisc.local_identity_recheck = e.target.checked;
                 this.saveServerMisc();
             });
         }
