@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.69.0](https://github.com/duckpuppy/comic-server/compare/v1.68.0...v1.69.0) (2026-10-20)
+
+
+### Features
+
+* local identity for collected books ComicVine never lists ([#43](https://github.com/duckpuppy/comic-server/issues/43)) ([e24510b](https://github.com/duckpuppy/comic-server/commit/e24510b356c4302b99fe9e7090712b89da5dbc88))
+* local identity for collected books ComicVine never lists ([#43](https://github.com/duckpuppy/comic-server/issues/43)) ([223fbb9](https://github.com/duckpuppy/comic-server/commit/223fbb9b15839463b374c97c9683b1cfc1267437))
+* setting to count collected-edition issues as owned ([#46](https://github.com/duckpuppy/comic-server/issues/46)) ([59108b5](https://github.com/duckpuppy/comic-server/commit/59108b5cbdef2f8a8873f5d4b3a740b767a8d79d))
+* setting to count collected-edition issues as owned ([#46](https://github.com/duckpuppy/comic-server/issues/46)) ([b45988f](https://github.com/duckpuppy/comic-server/commit/b45988f6154a0fcf03a20db9b4bd809a835435b5))
+* suggest collects links from the description text ([#40](https://github.com/duckpuppy/comic-server/issues/40)) ([6b5190b](https://github.com/duckpuppy/comic-server/commit/6b5190b27a4e461d6d0c89ec36f40d839812f277))
+* suggest collects links from the description text ([#40](https://github.com/duckpuppy/comic-server/issues/40)) ([ce9206f](https://github.com/duckpuppy/comic-server/commit/ce9206f28b73626cd1ee58830d0867caf416ea48))
+* **web:** link a whole local-identity line to a ComicVine volume ([#44](https://github.com/duckpuppy/comic-server/issues/44)) ([eb97944](https://github.com/duckpuppy/comic-server/commit/eb9794422b28f7296106769e3a43ab8e69eab65c))
+* **web:** link a whole local-identity line to a ComicVine volume ([#44](https://github.com/duckpuppy/comic-server/issues/44)) ([8de9dd4](https://github.com/duckpuppy/comic-server/commit/8de9dd42785092380c01c6dc8d2f7268980a4859))
+* **web:** show issues inside a collected edition as covered in Missing Issues ([#41](https://github.com/duckpuppy/comic-server/issues/41)) ([#225](https://github.com/duckpuppy/comic-server/issues/225)) ([d791673](https://github.com/duckpuppy/comic-server/commit/d791673a2b717518c940cb097877f778a537c995))
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/go-jose/go-jose/v4 to v4.1.6 ([#223](https://github.com/duckpuppy/comic-server/issues/223)) ([81f40e3](https://github.com/duckpuppy/comic-server/commit/81f40e3dba42c6471110cb6e6ed948e484d4a706))
+
 ## [1.68.0](https://github.com/duckpuppy/comic-server/compare/v1.67.1...v1.68.0) (2026-10-19)
 
 
