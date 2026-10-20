@@ -374,6 +374,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/scrape/log", s.handleScrapeLog)
 	s.mux.HandleFunc("/api/scrape/review", s.handleScrapeReviewList)
 	s.mux.HandleFunc("/api/scrape/review/", s.handleScrapeReviewResolve)
+	s.mux.HandleFunc("/api/scrape/recheck/dismiss/", s.handleRecheckDismiss)
 
 	// Komga sync endpoints
 	s.mux.HandleFunc("/api/komga/status", s.handleKomgaStatus)

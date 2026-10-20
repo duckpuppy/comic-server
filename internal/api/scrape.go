@@ -265,8 +265,16 @@ func (s *Server) handleScrapeReviewList(w http.ResponseWriter, r *http.Request) 
 	for _, p := range pending {
 		item := scrapeReviewItem{BookScrapeResult: p}
 		if b, err := s.backend.GetBook(p.BookID); err == nil && b != nil {
-			if workflow.IsNoCVMatch(b) || localid.Has(b) {
+			if workflow.IsNoCVMatch(b) {
 				continue // the user already decided; the old pending result is moot
+			}
+			if localid.Has(b) {
+				if p.Error != comicvine.RecheckNote {
+					continue // same: the identity is the decision
+				}
+				item.LocalRecheck = true // a background suggestion (#47)
+			} else if p.Error == comicvine.RecheckNote {
+				continue // the identity was retired another way; the suggestion is stale
 			}
 			item.Book = &scrapeReviewBook{
 				Series: b.Series, Number: b.Number, Year: b.Year,
@@ -290,6 +298,10 @@ type scrapeReviewItem struct {
 	// NeedsIssue: the book has no issue number, so the user picks the issue
 	// from the volume's list (comic-server-5wer phase 3).
 	NeedsIssue bool `json:"needs_issue,omitempty"`
+	// LocalRecheck: this is a suggestion from the background re-check of a
+	// book with a local identity (tracker #47). Accepting it retires the
+	// identity; dismissing keeps it and stops the suggestions.
+	LocalRecheck bool `json:"local_recheck,omitempty"`
 	// OnlyIssues maps a candidate volume id to its single issue, for
 	// candidates ComicVine lists with exactly one issue (comic-server-5wer
 	// phase 5). The review page offers it as the pick; the user still

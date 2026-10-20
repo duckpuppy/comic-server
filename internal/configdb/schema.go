@@ -14,8 +14,10 @@ import "fmt"
 // trash_settings (comic-server-4hsz). Version 11 adds
 // server_misc_settings (comic-server-wp8k). Version 12 adds
 // watch_folders (comic-server-obe). Version 13 adds an auto_sync column
-// to server_misc_settings (comic-server-r769).
-const schemaVersion = 14
+// to server_misc_settings (comic-server-r769). Version 14 adds
+// count_covered_as_owned (tracker #46), version 15 adds
+// local_identity_recheck (tracker #47).
+const schemaVersion = 15
 
 // SchemaVersion is the newest schema this build understands; restore refuses a backup above it.
 const SchemaVersion = schemaVersion
@@ -100,6 +102,11 @@ func (db *DB) initSchema() error {
 		if version < 14 {
 			if err := db.migrateV13ToV14(); err != nil {
 				return fmt.Errorf("migrate v13→v14: %w", err)
+			}
+		}
+		if version < 15 {
+			if err := db.migrateV14ToV15(); err != nil {
+				return fmt.Errorf("migrate v14→v15: %w", err)
 			}
 		}
 	}
@@ -340,6 +347,15 @@ func (db *DB) migrateV13ToV14() error {
 		return fmt.Errorf("migrate v13→v14: %w", err)
 	}
 	return db.addCountCoveredColumn()
+}
+
+// migrateV14ToV15 adds local_identity_recheck to server_misc_settings
+// (tracker #47). Creates the table first for the same reason as v12→v13.
+func (db *DB) migrateV14ToV15() error {
+	if err := db.createServerMiscSettingsTable(); err != nil {
+		return fmt.Errorf("migrate v14→v15: %w", err)
+	}
+	return db.addLocalIdentityRecheckColumn()
 }
 
 // createDataManagerTables creates the tables backing the Data Manager rule

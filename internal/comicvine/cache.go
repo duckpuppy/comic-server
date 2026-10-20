@@ -54,6 +54,10 @@ func OpenCache(path string) (*Cache, error) {
 		db.Close()
 		return nil, fmt.Errorf("initialize cache schema: %w", err)
 	}
+	if err := c.ensureRecheckTable(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("initialize cache schema: %w", err)
+	}
 	return c, nil
 }
 

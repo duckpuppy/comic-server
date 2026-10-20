@@ -582,6 +582,9 @@ func runServer(cmd *cobra.Command, args []string) error {
 	cvCtx, cvCancel := context.WithCancel(context.Background())
 	defer cvCancel()
 	if cfg.Server.ComicVineAPIKey != "" {
+		// Slow background search for local-identity books; off unless the
+		// Settings toggle is on (tracker #47).
+		apiServer.StartLocalIdentityRecheck(cvCtx)
 		go startComicVineSync(cvCtx, cfg.Server.ComicVineAPIKey, backend, cfg.Server.ComicVineCachePath, func() comicvine.CompletenessOptions {
 			st, err := configDB.GetServerMiscSettings()
 			return comicvine.CompletenessOptions{CountCoveredAsOwned: err == nil && st != nil && st.CountCoveredAsOwned}
