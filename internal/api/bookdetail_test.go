@@ -452,3 +452,25 @@ func TestBookLocalIdentity_PreviewSetSiblingsRefusalsAndClear(t *testing.T) {
 		t.Errorf("clear must touch only this book: %+v %+v", d.LocalID, d2.LocalID)
 	}
 }
+
+func TestBookLocalIdentity_LineListsBooksSharingTheKey(t *testing.T) {
+	books := []library.ComicBook{
+		{ID: "v1", Series: "Ghost Rider TPB", Number: "1", FilePath: "a.cbz"},
+		{ID: "v2", Series: "Ghost Rider TPB", Number: "2", FilePath: "b.cbz"},
+		{ID: "v3", Series: "Ghost Rider TPB", Number: "3", FilePath: "c.cbz"},
+	}
+	s := newDuplicatesTestServer(t, t.TempDir(), books)
+	post := func(id, body string) (int, string) {
+		w := httptest.NewRecorder()
+		s.handleBooksRouter(w, httptest.NewRequest(http.MethodPost, "/api/library/books/"+id+"/local-identity", strings.NewReader(body)))
+		return w.Code, w.Body.String()
+	}
+	if code, _ := post("v1", `{"line":true}`); code != http.StatusConflict {
+		t.Errorf("line without identity: %d", code)
+	}
+	post("v1", `{"set":true,"sibling_ids":["v2"]}`)
+	code, out := post("v1", `{"line":true}`)
+	if code != http.StatusOK || !strings.Contains(out, `"v1"`) || !strings.Contains(out, `"v2"`) || strings.Contains(out, `"v3"`) {
+		t.Errorf("line: %d %s", code, out)
+	}
+}

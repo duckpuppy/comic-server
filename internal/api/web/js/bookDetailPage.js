@@ -427,6 +427,7 @@ class BookDetailPage {
                     ${rollback}
                 </div>
                 ${this.renderLocalIdentityPanel()}
+                ${d.local_identity && d.file ? `<details class="bd-cvmatch"><summary>Link this whole line to a ComicVine volume</summary><div id="bd-li-line-host"></div></details>` : ''}
                 ${d.file ? `<details class="bd-cvmatch"><summary>Match by ComicVine link or ID</summary><div id="bd-cvmatch-host"></div></details>` : ''}
                 ${notes.length ? `<p class="empty-message bd-action-notes">${notes.map(n => this.escapeHtml(n)).join('<br>')}</p>` : ''}
             </div>`;
@@ -904,6 +905,14 @@ class BookDetailPage {
             this.setAccepted(el.dataset.flag, el.dataset.accept === '1')));
         on('bd-write-btn', () => this.writeMetadata());
         on('bd-rollback-btn', () => this.rollback());
+        const lineHost = document.getElementById('bd-li-line-host');
+        if (lineHost && typeof LocalLinePanel !== 'undefined') {
+            new LocalLinePanel(this.bookId, lineHost, async () => {
+                // Reload first: a render with the old detail would rebuild this panel for a book that no longer has a local identity.
+                await Promise.all([this.loadDetail(), this.loadHistory()]);
+                this.render();
+            });
+        }
         const cxHost = document.getElementById('bd-collects-host');
         if (cxHost && typeof CollectsEditor !== 'undefined') {
             new CollectsEditor(this.bookId, cxHost, this.detail.collects || [], entries => { this.detail.collects = entries; });

@@ -21,6 +21,17 @@ type LocalIdentityRequest struct {
 	Set        bool     `json:"set"`
 	Preview    bool     `json:"preview"`
 	SiblingIDs []string `json:"sibling_ids"`
+	// Line lists the books that share this book's volume key (this book
+	// included) and changes nothing. It is the first step of linking a
+	// whole line to a real ComicVine volume (tracker #44).
+	Line bool `json:"line"`
+}
+
+// LocalIdentityLineBook is one book of a line.
+type LocalIdentityLineBook struct {
+	ID     string `json:"id"`
+	Number string `json:"number"`
+	Title  string `json:"title"`
 }
 
 // LocalIdentitySibling is a book that could share the volume key.
@@ -63,6 +74,27 @@ func (s *Server) handleLocalIdentity(w http.ResponseWriter, r *http.Request) {
 	book, err := backend.GetBook(id)
 	if err != nil || book == nil {
 		http.Error(w, "Book not found", http.StatusNotFound)
+		return
+	}
+
+	if req.Line {
+		ident, ok := localid.Get(book)
+		if !ok {
+			http.Error(w, "this book has no local identity", http.StatusConflict)
+			return
+		}
+		all, err := backend.GetAllBooks()
+		if err != nil {
+			http.Error(w, "Failed to load books", http.StatusInternalServerError)
+			return
+		}
+		line := []LocalIdentityLineBook{}
+		for i := range all {
+			if o, ok := localid.Get(&all[i]); ok && o.Volume == ident.Volume && all[i].FilePath != "" {
+				line = append(line, LocalIdentityLineBook{ID: all[i].ID, Number: all[i].Number, Title: all[i].Title})
+			}
+		}
+		s.writeJSON(w, http.StatusOK, map[string]any{"volume_key": ident.Volume, "line": line})
 		return
 	}
 
