@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.70.0](https://github.com/duckpuppy/comic-server/compare/v1.69.0...v1.70.0) (2026-10-20)
+
+
+### Features
+
+* background re-check for local-identity books ([#47](https://github.com/duckpuppy/comic-server/issues/47)) ([3a5d9ae](https://github.com/duckpuppy/comic-server/commit/3a5d9aebaedaaa7ff994ebcc72b3fe15432555ad))
+* background re-check for local-identity books ([#47](https://github.com/duckpuppy/comic-server/issues/47)) ([1950ab0](https://github.com/duckpuppy/comic-server/commit/1950ab0129ab76cc13aaa8837965b11855d714e2))
+* search and replace in Browse bulk edit ([#31](https://github.com/duckpuppy/comic-server/issues/31)) ([c22f87d](https://github.com/duckpuppy/comic-server/commit/c22f87de6e5dbc18a903df08b3bd9d1b03704ff2))
+* search and replace in Browse bulk edit ([#31](https://github.com/duckpuppy/comic-server/issues/31)) ([fcfd770](https://github.com/duckpuppy/comic-server/commit/fcfd7705caa5f535b50eb4e35cee75d6af824056))
+
 ## [1.69.0](https://github.com/duckpuppy/comic-server/compare/v1.68.0...v1.69.0) (2026-10-20)
 
 
