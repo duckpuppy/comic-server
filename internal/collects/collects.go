@@ -218,3 +218,27 @@ func Set(b *library.ComicBook, entries []Entry) bool {
 	b.CustomValuesStore = library.SetCustomValue(b.CustomValuesStore, Key, enc)
 	return true
 }
+
+// KeyDismissed marks a book whose suggested links the user turned down
+// (tracker #40), so the suggestion is not offered again. The comic_server_
+// prefix keeps it out of the metadata fingerprint.
+const KeyDismissed = "comic_server_collects_dismissed"
+
+// Dismissed reports whether suggestions were turned down for b.
+func Dismissed(b *library.ComicBook) bool {
+	v, _ := library.GetCustomValue(b.CustomValuesStore, KeyDismissed)
+	return v != ""
+}
+
+// SetDismissed sets or clears the mark and reports whether it changed.
+func SetDismissed(b *library.ComicBook, dismissed bool) bool {
+	if Dismissed(b) == dismissed {
+		return false
+	}
+	if dismissed {
+		b.CustomValuesStore = library.SetCustomValue(b.CustomValuesStore, KeyDismissed, "1")
+	} else {
+		b.CustomValuesStore = library.RemoveCustomValue(b.CustomValuesStore, KeyDismissed)
+	}
+	return true
+}

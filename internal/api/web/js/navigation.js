@@ -119,6 +119,7 @@ Navigation.ENTRIES = [
         { tab: 'lists', href: '/lists', icon: '📚', label: 'Lists', badge: true },
         { tab: 'browse', href: '/browse', icon: '🔍', label: 'Browse' },
         { tab: 'missing-issues', href: '/missing-issues', icon: '🕳️', label: 'Missing Issues' },
+        { tab: 'collects-suggestions', href: '/collects-suggestions', icon: '🔗', label: 'Collects Suggestions' },
         { tab: 'variant-covers', href: '/variant-covers', icon: '🖼️', label: 'Variant Covers' },
         { tab: 'duplicates', href: '/duplicates', icon: '👯', label: 'Duplicates' },
         { tab: 'physical', href: '/physical', icon: '📦', label: 'Paper Copies' },

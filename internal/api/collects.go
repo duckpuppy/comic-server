@@ -142,5 +142,6 @@ func (s *Server) handleBookCollects(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.invalidateVolumeSummaries() // Missing Issues shows what a collection covers
+	s.invalidateCollectsSuggestions()
 	s.writeJSON(w, http.StatusOK, map[string]any{"book_id": id, "collects": collectsOrEmpty(book), "warnings": s.collectsWarnings(req.Entries)})
 }

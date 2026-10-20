@@ -123,13 +123,18 @@ func (s *Scraper) ApplyIssue(ctx context.Context, backend library.Backend, bookI
 // only, with no ComicVine call. ok is false when the volume is not cached:
 // unknown is not the same as empty.
 func (s *Scraper) CachedIssueNumbers(volumeID int) (numbers []string, ok bool) {
-	cached, err := s.cache.GetIssuesForVolume(volumeID)
+	return s.cache.CachedIssueNumbers(volumeID)
+}
+
+// CachedIssueNumbers is the cache-only issue number list of a volume.
+func (c *Cache) CachedIssueNumbers(volumeID int) (numbers []string, ok bool) {
+	cached, err := c.GetIssuesForVolume(volumeID)
 	if err != nil || len(cached) == 0 {
 		return nil, false
 	}
 	numbers = make([]string, len(cached))
-	for i, c := range cached {
-		numbers[i] = c.Number
+	for i, ci := range cached {
+		numbers[i] = ci.Number
 	}
 	return numbers, true
 }

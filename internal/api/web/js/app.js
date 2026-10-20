@@ -119,6 +119,7 @@ let variantCoversPage = null;
 let pageManagerPage = null;
 let readerPage = null;
 let missingIssuesPage = null;
+let collectsSuggestionsPage = null;
 let scanInfoSettings = null;
 let dataManagerPage = null;
 let dataManagerRulesPage = null;
@@ -328,6 +329,15 @@ document.addEventListener('DOMContentLoaded', () => {
             missingIssuesPage = new MissingIssuesPage();
         }
         await missingIssuesPage.init(ctx);
+    });
+
+    router.register('/collects-suggestions', async (params, ctx) => {
+        navigation.setActive('collects-suggestions');
+        dashboard.hide();
+        if (!collectsSuggestionsPage) {
+            collectsSuggestionsPage = new CollectsSuggestionsPage();
+        }
+        await collectsSuggestionsPage.init(ctx);
     });
 
     router.register('/variant-covers', async (params, ctx) => {
