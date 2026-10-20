@@ -5,6 +5,7 @@ import (
 
 	"github.com/duckpuppy/comic-server/internal/datamanager"
 	"github.com/duckpuppy/comic-server/internal/library"
+	"github.com/duckpuppy/comic-server/internal/localid"
 )
 
 func TestGetSetStage_RoundTrip(t *testing.T) {
@@ -351,5 +352,34 @@ func TestInferStage_CVDBSkipLeavesScrape(t *testing.T) {
 	b := &library.ComicBook{FilePath: "/c/a.cbz", Tags: "CVDBSKIP", ScanInformation: "s"}
 	if got := InferStage(b, nil); got == StageScrape {
 		t.Errorf("CVDBSKIP book inferred at Scrape")
+	}
+}
+
+func TestLocalIdentity_StageAndMarkerReplace(t *testing.T) {
+	b := &library.ComicBook{ID: "x", FilePath: "/c/a.cbz", ScanInformation: "scanned"}
+	SetStage(b, StageScrape)
+	SetNoCVMatch(b, "collected", "2026-10-16")
+	id := localid.Identity{Volume: localid.NewVolumeKey(), Issue: localid.NewIssueKey()}
+	if !SetLocalIdentity(b, id) {
+		t.Fatal("set should change")
+	}
+	if IsNoCVMatch(b) {
+		t.Error("the identity should replace the not-in-ComicVine marker")
+	}
+	if SetLocalIdentity(b, id) {
+		t.Error("same identity should not change")
+	}
+	if !ExemptFromScrape(b) || GetStage(b) <= StageScrape {
+		t.Errorf("exempt=%v stage=%v", ExemptFromScrape(b), GetStage(b))
+	}
+	// Removing the old marker later must not push the book back to Scrape.
+	if ClearNoCVMatch(b) {
+		t.Error("marker was already gone")
+	}
+	if !ClearLocalIdentity(b) || GetStage(b) != StageScrape {
+		t.Errorf("after clear: stage %v, want Scrape", GetStage(b))
+	}
+	if ClearLocalIdentity(b) {
+		t.Error("second clear should report no change")
 	}
 }

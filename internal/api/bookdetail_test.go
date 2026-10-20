@@ -387,3 +387,68 @@ func TestBookCollects_PreviewSavesNothingAndLookupNeedsScraper(t *testing.T) {
 		t.Errorf("lookup without scraper: %d", w.Code)
 	}
 }
+
+func TestBookLocalIdentity_PreviewSetSiblingsRefusalsAndClear(t *testing.T) {
+	books := []library.ComicBook{
+		{ID: "v1", Series: "Ghost Rider TPB", Number: "1", FilePath: "a.cbz"},
+		{ID: "v2", Series: "ghost rider tpb", Number: "2", FilePath: "b.cbz"},
+		{ID: "v3", Series: "Ghost Rider TPB", Number: "3", FilePath: "c.cbz"},
+		{ID: "tag", Series: "Ghost Rider TPB", Number: "4", FilePath: "d.cbz", CustomValuesStore: ",comicvine_volume=9"},
+		{ID: "none", Series: "", FilePath: "e.cbz"},
+	}
+	s := newDuplicatesTestServer(t, t.TempDir(), books)
+	post := func(id, body string) (int, string) {
+		w := httptest.NewRecorder()
+		s.handleBooksRouter(w, httptest.NewRequest(http.MethodPost, "/api/library/books/"+id+"/local-identity", strings.NewReader(body)))
+		return w.Code, w.Body.String()
+	}
+	if code, _ := post("none", `{"set":true}`); code != http.StatusBadRequest {
+		t.Errorf("no series: %d", code)
+	}
+	if code, _ := post("tag", `{"set":true}`); code != http.StatusConflict {
+		t.Errorf("already tagged: %d", code)
+	}
+	code, out := post("v1", `{"set":true,"preview":true}`)
+	if code != http.StatusOK || !strings.Contains(out, `"v2"`) || !strings.Contains(out, `"v3"`) || strings.Contains(out, `"tag"`) {
+		t.Fatalf("preview: %d %s", code, out)
+	}
+	var d BookDetail
+	getJSON(t, s, "/api/library/books/v1", &d)
+	if d.LocalID != nil {
+		t.Fatal("preview saved an identity")
+	}
+	if code, out = post("v1", `{"set":true,"sibling_ids":["v2","tag","zzz"]}`); code != http.StatusOK || !strings.Contains(out, `"books_changed":2`) {
+		t.Fatalf("set: %d %s", code, out)
+	}
+	var d2, d3 BookDetail
+	getJSON(t, s, "/api/library/books/v1", &d)
+	getJSON(t, s, "/api/library/books/v2", &d2)
+	getJSON(t, s, "/api/library/books/v3", &d3)
+	if d.LocalID == nil || d2.LocalID == nil || d3.LocalID != nil {
+		t.Fatalf("ids: %+v %+v %+v", d.LocalID, d2.LocalID, d3.LocalID)
+	}
+	if d.LocalID.VolumeKey != d2.LocalID.VolumeKey || d.LocalID.IssueKey == d2.LocalID.IssueKey {
+		t.Errorf("siblings must share the volume key and keep their own issue key: %+v %+v", d.LocalID, d2.LocalID)
+	}
+	// A later volume of the same line joins the existing key.
+	if code, _ = post("v3", `{"set":true}`); code != http.StatusOK {
+		t.Fatalf("join: %d", code)
+	}
+	getJSON(t, s, "/api/library/books/v3", &d3)
+	if d3.LocalID == nil || d3.LocalID.VolumeKey != d.LocalID.VolumeKey {
+		t.Errorf("v3 should join %v, got %+v", d.LocalID, d3.LocalID)
+	}
+	rows, _, _ := s.configDB.ListAudit(configdb.AuditFilter{BookID: "v1", Limit: 10})
+	if len(rows) != 1 || rows[0].Action != "local_identity" {
+		t.Errorf("audit rows = %+v", rows)
+	}
+	if code, _ = post("v1", `{"set":false}`); code != http.StatusOK {
+		t.Fatalf("clear: %d", code)
+	}
+	d, d2 = BookDetail{}, BookDetail{} // a decode does not reset omitted fields
+	getJSON(t, s, "/api/library/books/v1", &d)
+	getJSON(t, s, "/api/library/books/v2", &d2)
+	if d.LocalID != nil || d2.LocalID == nil {
+		t.Errorf("clear must touch only this book: %+v %+v", d.LocalID, d2.LocalID)
+	}
+}

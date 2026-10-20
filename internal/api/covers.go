@@ -29,6 +29,10 @@ func (s *Server) handleBooksRouter(w http.ResponseWriter, r *http.Request) {
 		s.handleAcceptFlag(w, r)
 		return
 	}
+	if strings.HasSuffix(suffix, "/local-identity") {
+		s.handleLocalIdentity(w, r)
+		return
+	}
 	if strings.HasSuffix(suffix, "/collects/lookup") {
 		s.handleCollectsLookup(w, r)
 		return
