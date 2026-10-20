@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/duckpuppy/comic-server/internal/collects"
 	"github.com/duckpuppy/comic-server/internal/library"
 )
 
@@ -21,6 +22,10 @@ type SeriesIssue struct {
 	Owned     bool   `json:"owned"`
 	Wanted    bool   `json:"wanted"`            // a placeholder book exists for it
 	BookID    string `json:"book_id,omitempty"` // the owning (or wanted) book
+	// Covered: no book of its own, but a collected edition contains it
+	// (tracker #41). CoveredBy is that collected book. Owned wins over covered.
+	Covered   bool   `json:"covered,omitempty"`
+	CoveredBy string `json:"covered_by,omitempty"`
 }
 
 // SeriesCompleteness is the detail view of one volume.
@@ -32,8 +37,9 @@ type SeriesCompleteness struct {
 	SiteURL   string        `json:"site_url,omitempty"`
 	Total     int           `json:"total"`
 	Owned     int           `json:"owned"`
-	Missing   int           `json:"missing"`
-	Wanted    int           `json:"wanted"` // missing issues already on the Wanted list
+	Covered   int           `json:"covered"` // not owned, but inside a collected edition the library holds
+	Missing   int           `json:"missing"` // neither owned nor covered
+	Wanted    int           `json:"wanted"`  // missing issues already on the Wanted list
 	Percent   int           `json:"percent"`
 	Unmatched int           `json:"unmatched_owned"` // owned books of this volume with no issue id
 	Issues    []SeriesIssue `json:"issues"`
@@ -47,6 +53,7 @@ type VolumeSummary struct {
 	StartYear string `json:"start_year"`
 	Total     int    `json:"total"`
 	Owned     int    `json:"owned"`
+	Covered   int    `json:"covered"`
 	Missing   int    `json:"missing"`
 	Percent   int    `json:"percent"`
 }
@@ -55,19 +62,31 @@ type volumeHolding struct {
 	owned     map[int]string // issue id -> book id
 	wanted    map[int]string
 	unmatched int
+	runs      []collectionRun // collected editions that contain issues of this volume
+}
+
+// collectionRun is one whole-issue run of a collected edition (tracker #41).
+type collectionRun struct {
+	bookID string
+	entry  collects.Entry
+}
+
+func newHolding() *volumeHolding {
+	return &volumeHolding{owned: map[int]string{}, wanted: map[int]string{}}
 }
 
 func groupHoldings(books []library.ComicBook) map[int]*volumeHolding {
 	out := map[int]*volumeHolding{}
 	for i := range books {
 		b := &books[i]
+		addCollectionRuns(out, b)
 		vol := extractCVVolumeID(b.CustomValuesStore)
 		if vol == 0 {
 			continue
 		}
 		h := out[vol]
 		if h == nil {
-			h = &volumeHolding{owned: map[int]string{}, wanted: map[int]string{}}
+			h = newHolding()
 			out[vol] = h
 		}
 		iss := extractCVIssueID(b.CustomValuesStore)
@@ -85,6 +104,91 @@ func groupHoldings(books []library.ComicBook) map[int]*volumeHolding {
 	return out
 }
 
+// addCollectionRuns records the whole-issue runs of a collected book. A
+// backup story or a partial issue does not cover an issue, a Wanted
+// placeholder holds nothing, and an entry with no ComicVine volume cannot be
+// resolved (unknown is not covered).
+func addCollectionRuns(out map[int]*volumeHolding, b *library.ComicBook) {
+	if library.IsWantedPlaceholder(b) {
+		return
+	}
+	for _, e := range collects.Get(b) {
+		if e.Volume <= 0 || e.Kind == collects.KindBackup || e.Partial {
+			continue
+		}
+		h := out[e.Volume]
+		if h == nil {
+			h = newHolding()
+			out[e.Volume] = h
+		}
+		h.runs = append(h.runs, collectionRun{bookID: b.ID, entry: e})
+	}
+}
+
+// coveredIssues maps issue id -> collected book id for the issues of a
+// volume that a collection contains. A range with a missing end, or one that
+// runs backwards, covers nothing.
+func (h *volumeHolding) coveredIssues(issues []CachedIssue) map[int]string {
+	out := map[int]string{}
+	if len(h.runs) == 0 {
+		return out
+	}
+	sorted := append([]CachedIssue(nil), issues...)
+	sort.SliceStable(sorted, func(i, j int) bool { return issueNumberLess(sorted[i].Number, sorted[j].Number) })
+	for _, r := range h.runs {
+		for _, id := range coveredByEntry(r.entry.Normalize(), sorted) {
+			if _, ok := out[id]; !ok {
+				out[id] = r.bookID
+			}
+		}
+	}
+	return out
+}
+
+// coveredByEntry returns the ids of the issues (sorted by number) inside one run.
+func coveredByEntry(e collects.Entry, sorted []CachedIssue) []int {
+	var ids []int
+	if e.To == "" {
+		want := collects.NormNumber(e.From)
+		for _, iss := range sorted {
+			if collects.NormNumber(iss.Number) == want {
+				ids = append(ids, iss.CVID)
+			}
+		}
+		return ids
+	}
+	from, errA := strconv.ParseFloat(e.From, 64)
+	to, errB := strconv.ParseFloat(e.To, 64)
+	if errA == nil && errB == nil {
+		for _, iss := range sorted {
+			if n, err := strconv.ParseFloat(strings.TrimSpace(iss.Number), 64); err == nil && n >= from && n <= to {
+				ids = append(ids, iss.CVID)
+			}
+		}
+		return ids
+	}
+	// Text endpoints ("Annual 1" to "Annual 3"): everything between the two
+	// in number order, when both exist in the volume.
+	i, j := -1, -1
+	for k, iss := range sorted {
+		switch collects.NormNumber(iss.Number) {
+		case collects.NormNumber(e.From):
+			if i < 0 {
+				i = k
+			}
+		case collects.NormNumber(e.To):
+			j = k
+		}
+	}
+	if i < 0 || j < i {
+		return nil
+	}
+	for _, iss := range sorted[i : j+1] {
+		ids = append(ids, iss.CVID)
+	}
+	return ids
+}
+
 // BuildSeriesCompleteness lists every issue of volumeID with its ownership.
 // It returns nil, nil when the volume's issues are not cached yet.
 func BuildSeriesCompleteness(books []library.ComicBook, cache *Cache, volumeID int) (*SeriesCompleteness, error) {
@@ -98,8 +202,9 @@ func BuildSeriesCompleteness(books []library.ComicBook, cache *Cache, volumeID i
 	}
 	h := groupHoldings(books)[volumeID]
 	if h == nil {
-		h = &volumeHolding{owned: map[int]string{}, wanted: map[int]string{}}
+		h = newHolding()
 	}
+	covered := h.coveredIssues(issues)
 
 	sc := &SeriesCompleteness{
 		VolumeID: vol.CVID, Name: vol.Name, Publisher: vol.Publisher,
@@ -111,6 +216,12 @@ func BuildSeriesCompleteness(books []library.ComicBook, cache *Cache, volumeID i
 		if id, ok := h.owned[iss.CVID]; ok {
 			si.Owned, si.BookID = true, id
 			sc.Owned++
+		} else if by, ok := covered[iss.CVID]; ok {
+			si.Covered, si.CoveredBy = true, by
+			sc.Covered++
+			if id, ok := h.wanted[iss.CVID]; ok {
+				si.Wanted, si.BookID = true, id
+			}
 		} else {
 			sc.Missing++
 			if id, ok := h.wanted[iss.CVID]; ok {
@@ -141,15 +252,18 @@ func BuildVolumeSummaries(books []library.ComicBook, cache *Cache) ([]VolumeSumm
 		if err != nil {
 			continue
 		}
-		owned := 0
+		owned, coveredN := 0, 0
+		covered := h.coveredIssues(issues)
 		for _, iss := range issues {
 			if _, ok := h.owned[iss.CVID]; ok {
 				owned++
+			} else if _, ok := covered[iss.CVID]; ok {
+				coveredN++
 			}
 		}
 		vs := VolumeSummary{
 			VolumeID: vol.CVID, Name: vol.Name, Publisher: vol.Publisher, StartYear: vol.StartYear,
-			Total: len(issues), Owned: owned, Missing: len(issues) - owned,
+			Total: len(issues), Owned: owned, Covered: coveredN, Missing: len(issues) - owned - coveredN,
 		}
 		if vs.Total > 0 {
 			vs.Percent = owned * 100 / vs.Total

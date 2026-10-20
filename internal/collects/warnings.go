@@ -6,8 +6,8 @@ import (
 	"strings"
 )
 
-// normNumber makes issue numbers comparable: "01" and "1" match, case is ignored.
-func normNumber(n string) string {
+// NormNumber makes issue numbers comparable: "01" and "1" match, case is ignored.
+func NormNumber(n string) string {
 	n = strings.ToLower(strings.TrimSpace(n))
 	if f, err := strconv.ParseFloat(n, 64); err == nil {
 		return strconv.FormatFloat(f, 'f', -1, 64)
@@ -33,10 +33,10 @@ func Warnings(e Entry, numbers []string) []string {
 	}
 	have := make(map[string]bool, len(numbers))
 	for _, n := range numbers {
-		have[normNumber(n)] = true
+		have[NormNumber(n)] = true
 	}
 	for _, n := range []string{e.From, e.To} {
-		if n != "" && !have[normNumber(n)] {
+		if n != "" && !have[NormNumber(n)] {
 			out = append(out, fmt.Sprintf("#%s is not in this ComicVine volume", n))
 		}
 	}

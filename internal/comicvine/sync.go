@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/duckpuppy/comic-server/internal/collects"
+	"github.com/duckpuppy/comic-server/internal/library"
 	"github.com/duckpuppy/comic-server/internal/log"
 )
 
@@ -31,6 +33,11 @@ func (s *Syncer) SeedFromLibrary(customValuesStores []string) (seeded int, err e
 		if cvID > 0 && !seen[cvID] {
 			seen[cvID] = true
 		}
+		// A volume only a collected edition points to must be synced too, or
+		// its issues can never show as covered (tracker #41).
+		for _, id := range collectionVolumeIDs(store) {
+			seen[id] = true
+		}
 	}
 
 	ids := make([]int, 0, len(seen))
@@ -53,8 +60,29 @@ func BuildOwnedCounts(customValuesStores []string) map[int]int {
 		if cvID > 0 {
 			counts[cvID]++
 		}
+		for _, id := range collectionVolumeIDs(store) {
+			counts[id]++
+		}
 	}
 	return counts
+}
+
+// collectionVolumeIDs returns the ComicVine volumes a collected book's links
+// point to (comic_server_collects), once each.
+func collectionVolumeIDs(store string) []int {
+	v, _ := library.GetCustomValue(store, collects.Key)
+	if v == "" {
+		return nil
+	}
+	var ids []int
+	seen := map[int]bool{}
+	for _, e := range collects.Decode(v) {
+		if e.Volume > 0 && !seen[e.Volume] {
+			seen[e.Volume] = true
+			ids = append(ids, e.Volume)
+		}
+	}
+	return ids
 }
 
 // Run executes the background sync loop. It processes pending volumes one at a time,

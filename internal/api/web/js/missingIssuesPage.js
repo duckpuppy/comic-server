@@ -110,7 +110,7 @@ class MissingIssuesPage {
                         <span class="empty-message">${this.escapeHtml(v.start_year || '')}</span></td>
                     <td>${this.escapeHtml(v.publisher || '')}</td>
                     <td>${this.bar(v.owned, v.total)}</td>
-                    <td class="missing-num">${v.owned} / ${v.total}</td>
+                    <td class="missing-num">${v.owned} / ${v.total}${v.covered ? ` <span class="empty-message" title="Inside a collected edition you own">+${v.covered} covered</span>` : ''}</td>
                     <td class="missing-num"><strong>${v.missing}</strong> missing</td>
                 </tr>`).join('');
             body = `
@@ -145,17 +145,19 @@ class MissingIssuesPage {
         }
         const d = this.detail;
         const cells = d.issues.map(i => {
-            const state = i.owned ? 'owned' : (i.wanted ? 'wanted' : 'missing');
+            const state = i.owned ? 'owned' : (i.covered ? 'covered' : (i.wanted ? 'wanted' : 'missing'));
             const selectable = state === 'missing';
             const label = i.number || '?';
             return `
                 <label class="missing-issue missing-issue-${state}" title="${this.escapeAttr(i.name || '')}${i.cover_date ? ' · ' + this.escapeAttr(i.cover_date) : ''}">
                     ${selectable ? `<input type="checkbox" class="missing-check" data-issue="${i.issue_id}" ${this.chosen.has(i.issue_id) ? 'checked' : ''}>` : ''}
                     <span class="missing-issue-num">#${this.escapeHtml(label)}</span>
-                    <span class="missing-issue-state">${state === 'wanted' ? 'wanted' : (state === 'owned' ? 'owned' : '')}</span>
+                    <span class="missing-issue-state">${state === 'covered'
+                        ? `<a href="/books/${encodeURIComponent(i.covered_by)}" data-route title="Inside a collected edition you own">covered</a>`
+                        : (state === 'wanted' ? 'wanted' : (state === 'owned' ? 'owned' : ''))}</span>
                 </label>`;
         }).join('');
-        const missingIds = d.issues.filter(i => !i.owned && !i.wanted).map(i => i.issue_id);
+        const missingIds = d.issues.filter(i => !i.owned && !i.covered && !i.wanted).map(i => i.issue_id);
         return `
             <div class="missing-page">
                 <div class="missing-header">
@@ -165,7 +167,7 @@ class MissingIssuesPage {
                 <div class="panel">
                     <p class="missing-summary">${this.bar(d.owned, d.total)}
                         <strong>${d.owned}</strong> of ${d.total} owned (${d.percent}%) ·
-                        <strong>${d.missing}</strong> missing${d.wanted ? ` (${d.wanted} already wanted)` : ''}
+                        ${d.covered ? `<strong>${d.covered}</strong> covered by a collected edition · ` : ''}<strong>${d.missing}</strong> missing${d.wanted ? ` (${d.wanted} already wanted)` : ''}
                         ${d.unmatched_owned ? ` · ${d.unmatched_owned} owned book${d.unmatched_owned === 1 ? '' : 's'} not matched to an issue` : ''}</p>
                     ${this.message ? `<p>${this.escapeHtml(this.message)}</p>` : ''}
                     <div class="datamanager-actions">
@@ -213,7 +215,7 @@ class MissingIssuesPage {
         }));
         const all = document.getElementById('missing-select-all');
         if (all) all.addEventListener('click', () => {
-            this.detail.issues.filter(i => !i.owned && !i.wanted).forEach(i => this.chosen.add(i.issue_id));
+            this.detail.issues.filter(i => !i.owned && !i.covered && !i.wanted).forEach(i => this.chosen.add(i.issue_id));
             this.render();
         });
         const add = document.getElementById('missing-add-wanted');

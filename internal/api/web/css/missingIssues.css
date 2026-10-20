@@ -22,3 +22,4 @@
 .missing-issue-wanted { border-style: dashed; }
 .missing-issue-missing { cursor: pointer; border-color: var(--warning-color, #d29922); }
 .missing-issue-state { font-size: 0.75rem; color: var(--text-secondary); min-height: 1em; }
+.missing-issue-covered { border-style: dotted; opacity: 0.8; }
