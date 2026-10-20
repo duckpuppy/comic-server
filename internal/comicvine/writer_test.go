@@ -4,7 +4,9 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/duckpuppy/comic-server/internal/collects"
 	"github.com/duckpuppy/comic-server/internal/library"
+	"github.com/duckpuppy/comic-server/internal/localid"
 	"github.com/duckpuppy/comic-server/internal/workflow"
 )
 
@@ -459,5 +461,25 @@ func TestWriteMetadata_PropagatesUpdateError(t *testing.T) {
 	_, err := WriteMetadata(backend, book, testVolume(), testIssueDetail(), DefaultScraperConfig())
 	if err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+// A real ComicVine match retires the local identity (tracker #43/#44) and
+// leaves the collects links alone.
+func TestApplyMetadata_RetiresLocalIdentityKeepsCollects(t *testing.T) {
+	book := &library.ComicBook{ID: "tpb", FilePath: "/c/t.cbz"}
+	collects.Set(book, []collects.Entry{{Volume: 100, From: "1", To: "6"}})
+	localid.Set(book, localid.Identity{Volume: localid.NewVolumeKey(), Issue: localid.NewIssueKey()})
+
+	ApplyMetadata(book, testVolume(), testIssueDetail(), DefaultScraperConfig())
+
+	if localid.Has(book) {
+		t.Error("local identity should be retired by a real match")
+	}
+	if got := collects.Get(book); len(got) != 1 || got[0].Volume != 100 || got[0].To != "6" {
+		t.Errorf("collects links changed: %+v", got)
+	}
+	if comicvine := extractCVVolumeID(book.CustomValuesStore); comicvine == 0 {
+		t.Error("the real ComicVine volume should be written")
 	}
 }
