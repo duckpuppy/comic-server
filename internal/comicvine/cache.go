@@ -671,3 +671,23 @@ func sortByOwned(ids []int, owned map[int]int) {
 		}
 	}
 }
+
+// NamedVolumes returns every cached volume that has a name (a volume that is
+// only seeded, not yet synced, has none). It reads no data from ComicVine.
+func (c *Cache) NamedVolumes() ([]CachedVolume, error) {
+	rows, err := c.db.Query(`SELECT cv_id, name, COALESCE(publisher,''), COALESCE(start_year,''), COALESCE(issue_count,0)
+		FROM cv_volumes WHERE COALESCE(name,'') != ''`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []CachedVolume
+	for rows.Next() {
+		var v CachedVolume
+		if err := rows.Scan(&v.CVID, &v.Name, &v.Publisher, &v.StartYear, &v.IssueCount); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
