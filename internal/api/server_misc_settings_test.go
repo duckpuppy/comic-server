@@ -89,3 +89,33 @@ func TestHandleServerMiscSettings_ConfigDBUnavailable(t *testing.T) {
 		t.Fatalf("expected 503, got %d: %s", w.Code, w.Body.String())
 	}
 }
+
+func TestServerMiscSettings_CountCoveredAsOwnedRoundTripAndDefaultOff(t *testing.T) {
+	s := newServerMiscSettingsTestServer(t)
+	if s.countCoveredAsOwned() {
+		t.Fatal("must default to off")
+	}
+	put := func(on bool) {
+		body, _ := json.Marshal(ServerMiscSettingsResponse{CountCoveredAsOwned: on})
+		w := httptest.NewRecorder()
+		s.handleServerMiscSettings(w, httptest.NewRequest(http.MethodPut, "/api/settings/server-misc", bytes.NewReader(body)))
+		if w.Code != http.StatusOK {
+			t.Fatalf("put: %d %s", w.Code, w.Body.String())
+		}
+	}
+	put(true)
+	if !s.countCoveredAsOwned() || !s.completenessOptions().CountCoveredAsOwned {
+		t.Error("setting not stored")
+	}
+	w := httptest.NewRecorder()
+	s.handleServerMiscSettings(w, httptest.NewRequest(http.MethodGet, "/api/settings/server-misc", nil))
+	var got ServerMiscSettingsResponse
+	_ = json.Unmarshal(w.Body.Bytes(), &got)
+	if !got.CountCoveredAsOwned {
+		t.Errorf("GET = %+v", got)
+	}
+	put(false)
+	if s.countCoveredAsOwned() {
+		t.Error("setting not cleared")
+	}
+}

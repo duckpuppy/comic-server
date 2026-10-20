@@ -15,7 +15,7 @@ import "fmt"
 // server_misc_settings (comic-server-wp8k). Version 12 adds
 // watch_folders (comic-server-obe). Version 13 adds an auto_sync column
 // to server_misc_settings (comic-server-r769).
-const schemaVersion = 13
+const schemaVersion = 14
 
 // SchemaVersion is the newest schema this build understands; restore refuses a backup above it.
 const SchemaVersion = schemaVersion
@@ -95,6 +95,11 @@ func (db *DB) initSchema() error {
 		if version < 13 {
 			if err := db.migrateV12ToV13(); err != nil {
 				return fmt.Errorf("migrate v12→v13: %w", err)
+			}
+		}
+		if version < 14 {
+			if err := db.migrateV13ToV14(); err != nil {
+				return fmt.Errorf("migrate v13→v14: %w", err)
 			}
 		}
 	}
@@ -326,6 +331,15 @@ func (db *DB) migrateV12ToV13() error {
 		return fmt.Errorf("migrate v12→v13: %w", err)
 	}
 	return db.addAutoSyncColumn()
+}
+
+// migrateV13ToV14 adds count_covered_as_owned to server_misc_settings
+// (tracker #46). Creates the table first for the same reason as v12→v13.
+func (db *DB) migrateV13ToV14() error {
+	if err := db.createServerMiscSettingsTable(); err != nil {
+		return fmt.Errorf("migrate v13→v14: %w", err)
+	}
+	return db.addCountCoveredColumn()
 }
 
 // createDataManagerTables creates the tables backing the Data Manager rule

@@ -110,7 +110,7 @@ class MissingIssuesPage {
                         <span class="empty-message">${this.escapeHtml(v.start_year || '')}</span></td>
                     <td>${this.escapeHtml(v.publisher || '')}</td>
                     <td>${this.bar(v.owned, v.total)}</td>
-                    <td class="missing-num">${v.owned} / ${v.total}${v.covered ? ` <span class="empty-message" title="Inside a collected edition you own">+${v.covered} covered</span>` : ''}</td>
+                    <td class="missing-num">${v.owned} / ${v.total}${v.covered ? ` <span class="empty-message" title="Inside a collected edition you own">${v.covered_as_owned ? `incl. ${v.covered} covered` : `+${v.covered} covered`}</span>` : ''}</td>
                     <td class="missing-num"><strong>${v.missing}</strong> missing</td>
                 </tr>`).join('');
             body = `
@@ -167,7 +167,7 @@ class MissingIssuesPage {
                 <div class="panel">
                     <p class="missing-summary">${this.bar(d.owned, d.total)}
                         <strong>${d.owned}</strong> of ${d.total} owned (${d.percent}%) ·
-                        ${d.covered ? `<strong>${d.covered}</strong> covered by a collected edition · ` : ''}<strong>${d.missing}</strong> missing${d.wanted ? ` (${d.wanted} already wanted)` : ''}
+                        ${d.covered ? `<strong>${d.covered}</strong> covered by a collected edition${d.covered_as_owned ? ' (counted as owned)' : ''} · ` : ''}<strong>${d.missing}</strong> missing${d.wanted ? ` (${d.wanted} already wanted)` : ''}
                         ${d.unmatched_owned ? ` · ${d.unmatched_owned} owned book${d.unmatched_owned === 1 ? '' : 's'} not matched to an issue` : ''}</p>
                     ${this.message ? `<p>${this.escapeHtml(this.message)}</p>` : ''}
                     <div class="datamanager-actions">

@@ -100,3 +100,41 @@ func TestCollectionVolumeIDsSeedAndCount(t *testing.T) {
 		t.Errorf("counts = %v", counts)
 	}
 }
+
+func TestCountCoveredAsOwned_SeriesSummariesAndMatcherMap(t *testing.T) {
+	c := testCache(t)
+	seedVolume(t, c) // volume 100: issues 1, 2, 3, 10
+	books := []library.ComicBook{
+		{ID: "own2", FilePath: "b.cbz", CustomValuesStore: ",comicvine_volume=100,comicvine_issue=1002"},
+		collectedBook("tpb", "t.cbz", collects.Entry{Volume: 100, From: "1", To: "3"}),
+	}
+	on := CompletenessOptions{CountCoveredAsOwned: true}
+
+	sc, err := BuildSeriesCompletenessOpts(books, c, 100, on)
+	if err != nil || sc == nil {
+		t.Fatalf("sc=%v err=%v", sc, err)
+	}
+	// Issues 1 and 3 are covered, 2 is owned: all three count, 10 is missing.
+	if !sc.CoveredAsOwned || sc.Owned != 3 || sc.Covered != 2 || sc.Missing != 1 || sc.Percent != 75 {
+		t.Errorf("series = %+v", sc)
+	}
+	off, _ := BuildSeriesCompleteness(books, c, 100)
+	if off.CoveredAsOwned || off.Owned != 1 || off.Percent != 25 {
+		t.Errorf("default must stay owned-only: %+v", off)
+	}
+
+	sums, _ := BuildVolumeSummariesOpts(books, c, on)
+	if len(sums) != 1 || sums[0].Owned != 3 || sums[0].Missing != 1 || sums[0].Percent != 75 || !sums[0].CoveredAsOwned {
+		t.Errorf("summaries = %+v", sums)
+	}
+
+	// The matcher map: the owned single issue's book sees the collection's issues too.
+	m, _ := BuildCompletenessMapOpts(books, c, on)
+	if cv := m["own2"]; cv == nil || cv.OwnedIssues != 3 || cv.MissingCount != 1 || cv.IsComplete != "No" {
+		t.Errorf("map on = %+v", cv)
+	}
+	m, _ = BuildCompletenessMap(books, c)
+	if cv := m["own2"]; cv == nil || cv.OwnedIssues != 1 || cv.MissingCount != 3 {
+		t.Errorf("map off = %+v (collections must be ignored by default)", cv)
+	}
+}
