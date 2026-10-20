@@ -24,6 +24,31 @@ func TestRoundTripKeepsSeparators(t *testing.T) {
 	}
 }
 
+func TestNoteRoundTrip(t *testing.T) {
+	in := Entry{Volume: 9, From: "181", Partial: true, Note: "The Hulk story, part 1 = a|b+c"}
+	enc := Encode([]Entry{in})
+	if strings.ContainsAny(enc, ", =") {
+		t.Fatalf("encoded text has a custom-value separator: %q", enc)
+	}
+	got := Decode(enc)
+	if len(got) != 1 || got[0].Note != in.Note {
+		t.Errorf("got %+v", got)
+	}
+	if n := strings.Count(Encode([]Entry{{Volume: 9, From: "1"}}), "|"); n != 6 {
+		t.Errorf("an entry without a note must keep 7 fields, got %d separators", n)
+	}
+	if (Entry{Volume: 1, From: "1", Note: strings.Repeat("x", 201)}).Validate() == nil {
+		t.Error("a note over the limit should be refused")
+	}
+}
+
+func TestDecodeOldSevenFieldValue(t *testing.T) {
+	got := Decode("12||1|5|main|1|manual")
+	if len(got) != 1 || got[0].Note != "" || !got[0].Partial {
+		t.Errorf("got %+v", got)
+	}
+}
+
 func TestSetGetThroughCustomValues(t *testing.T) {
 	b := &library.ComicBook{CustomValuesStore: ",other=1"}
 	if !Set(b, []Entry{{Volume: 7, From: "3", To: "3"}}) {

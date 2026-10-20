@@ -371,11 +371,17 @@ a.book-link {
     padding: 0 0.5rem;
 }
 
+.bd-collects-story {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
 /* Collects editor (tracker #39) */
 .cx-box { display: flex; flex-direction: column; gap: 0.5rem; }
 .cx-row { border: 1px solid var(--border-color); border-radius: 6px; padding: 0.5rem; display: flex; flex-direction: column; gap: 0.4rem; }
 .cx-line { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
-.cx-ref, .cx-series { flex: 1; min-width: 12rem; }
+.cx-ref, .cx-series, .cx-note { flex: 1; min-width: 12rem; }
 .cx-info { font-size: 0.85rem; color: var(--text-secondary); }
 .cx-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 .cx-warning { font-size: 0.85rem; color: var(--warning-color, #b7791f); }
