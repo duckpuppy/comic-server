@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.71.0](https://github.com/duckpuppy/comic-server/compare/v1.70.0...v1.71.0) (2026-10-20)
+
+
+### Features
+
+* story note on collected-edition links ([c4f16a8](https://github.com/duckpuppy/comic-server/commit/c4f16a88444a62653ae9f121029f0315db334335))
+* story note on collected-edition links ([#42](https://github.com/duckpuppy/comic-server/issues/42)) ([151dbc4](https://github.com/duckpuppy/comic-server/commit/151dbc4b521f8bf11c324fbec6340758d8156c21))
+
+
+### Bug Fixes
+
+* escape quotes in the collects editor ([a1a1102](https://github.com/duckpuppy/comic-server/commit/a1a110241f5f1057040851af33744f14a4b10a14))
+
 ## [1.70.0](https://github.com/duckpuppy/comic-server/compare/v1.69.0...v1.70.0) (2026-10-20)
 
 
