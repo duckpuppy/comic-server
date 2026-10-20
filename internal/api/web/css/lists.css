@@ -1465,6 +1465,12 @@
 .bulk-row-mode-fixed { padding-top: 0.35rem; color: var(--text-muted, #666); }
 .bulk-editor-add { display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; }
 .bulk-editor-buttons { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.bulk-replace-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.5rem; }
+.bulk-replace-grid label { display: grid; gap: 0.2rem; font-weight: 600; }
+.bulk-diff { font-size: 0.9em; overflow-wrap: anywhere; }
+.bulk-diff-field { color: var(--text-muted, #666); }
+.bulk-diff del { color: var(--danger-color, #b91c1c); }
+.bulk-diff ins { color: var(--success-color, #15803d); text-decoration: none; }
 .bulk-sample { margin: 0.25rem 0; padding-left: 1.25rem; max-height: 10rem; overflow: auto; }
 @media (max-width: 700px) { .bulk-row { grid-template-columns: 1fr; } }
 
