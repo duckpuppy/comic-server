@@ -29,6 +29,7 @@ import (
 
 	"github.com/duckpuppy/comic-server/internal/datamanager"
 	"github.com/duckpuppy/comic-server/internal/library"
+	"github.com/duckpuppy/comic-server/internal/localid"
 )
 
 // Stage is one step in the pipeline, in a fixed order (see Stages).
@@ -387,7 +388,35 @@ func IsNoCVMatch(book *library.ComicBook) bool {
 // done with the Scrape stage: the user marked it as not in ComicVine, or it
 // carries the older CVDBSKIP tag.
 func ExemptFromScrape(book *library.ComicBook) bool {
-	return IsNoCVMatch(book) || IsCVDBSkip(book)
+	return IsNoCVMatch(book) || IsCVDBSkip(book) || localid.Has(book)
+}
+
+// SetLocalIdentity gives the book a local identity (tracker #43) and moves it
+// past the Scrape stage. A "not in ComicVine" marker is dropped: the identity
+// replaces that decision. Returns whether anything changed.
+func SetLocalIdentity(book *library.ComicBook, id localid.Identity) bool {
+	changed := localid.Set(book, id)
+	if IsNoCVMatch(book) {
+		book.CustomValuesStore = library.RemoveCustomValue(book.CustomValuesStore, KeyNoCVMatch)
+		changed = true
+	}
+	if changed {
+		AdvanceIfAtOrBefore(book, StageScrape, nil)
+	}
+	return changed
+}
+
+// ClearLocalIdentity removes the identity. A book left with no ComicVine tag
+// and no other exemption goes back to the Scrape stage. Returns whether the
+// identity was present.
+func ClearLocalIdentity(book *library.ComicBook) bool {
+	if !localid.Clear(book) {
+		return false
+	}
+	if _, tagged := library.GetCustomValue(book.CustomValuesStore, "comicvine_volume"); !tagged && !ExemptFromScrape(book) {
+		RegressToStageIfPast(book, StageScrape)
+	}
+	return true
 }
 
 // SetNoCVMatch marks the book and moves it past the Scrape stage. Returns
@@ -410,7 +439,7 @@ func ClearNoCVMatch(book *library.ComicBook) bool {
 		return false
 	}
 	book.CustomValuesStore = library.RemoveCustomValue(book.CustomValuesStore, KeyNoCVMatch)
-	if _, tagged := library.GetCustomValue(book.CustomValuesStore, "comicvine_volume"); !tagged && !IsCVDBSkip(book) {
+	if _, tagged := library.GetCustomValue(book.CustomValuesStore, "comicvine_volume"); !tagged && !ExemptFromScrape(book) {
 		RegressToStageIfPast(book, StageScrape)
 	}
 	return true

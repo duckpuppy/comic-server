@@ -20,6 +20,7 @@ import (
 	"github.com/duckpuppy/comic-server/internal/cbzconvert"
 	"github.com/duckpuppy/comic-server/internal/comicvine"
 	"github.com/duckpuppy/comic-server/internal/library"
+	"github.com/duckpuppy/comic-server/internal/localid"
 	"github.com/duckpuppy/comic-server/internal/log"
 	"github.com/duckpuppy/comic-server/internal/workflow"
 )
@@ -54,6 +55,12 @@ type BookDetailComicVine struct {
 	IssueURL  string `json:"issue_url,omitempty"`
 }
 
+// BookDetailLocalIdentity is a book's local identity (tracker #43).
+type BookDetailLocalIdentity struct {
+	VolumeKey string `json:"volume_key"`
+	IssueKey  string `json:"issue_key"`
+}
+
 // BookDetailNoCVMatch is the "not in ComicVine" decision on a book (comic-server-5wer).
 type BookDetailNoCVMatch struct {
 	Reason string `json:"reason"`
@@ -62,20 +69,21 @@ type BookDetailNoCVMatch struct {
 
 // BookDetail is the response of GET /api/library/books/:id.
 type BookDetail struct {
-	Book         library.ComicBook    `json:"book"`
-	CustomValues map[string]string    `json:"custom_values"`
-	Kind         string               `json:"kind,omitempty"` // "physical", "wanted", or empty (has a file)
-	Stage        string               `json:"stage,omitempty"`
-	StageLabel   string               `json:"stage_label,omitempty"`
-	Flags        []BookDetailFlag     `json:"flags"`
-	Accepted     []BookDetailFlag     `json:"accepted_flags"` // flags the user hid on this book
-	LockedFields []string             `json:"locked_fields"`  // fields undo must not change (tracker #27)
-	Collects     []collects.Entry     `json:"collects"`       // issues this collected edition contains (tracker #38)
-	File         *BookDetailFile      `json:"file,omitempty"` // nil for a fileless book
-	ComicVine    *BookDetailComicVine `json:"comicvine,omitempty"`
-	NoCVMatch    *BookDetailNoCVMatch `json:"cv_nomatch,omitempty"` // user marked: not in ComicVine
-	CoverURL     string               `json:"cover_url"`
-	Actions      BookDetailActions    `json:"actions"`
+	Book         library.ComicBook        `json:"book"`
+	CustomValues map[string]string        `json:"custom_values"`
+	Kind         string                   `json:"kind,omitempty"` // "physical", "wanted", or empty (has a file)
+	Stage        string                   `json:"stage,omitempty"`
+	StageLabel   string                   `json:"stage_label,omitempty"`
+	Flags        []BookDetailFlag         `json:"flags"`
+	Accepted     []BookDetailFlag         `json:"accepted_flags"` // flags the user hid on this book
+	LockedFields []string                 `json:"locked_fields"`  // fields undo must not change (tracker #27)
+	Collects     []collects.Entry         `json:"collects"`       // issues this collected edition contains (tracker #38)
+	File         *BookDetailFile          `json:"file,omitempty"` // nil for a fileless book
+	ComicVine    *BookDetailComicVine     `json:"comicvine,omitempty"`
+	NoCVMatch    *BookDetailNoCVMatch     `json:"cv_nomatch,omitempty"`     // user marked: not in ComicVine
+	LocalID      *BookDetailLocalIdentity `json:"local_identity,omitempty"` // generated identity for a book ComicVine never lists (tracker #43)
+	CoverURL     string                   `json:"cover_url"`
+	Actions      BookDetailActions        `json:"actions"`
 }
 
 // BookDetailStage is one stage a book can be rolled back to.
@@ -209,6 +217,10 @@ func (s *Server) handleBookDetail(w http.ResponseWriter, r *http.Request) {
 
 	if reason, date, ok := workflow.NoCVMatch(book); ok {
 		d.NoCVMatch = &BookDetailNoCVMatch{Reason: reason, Date: date}
+	}
+
+	if id, ok := localid.Get(book); ok {
+		d.LocalID = &BookDetailLocalIdentity{VolumeKey: id.Volume, IssueKey: id.Issue}
 	}
 
 	vol, iss := comicvine.VolumeIDFromStore(book.CustomValuesStore), comicvine.IssueIDFromStore(book.CustomValuesStore)

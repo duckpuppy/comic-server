@@ -13,6 +13,7 @@ import (
 
 	"github.com/duckpuppy/comic-server/internal/comicvine"
 	"github.com/duckpuppy/comic-server/internal/library"
+	"github.com/duckpuppy/comic-server/internal/localid"
 	"github.com/duckpuppy/comic-server/internal/log"
 	ws "github.com/duckpuppy/comic-server/internal/websocket"
 	"github.com/duckpuppy/comic-server/internal/workflow"
@@ -122,6 +123,8 @@ func (s *Server) filterHeldBack(books []*library.ComicBook, retry bool) ([]*libr
 			reason = "tagged CVDBSKIP"
 		} else if workflow.IsNoCVMatch(b) {
 			reason = "marked not in ComicVine"
+		} else if localid.Has(b) {
+			reason = "has a local identity"
 		} else {
 			reason = comicvine.HeldBackReason(latest[b.ID])
 		}
@@ -262,7 +265,7 @@ func (s *Server) handleScrapeReviewList(w http.ResponseWriter, r *http.Request) 
 	for _, p := range pending {
 		item := scrapeReviewItem{BookScrapeResult: p}
 		if b, err := s.backend.GetBook(p.BookID); err == nil && b != nil {
-			if workflow.IsNoCVMatch(b) {
+			if workflow.IsNoCVMatch(b) || localid.Has(b) {
 				continue // the user already decided; the old pending result is moot
 			}
 			item.Book = &scrapeReviewBook{

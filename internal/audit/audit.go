@@ -55,6 +55,7 @@ const (
 	ActionEdit              = "edit"
 	ActionReadingList       = "reading_list"
 	ActionCollects          = "collects"
+	ActionLocalIdentity     = "local_identity"
 )
 
 // Change is one field's before/after.

@@ -12,6 +12,8 @@ class BookDetailPage {
         this.loading = true;
         this.openSections = {};
         this.completeness = null; // series-completeness of the book's CV volume
+        this.liPreview = null; // local-identity preview (tracker #43)
+        this.liChosen = new Set();
         this.lists = null; // manual lists, each with `contains` for this book
     }
 
@@ -24,6 +26,7 @@ class BookDetailPage {
         this.loading = true;
         this.openSections = {};
         this.completeness = null;
+        this.liPreview = null;
         this.lists = null;
         this.busy = false;
         this.editing = false;
@@ -283,6 +286,7 @@ class BookDetailPage {
         if (d.stage_label) badges.push(`<span class="bd-badge">Stage: ${this.escapeHtml(d.stage_label)}</span>`);
         if (!d.file) badges.push('<span class="bd-badge">No file (wanted or physical)</span>');
         else if (!d.file.exists) badges.push('<span class="bd-badge bd-badge-error">File missing</span>');
+        if (d.local_identity) badges.push(`<span class="bd-badge" title="Volume ${this.escapeHtml(d.local_identity.volume_key)}, issue ${this.escapeHtml(d.local_identity.issue_key)}">Local identity</span>`);
         if (d.cv_nomatch) badges.push(`<span class="bd-badge">Not in ComicVine (${this.escapeHtml(this.noMatchLabel(d.cv_nomatch.reason))}, ${this.escapeHtml(d.cv_nomatch.date)})</span>`);
         if (d.book.ComicInfoIsDirty) badges.push('<span class="bd-badge">ComicInfo not yet written</span>');
         return badges.length ? `<div class="bd-badges">${badges.join('')}</div>` : '';
@@ -300,13 +304,71 @@ class BookDetailPage {
         if (d.cv_nomatch) {
             return `<button class="btn btn-secondary" id="bd-nomatch-undo-btn" ${this.busy ? 'disabled' : ''}>Undo "not in ComicVine"</button>`;
         }
+        if (d.local_identity) {
+            return `<button class="btn btn-secondary" id="bd-li-remove-btn" ${this.busy ? 'disabled' : ''}>Remove local identity</button>`;
+        }
         if (d.comicvine) return '';
-        return `<span class="bd-rollback">
+        return `<button class="btn btn-secondary" id="bd-li-open-btn" ${this.busy ? 'disabled' : ''} title="For a collected edition ComicVine never lists">Give a local identity…</button>
+        <span class="bd-rollback">
             <select id="bd-nomatch-reason" aria-label="Why it is not in ComicVine">
                 ${BookDetailPage.NO_MATCH_REASONS.map(r => `<option value="${r[0]}">${r[1]}</option>`).join('')}
             </select>
             <button class="btn btn-secondary" id="bd-nomatch-btn" ${this.busy ? 'disabled' : ''}>Mark as not in ComicVine</button>
         </span>`;
+    }
+
+    // Local identity for a book ComicVine never lists (tracker #43). Preview
+    // first: the books of the same series that could share the volume key.
+    renderLocalIdentityPanel() {
+        const p = this.liPreview;
+        if (!p) return '';
+        const sibs = (p.siblings || []).map(o => `
+            <label class="bd-li-sib"><input type="checkbox" class="bd-li-check" data-id="${this.escapeHtml(o.id)}" ${this.liChosen.has(o.id) ? 'checked' : ''}>
+                #${this.escapeHtml(o.number || '?')} ${this.escapeHtml(o.title || '')}${o.has_identity ? ' <span class="bd-collects-note">already has one</span>' : ''}</label>`).join('');
+        return `<div class="panel bd-li-panel">
+            <p><strong>${this.escapeHtml(p.series)}</strong>${p.number ? ` #${this.escapeHtml(p.number)}` : ''} gets a local identity.
+            ${p.volume_key ? `It joins the existing line <code>${this.escapeHtml(p.volume_key)}</code>.` : 'A new line is created.'}
+            The series name and number stay as they are.</p>
+            ${sibs ? `<p>Other books of this series without a ComicVine volume. Tick the ones that belong to the same line:</p>${sibs}` : '<p class="empty-message">No other books of this series to group.</p>'}
+            <div class="cx-actions">
+                <button class="btn btn-primary" id="bd-li-confirm-btn" ${this.busy ? 'disabled' : ''}>Confirm</button>
+                <button class="btn btn-secondary" id="bd-li-cancel-btn">Cancel</button>
+            </div>
+        </div>`;
+    }
+
+    async openLocalIdentity() {
+        try {
+            this.liPreview = await this.postJSON(`/api/library/books/${encodeURIComponent(this.bookId)}/local-identity`, { set: true, preview: true });
+            this.liChosen = new Set((this.liPreview.siblings || []).filter(o => !o.has_identity).map(o => o.id));
+            this.render();
+        } catch (e) {
+            dialogs.toast(`Could not preview: ${e.message}`, 'error', 8000);
+        }
+    }
+
+    async confirmLocalIdentity() {
+        const ids = [...this.liChosen];
+        await this.runAction(async () => {
+            try {
+                const r = await this.postJSON(`/api/library/books/${encodeURIComponent(this.bookId)}/local-identity`, { set: true, sibling_ids: ids });
+                dialogs.toast(`Local identity saved for ${r.books_changed} book${r.books_changed === 1 ? '' : 's'}.`, 'success');
+                this.liPreview = null;
+            } catch (e) {
+                dialogs.toast(`Could not save: ${e.message}`, 'error', 8000);
+            }
+        });
+    }
+
+    async removeLocalIdentity() {
+        await this.runAction(async () => {
+            try {
+                await this.postJSON(`/api/library/books/${encodeURIComponent(this.bookId)}/local-identity`, { set: false });
+                dialogs.toast('Local identity removed. The book can be scraped again.', 'success');
+            } catch (e) {
+                dialogs.toast(`Could not save: ${e.message}`, 'error', 8000);
+            }
+        });
     }
 
     async setNoMatch(set) {
@@ -364,6 +426,7 @@ class BookDetailPage {
                     ${this.renderNoMatch(d)}
                     ${rollback}
                 </div>
+                ${this.renderLocalIdentityPanel()}
                 ${d.file ? `<details class="bd-cvmatch"><summary>Match by ComicVine link or ID</summary><div id="bd-cvmatch-host"></div></details>` : ''}
                 ${notes.length ? `<p class="empty-message bd-action-notes">${notes.map(n => this.escapeHtml(n)).join('<br>')}</p>` : ''}
             </div>`;
@@ -849,6 +912,13 @@ class BookDetailPage {
         if (cvHost && typeof CVMatchBox !== 'undefined') {
             new CVMatchBox(this.bookId, cvHost, () => this.runAction(async () => {}));
         }
+        on('bd-li-open-btn', () => this.openLocalIdentity());
+        on('bd-li-remove-btn', () => this.removeLocalIdentity());
+        on('bd-li-confirm-btn', () => this.confirmLocalIdentity());
+        on('bd-li-cancel-btn', () => { this.liPreview = null; this.render(); });
+        document.querySelectorAll('.bd-li-check').forEach(cb => cb.addEventListener('change', () => {
+            if (cb.checked) this.liChosen.add(cb.dataset.id); else this.liChosen.delete(cb.dataset.id);
+        }));
         on('bd-nomatch-btn', () => this.setNoMatch(true));
         on('bd-nomatch-undo-btn', () => this.setNoMatch(false));
         on('bd-variants-btn', () => router.navigate(`/variant-covers?book=${encodeURIComponent(this.bookId)}`));

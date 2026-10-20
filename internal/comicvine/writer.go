@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/duckpuppy/comic-server/internal/library"
+	"github.com/duckpuppy/comic-server/internal/localid"
 	"github.com/duckpuppy/comic-server/internal/workflow"
 )
 
@@ -262,7 +263,9 @@ func ApplyMetadata(book *library.ComicBook, volume Volume, detail *IssueDetail, 
 
 	// Identity tracking is always applied, independent of the per-field toggles above.
 	// A real match replaces any "not in ComicVine" decision (comic-server-5wer).
+	// A local identity (tracker #43) is retired the same way: the book now has a real one.
 	newStore := library.RemoveCustomValue(book.CustomValuesStore, workflow.KeyNoCVMatch)
+	newStore = library.RemoveCustomValue(newStore, localid.Key)
 	newStore = library.SetCustomValue(newStore, "comicvine_volume", strconv.Itoa(volume.ID))
 	newStore = library.SetCustomValue(newStore, "comicvine_issue", strconv.Itoa(detail.ID))
 	if newStore != book.CustomValuesStore {
