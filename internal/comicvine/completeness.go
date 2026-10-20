@@ -12,6 +12,21 @@ import (
 // comicvine_volume custom value and a corresponding synced volume in the cache
 // are included.
 func BuildCompletenessMap(books []library.ComicBook, cache *Cache) (map[string]*library.CVCompleteness, error) {
+	return BuildCompletenessMapOpts(books, cache, CompletenessOptions{})
+}
+
+// BuildCompletenessMapOpts is BuildCompletenessMap with options. With
+// CountCoveredAsOwned, an issue a collected edition contains counts as owned
+// for the volume's books (tracker #46); without it collections are ignored,
+// which is the meaning the CV smart-list matchers always had.
+func BuildCompletenessMapOpts(books []library.ComicBook, cache *Cache, opts CompletenessOptions) (map[string]*library.CVCompleteness, error) {
+	var runs map[int]*volumeHolding
+	if opts.CountCoveredAsOwned {
+		runs = map[int]*volumeHolding{}
+		for i := range books {
+			addCollectionRuns(runs, &books[i])
+		}
+	}
 	// Group books by CV volume ID
 	type volumeBooks struct {
 		cvVolumeID    int
@@ -56,9 +71,13 @@ func BuildCompletenessMap(books []library.ComicBook, cache *Cache) (map[string]*
 		}
 
 		totalIssues := len(issues)
+		var covered map[int]string
+		if h := runs[vb.cvVolumeID]; h != nil {
+			covered = h.coveredIssues(issues)
+		}
 		ownedIssues := 0
 		for _, iss := range issues {
-			if vb.ownedIssueIDs[iss.CVID] {
+			if _, ok := covered[iss.CVID]; vb.ownedIssueIDs[iss.CVID] || ok {
 				ownedIssues++
 			}
 		}

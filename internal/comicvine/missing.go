@@ -13,6 +13,13 @@ import (
 // ComicVine volume the library owns and which it does not, computed from the
 // same cache BuildCompletenessMap uses.
 
+// CompletenessOptions tunes how collected editions count (tracker #41, #46).
+type CompletenessOptions struct {
+	// CountCoveredAsOwned counts an issue that only a collected edition
+	// contains as owned. Off by default: it is reported as covered, apart.
+	CountCoveredAsOwned bool
+}
+
 // SeriesIssue is one issue of a ComicVine volume.
 type SeriesIssue struct {
 	IssueCVID int    `json:"issue_id"`
@@ -30,19 +37,21 @@ type SeriesIssue struct {
 
 // SeriesCompleteness is the detail view of one volume.
 type SeriesCompleteness struct {
-	VolumeID  int           `json:"volume_id"`
-	Name      string        `json:"name"`
-	Publisher string        `json:"publisher"`
-	StartYear string        `json:"start_year"`
-	SiteURL   string        `json:"site_url,omitempty"`
-	Total     int           `json:"total"`
-	Owned     int           `json:"owned"`
-	Covered   int           `json:"covered"` // not owned, but inside a collected edition the library holds
-	Missing   int           `json:"missing"` // neither owned nor covered
-	Wanted    int           `json:"wanted"`  // missing issues already on the Wanted list
-	Percent   int           `json:"percent"`
-	Unmatched int           `json:"unmatched_owned"` // owned books of this volume with no issue id
-	Issues    []SeriesIssue `json:"issues"`
+	VolumeID  int    `json:"volume_id"`
+	Name      string `json:"name"`
+	Publisher string `json:"publisher"`
+	StartYear string `json:"start_year"`
+	SiteURL   string `json:"site_url,omitempty"`
+	Total     int    `json:"total"`
+	Owned     int    `json:"owned"`
+	Covered   int    `json:"covered"` // not owned, but inside a collected edition the library holds
+	// CoveredAsOwned: Owned (and Percent) include the covered issues (setting, tracker #46).
+	CoveredAsOwned bool          `json:"covered_as_owned"`
+	Missing        int           `json:"missing"` // neither owned nor covered
+	Wanted         int           `json:"wanted"`  // missing issues already on the Wanted list
+	Percent        int           `json:"percent"`
+	Unmatched      int           `json:"unmatched_owned"` // owned books of this volume with no issue id
+	Issues         []SeriesIssue `json:"issues"`
 }
 
 // VolumeSummary is one row of the volume list.
@@ -54,8 +63,10 @@ type VolumeSummary struct {
 	Total     int    `json:"total"`
 	Owned     int    `json:"owned"`
 	Covered   int    `json:"covered"`
-	Missing   int    `json:"missing"`
-	Percent   int    `json:"percent"`
+	// CoveredAsOwned: Owned (and Percent) include the covered issues.
+	CoveredAsOwned bool `json:"covered_as_owned"`
+	Missing        int  `json:"missing"`
+	Percent        int  `json:"percent"`
 }
 
 type volumeHolding struct {
@@ -192,6 +203,11 @@ func coveredByEntry(e collects.Entry, sorted []CachedIssue) []int {
 // BuildSeriesCompleteness lists every issue of volumeID with its ownership.
 // It returns nil, nil when the volume's issues are not cached yet.
 func BuildSeriesCompleteness(books []library.ComicBook, cache *Cache, volumeID int) (*SeriesCompleteness, error) {
+	return BuildSeriesCompletenessOpts(books, cache, volumeID, CompletenessOptions{})
+}
+
+// BuildSeriesCompletenessOpts is BuildSeriesCompleteness with options.
+func BuildSeriesCompletenessOpts(books []library.ComicBook, cache *Cache, volumeID int, opts CompletenessOptions) (*SeriesCompleteness, error) {
 	vol, err := cache.GetVolume(volumeID)
 	if err != nil || vol == nil || !vol.IssuesSynced {
 		return nil, err
@@ -231,6 +247,10 @@ func BuildSeriesCompleteness(books []library.ComicBook, cache *Cache, volumeID i
 		}
 		sc.Issues = append(sc.Issues, si)
 	}
+	if opts.CountCoveredAsOwned {
+		sc.CoveredAsOwned = true
+		sc.Owned += sc.Covered
+	}
 	if sc.Total > 0 {
 		sc.Percent = sc.Owned * 100 / sc.Total
 	}
@@ -242,6 +262,11 @@ func BuildSeriesCompleteness(books []library.ComicBook, cache *Cache, volumeID i
 // least one book of, most-missing first. Volumes whose issue list is not
 // synced yet are skipped (their completeness is unknown, not zero).
 func BuildVolumeSummaries(books []library.ComicBook, cache *Cache) ([]VolumeSummary, error) {
+	return BuildVolumeSummariesOpts(books, cache, CompletenessOptions{})
+}
+
+// BuildVolumeSummariesOpts is BuildVolumeSummaries with options.
+func BuildVolumeSummariesOpts(books []library.ComicBook, cache *Cache, opts CompletenessOptions) ([]VolumeSummary, error) {
 	var out []VolumeSummary
 	for volID, h := range groupHoldings(books) {
 		vol, err := cache.GetVolume(volID)
@@ -264,6 +289,11 @@ func BuildVolumeSummaries(books []library.ComicBook, cache *Cache) ([]VolumeSumm
 		vs := VolumeSummary{
 			VolumeID: vol.CVID, Name: vol.Name, Publisher: vol.Publisher, StartYear: vol.StartYear,
 			Total: len(issues), Owned: owned, Covered: coveredN, Missing: len(issues) - owned - coveredN,
+		}
+		if opts.CountCoveredAsOwned {
+			vs.CoveredAsOwned = true
+			vs.Owned += coveredN
+			owned = vs.Owned
 		}
 		if vs.Total > 0 {
 			vs.Percent = owned * 100 / vs.Total

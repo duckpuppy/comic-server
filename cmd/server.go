@@ -582,7 +582,10 @@ func runServer(cmd *cobra.Command, args []string) error {
 	cvCtx, cvCancel := context.WithCancel(context.Background())
 	defer cvCancel()
 	if cfg.Server.ComicVineAPIKey != "" {
-		go startComicVineSync(cvCtx, cfg.Server.ComicVineAPIKey, backend, cfg.Server.ComicVineCachePath)
+		go startComicVineSync(cvCtx, cfg.Server.ComicVineAPIKey, backend, cfg.Server.ComicVineCachePath, func() comicvine.CompletenessOptions {
+			st, err := configDB.GetServerMiscSettings()
+			return comicvine.CompletenessOptions{CountCoveredAsOwned: err == nil && st != nil && st.CountCoveredAsOwned}
+		})
 	}
 
 	// Start Komga collection/read-list sync if enabled
@@ -1599,7 +1602,7 @@ func wireScraperAPI(apiServer *api.Server, apiKey, cachePathOverride string) err
 	return nil
 }
 
-func startComicVineSync(ctx context.Context, apiKey string, backend library.Backend, cachePathOverride string) {
+func startComicVineSync(ctx context.Context, apiKey string, backend library.Backend, cachePathOverride string, cvOptions func() comicvine.CompletenessOptions) {
 	cachePath, err := resolveComicVineCachePath(cachePathOverride)
 	if err != nil {
 		log.Error().Err(err).Msg("ComicVine sync: failed to resolve cache path")
@@ -1648,7 +1651,7 @@ func startComicVineSync(ctx context.Context, apiKey string, backend library.Back
 	owned := comicvine.BuildOwnedCounts(stores)
 
 	// Build and apply initial completeness data from any previously cached volumes
-	updateCVData(backend, books, cache)
+	updateCVData(backend, books, cache, cvOptions())
 
 	synced, pending, failed, _ := cache.SyncStats()
 	missing, _ := cache.MissingVolumeCount()
@@ -1667,7 +1670,7 @@ func startComicVineSync(ctx context.Context, apiKey string, backend library.Back
 	}
 
 	// Final update after sync completes
-	updateCVData(backend, books, cache)
+	updateCVData(backend, books, cache, cvOptions())
 }
 
 // startKomgaSync runs komga.Syncer for the life of ctx, pushing each
@@ -1811,8 +1814,8 @@ func startKomgaSync(ctx context.Context, syncer *komga.Syncer, cfg config.KomgaC
 	})
 }
 
-func updateCVData(backend library.Backend, books []library.ComicBook, cache *comicvine.Cache) {
-	cvData, err := comicvine.BuildCompletenessMap(books, cache)
+func updateCVData(backend library.Backend, books []library.ComicBook, cache *comicvine.Cache, opts comicvine.CompletenessOptions) {
+	cvData, err := comicvine.BuildCompletenessMapOpts(books, cache, opts)
 	if err != nil {
 		log.Error().Err(err).Msg("ComicVine sync: failed to build completeness map")
 		return

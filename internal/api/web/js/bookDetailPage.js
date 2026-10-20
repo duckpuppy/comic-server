@@ -80,7 +80,7 @@ class BookDetailPage {
         return `
             <div class="bd-completeness">
                 <div class="bd-completeness-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><span style="width:${pct}%"></span></div>
-                <p class="empty-message">Own ${c.owned} of ${c.total} issues of ${this.escapeHtml(c.name)}${c.start_year ? ` (${this.escapeHtml(c.start_year)})` : ''}${c.covered ? ` &middot; ${c.covered} covered by a collected edition` : ''}${more}</p>
+                <p class="empty-message">Own ${c.owned} of ${c.total} issues of ${this.escapeHtml(c.name)}${c.start_year ? ` (${this.escapeHtml(c.start_year)})` : ''}${c.covered ? ` &middot; ${c.covered} covered by a collected edition${c.covered_as_owned ? ' (counted as owned)' : ''}` : ''}${more}</p>
             </div>`;
     }
 

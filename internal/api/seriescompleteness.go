@@ -40,7 +40,7 @@ func (s *Server) volumeSummaries() ([]comicvine.VolumeSummary, error) {
 	if err != nil {
 		return nil, err
 	}
-	entries, err := comicvine.BuildVolumeSummaries(books, s.cvCache)
+	entries, err := comicvine.BuildVolumeSummariesOpts(books, s.cvCache, s.completenessOptions())
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +126,7 @@ func (s *Server) handleSeriesCompletenessDetail(w http.ResponseWriter, r *http.R
 			http.Error(w, "Failed to load books", http.StatusInternalServerError)
 			return
 		}
-		sc, err := comicvine.BuildSeriesCompleteness(books, s.cvCache, volumeID)
+		sc, err := comicvine.BuildSeriesCompletenessOpts(books, s.cvCache, volumeID, s.completenessOptions())
 		if err != nil {
 			http.Error(w, "Failed to compute completeness", http.StatusInternalServerError)
 			return
@@ -171,7 +171,7 @@ func (s *Server) addMissingToWanted(w http.ResponseWriter, r *http.Request, volu
 		http.Error(w, "Failed to load books", http.StatusInternalServerError)
 		return
 	}
-	sc, err := comicvine.BuildSeriesCompleteness(books, s.cvCache, volumeID)
+	sc, err := comicvine.BuildSeriesCompletenessOpts(books, s.cvCache, volumeID, s.completenessOptions())
 	if err != nil || sc == nil {
 		http.Error(w, "That volume's issues are not synced from ComicVine yet", http.StatusNotFound)
 		return

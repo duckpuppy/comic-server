@@ -23,6 +23,9 @@ type ServerMiscSettings struct {
 	CBZConvertEnabled bool
 	IgnoreDevices     []string
 	AutoSync          bool
+	// CountCoveredAsOwned: issues a collected edition contains count as
+	// owned in Missing Issues and the ComicVine smart-list matchers (tracker #46).
+	CountCoveredAsOwned bool
 }
 
 // createServerMiscSettingsTable creates the server_misc_settings table - a
@@ -32,7 +35,8 @@ func (db *DB) createServerMiscSettingsTable() error {
 		id                  INTEGER PRIMARY KEY CHECK (id = 1),
 		cbz_convert_enabled INTEGER NOT NULL DEFAULT 0,
 		ignore_devices      TEXT NOT NULL DEFAULT '[]',
-		auto_sync           INTEGER NOT NULL DEFAULT 0
+		auto_sync           INTEGER NOT NULL DEFAULT 0,
+		count_covered_as_owned INTEGER NOT NULL DEFAULT 0
 	)`)
 	if err != nil {
 		return fmt.Errorf("create server_misc_settings table: %w", err)
@@ -59,15 +63,31 @@ func (db *DB) addAutoSyncColumn() error {
 	return nil
 }
 
+// addCountCoveredColumn adds count_covered_as_owned (tracker #46), guarded
+// like addAutoSyncColumn.
+func (db *DB) addCountCoveredColumn() error {
+	hasIt, err := db.hasColumn("server_misc_settings", "count_covered_as_owned")
+	if err != nil {
+		return fmt.Errorf("add count_covered_as_owned column: %w", err)
+	}
+	if hasIt {
+		return nil
+	}
+	if _, err := db.Exec(`ALTER TABLE server_misc_settings ADD COLUMN count_covered_as_owned INTEGER NOT NULL DEFAULT 0`); err != nil {
+		return fmt.Errorf("add count_covered_as_owned column: %w", err)
+	}
+	return nil
+}
+
 // GetServerMiscSettings returns the stored settings, or nil if config.db
 // has never been given any - callers should fall back to config.yaml's
 // Server.CBZConvert.Enabled/Server.IgnoreDevices/Server.AutoSync in that
 // case.
 func (db *DB) GetServerMiscSettings() (*ServerMiscSettings, error) {
-	var enabled, autoSync bool
+	var enabled, autoSync, countCovered bool
 	var ignoreJSON string
-	err := db.QueryRow(`SELECT cbz_convert_enabled, ignore_devices, auto_sync FROM server_misc_settings WHERE id = 1`).
-		Scan(&enabled, &ignoreJSON, &autoSync)
+	err := db.QueryRow(`SELECT cbz_convert_enabled, ignore_devices, auto_sync, count_covered_as_owned FROM server_misc_settings WHERE id = 1`).
+		Scan(&enabled, &ignoreJSON, &autoSync, &countCovered)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -78,7 +98,7 @@ func (db *DB) GetServerMiscSettings() (*ServerMiscSettings, error) {
 	if err := json.Unmarshal([]byte(ignoreJSON), &ignoreDevices); err != nil {
 		return nil, fmt.Errorf("unmarshal server misc settings ignore_devices: %w", err)
 	}
-	return &ServerMiscSettings{CBZConvertEnabled: enabled, IgnoreDevices: ignoreDevices, AutoSync: autoSync}, nil
+	return &ServerMiscSettings{CBZConvertEnabled: enabled, IgnoreDevices: ignoreDevices, AutoSync: autoSync, CountCoveredAsOwned: countCovered}, nil
 }
 
 // UpsertServerMiscSettings replaces the stored settings wholesale.
@@ -93,13 +113,14 @@ func (db *DB) UpsertServerMiscSettings(s ServerMiscSettings) error {
 	}
 
 	_, err = db.Exec(`
-		INSERT INTO server_misc_settings (id, cbz_convert_enabled, ignore_devices, auto_sync)
-		VALUES (1, ?, ?, ?)
+		INSERT INTO server_misc_settings (id, cbz_convert_enabled, ignore_devices, auto_sync, count_covered_as_owned)
+		VALUES (1, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			cbz_convert_enabled = excluded.cbz_convert_enabled,
 			ignore_devices = excluded.ignore_devices,
-			auto_sync = excluded.auto_sync
-	`, s.CBZConvertEnabled, string(ignoreJSON), s.AutoSync)
+			auto_sync = excluded.auto_sync,
+			count_covered_as_owned = excluded.count_covered_as_owned
+	`, s.CBZConvertEnabled, string(ignoreJSON), s.AutoSync, s.CountCoveredAsOwned)
 	if err != nil {
 		return fmt.Errorf("upsert server misc settings: %w", err)
 	}

@@ -323,10 +323,10 @@ class ScanInfoSettings {
             const response = await fetch('/api/settings/server-misc');
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json();
-            this.serverMisc = { cbz_convert_enabled: !!data.cbz_convert_enabled, ignore_devices: data.ignore_devices || [], auto_sync: !!data.auto_sync };
+            this.serverMisc = { cbz_convert_enabled: !!data.cbz_convert_enabled, ignore_devices: data.ignore_devices || [], auto_sync: !!data.auto_sync, count_covered_as_owned: !!data.count_covered_as_owned };
         } catch (error) {
             console.error('Failed to load server settings:', error);
-            this.serverMisc = { cbz_convert_enabled: false, ignore_devices: [], auto_sync: false };
+            this.serverMisc = { cbz_convert_enabled: false, ignore_devices: [], auto_sync: false, count_covered_as_owned: false };
         }
     }
 
@@ -873,7 +873,7 @@ class ScanInfoSettings {
     }
 
     renderServerMisc() {
-        const m = this.serverMisc || { cbz_convert_enabled: false, ignore_devices: [], auto_sync: false };
+        const m = this.serverMisc || { cbz_convert_enabled: false, ignore_devices: [], auto_sync: false, count_covered_as_owned: false };
         return `
             <div class="panel scan-info-panel">
                 <div class="settings-section-header">
@@ -897,6 +897,15 @@ class ScanInfoSettings {
                     </label>
                     <span class="form-label-inline">Auto-sync on connect</span>
                     <div class="form-help">Automatically start a sync whenever a device connects and requests one, instead of waiting for a manual sync.</div>
+                </div>
+
+                <div class="form-group">
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="server-misc-count-covered" ${m.count_covered_as_owned ? 'checked' : ''}>
+                        <span class="toggle-slider"></span>
+                    </label>
+                    <span class="form-label-inline">Count collected-edition issues as owned</span>
+                    <div class="form-help">Off: an issue that only a collected edition (TPB, omnibus) contains shows as "covered" in Missing Issues and is not counted as owned. On: it counts as owned in Missing Issues and in the ComicVine smart-list matchers (series complete, missing count, percent owned).</div>
                 </div>
 
                 <div class="form-group scan-info-list-group">
@@ -1262,6 +1271,13 @@ class ScanInfoSettings {
         if (autoSyncToggle) {
             autoSyncToggle.addEventListener('change', (e) => {
                 this.serverMisc.auto_sync = e.target.checked;
+                this.saveServerMisc();
+            });
+        }
+        const coveredToggle = document.getElementById('server-misc-count-covered');
+        if (coveredToggle) {
+            coveredToggle.addEventListener('change', (e) => {
+                this.serverMisc.count_covered_as_owned = e.target.checked;
                 this.saveServerMisc();
             });
         }
