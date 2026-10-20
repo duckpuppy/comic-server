@@ -55,6 +55,9 @@ type Entry struct {
 	Partial bool `json:"partial,omitempty"`
 	// Source is SourceManual (default) or SourceSuggested.
 	Source string `json:"source,omitempty"`
+	// Note says which story is meant ("the Hulk story from #181"). A label
+	// only: it never changes what an entry covers.
+	Note string `json:"note,omitempty"`
 }
 
 // Validate checks one entry and returns a readable reason when it is bad.
@@ -68,7 +71,7 @@ func (e Entry) Validate() error {
 	if strings.TrimSpace(e.From) == "" {
 		return fmt.Errorf("an entry needs a first issue number")
 	}
-	for _, f := range []string{e.Series, e.From, e.To} {
+	for _, f := range []string{e.Series, e.From, e.To, e.Note} {
 		if len(f) > maxFieldLen {
 			return fmt.Errorf("a field is longer than %d characters", maxFieldLen)
 		}
@@ -91,6 +94,7 @@ func (e Entry) Normalize() Entry {
 	e.Series = strings.TrimSpace(e.Series)
 	e.From = strings.TrimSpace(e.From)
 	e.To = strings.TrimSpace(e.To)
+	e.Note = strings.TrimSpace(e.Note)
 	if e.To == e.From {
 		e.To = ""
 	}
@@ -131,10 +135,16 @@ func Encode(entries []Entry) string {
 		if e.Volume > 0 {
 			vol = fmt.Sprint(e.Volume)
 		}
-		parts = append(parts, strings.Join([]string{
+		fields := []string{
 			vol, esc(e.Series), esc(e.From), esc(e.To),
 			e.Kind, partial, e.Source,
-		}, "|"))
+		}
+		// The note is an 8th field written only when set, so a book without
+		// one stays readable by an older build.
+		if e.Note != "" {
+			fields = append(fields, esc(e.Note))
+		}
+		parts = append(parts, strings.Join(fields, "|"))
 	}
 	return strings.Join(parts, "+")
 }
@@ -160,7 +170,7 @@ func Decode(s string) []Entry {
 	var out []Entry
 	for _, part := range strings.Split(s, "+") {
 		f := strings.Split(part, "|")
-		if len(f) != 7 {
+		if len(f) != 7 && len(f) != 8 {
 			continue
 		}
 		var e Entry
@@ -180,6 +190,11 @@ func Decode(s string) []Entry {
 			continue
 		}
 		e.Kind, e.Partial, e.Source = f[4], f[5] == "1", f[6]
+		if len(f) == 8 {
+			if e.Note, err = url.PathUnescape(f[7]); err != nil {
+				continue
+			}
+		}
 		out = append(out, e.Normalize())
 	}
 	return out

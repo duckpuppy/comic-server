@@ -50,7 +50,7 @@ class CollectsEditor {
         this.render();
     }
 
-    blankRow() { return { volume: 0, series: '', from: '', to: '', kind: 'main', partial: false, source: 'manual', ref: '', info: '', lookupError: '' }; }
+    blankRow() { return { volume: 0, series: '', from: '', to: '', kind: 'main', partial: false, note: '', source: 'manual', ref: '', info: '', lookupError: '' }; }
 
     startEdit() {
         this.rows = (this.entries || []).map(e => ({
@@ -66,7 +66,7 @@ class CollectsEditor {
     // Entry sent to the server: only the fields it knows.
     entryOf(r) {
         return { volume: r.volume || 0, series: r.series.trim(), from: r.from.trim(), to: r.to.trim(),
-            kind: r.kind, partial: !!r.partial, source: r.source || 'manual' };
+            kind: r.kind, partial: !!r.partial, note: (r.note || '').trim(), source: r.source || 'manual' };
     }
 
     // The server skips nothing: an empty row (no volume, name or number) is
@@ -138,7 +138,8 @@ class CollectsEditor {
                 ? `<a href="https://comicvine.gamespot.com/volume/4050-${e.volume}/" target="_blank" rel="noopener noreferrer">${this.esc(label)}</a>`
                 : this.esc(label);
             const w = ((warnings || [])[i] || []).map(x => `<div class="cx-warning">Check: ${this.esc(x)}</div>`).join('');
-            return `<li class="bd-collects-row">${name} ${this.rangeText(e)} ${this.notes(e)}${w}</li>`;
+            const story = e.note ? ` <span class="bd-collects-story">“${this.esc(e.note)}”</span>` : '';
+            return `<li class="bd-collects-row">${name} ${this.rangeText(e)} ${this.notes(e)}${story}${w}</li>`;
         }).join('')}</ul>`;
     }
 
@@ -161,6 +162,9 @@ class CollectsEditor {
                 </select>
                 <label><input type="checkbox" class="cx-partial" ${r.partial ? 'checked' : ''}> partial</label>
                 <button class="btn btn-small btn-secondary cx-remove" ${dis}>Remove</button>
+            </div>
+            <div class="cx-line">
+                <input type="text" class="cx-note" maxlength="200" placeholder="Which story? (optional)" value="${this.esc(r.note)}" aria-label="Which story">
             </div>
         </div>`;
     }
@@ -215,7 +219,7 @@ class CollectsEditor {
                 input.addEventListener(isCheck ? 'change' : 'input', () => { r[key] = isCheck ? input.checked : input.value; });
             };
             bind('.cx-ref', 'ref'); bind('.cx-series', 'series'); bind('.cx-from', 'from');
-            bind('.cx-to', 'to'); bind('.cx-kind', 'kind'); bind('.cx-partial', 'partial', true);
+            bind('.cx-to', 'to'); bind('.cx-kind', 'kind'); bind('.cx-partial', 'partial', true); bind('.cx-note', 'note');
             el.querySelector('.cx-ref').addEventListener('keydown', e => { if (e.key === 'Enter') this.lookup(i); });
             el.querySelector('.cx-lookup').addEventListener('click', () => this.lookup(i));
             el.querySelector('.cx-remove').addEventListener('click', () => {
