@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/duckpuppy/comic-server/internal/audit"
+	"github.com/duckpuppy/comic-server/internal/datamanager"
 	"github.com/duckpuppy/comic-server/internal/library"
 	"github.com/duckpuppy/comic-server/internal/log"
 )
@@ -48,6 +49,16 @@ type BulkEditSample struct {
 	Series  string   `json:"series"`
 	Number  string   `json:"number"`
 	Changed []string `json:"changed"`
+	// Diffs holds the before and after text of each changed field except
+	// Read (tracker #31), so an edit can be checked book by book.
+	Diffs []BulkEditDiff `json:"diffs,omitempty"`
+}
+
+// BulkEditDiff is one field's value before and after an edit.
+type BulkEditDiff struct {
+	Field  string `json:"field"`
+	Before string `json:"before"`
+	After  string `json:"after"`
 }
 
 // BulkEditResponse reports a preview or an applied edit.
@@ -77,7 +88,7 @@ func (s *Server) handleBulkEdit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
-	if len(req.Edit.Fields)+len(req.Edit.ListAdd)+len(req.Edit.ListRemove) == 0 && req.Edit.Read == "" {
+	if len(req.Edit.Fields)+len(req.Edit.ListAdd)+len(req.Edit.ListRemove) == 0 && req.Edit.FindReplace == nil && req.Edit.Read == "" {
 		http.Error(w, "Nothing to change", http.StatusBadRequest)
 		return
 	}
@@ -112,6 +123,10 @@ func (s *Server) handleBulkEdit(w http.ResponseWriter, r *http.Request) {
 		if err != nil || book == nil {
 			continue // removed since the scope was resolved
 		}
+		var before map[string]string
+		if len(resp.Sample) < bulkEditSampleSize {
+			before = bulkEditSnapshot(book, req.Edit)
+		}
 		changed, err := applyBookEdit(book, req.Edit, now)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -126,7 +141,14 @@ func (s *Server) handleBulkEdit(w http.ResponseWriter, r *http.Request) {
 			resp.Fields[f]++
 		}
 		if len(resp.Sample) < bulkEditSampleSize {
-			resp.Sample = append(resp.Sample, BulkEditSample{ID: book.ID, Series: book.Series, Number: book.Number, Changed: changed})
+			sample := BulkEditSample{ID: book.ID, Series: book.Series, Number: book.Number, Changed: changed}
+			for _, f := range changed {
+				if old, ok := before[f]; ok {
+					after, _ := datamanager.GetFieldString(book, f)
+					sample.Diffs = append(sample.Diffs, BulkEditDiff{Field: f, Before: old, After: after})
+				}
+			}
+			resp.Sample = append(resp.Sample, sample)
 		}
 		changedBooks = append(changedBooks, book)
 	}
@@ -144,6 +166,29 @@ func (s *Server) handleBulkEdit(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.writeJSON(w, http.StatusOK, resp)
+}
+
+// bulkEditSnapshot reads the current value of every field the edit names, so
+// the preview can show before and after.
+func bulkEditSnapshot(book *library.ComicBook, edit BookEditRequest) map[string]string {
+	out := map[string]string{}
+	add := func(f string) {
+		v, _ := datamanager.GetFieldString(book, f)
+		out[f] = v
+	}
+	for f := range edit.Fields {
+		add(f)
+	}
+	for f := range edit.ListAdd {
+		add(f)
+	}
+	for f := range edit.ListRemove {
+		add(f)
+	}
+	if edit.FindReplace != nil {
+		add(edit.FindReplace.Field)
+	}
+	return out
 }
 
 // bulkEditScope returns the ids the edit covers: the ticked rows, or every

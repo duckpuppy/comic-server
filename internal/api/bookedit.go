@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/duckpuppy/comic-server/internal/audit"
 	"github.com/duckpuppy/comic-server/internal/datamanager"
@@ -63,8 +66,71 @@ type BookEditRequest struct {
 	// list of items. A field may not also appear in Fields.
 	ListAdd    map[string]string `json:"list_add,omitempty"`
 	ListRemove map[string]string `json:"list_remove,omitempty"`
+	// FindReplace swaps text inside one field's current value (tracker #31).
+	// The field may not also appear in Fields, ListAdd or ListRemove.
+	FindReplace *FindReplace `json:"find_replace,omitempty"`
 	// Read is "read", "unread" or "" (leave the read state alone).
 	Read string `json:"read"`
+}
+
+// FindReplace is a plain-text search and replace inside one field. Find is
+// literal (no regex). A book whose value does not contain Find is unchanged.
+type FindReplace struct {
+	Field      string `json:"field"`
+	Find       string `json:"find"`
+	Replace    string `json:"replace"`
+	IgnoreCase bool   `json:"ignore_case,omitempty"`
+	WholeWord  bool   `json:"whole_word,omitempty"`
+}
+
+// findReplaceField reports whether a search and replace may touch field: an
+// editable field minus the numeric, date and enum ones, where a text swap can
+// only produce an invalid value. comic_server_ custom values are not in
+// editableFields at all, so they can never be replaced.
+func findReplaceField(field string) bool {
+	if _, ok := editableFields[field]; !ok {
+		return false
+	}
+	switch field {
+	case "Number", "Count", "Volume", "AlternateCount", "Year", "Month", "Day", "Rating", "CommunityRating",
+		"BookPrice", "BlackAndWhite", "Manga", "SeriesComplete", "Checked", "AgeRating", "Format", "LanguageISO",
+		"BookCollectionStatus":
+		return false
+	}
+	return true
+}
+
+// replaceText replaces every literal occurrence of find in text. With
+// wholeWord a match counts only when the characters next to it are not
+// letters, digits or underscore (RE2 has no lookaround, so it is checked by
+// hand). The replacement is literal: no $1 or backslash handling.
+func replaceText(text, find, repl string, ignoreCase, wholeWord bool) string {
+	if find == "" {
+		return text
+	}
+	pat := regexp.QuoteMeta(find)
+	if ignoreCase {
+		pat = "(?i)" + pat
+	}
+	rx := regexp.MustCompile(pat)
+	isWord := func(r rune) bool { return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r) }
+	var b strings.Builder
+	last := 0
+	for _, m := range rx.FindAllStringIndex(text, -1) {
+		if wholeWord {
+			if r, _ := utf8.DecodeLastRuneInString(text[:m[0]]); m[0] > 0 && isWord(r) {
+				continue
+			}
+			if r, _ := utf8.DecodeRuneInString(text[m[1]:]); m[1] < len(text) && isWord(r) {
+				continue
+			}
+		}
+		b.WriteString(text[last:m[0]])
+		b.WriteString(repl)
+		last = m[1]
+	}
+	b.WriteString(text[last:])
+	return b.String()
 }
 
 // listFields hold comma-separated items, so they can take ListAdd/ListRemove.
@@ -119,6 +185,19 @@ func expandListOps(book *library.ComicBook, req BookEditRequest) (map[string]any
 	}
 	for f := range req.ListRemove {
 		names[f] = true
+	}
+	if fr := req.FindReplace; fr != nil {
+		if !findReplaceField(fr.Field) {
+			return nil, fmt.Errorf("search and replace is not available for %q", fr.Field)
+		}
+		if fr.Find == "" {
+			return nil, fmt.Errorf("enter the text to find")
+		}
+		if _, dup := fields[fr.Field]; dup || names[fr.Field] {
+			return nil, fmt.Errorf("%s: cannot search and replace and set it in one edit", fr.Field)
+		}
+		cur, _ := datamanager.GetFieldString(book, fr.Field)
+		fields[fr.Field] = replaceText(cur, fr.Find, fr.Replace, fr.IgnoreCase, fr.WholeWord)
 	}
 	for f := range names {
 		if !listFields[f] {

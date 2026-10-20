@@ -12,6 +12,8 @@ class BrowseBulk {
         this.ids = new Set();      // ticked rows
         this.allMatching = false;  // "select all N matching": the filter is the scope
         this.editing = false;
+        this.replacing = false;    // the find-and-replace panel (tracker #31)
+        this.fr = { field: '', find: '', replace: '', ignoreCase: false, wholeWord: false };
         this.rows = [];            // [{field, mode, value}] fields to change
         this.read = '';            // '' | 'read' | 'unread'
         this.preview = null;
@@ -38,6 +40,16 @@ class BrowseBulk {
 
     static LIST_FIELDS = new Set(['Genre', 'Writer', 'Penciller', 'Inker', 'Colorist', 'Letterer',
         'CoverArtist', 'Editor', 'Translator', 'Characters', 'Teams', 'Locations', 'Tags']);
+
+    // Text fields a find-and-replace may touch: the server refuses numbers,
+    // dates and fixed-choice fields (findReplaceField in bookedit.go).
+    static REPLACE_SKIP = new Set(['Number', 'Count', 'Volume', 'AlternateCount', 'Year', 'Month', 'Day',
+        'Rating', 'CommunityRating', 'BookPrice', 'BlackAndWhite', 'Manga', 'SeriesComplete', 'Checked',
+        'AgeRating', 'Format', 'LanguageISO', 'BookCollectionStatus']);
+
+    static replaceFields() {
+        return BrowseBulk.fields().filter(f => !BrowseBulk.REPLACE_SKIP.has(f.name));
+    }
 
     // Checkbox for one result row.
     checkbox(id) {
@@ -66,6 +78,7 @@ class BrowseBulk {
             <div class="bulk-bar-row">
                 <strong>${this.count()} selected</strong>
                 <button class="btn btn-small btn-primary" id="bulk-edit-btn" ${this.busy ? 'disabled' : ''}>Edit…</button>
+                <button class="btn btn-small btn-secondary" id="bulk-replace-btn" ${this.busy ? 'disabled' : ''}>Find &amp; replace…</button>
                 <button class="btn btn-small btn-secondary" id="bulk-read-btn" ${this.busy ? 'disabled' : ''}>Mark read</button>
                 <button class="btn btn-small btn-secondary" id="bulk-unread-btn" ${this.busy ? 'disabled' : ''}>Mark unread</button>
                 <button class="btn btn-small btn-secondary" id="bulk-list-btn" ${this.busy ? 'disabled' : ''}>Add to list…</button>
@@ -73,6 +86,36 @@ class BrowseBulk {
             </div>
             ${banner ? `<p class="bulk-banner">${banner}</p>` : ''}
             ${this.editing ? this.renderEditor() : ''}
+            ${this.replacing ? this.renderReplace() : ''}
+        </div>`;
+    }
+
+    // Find and replace in one field: plain text, optional case-insensitive
+    // and whole-word. Previewed per book, then applied through the same
+    // bulk-edit endpoint.
+    renderReplace() {
+        const fr = this.fr;
+        const opts = BrowseBulk.replaceFields().map(f =>
+            `<option value="${this.esc(f.name)}" ${f.name === fr.field ? 'selected' : ''}>${this.esc(f.label)}</option>`).join('');
+        const ready = fr.field && fr.find;
+        return `<div class="bulk-editor bulk-replace">
+            <div class="bulk-replace-grid">
+                <label>Field <select id="bulk-fr-field"><option value="">Pick a field…</option>${opts}</select></label>
+                <label>Find <input type="text" id="bulk-fr-find" value="${this.esc(fr.find)}" placeholder="text to find"></label>
+                <label>Replace with <input type="text" id="bulk-fr-replace" value="${this.esc(fr.replace)}" placeholder="empty removes the text"></label>
+            </div>
+            <div class="bulk-editor-add">
+                <label><input type="checkbox" id="bulk-fr-ic" ${fr.ignoreCase ? 'checked' : ''}> Ignore case</label>
+                <label><input type="checkbox" id="bulk-fr-ww" ${fr.wholeWord ? 'checked' : ''}> Whole word</label>
+                <span class="browse-compact-meta">Plain text, not a pattern. A list field is changed as its whole comma-separated text.</span>
+            </div>
+            ${this.error ? `<p class="datamanager-errors">${this.esc(this.error)}</p>` : ''}
+            ${this.renderPreview()}
+            <div class="bulk-editor-buttons">
+                <button class="btn btn-secondary" id="bulk-preview-btn" ${this.busy || !ready ? 'disabled' : ''}>${this.busy ? 'Working…' : 'Preview'}</button>
+                <button class="btn btn-primary" id="bulk-apply-btn" ${this.busy || !this.preview || this.preview.changed === 0 ? 'disabled' : ''}>Apply to ${this.preview ? this.preview.changed : 0} book${this.preview && this.preview.changed === 1 ? '' : 's'}</button>
+                <button class="btn btn-secondary" id="bulk-close-btn">Close</button>
+            </div>
         </div>`;
     }
 
@@ -133,7 +176,8 @@ class BrowseBulk {
         if (!pv) return '';
         const fields = Object.entries(pv.fields || {}).map(([f, n]) => `${this.esc(f)}: ${n}`).join(', ');
         const sample = (pv.sample || []).map(s =>
-            `<li>${this.esc(s.series)}${s.number ? ' #' + this.esc(s.number) : ''} <span class="browse-compact-meta">${this.esc((s.changed || []).join(', '))}</span></li>`).join('');
+            `<li>${this.esc(s.series)}${s.number ? ' #' + this.esc(s.number) : ''} <span class="browse-compact-meta">${this.esc((s.changed || []).join(', '))}</span>${(s.diffs || []).map(d =>
+                `<div class="bulk-diff"><span class="bulk-diff-field">${this.esc(d.field)}</span> <del>${this.esc(d.before) || '(empty)'}</del> &rarr; <ins>${this.esc(d.after) || '(empty)'}</ins></div>`).join('')}</li>`).join('');
         return `<div class="bulk-preview">
             <p><strong>${pv.changed}</strong> of ${pv.total} books would change; ${pv.unchanged} already match.${fields ? ` (${fields})` : ''}</p>
             ${sample ? `<ul class="bulk-sample">${sample}</ul>${pv.changed > pv.sample.length ? `<p class="browse-compact-meta">…and ${pv.changed - pv.sample.length} more.</p>` : ''}` : ''}
@@ -142,6 +186,11 @@ class BrowseBulk {
 
     // Build the edit body from the rows. Empty values clear a field on Replace.
     editBody() {
+        if (this.replacing) {
+            const fr = this.fr;
+            if (!fr.field || !fr.find) return {};
+            return { find_replace: { field: fr.field, find: fr.find, replace: fr.replace, ignore_case: fr.ignoreCase, whole_word: fr.wholeWord } };
+        }
         const fields = {}, list_add = {}, list_remove = {};
         for (const r of this.rows) {
             if (BrowseBulk.LIST_FIELDS.has(r.field) && r.mode === 'add') list_add[r.field] = r.value;
@@ -177,7 +226,7 @@ class BrowseBulk {
 
     async runPreview() {
         const edit = this.editBody();
-        if (!Object.keys(edit).length) { this.error = 'Add a field or a read state first.'; this.redraw(); return; }
+        if (!Object.keys(edit).length) { this.error = this.replacing ? 'Pick a field and enter the text to find.' : 'Add a field or a read state first.'; this.redraw(); return; }
         this.busy = true; this.error = ''; this.redraw();
         try {
             this.preview = await this.call(edit, false);
@@ -243,9 +292,15 @@ class BrowseBulk {
         if (btn) { btn.disabled = true; btn.textContent = 'Apply to 0 books'; }
     }
 
+    // Preview needs a field and some text to find.
+    syncReplaceButtons() {
+        const btn = document.getElementById('bulk-preview-btn');
+        if (btn && this.replacing) btn.disabled = this.busy || !(this.fr.field && this.fr.find);
+    }
+
     afterSelectionChange() {
         this.preview = null;
-        if (!this.any()) this.editing = false;
+        if (!this.any()) { this.editing = false; this.replacing = false; }
         this.redraw();
     }
 
@@ -261,12 +316,13 @@ class BrowseBulk {
     attachBar() {
         const $ = id => document.getElementById(id);
         const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
-        on('bulk-edit-btn', () => { this.editing = !this.editing; this.redraw(); });
+        on('bulk-edit-btn', () => { this.editing = !this.editing; this.replacing = false; this.preview = null; this.redraw(); });
+        on('bulk-replace-btn', () => { this.replacing = !this.replacing; this.editing = false; this.preview = null; this.error = ''; this.redraw(); });
         on('bulk-read-btn', () => this.apply({ read: 'read' }, 'Mark read'));
         on('bulk-unread-btn', () => this.apply({ read: 'unread' }, 'Mark unread'));
         on('bulk-list-btn', () => ManualLists.pickAndAdd({ scope: this.scopeBody(), count: this.count() }));
         on('bulk-clear-btn', () => { this.reset(); this.redraw(); });
-        on('bulk-close-btn', () => { this.editing = false; this.redraw(); });
+        on('bulk-close-btn', () => { this.editing = false; this.replacing = false; this.redraw(); });
         on('bulk-preview-btn', () => this.runPreview());
         on('bulk-apply-btn', () => this.apply(this.editBody(), `Apply ${this.preview ? this.preview.changed : 0} changes`));
         document.querySelectorAll('.bulk-select-all').forEach(el => el.addEventListener('click', () => {
@@ -282,6 +338,19 @@ class BrowseBulk {
             this.preview = null;
             this.redraw();
         });
+        // Find-and-replace inputs: like the row values, typing only drops the stale preview.
+        const frInput = (id, key, prop = 'value') => {
+            const el = $(id);
+            if (!el) return;
+            const set = () => { this.fr[key] = el[prop]; this.invalidatePreview(); this.syncReplaceButtons(); };
+            el.addEventListener('input', set);
+            el.addEventListener('change', set);
+        };
+        frInput('bulk-fr-field', 'field');
+        frInput('bulk-fr-find', 'find');
+        frInput('bulk-fr-replace', 'replace');
+        frInput('bulk-fr-ic', 'ignoreCase', 'checked');
+        frInput('bulk-fr-ww', 'wholeWord', 'checked');
         const readState = $('bulk-read-state');
         if (readState) readState.addEventListener('change', () => { this.read = readState.value; this.preview = null; this.redraw(); });
         // Typing must not re-render (it would drop focus and fire blur mid-removal),
