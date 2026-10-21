@@ -69,6 +69,9 @@ type BookEditRequest struct {
 	// FindReplace swaps text inside one field's current value (tracker #31).
 	// The field may not also appear in Fields, ListAdd or ListRemove.
 	FindReplace *FindReplace `json:"find_replace,omitempty"`
+	// Autonumber numbers the books of a bulk edit in order (tracker #30). It
+	// is bulk-only and must be the whole edit; the single-book edit refuses it.
+	Autonumber *Autonumber `json:"autonumber,omitempty"`
 	// Read is "read", "unread" or "" (leave the read state alone).
 	Read string `json:"read"`
 }
@@ -287,6 +290,9 @@ func validateEditValue(field, value string) error {
 // applyBookEdit writes req onto book and returns the changed field names,
 // sorted. "Read" is reported as a change when the read state moved.
 func applyBookEdit(book *library.ComicBook, req BookEditRequest, now time.Time) ([]string, error) {
+	if req.Autonumber != nil {
+		return nil, fmt.Errorf("autonumber works on several books at once; use bulk edit")
+	}
 	var changed []string
 	comicInfoChanged, organizeChanged := false, false
 	fields, err := expandListOps(book, req)
