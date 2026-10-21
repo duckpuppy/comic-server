@@ -139,6 +139,61 @@ func exportFolder(root, subfolder string) (string, error) {
 	return filepath.Join(filepath.Clean(root), clean), nil
 }
 
+// effectiveExportPath returns the export folder in effect: the one saved in
+// Settings (config.db) if set, else the config file / env value (tracker #48).
+func (s *Server) effectiveExportPath() string {
+	if s.configDB != nil {
+		if st, err := s.configDB.GetServerMiscSettings(); err == nil && st != nil && st.ExportPath != "" {
+			return st.ExportPath
+		}
+	}
+	s.configMu.RLock()
+	defer s.configMu.RUnlock()
+	if s.config == nil {
+		return ""
+	}
+	return s.config.Server.ExportPath
+}
+
+// validateExportPath checks a folder before it is saved as the export folder:
+// absolute, creatable, writable, and not inside the library root (an export
+// must never land among the originals).
+func validateExportPath(path, libraryRoot string) error {
+	if !filepath.IsAbs(path) {
+		return errors.New("use a full path, starting with /")
+	}
+	clean := filepath.Clean(path)
+	if libraryRoot != "" && pathWithin(clean, filepath.Clean(libraryRoot)) {
+		return errors.New("it is inside the library folder; pick a folder outside it")
+	}
+	if err := os.MkdirAll(clean, 0o755); err != nil {
+		return fmt.Errorf("the server cannot create it: %w", err)
+	}
+	probe, err := os.CreateTemp(clean, ".export-check-*")
+	if err != nil {
+		return fmt.Errorf("the server cannot write to it: %w", err)
+	}
+	probe.Close()
+	os.Remove(probe.Name()) // our own empty probe file
+	return nil
+}
+
+// pathWithin reports whether child is parent or lies under it.
+func pathWithin(child, parent string) bool {
+	rel, err := filepath.Rel(parent, child)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// GET /api/library/browse/export-books-config tells the Browse panel whether
+// an export folder is set.
+func (s *Server) handleBookExportConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	s.writeJSON(w, http.StatusOK, map[string]bool{"configured": s.effectiveExportPath() != ""})
+}
+
 // POST /api/library/browse/export-books
 func (s *Server) handleBookExportStart(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -149,16 +204,12 @@ func (s *Server) handleBookExportStart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Library not available", http.StatusServiceUnavailable)
 		return
 	}
+	root := s.effectiveExportPath()
 	s.configMu.RLock()
-	var root string
-	var embed bool
-	if s.config != nil {
-		root = s.config.Server.ExportPath
-		embed = s.config.Server.CBZConvert.EmbedComicBook
-	}
+	embed := s.config != nil && s.config.Server.CBZConvert.EmbedComicBook
 	s.configMu.RUnlock()
 	if root == "" {
-		http.Error(w, "Export is off: set server.export_path (or COMIC_SERVER_EXPORT_PATH) to a folder", http.StatusServiceUnavailable)
+		http.Error(w, "Export is off: set the export folder in Settings", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -281,6 +332,9 @@ func (s *Server) exportOneBook(id, folder string, req BookExportRequest, opts cb
 		return "skipped", nil
 	}
 	src := s.resolveBookFilePath(book.FilePath)
+	if pathWithin(filepath.Dir(filepath.Clean(src)), filepath.Clean(folder)) {
+		return "", errors.New("the export folder holds this book's original; pick another folder")
+	}
 	name := exportFileName(&book, req.Naming)
 	if used[strings.ToLower(name)] {
 		stem := strings.TrimSuffix(name, ".cbz")

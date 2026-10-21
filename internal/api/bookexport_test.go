@@ -159,3 +159,113 @@ func TestBookExport_RefusesBadInput(t *testing.T) {
 		}
 	}
 }
+
+func putServerMisc(t *testing.T, s *Server, body string) (int, string) {
+	t.Helper()
+	w := httptest.NewRecorder()
+	s.handleServerMiscSettings(w, httptest.NewRequest(http.MethodPut, "/api/settings/server-misc", strings.NewReader(body)))
+	return w.Code, w.Body.String()
+}
+
+func TestValidateExportPath(t *testing.T) {
+	root := t.TempDir()
+	lib := filepath.Join(t.TempDir(), "comics")
+	good := filepath.Join(root, "new", "deeper")
+	if err := validateExportPath(good, lib); err != nil {
+		t.Fatalf("good path refused: %v", err)
+	}
+	if st, err := os.Stat(good); err != nil || !st.IsDir() {
+		t.Error("folder was not created")
+	}
+	left, _ := filepath.Glob(filepath.Join(good, ".export-check-*"))
+	if len(left) != 0 {
+		t.Errorf("probe file left behind: %v", left)
+	}
+	for name, p := range map[string]string{
+		"relative":       "exports",
+		"library itself": lib,
+		"inside library": filepath.Join(lib, "out"),
+	} {
+		if err := validateExportPath(p, lib); err == nil {
+			t.Errorf("%s: %q should be refused", name, p)
+		}
+	}
+	// A sibling that only shares a name prefix is fine.
+	if err := validateExportPath(lib+"-exports", lib); err != nil {
+		t.Errorf("prefix sibling refused: %v", err)
+	}
+}
+
+func TestBookExport_FolderSavedInSettingsWinsOverConfigFile(t *testing.T) {
+	fromFile, fromUI := t.TempDir(), t.TempDir()
+	s := newDuplicatesTestServer(t, "", bulkEditBooks())
+	s.config.Server.ExportPath = fromFile
+	if got := s.effectiveExportPath(); got != fromFile {
+		t.Fatalf("fallback = %q", got)
+	}
+	if code, body := putServerMisc(t, s, `{"export_path":"`+fromUI+`"}`); code != http.StatusOK {
+		t.Fatalf("put: %d %s", code, body)
+	}
+	if got := s.effectiveExportPath(); got != fromUI {
+		t.Errorf("effective = %q, want the Settings value %q", got, fromUI)
+	}
+	// Clearing it in Settings goes back to the file value.
+	if code, body := putServerMisc(t, s, `{"export_path":""}`); code != http.StatusOK {
+		t.Fatalf("clear: %d %s", code, body)
+	}
+	if got := s.effectiveExportPath(); got != fromFile {
+		t.Errorf("after clear = %q, want %q", got, fromFile)
+	}
+	w := httptest.NewRecorder()
+	s.handleServerMiscSettings(w, httptest.NewRequest(http.MethodGet, "/api/settings/server-misc", nil))
+	if !strings.Contains(w.Body.String(), `"export_path_fallback":"`+fromFile+`"`) {
+		t.Errorf("GET should show the file value in use: %s", w.Body.String())
+	}
+}
+
+func TestBookExport_SettingsRefuseBadFolder(t *testing.T) {
+	s := newDuplicatesTestServer(t, "", bulkEditBooks())
+	s.config.Server.LibraryRoot = filepath.Join(t.TempDir(), "comics")
+	if code, _ := putServerMisc(t, s, `{"export_path":"relative/dir"}`); code != http.StatusBadRequest {
+		t.Errorf("relative path: %d", code)
+	}
+	if code, _ := putServerMisc(t, s, `{"export_path":"`+filepath.Join(s.config.Server.LibraryRoot, "x")+`"}`); code != http.StatusBadRequest {
+		t.Errorf("inside library: %d", code)
+	}
+	if got := s.effectiveExportPath(); got != "" {
+		t.Errorf("a refused save must store nothing, got %q", got)
+	}
+}
+
+func TestBookExport_ConfigEndpoint(t *testing.T) {
+	s := newDuplicatesTestServer(t, "", bulkEditBooks())
+	ask := func() string {
+		w := httptest.NewRecorder()
+		s.handleBookExportConfig(w, httptest.NewRequest(http.MethodGet, "/api/library/browse/export-books-config", nil))
+		return strings.TrimSpace(w.Body.String())
+	}
+	if got := ask(); got != `{"configured":false}` {
+		t.Errorf("unset: %s", got)
+	}
+	s.config.Server.ExportPath = t.TempDir()
+	if got := ask(); got != `{"configured":true}` {
+		t.Errorf("set: %s", got)
+	}
+}
+
+func TestBookExport_RefusesFolderHoldingTheOriginals(t *testing.T) {
+	libDir := t.TempDir()
+	p := filepath.Join(libDir, "a.cbz")
+	writeTestCBZFixture(t, p)
+	s := newCBZConvertTestServer(t, config.CBZConvertConfig{}, "", []library.ComicBook{{ID: "a", FilePath: p}})
+	s.config.Server.ExportPath = libDir // misconfigured: same folder as the originals
+	if code, body := startExport(t, s, `{"book_ids":["a"],"naming":"series","overwrite":true}`); code != http.StatusAccepted {
+		t.Fatalf("start: %d %s", code, body)
+	}
+	if job := waitExport(t, s); job.Failed != 1 || job.Exported != 0 {
+		t.Errorf("job = %+v, want the book refused", job)
+	}
+	if _, err := os.Stat(p); err != nil {
+		t.Errorf("original gone: %v", err)
+	}
+}

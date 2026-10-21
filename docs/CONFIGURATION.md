@@ -541,14 +541,15 @@ server:
 
 ### Export Books
 
-```yaml
-server:
-  export_path: /data/exports   # empty (default) turns Export off
-```
+Set the folder in **Settings > Server > Export folder**. Browse > select books >
+**Export…** writes a CBZ copy of each into it (or one subfolder of it). The
+originals are never changed. The folder must be a full path outside the
+library; it is created if missing. Under Docker, use a path on a mounted
+volume. It takes effect at once, no restart.
 
-Browse > select books > **Export…** writes a CBZ copy of each into this folder
-(or one subfolder of it). The originals are never changed. Env:
-`COMIC_SERVER_EXPORT_PATH`. Under Docker, use a path on a mounted volume.
+For installs set up from a file, `server.export_path` in config.yaml (env
+`COMIC_SERVER_EXPORT_PATH`) still works, but only while the Settings field is
+empty. A folder saved in Settings wins.
 
 Converting a book repacks its pages into a CBZ with a `ComicInfo.xml` built from
 the library record. With `embed_comic_book: true` it also writes
