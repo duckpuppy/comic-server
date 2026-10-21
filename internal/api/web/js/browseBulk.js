@@ -14,6 +14,8 @@ class BrowseBulk {
         this.editing = false;
         this.replacing = false;    // the find-and-replace panel (tracker #31)
         this.fr = { field: '', find: '', replace: '', ignoreCase: false, wholeWord: false };
+        this.numbering = false;    // the autonumber panel (tracker #30)
+        this.an = { order: 'current', start: 1, step: 1, pad: 0 };
         this.rows = [];            // [{field, mode, value}] fields to change
         this.read = '';            // '' | 'read' | 'unread'
         this.preview = null;
@@ -79,6 +81,7 @@ class BrowseBulk {
                 <strong>${this.count()} selected</strong>
                 <button class="btn btn-small btn-primary" id="bulk-edit-btn" ${this.busy ? 'disabled' : ''}>Edit…</button>
                 <button class="btn btn-small btn-secondary" id="bulk-replace-btn" ${this.busy ? 'disabled' : ''}>Find &amp; replace…</button>
+                <button class="btn btn-small btn-secondary" id="bulk-number-btn" ${this.busy ? 'disabled' : ''}>Autonumber…</button>
                 <button class="btn btn-small btn-secondary" id="bulk-read-btn" ${this.busy ? 'disabled' : ''}>Mark read</button>
                 <button class="btn btn-small btn-secondary" id="bulk-unread-btn" ${this.busy ? 'disabled' : ''}>Mark unread</button>
                 <button class="btn btn-small btn-secondary" id="bulk-list-btn" ${this.busy ? 'disabled' : ''}>Add to list…</button>
@@ -87,6 +90,33 @@ class BrowseBulk {
             ${banner ? `<p class="bulk-banner">${banner}</p>` : ''}
             ${this.editing ? this.renderEditor() : ''}
             ${this.replacing ? this.renderReplace() : ''}
+            ${this.numbering ? this.renderNumbering() : ''}
+        </div>`;
+    }
+
+    // Autonumber: write Number 1, 2, 3... in a chosen order. Previewed per
+    // book, then applied through the same bulk-edit endpoint.
+    renderNumbering() {
+        const an = this.an;
+        const orders = [['current', 'As selected'], ['date', 'Date (year, month, day)'], ['title', 'Title'], ['file', 'File name']];
+        const num = (id, label, val, min, max) => `<label>${label} <input type="number" id="${id}" value="${this.esc(val)}" min="${min}" ${max ? `max="${max}"` : ''} step="1" size="4"></label>`;
+        return `<div class="bulk-editor bulk-number">
+            <div class="bulk-replace-grid">
+                <label>Order <select id="bulk-an-order">${orders.map(([v, l]) => `<option value="${v}" ${an.order === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+                ${num('bulk-an-start', 'Start at', an.start, 0)}
+                ${num('bulk-an-step', 'Step', an.step, 1)}
+                ${num('bulk-an-pad', 'Zero padding (width)', an.pad, 0, 10)}
+            </div>
+            <div class="bulk-editor-add">
+                <span class="browse-compact-meta">Sets the Number of the ${this.count()} selected books. Books with a ComicVine issue keep their number. Books with no date go last in Date order.</span>
+            </div>
+            ${this.error ? `<p class="datamanager-errors">${this.esc(this.error)}</p>` : ''}
+            ${this.renderPreview()}
+            <div class="bulk-editor-buttons">
+                <button class="btn btn-secondary" id="bulk-preview-btn" ${this.busy ? 'disabled' : ''}>${this.busy ? 'Working…' : 'Preview'}</button>
+                <button class="btn btn-primary" id="bulk-apply-btn" ${this.busy || !this.preview || this.preview.changed === 0 ? 'disabled' : ''}>Apply to ${this.preview ? this.preview.changed : 0} book${this.preview && this.preview.changed === 1 ? '' : 's'}</button>
+                <button class="btn btn-secondary" id="bulk-close-btn">Close</button>
+            </div>
         </div>`;
     }
 
@@ -180,12 +210,17 @@ class BrowseBulk {
                 `<div class="bulk-diff"><span class="bulk-diff-field">${this.esc(d.field)}</span> <del>${this.esc(d.before) || '(empty)'}</del> &rarr; <ins>${this.esc(d.after) || '(empty)'}</ins></div>`).join('')}</li>`).join('');
         return `<div class="bulk-preview">
             <p><strong>${pv.changed}</strong> of ${pv.total} books would change; ${pv.unchanged} already match.${fields ? ` (${fields})` : ''}</p>
+            ${pv.skipped ? `<p class="browse-compact-meta">${pv.skipped} skipped, they keep their number: ${(pv.skipped_books || []).map(b => `${this.esc(b.series)}${b.number ? ' #' + this.esc(b.number) : ''} (${this.esc(b.reason)})`).join(', ')}${pv.skipped > (pv.skipped_books || []).length ? ', …' : ''}</p>` : ''}
             ${sample ? `<ul class="bulk-sample">${sample}</ul>${pv.changed > pv.sample.length ? `<p class="browse-compact-meta">…and ${pv.changed - pv.sample.length} more.</p>` : ''}` : ''}
         </div>`;
     }
 
     // Build the edit body from the rows. Empty values clear a field on Replace.
     editBody() {
+        if (this.numbering) {
+            const an = this.an;
+            return { autonumber: { order: an.order, start: an.start, step: an.step, pad: an.pad } };
+        }
         if (this.replacing) {
             const fr = this.fr;
             if (!fr.field || !fr.find) return {};
@@ -300,7 +335,7 @@ class BrowseBulk {
 
     afterSelectionChange() {
         this.preview = null;
-        if (!this.any()) { this.editing = false; this.replacing = false; }
+        if (!this.any()) { this.editing = false; this.replacing = false; this.numbering = false; }
         this.redraw();
     }
 
@@ -316,13 +351,14 @@ class BrowseBulk {
     attachBar() {
         const $ = id => document.getElementById(id);
         const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
-        on('bulk-edit-btn', () => { this.editing = !this.editing; this.replacing = false; this.preview = null; this.redraw(); });
-        on('bulk-replace-btn', () => { this.replacing = !this.replacing; this.editing = false; this.preview = null; this.error = ''; this.redraw(); });
+        on('bulk-edit-btn', () => { this.editing = !this.editing; this.replacing = false; this.numbering = false; this.preview = null; this.redraw(); });
+        on('bulk-replace-btn', () => { this.replacing = !this.replacing; this.editing = false; this.numbering = false; this.preview = null; this.error = ''; this.redraw(); });
+        on('bulk-number-btn', () => { this.numbering = !this.numbering; this.editing = false; this.replacing = false; this.preview = null; this.error = ''; this.redraw(); });
         on('bulk-read-btn', () => this.apply({ read: 'read' }, 'Mark read'));
         on('bulk-unread-btn', () => this.apply({ read: 'unread' }, 'Mark unread'));
         on('bulk-list-btn', () => ManualLists.pickAndAdd({ scope: this.scopeBody(), count: this.count() }));
         on('bulk-clear-btn', () => { this.reset(); this.redraw(); });
-        on('bulk-close-btn', () => { this.editing = false; this.replacing = false; this.redraw(); });
+        on('bulk-close-btn', () => { this.editing = false; this.replacing = false; this.numbering = false; this.redraw(); });
         on('bulk-preview-btn', () => this.runPreview());
         on('bulk-apply-btn', () => this.apply(this.editBody(), `Apply ${this.preview ? this.preview.changed : 0} changes`));
         document.querySelectorAll('.bulk-select-all').forEach(el => el.addEventListener('click', () => {
@@ -351,6 +387,18 @@ class BrowseBulk {
         frInput('bulk-fr-replace', 'replace');
         frInput('bulk-fr-ic', 'ignoreCase', 'checked');
         frInput('bulk-fr-ww', 'wholeWord', 'checked');
+        // Autonumber inputs: typing only drops the stale preview.
+        const anInput = (id, key, num) => {
+            const el = $(id);
+            if (!el) return;
+            const set = () => { this.an[key] = num ? (parseInt(el.value, 10) || 0) : el.value; this.invalidatePreview(); };
+            el.addEventListener('input', set);
+            el.addEventListener('change', set);
+        };
+        anInput('bulk-an-order', 'order');
+        anInput('bulk-an-start', 'start', true);
+        anInput('bulk-an-step', 'step', true);
+        anInput('bulk-an-pad', 'pad', true);
         const readState = $('bulk-read-state');
         if (readState) readState.addEventListener('change', () => { this.read = readState.value; this.preview = null; this.redraw(); });
         // Typing must not re-render (it would drop focus and fire blur mid-removal),

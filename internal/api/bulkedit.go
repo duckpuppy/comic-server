@@ -69,6 +69,10 @@ type BulkEditResponse struct {
 	Unchanged int              `json:"unchanged"`
 	Fields    map[string]int   `json:"fields"` // books changed per field
 	Sample    []BulkEditSample `json:"sample"`
+	// Skipped counts books an autonumber left alone (they keep their number);
+	// SkippedBooks lists the first few with the reason (tracker #30).
+	Skipped      int              `json:"skipped,omitempty"`
+	SkippedBooks []autonumberSkip `json:"skipped_books,omitempty"`
 }
 
 const bulkEditSampleSize = 20
@@ -88,7 +92,7 @@ func (s *Server) handleBulkEdit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
-	if len(req.Edit.Fields)+len(req.Edit.ListAdd)+len(req.Edit.ListRemove) == 0 && req.Edit.FindReplace == nil && req.Edit.Read == "" {
+	if len(req.Edit.Fields)+len(req.Edit.ListAdd)+len(req.Edit.ListRemove) == 0 && req.Edit.FindReplace == nil && req.Edit.Autonumber == nil && req.Edit.Read == "" {
 		http.Error(w, "Nothing to change", http.StatusBadRequest)
 		return
 	}
@@ -116,18 +120,59 @@ func (s *Server) handleBulkEdit(w http.ResponseWriter, r *http.Request) {
 	// the audit diff sees the old values and a preview never touches the library.
 	backend := s.audited(audit.ActionEdit)
 	now := time.Now()
+
+	// Autonumber needs the whole scope: plan every number first.
+	var numbers map[string]string
+	var preloaded map[string]*library.ComicBook
+	var skipped map[string]bool
+	var skippedList []autonumberSkip
+	if a := req.Edit.Autonumber; a != nil {
+		if len(req.Edit.Fields)+len(req.Edit.ListAdd)+len(req.Edit.ListRemove) > 0 || req.Edit.FindReplace != nil || req.Edit.Read != "" {
+			http.Error(w, "Autonumber cannot be combined with other changes", http.StatusBadRequest)
+			return
+		}
+		if err := a.validate(); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		preloaded = make(map[string]*library.ComicBook, len(ids))
+		ordered := make([]*library.ComicBook, 0, len(ids))
+		for _, id := range ids {
+			if b, err := backend.GetBook(id); err == nil && b != nil {
+				preloaded[id] = b
+				ordered = append(ordered, b)
+			}
+		}
+		numbers, skippedList = planAutonumber(ordered, *a)
+		skipped = make(map[string]bool, len(skippedList))
+		for _, sk := range skippedList {
+			skipped[sk.ID] = true
+		}
+	}
 	resp := BulkEditResponse{Applied: req.Apply, Total: len(ids), Fields: map[string]int{}, Sample: []BulkEditSample{}}
 	var changedBooks []*library.ComicBook
 	for _, id := range ids {
-		book, err := backend.GetBook(id)
-		if err != nil || book == nil {
+		var book *library.ComicBook
+		if preloaded != nil {
+			book = preloaded[id]
+		} else {
+			book, _ = backend.GetBook(id)
+		}
+		if book == nil {
 			continue // removed since the scope was resolved
+		}
+		edit := req.Edit
+		if req.Edit.Autonumber != nil {
+			if skipped[id] {
+				continue
+			}
+			edit = BookEditRequest{Fields: map[string]any{"Number": numbers[id]}}
 		}
 		var before map[string]string
 		if len(resp.Sample) < bulkEditSampleSize {
-			before = bulkEditSnapshot(book, req.Edit)
+			before = bulkEditSnapshot(book, edit)
 		}
-		changed, err := applyBookEdit(book, req.Edit, now)
+		changed, err := applyBookEdit(book, edit, now)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -152,6 +197,9 @@ func (s *Server) handleBulkEdit(w http.ResponseWriter, r *http.Request) {
 		}
 		changedBooks = append(changedBooks, book)
 	}
+
+	resp.Skipped = len(skippedList)
+	resp.SkippedBooks = skippedList[:min(len(skippedList), bulkEditSampleSize)]
 
 	if req.Apply {
 		for chunk := range slices.Chunk(changedBooks, bulkEditWriteBatch) {
