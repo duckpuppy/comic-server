@@ -46,6 +46,18 @@ type BookExportRequest struct {
 	Subfolder string `json:"subfolder"`
 	// Overwrite replaces an earlier export with the same name. Off skips it.
 	Overwrite bool `json:"overwrite"`
+
+	// Page options (tracker #7, step 2). All empty = pages copied unchanged.
+	Format      string `json:"format"`       // "" keep | "jpeg" | "png"
+	Quality     int    `json:"quality"`      // JPEG quality 1-100; 0 = 85
+	Resize      string `json:"resize"`       // "" | "width" | "height" | "fit"
+	Width       int    `json:"width"`        // pixels; used by width and fit
+	Height      int    `json:"height"`       // pixels; used by height and fit
+	DontEnlarge bool   `json:"dont_enlarge"` // never scale a page up
+}
+
+func (r BookExportRequest) pageOptions() cbzconvert.PageOptions {
+	return cbzconvert.PageOptions{Format: r.Format, Quality: r.Quality, Resize: r.Resize, Width: r.Width, Height: r.Height, DontEnlarge: r.DontEnlarge}
 }
 
 // BookExportJob is the state of the one export job (running or last finished).
@@ -225,6 +237,10 @@ func (s *Server) handleBookExportStart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "naming must be \"original\" or \"series\"", http.StatusBadRequest)
 		return
 	}
+	if err := req.pageOptions().Validate(); err != nil {
+		http.Error(w, "Page options: "+err.Error(), http.StatusBadRequest)
+		return
+	}
 	folder, err := exportFolder(root, req.Subfolder)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -347,7 +363,7 @@ func (s *Server) exportOneBook(id, folder string, req BookExportRequest, opts cb
 	}
 	used[strings.ToLower(name)] = true
 
-	_, err = cbzconvert.ExportCopy(&book, src, filepath.Join(folder, name), opts, req.Overwrite)
+	_, err = cbzconvert.ExportCopy(&book, src, filepath.Join(folder, name), opts, req.pageOptions(), req.Overwrite)
 	if errors.Is(err, cbzconvert.ErrExportExists) {
 		return "skipped", nil
 	}

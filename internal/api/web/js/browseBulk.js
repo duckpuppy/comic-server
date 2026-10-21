@@ -17,7 +17,7 @@ class BrowseBulk {
         this.numbering = false;    // the autonumber panel (tracker #30)
         this.an = { order: 'current', start: 1, step: 1, pad: 0 };
         this.exporting = false;    // the export-copies panel (tracker #7)
-        this.ex = { naming: 'original', subfolder: '', overwrite: false };
+        this.ex = { naming: 'original', subfolder: '', overwrite: false, format: '', quality: 85, resize: '', width: 1600, height: 2400, dontEnlarge: true };
         this.exJob = null;         // the latest export job, polled while it runs
         this.exConfigured = null;  // null = not asked yet; false = no export folder set
         this.rows = [];            // [{field, mode, value}] fields to change
@@ -129,8 +129,26 @@ class BrowseBulk {
                 <label>Subfolder (optional) <input type="text" id="bulk-ex-subfolder" value="${this.esc(ex.subfolder)}" placeholder="one folder name"></label>
                 <label><input type="checkbox" id="bulk-ex-overwrite" ${ex.overwrite ? 'checked' : ''}> Replace earlier exports with the same name</label>
             </div>
+            <div class="bulk-replace-grid">
+                <label>Page format <select id="bulk-ex-format">
+                    <option value="" ${ex.format === '' ? 'selected' : ''}>Keep each page as it is</option>
+                    <option value="jpeg" ${ex.format === 'jpeg' ? 'selected' : ''}>JPEG</option>
+                    <option value="png" ${ex.format === 'png' ? 'selected' : ''}>PNG</option>
+                </select></label>
+                <label>JPEG quality <input type="number" id="bulk-ex-quality" value="${this.esc(ex.quality)}" min="1" max="100" step="1" size="4" ${ex.format === 'jpeg' ? '' : 'disabled'}></label>
+                <label>Page size <select id="bulk-ex-resize">
+                    <option value="" ${ex.resize === '' ? 'selected' : ''}>Original size</option>
+                    <option value="width" ${ex.resize === 'width' ? 'selected' : ''}>Set the width</option>
+                    <option value="height" ${ex.resize === 'height' ? 'selected' : ''}>Set the height</option>
+                    <option value="fit" ${ex.resize === 'fit' ? 'selected' : ''}>Fit inside a box</option>
+                </select></label>
+                <label>Width (px) <input type="number" id="bulk-ex-width" value="${this.esc(ex.width)}" min="1" max="20000" step="1" size="6" ${ex.resize === 'width' || ex.resize === 'fit' ? '' : 'disabled'}></label>
+                <label>Height (px) <input type="number" id="bulk-ex-height" value="${this.esc(ex.height)}" min="1" max="20000" step="1" size="6" ${ex.resize === 'height' || ex.resize === 'fit' ? '' : 'disabled'}></label>
+                <label><input type="checkbox" id="bulk-ex-noenlarge" ${ex.dontEnlarge ? 'checked' : ''} ${ex.resize ? '' : 'disabled'}> Never make a page bigger</label>
+            </div>
             <div class="bulk-editor-add">
-                <span class="browse-compact-meta">Writes a CBZ copy of the ${this.count()} selected books, with fresh ComicInfo.xml, into the server's export folder. Originals are not changed.</span>
+                <span class="browse-compact-meta">Writes a CBZ copy of the ${this.count()} selected books, with fresh ComicInfo.xml, into the server's export folder. Originals are not changed. Changing the page format or size re-encodes every page, which takes a while on big selections; pages that need no change keep their exact bytes.</span>
+                ${(ex.format || ex.resize) ? '<br><span class="browse-compact-meta">The copy gets a new ComicInfo.xml built from the library record only: extra elements that were in the original file are not carried over.</span>' : ''}
             </div>
             ${this.error ? `<p class="datamanager-errors">${this.esc(this.error)}</p>` : ''}
             ${status}
@@ -149,13 +167,22 @@ class BrowseBulk {
         this.redraw();
     }
 
+    // Page options for the request; empty values mean "leave the pages alone".
+    pageBody() {
+        const ex = this.ex, body = { format: ex.format, resize: ex.resize, dont_enlarge: ex.dontEnlarge };
+        if (ex.format === 'jpeg') body.quality = ex.quality;
+        if (ex.resize === 'width' || ex.resize === 'fit') body.width = ex.width;
+        if (ex.resize === 'height' || ex.resize === 'fit') body.height = ex.height;
+        return body;
+    }
+
     async startExport() {
         this.busy = true; this.error = ''; this.redraw();
         try {
             const res = await fetch('/api/library/browse/export-books', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ...this.scopeBody(), expected_count: this.count(), naming: this.ex.naming, subfolder: this.ex.subfolder, overwrite: this.ex.overwrite }),
+                body: JSON.stringify({ ...this.scopeBody(), expected_count: this.count(), naming: this.ex.naming, subfolder: this.ex.subfolder, overwrite: this.ex.overwrite, ...this.pageBody() }),
             });
             const text = await res.text();
             if (!res.ok) throw new Error(text.trim() || `HTTP ${res.status}`);
@@ -502,6 +529,24 @@ class BrowseBulk {
         exInput('bulk-ex-naming', 'naming');
         exInput('bulk-ex-subfolder', 'subfolder');
         exInput('bulk-ex-overwrite', 'overwrite', 'checked');
+        // Selects change which boxes are usable, so they redraw; the number boxes must not (focus).
+        const exSelect = (id, key) => {
+            const el = $(id);
+            if (el) el.addEventListener('change', () => { this.ex[key] = el.value; this.redraw(); });
+        };
+        exSelect('bulk-ex-format', 'format');
+        exSelect('bulk-ex-resize', 'resize');
+        const exNum = (id, key) => {
+            const el = $(id);
+            if (!el) return;
+            const set = () => { this.ex[key] = parseInt(el.value, 10) || 0; };
+            el.addEventListener('input', set);
+            el.addEventListener('change', set);
+        };
+        exNum('bulk-ex-quality', 'quality');
+        exNum('bulk-ex-width', 'width');
+        exNum('bulk-ex-height', 'height');
+        exInput('bulk-ex-noenlarge', 'dontEnlarge', 'checked');
         const readState = $('bulk-read-state');
         if (readState) readState.addEventListener('change', () => { this.read = readState.value; this.preview = null; this.redraw(); });
         // Typing must not re-render (it would drop focus and fire blur mid-removal),
