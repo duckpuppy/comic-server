@@ -164,6 +164,12 @@ type ServerConfig struct {
 	// survive container recreates.
 	TrashPath string `yaml:"trash_path,omitempty" toml:"trash_path,omitempty"`
 
+	// ExportPath is the folder "Export books" (Browse) writes CBZ copies
+	// into (tracker #7). Empty turns the feature off. Exports only ever
+	// create files here; they never touch the originals. Under Docker, set
+	// it to a path under a mounted volume so the copies survive recreates.
+	ExportPath string `yaml:"export_path,omitempty" toml:"export_path,omitempty"`
+
 	// TrashRetentionDays is how long a quarantined file is kept before
 	// being permanently deleted. Default: 30 (see comic-server-1up).
 	TrashRetentionDays int `yaml:"trash_retention_days,omitempty" toml:"trash_retention_days,omitempty"`

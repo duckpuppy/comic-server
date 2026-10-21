@@ -25,6 +25,11 @@ func (c *Config) ApplyEnvironment() error {
 		c.Server.CoverCacheDir = val
 	}
 
+	// Folder "Export books" writes into
+	if val := os.Getenv("COMIC_SERVER_EXPORT_PATH"); val != "" {
+		c.Server.ExportPath = val
+	}
+
 	// ComicVine enrichment cache file path
 	if val := os.Getenv("COMIC_SERVER_COMICVINE_CACHE_PATH"); val != "" {
 		c.Server.ComicVineCachePath = val

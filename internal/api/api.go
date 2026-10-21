@@ -86,6 +86,11 @@ type Server struct {
 	dmJob   *DMJobStatus
 	dmJobMu sync.RWMutex
 
+	// exportJob/exportJobMu track the current (or last finished) Export
+	// books run - see bookexport.go.
+	exportJob   *BookExportJob
+	exportJobMu sync.RWMutex
+
 	// libImportJob/libImportJobMu track the current (or most recently
 	// completed) on-demand library import background job - see
 	// LibraryImportJobStatus's doc comment in library_import.go
@@ -287,6 +292,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/library/browse/datamanager-preview", s.handleBrowseDataManagerPreview)
 	s.mux.HandleFunc("/api/library/browse/datamanager-apply", s.handleBrowseDataManagerApply)
 	s.mux.HandleFunc("/api/library/browse/bulk-edit", s.handleBulkEdit)
+	s.mux.HandleFunc("/api/library/browse/export-books", s.handleBookExportStart)
+	s.mux.HandleFunc("/api/library/browse/export-books-job", s.handleBookExportStatus)
 	s.mux.HandleFunc("/api/library/browse/export-columns", s.handleBrowseExportColumns)
 	s.mux.HandleFunc("/api/library/browse/export-csv", s.handleBrowseExportCSV)
 
