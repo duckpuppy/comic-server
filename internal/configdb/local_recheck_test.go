@@ -56,7 +56,53 @@ func TestMigrateV14ToV15_AddsLocalIdentityRecheck(t *testing.T) {
 	}
 	var v int
 	_ = db.QueryRow("PRAGMA user_version").Scan(&v)
-	if v != 15 {
-		t.Errorf("user_version = %d, want 15", v)
+	if v != schemaVersion {
+		t.Errorf("user_version = %d, want %d", v, schemaVersion)
+	}
+}
+
+func TestServerMiscSettings_ExportPathRoundTrips(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.UpsertServerMiscSettings(ServerMiscSettings{AutoSync: true}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := db.GetServerMiscSettings(); got == nil || got.ExportPath != "" {
+		t.Fatalf("default = %+v, want empty export path", got)
+	}
+	if err := db.UpsertServerMiscSettings(ServerMiscSettings{ExportPath: "/data/exports"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := db.GetServerMiscSettings(); got.ExportPath != "/data/exports" {
+		t.Errorf("got %+v", got)
+	}
+}
+
+// A v15 database (no export_path column) gains it on open and keeps its
+// stored settings (tracker #48).
+func TestMigrateV15ToV16_AddsExportPath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.db")
+	db, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.UpsertServerMiscSettings(ServerMiscSettings{AutoSync: true, LocalIdentityRecheck: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`ALTER TABLE server_misc_settings DROP COLUMN export_path`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`PRAGMA user_version = 15`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	db, err = Open(path)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer db.Close()
+	got, err := db.GetServerMiscSettings()
+	if err != nil || got == nil || !got.AutoSync || !got.LocalIdentityRecheck || got.ExportPath != "" {
+		t.Fatalf("got %+v, %v; want old values kept and no export path", got, err)
 	}
 }

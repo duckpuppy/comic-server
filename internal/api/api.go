@@ -294,6 +294,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/library/browse/bulk-edit", s.handleBulkEdit)
 	s.mux.HandleFunc("/api/library/browse/export-books", s.handleBookExportStart)
 	s.mux.HandleFunc("/api/library/browse/export-books-job", s.handleBookExportStatus)
+	s.mux.HandleFunc("/api/library/browse/export-books-config", s.handleBookExportConfig)
 	s.mux.HandleFunc("/api/library/browse/export-columns", s.handleBrowseExportColumns)
 	s.mux.HandleFunc("/api/library/browse/export-csv", s.handleBrowseExportCSV)
 

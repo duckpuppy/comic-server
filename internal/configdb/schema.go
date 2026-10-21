@@ -16,8 +16,9 @@ import "fmt"
 // watch_folders (comic-server-obe). Version 13 adds an auto_sync column
 // to server_misc_settings (comic-server-r769). Version 14 adds
 // count_covered_as_owned (tracker #46), version 15 adds
-// local_identity_recheck (tracker #47).
-const schemaVersion = 15
+// local_identity_recheck (tracker #47), version 16 adds export_path
+// (tracker #48).
+const schemaVersion = 16
 
 // SchemaVersion is the newest schema this build understands; restore refuses a backup above it.
 const SchemaVersion = schemaVersion
@@ -107,6 +108,11 @@ func (db *DB) initSchema() error {
 		if version < 15 {
 			if err := db.migrateV14ToV15(); err != nil {
 				return fmt.Errorf("migrate v14→v15: %w", err)
+			}
+		}
+		if version < 16 {
+			if err := db.migrateV15ToV16(); err != nil {
+				return fmt.Errorf("migrate v15→v16: %w", err)
 			}
 		}
 	}
@@ -356,6 +362,14 @@ func (db *DB) migrateV14ToV15() error {
 		return fmt.Errorf("migrate v14→v15: %w", err)
 	}
 	return db.addLocalIdentityRecheckColumn()
+}
+
+// migrateV15ToV16 adds export_path to server_misc_settings (tracker #48).
+func (db *DB) migrateV15ToV16() error {
+	if err := db.createServerMiscSettingsTable(); err != nil {
+		return fmt.Errorf("migrate v15→v16: %w", err)
+	}
+	return db.addExportPathColumn()
 }
 
 // createDataManagerTables creates the tables backing the Data Manager rule

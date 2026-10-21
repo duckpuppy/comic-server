@@ -19,6 +19,7 @@ class BrowseBulk {
         this.exporting = false;    // the export-copies panel (tracker #7)
         this.ex = { naming: 'original', subfolder: '', overwrite: false };
         this.exJob = null;         // the latest export job, polled while it runs
+        this.exConfigured = null;  // null = not asked yet; false = no export folder set
         this.rows = [];            // [{field, mode, value}] fields to change
         this.read = '';            // '' | 'read' | 'unread'
         this.preview = null;
@@ -113,6 +114,12 @@ class BrowseBulk {
                 <span class="browse-compact-meta">Folder: ${this.esc(job.folder)}</span>
                 ${(job.errors || []).length ? `<br><span class="datamanager-errors">${job.errors.map(e => this.esc(e)).join('<br>')}</span>` : ''}</p>`;
         }
+        if (this.exConfigured === false) {
+            return `<div class="bulk-editor bulk-export">
+                <p>No export folder is set. <a href="/settings">Set it in Settings</a> (Server &gt; Export folder), then come back.</p>
+                <div class="bulk-editor-buttons"><button class="btn btn-secondary" id="bulk-close-btn">Close</button></div>
+            </div>`;
+        }
         return `<div class="bulk-editor bulk-export">
             <div class="bulk-replace-grid">
                 <label>File names <select id="bulk-ex-naming">
@@ -132,6 +139,14 @@ class BrowseBulk {
                 <button class="btn btn-secondary" id="bulk-close-btn">Close</button>
             </div>
         </div>`;
+    }
+
+    async checkExportConfigured() {
+        try {
+            const res = await fetch('/api/library/browse/export-books-config');
+            if (res.ok) this.exConfigured = !!(await res.json()).configured;
+        } catch (e) { /* leave it unknown; the export itself will say */ }
+        this.redraw();
     }
 
     async startExport() {
@@ -431,7 +446,7 @@ class BrowseBulk {
         on('bulk-export-btn', () => {
             this.exporting = !this.exporting; this.editing = false; this.replacing = false; this.numbering = false; this.preview = null; this.error = '';
             this.redraw();
-            if (this.exporting) this.pollExport();
+            if (this.exporting) this.checkExportConfigured().then(() => { if (this.exConfigured) this.pollExport(); });
         });
         on('bulk-export-go-btn', () => this.startExport());
         on('bulk-list-btn', () => ManualLists.pickAndAdd({ scope: this.scopeBody(), count: this.count() }));

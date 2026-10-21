@@ -323,10 +323,10 @@ class ScanInfoSettings {
             const response = await fetch('/api/settings/server-misc');
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json();
-            this.serverMisc = { cbz_convert_enabled: !!data.cbz_convert_enabled, ignore_devices: data.ignore_devices || [], auto_sync: !!data.auto_sync, count_covered_as_owned: !!data.count_covered_as_owned, local_identity_recheck: !!data.local_identity_recheck };
+            this.serverMisc = { cbz_convert_enabled: !!data.cbz_convert_enabled, ignore_devices: data.ignore_devices || [], auto_sync: !!data.auto_sync, count_covered_as_owned: !!data.count_covered_as_owned, local_identity_recheck: !!data.local_identity_recheck, export_path: data.export_path || '', export_path_fallback: data.export_path_fallback || '' };
         } catch (error) {
             console.error('Failed to load server settings:', error);
-            this.serverMisc = { cbz_convert_enabled: false, ignore_devices: [], auto_sync: false, count_covered_as_owned: false, local_identity_recheck: false };
+            this.serverMisc = { cbz_convert_enabled: false, ignore_devices: [], auto_sync: false, count_covered_as_owned: false, local_identity_recheck: false, export_path: '', export_path_fallback: '' };
         }
     }
 
@@ -917,6 +917,13 @@ class ScanInfoSettings {
                     <div class="form-help">Once a day, searches ComicVine for a few books that have a local identity (at most 5 searches, only in the background headroom, stopping at the first error). If ComicVine now lists one, it appears in Scrape Review as a suggestion. Nothing is applied until you accept. Off by default.</div>
                 </div>
 
+                <div class="form-group">
+                    <label for="server-misc-export-path">Export folder</label>
+                    <div class="form-help">Browse &gt; Export… writes CBZ copies of the books you pick into this folder. Use a full path outside the library. Empty turns Export off${m.export_path_fallback ? `, except that the config file or environment sets <code>${this.escapeHtml(m.export_path_fallback)}</code>, which is used while this is empty` : ''}.</div>
+                    <input type="text" class="form-control" id="server-misc-export-path" value="${this.escapeHtml(m.export_path || '')}" placeholder="/path/to/exports">
+                    <button type="button" class="btn btn-secondary" id="server-misc-export-save-btn">Save</button>
+                </div>
+
                 <div class="form-group scan-info-list-group">
                     <label>Ignore Devices</label>
                     <div class="form-help">Devices to never discover or sync with - by IP address, device ID, or device name.</div>
@@ -1294,6 +1301,13 @@ class ScanInfoSettings {
         if (recheckToggle) {
             recheckToggle.addEventListener('change', (e) => {
                 this.serverMisc.local_identity_recheck = e.target.checked;
+                this.saveServerMisc();
+            });
+        }
+        const exportSaveBtn = document.getElementById('server-misc-export-save-btn');
+        if (exportSaveBtn) {
+            exportSaveBtn.addEventListener('click', () => {
+                this.serverMisc.export_path = document.getElementById('server-misc-export-path').value.trim();
                 this.saveServerMisc();
             });
         }

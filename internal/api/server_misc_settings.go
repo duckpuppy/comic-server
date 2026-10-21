@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/duckpuppy/comic-server/internal/comicvine"
 	"github.com/duckpuppy/comic-server/internal/configdb"
@@ -24,6 +25,12 @@ type ServerMiscSettingsResponse struct {
 	// LocalIdentityRecheck: slow background ComicVine search for books with a
 	// local identity, queued as Scrape Review suggestions (tracker #47).
 	LocalIdentityRecheck bool `json:"local_identity_recheck"`
+	// ExportPath: the folder Browse "Export…" writes into (tracker #48).
+	// Empty = use the config file / env value, if any.
+	ExportPath string `json:"export_path"`
+	// ExportPathFallback is read-only (GET only): the config file / env
+	// value that is in use while ExportPath is empty.
+	ExportPathFallback string `json:"export_path_fallback,omitempty"`
 }
 
 // handleServerMiscSettings serves GET/PUT /api/settings/server-misc.
@@ -56,6 +63,7 @@ func (s *Server) handleGetServerMiscSettings(w http.ResponseWriter, r *http.Requ
 		resp.AutoSync = stored.AutoSync
 		resp.CountCoveredAsOwned = stored.CountCoveredAsOwned
 		resp.LocalIdentityRecheck = stored.LocalIdentityRecheck
+		resp.ExportPath = stored.ExportPath
 	} else {
 		// Never migrated (e.g. a fresh install with nothing in config.yaml
 		// either) - fall back to whatever's currently in effect in memory,
@@ -70,6 +78,13 @@ func (s *Server) handleGetServerMiscSettings(w http.ResponseWriter, r *http.Requ
 		}
 		s.configMu.RUnlock()
 	}
+	if resp.ExportPath == "" {
+		s.configMu.RLock()
+		if s.config != nil {
+			resp.ExportPathFallback = s.config.Server.ExportPath
+		}
+		s.configMu.RUnlock()
+	}
 	s.writeJSON(w, http.StatusOK, resp)
 }
 
@@ -80,6 +95,20 @@ func (s *Server) handlePutServerMiscSettings(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	req.ExportPath = strings.TrimSpace(req.ExportPath)
+	if req.ExportPath != "" {
+		s.configMu.RLock()
+		libraryRoot := ""
+		if s.config != nil {
+			libraryRoot = s.config.Server.LibraryRoot
+		}
+		s.configMu.RUnlock()
+		if err := validateExportPath(req.ExportPath, libraryRoot); err != nil {
+			http.Error(w, "Invalid export folder: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+
 	before := s.countCoveredAsOwned()
 	if err := s.configDB.UpsertServerMiscSettings(configdb.ServerMiscSettings{
 		CBZConvertEnabled:    req.CBZConvertEnabled,
@@ -87,6 +116,7 @@ func (s *Server) handlePutServerMiscSettings(w http.ResponseWriter, r *http.Requ
 		AutoSync:             req.AutoSync,
 		CountCoveredAsOwned:  req.CountCoveredAsOwned,
 		LocalIdentityRecheck: req.LocalIdentityRecheck,
+		ExportPath:           req.ExportPath,
 	}); err != nil {
 		log.Error().Err(err).Msg("Failed to save server misc settings")
 		http.Error(w, "Failed to save server misc settings", http.StatusInternalServerError)

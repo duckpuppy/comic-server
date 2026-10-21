@@ -29,6 +29,10 @@ type ServerMiscSettings struct {
 	// LocalIdentityRecheck: a slow background ComicVine search for books
 	// with a local identity, queued as suggestions (tracker #47). Off by default.
 	LocalIdentityRecheck bool
+	// ExportPath: the folder Browse "Export…" writes CBZ copies into
+	// (tracker #48). Empty means "not set here": the config file / env
+	// value, if any, is used instead.
+	ExportPath string
 }
 
 // createServerMiscSettingsTable creates the server_misc_settings table - a
@@ -40,7 +44,8 @@ func (db *DB) createServerMiscSettingsTable() error {
 		ignore_devices      TEXT NOT NULL DEFAULT '[]',
 		auto_sync           INTEGER NOT NULL DEFAULT 0,
 		count_covered_as_owned INTEGER NOT NULL DEFAULT 0,
-		local_identity_recheck INTEGER NOT NULL DEFAULT 0
+		local_identity_recheck INTEGER NOT NULL DEFAULT 0,
+		export_path            TEXT NOT NULL DEFAULT ''
 	)`)
 	if err != nil {
 		return fmt.Errorf("create server_misc_settings table: %w", err)
@@ -99,15 +104,30 @@ func (db *DB) addLocalIdentityRecheckColumn() error {
 	return nil
 }
 
+// addExportPathColumn adds export_path (tracker #48), guarded like addAutoSyncColumn.
+func (db *DB) addExportPathColumn() error {
+	hasIt, err := db.hasColumn("server_misc_settings", "export_path")
+	if err != nil {
+		return fmt.Errorf("add export_path column: %w", err)
+	}
+	if hasIt {
+		return nil
+	}
+	if _, err := db.Exec(`ALTER TABLE server_misc_settings ADD COLUMN export_path TEXT NOT NULL DEFAULT ''`); err != nil {
+		return fmt.Errorf("add export_path column: %w", err)
+	}
+	return nil
+}
+
 // GetServerMiscSettings returns the stored settings, or nil if config.db
 // has never been given any - callers should fall back to config.yaml's
 // Server.CBZConvert.Enabled/Server.IgnoreDevices/Server.AutoSync in that
 // case.
 func (db *DB) GetServerMiscSettings() (*ServerMiscSettings, error) {
 	var enabled, autoSync, countCovered, recheck bool
-	var ignoreJSON string
-	err := db.QueryRow(`SELECT cbz_convert_enabled, ignore_devices, auto_sync, count_covered_as_owned, local_identity_recheck FROM server_misc_settings WHERE id = 1`).
-		Scan(&enabled, &ignoreJSON, &autoSync, &countCovered, &recheck)
+	var ignoreJSON, exportPath string
+	err := db.QueryRow(`SELECT cbz_convert_enabled, ignore_devices, auto_sync, count_covered_as_owned, local_identity_recheck, export_path FROM server_misc_settings WHERE id = 1`).
+		Scan(&enabled, &ignoreJSON, &autoSync, &countCovered, &recheck, &exportPath)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -118,7 +138,7 @@ func (db *DB) GetServerMiscSettings() (*ServerMiscSettings, error) {
 	if err := json.Unmarshal([]byte(ignoreJSON), &ignoreDevices); err != nil {
 		return nil, fmt.Errorf("unmarshal server misc settings ignore_devices: %w", err)
 	}
-	return &ServerMiscSettings{CBZConvertEnabled: enabled, IgnoreDevices: ignoreDevices, AutoSync: autoSync, CountCoveredAsOwned: countCovered, LocalIdentityRecheck: recheck}, nil
+	return &ServerMiscSettings{CBZConvertEnabled: enabled, IgnoreDevices: ignoreDevices, AutoSync: autoSync, CountCoveredAsOwned: countCovered, LocalIdentityRecheck: recheck, ExportPath: exportPath}, nil
 }
 
 // UpsertServerMiscSettings replaces the stored settings wholesale.
@@ -133,15 +153,16 @@ func (db *DB) UpsertServerMiscSettings(s ServerMiscSettings) error {
 	}
 
 	_, err = db.Exec(`
-		INSERT INTO server_misc_settings (id, cbz_convert_enabled, ignore_devices, auto_sync, count_covered_as_owned, local_identity_recheck)
-		VALUES (1, ?, ?, ?, ?, ?)
+		INSERT INTO server_misc_settings (id, cbz_convert_enabled, ignore_devices, auto_sync, count_covered_as_owned, local_identity_recheck, export_path)
+		VALUES (1, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			cbz_convert_enabled = excluded.cbz_convert_enabled,
 			ignore_devices = excluded.ignore_devices,
 			auto_sync = excluded.auto_sync,
 			count_covered_as_owned = excluded.count_covered_as_owned,
-			local_identity_recheck = excluded.local_identity_recheck
-	`, s.CBZConvertEnabled, string(ignoreJSON), s.AutoSync, s.CountCoveredAsOwned, s.LocalIdentityRecheck)
+			local_identity_recheck = excluded.local_identity_recheck,
+			export_path = excluded.export_path
+	`, s.CBZConvertEnabled, string(ignoreJSON), s.AutoSync, s.CountCoveredAsOwned, s.LocalIdentityRecheck, s.ExportPath)
 	if err != nil {
 		return fmt.Errorf("upsert server misc settings: %w", err)
 	}
