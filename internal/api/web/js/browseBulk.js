@@ -16,6 +16,9 @@ class BrowseBulk {
         this.fr = { field: '', find: '', replace: '', ignoreCase: false, wholeWord: false };
         this.numbering = false;    // the autonumber panel (tracker #30)
         this.an = { order: 'current', start: 1, step: 1, pad: 0 };
+        this.exporting = false;    // the export-copies panel (tracker #7)
+        this.ex = { naming: 'original', subfolder: '', overwrite: false };
+        this.exJob = null;         // the latest export job, polled while it runs
         this.rows = [];            // [{field, mode, value}] fields to change
         this.read = '';            // '' | 'read' | 'unread'
         this.preview = null;
@@ -85,13 +88,82 @@ class BrowseBulk {
                 <button class="btn btn-small btn-secondary" id="bulk-read-btn" ${this.busy ? 'disabled' : ''}>Mark read</button>
                 <button class="btn btn-small btn-secondary" id="bulk-unread-btn" ${this.busy ? 'disabled' : ''}>Mark unread</button>
                 <button class="btn btn-small btn-secondary" id="bulk-list-btn" ${this.busy ? 'disabled' : ''}>Add to list…</button>
+                <button class="btn btn-small btn-secondary" id="bulk-export-btn" ${this.busy ? 'disabled' : ''}>Export…</button>
                 <button class="btn btn-small btn-secondary" id="bulk-clear-btn">Clear</button>
             </div>
             ${banner ? `<p class="bulk-banner">${banner}</p>` : ''}
             ${this.editing ? this.renderEditor() : ''}
             ${this.replacing ? this.renderReplace() : ''}
             ${this.numbering ? this.renderNumbering() : ''}
+            ${this.exporting ? this.renderExport() : ''}
         </div>`;
+    }
+
+    // Export: write a CBZ copy of each selected book into the server's export
+    // folder. The originals and the library are never changed.
+    renderExport() {
+        const ex = this.ex, job = this.exJob;
+        const running = job && job.status === 'running';
+        let status = '';
+        if (job) {
+            const parts = [`${job.processed} of ${job.total} done`, `${job.exported} exported`];
+            if (job.skipped) parts.push(`${job.skipped} skipped (already there, or no file)`);
+            if (job.failed) parts.push(`${job.failed} failed`);
+            status = `<p class="bulk-preview"><strong>${running ? 'Exporting…' : 'Finished.'}</strong> ${this.esc(parts.join(', '))}.
+                <span class="browse-compact-meta">Folder: ${this.esc(job.folder)}</span>
+                ${(job.errors || []).length ? `<br><span class="datamanager-errors">${job.errors.map(e => this.esc(e)).join('<br>')}</span>` : ''}</p>`;
+        }
+        return `<div class="bulk-editor bulk-export">
+            <div class="bulk-replace-grid">
+                <label>File names <select id="bulk-ex-naming">
+                    <option value="original" ${ex.naming === 'original' ? 'selected' : ''}>Same as the original file</option>
+                    <option value="series" ${ex.naming === 'series' ? 'selected' : ''}>Series V2 #003 (2019)</option>
+                </select></label>
+                <label>Subfolder (optional) <input type="text" id="bulk-ex-subfolder" value="${this.esc(ex.subfolder)}" placeholder="one folder name"></label>
+                <label><input type="checkbox" id="bulk-ex-overwrite" ${ex.overwrite ? 'checked' : ''}> Replace earlier exports with the same name</label>
+            </div>
+            <div class="bulk-editor-add">
+                <span class="browse-compact-meta">Writes a CBZ copy of the ${this.count()} selected books, with fresh ComicInfo.xml, into the server's export folder. Originals are not changed.</span>
+            </div>
+            ${this.error ? `<p class="datamanager-errors">${this.esc(this.error)}</p>` : ''}
+            ${status}
+            <div class="bulk-editor-buttons">
+                <button class="btn btn-primary" id="bulk-export-go-btn" ${this.busy || running ? 'disabled' : ''}>${running ? 'Exporting…' : `Export ${this.count()} book${this.count() === 1 ? '' : 's'}`}</button>
+                <button class="btn btn-secondary" id="bulk-close-btn">Close</button>
+            </div>
+        </div>`;
+    }
+
+    async startExport() {
+        this.busy = true; this.error = ''; this.redraw();
+        try {
+            const res = await fetch('/api/library/browse/export-books', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...this.scopeBody(), expected_count: this.count(), naming: this.ex.naming, subfolder: this.ex.subfolder, overwrite: this.ex.overwrite }),
+            });
+            const text = await res.text();
+            if (!res.ok) throw new Error(text.trim() || `HTTP ${res.status}`);
+            this.busy = false;
+            await this.pollExport();
+        } catch (e) {
+            this.busy = false;
+            this.error = `Export failed: ${e.message}`;
+            this.redraw();
+        }
+    }
+
+    // Poll until the job is done, or the panel is closed (the job keeps going).
+    async pollExport() {
+        for (;;) {
+            try {
+                const res = await fetch('/api/library/browse/export-books-job');
+                if (res.ok) this.exJob = await res.json();
+            } catch (e) { /* try again */ }
+            this.redraw();
+            if (!this.exporting || !this.exJob || this.exJob.status !== 'running') return;
+            await new Promise(r => setTimeout(r, 1000));
+        }
     }
 
     // Autonumber: write Number 1, 2, 3... in a chosen order. Previewed per
@@ -335,7 +407,7 @@ class BrowseBulk {
 
     afterSelectionChange() {
         this.preview = null;
-        if (!this.any()) { this.editing = false; this.replacing = false; this.numbering = false; }
+        if (!this.any()) { this.editing = false; this.replacing = false; this.numbering = false; this.exporting = false; }
         this.redraw();
     }
 
@@ -351,14 +423,20 @@ class BrowseBulk {
     attachBar() {
         const $ = id => document.getElementById(id);
         const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
-        on('bulk-edit-btn', () => { this.editing = !this.editing; this.replacing = false; this.numbering = false; this.preview = null; this.redraw(); });
-        on('bulk-replace-btn', () => { this.replacing = !this.replacing; this.editing = false; this.numbering = false; this.preview = null; this.error = ''; this.redraw(); });
-        on('bulk-number-btn', () => { this.numbering = !this.numbering; this.editing = false; this.replacing = false; this.preview = null; this.error = ''; this.redraw(); });
+        on('bulk-edit-btn', () => { this.editing = !this.editing; this.replacing = false; this.numbering = false; this.exporting = false; this.preview = null; this.redraw(); });
+        on('bulk-replace-btn', () => { this.replacing = !this.replacing; this.editing = false; this.numbering = false; this.exporting = false; this.preview = null; this.error = ''; this.redraw(); });
+        on('bulk-number-btn', () => { this.numbering = !this.numbering; this.editing = false; this.replacing = false; this.exporting = false; this.preview = null; this.error = ''; this.redraw(); });
         on('bulk-read-btn', () => this.apply({ read: 'read' }, 'Mark read'));
         on('bulk-unread-btn', () => this.apply({ read: 'unread' }, 'Mark unread'));
+        on('bulk-export-btn', () => {
+            this.exporting = !this.exporting; this.editing = false; this.replacing = false; this.numbering = false; this.preview = null; this.error = '';
+            this.redraw();
+            if (this.exporting) this.pollExport();
+        });
+        on('bulk-export-go-btn', () => this.startExport());
         on('bulk-list-btn', () => ManualLists.pickAndAdd({ scope: this.scopeBody(), count: this.count() }));
         on('bulk-clear-btn', () => { this.reset(); this.redraw(); });
-        on('bulk-close-btn', () => { this.editing = false; this.replacing = false; this.numbering = false; this.redraw(); });
+        on('bulk-close-btn', () => { this.editing = false; this.replacing = false; this.numbering = false; this.exporting = false; this.redraw(); });
         on('bulk-preview-btn', () => this.runPreview());
         on('bulk-apply-btn', () => this.apply(this.editBody(), `Apply ${this.preview ? this.preview.changed : 0} changes`));
         document.querySelectorAll('.bulk-select-all').forEach(el => el.addEventListener('click', () => {
@@ -399,6 +477,16 @@ class BrowseBulk {
         anInput('bulk-an-start', 'start', true);
         anInput('bulk-an-step', 'step', true);
         anInput('bulk-an-pad', 'pad', true);
+        const exInput = (id, key, prop = 'value') => {
+            const el = $(id);
+            if (!el) return;
+            const set = () => { this.ex[key] = el[prop]; };
+            el.addEventListener('input', set);
+            el.addEventListener('change', set);
+        };
+        exInput('bulk-ex-naming', 'naming');
+        exInput('bulk-ex-subfolder', 'subfolder');
+        exInput('bulk-ex-overwrite', 'overwrite', 'checked');
         const readState = $('bulk-read-state');
         if (readState) readState.addEventListener('change', () => { this.read = readState.value; this.preview = null; this.redraw(); });
         // Typing must not re-render (it would drop focus and fire blur mid-removal),

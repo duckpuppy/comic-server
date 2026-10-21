@@ -539,6 +539,17 @@ server:
     embed_comic_book: false   # optional, default false
 ```
 
+### Export Books
+
+```yaml
+server:
+  export_path: /data/exports   # empty (default) turns Export off
+```
+
+Browse > select books > **Export…** writes a CBZ copy of each into this folder
+(or one subfolder of it). The originals are never changed. Env:
+`COMIC_SERVER_EXPORT_PATH`. Under Docker, use a path on a mounted volume.
+
 Converting a book repacks its pages into a CBZ with a `ComicInfo.xml` built from
 the library record. With `embed_comic_book: true` it also writes
 `ComicBook.xml`, ComicRack Community Edition's superset of `ComicInfo.xml`
