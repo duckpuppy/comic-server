@@ -15,7 +15,7 @@ require (
 	github.com/prometheus/client_model v0.6.3
 	github.com/rs/zerolog v1.35.1
 	github.com/spf13/cobra v1.10.2
-	go.starlark.net v0.0.0-20261005163335-bcb1a1a55bf9
+	go.starlark.net v0.0.0-20261016124120-4811d7e34ea3
 	golang.org/x/crypto v0.58.0
 	golang.org/x/image v0.47.0
 	golang.org/x/net v0.61.0
