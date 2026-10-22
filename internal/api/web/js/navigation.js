@@ -128,6 +128,7 @@ Navigation.ENTRIES = [
         { tab: 'workflow', href: '/workflow', icon: '🧭', label: 'Workflow' },
         { tab: 'datamanager', href: '/datamanager', icon: '🛠️', label: 'Data Manager' },
         { tab: 'scrape-review', href: '/scrape-review', icon: '🧩', label: 'Scrape Review', badge: true, alert: true },
+        { tab: 'pending-tasks', href: '/pending-tasks', icon: '⏳', label: 'Pending Tasks' },
         { tab: 'history', href: '/history', icon: '📜', label: 'History' },
         { tab: 'trash', href: '/trash', icon: '🗑️', label: 'Trash', badge: true, alert: true },
     ] },

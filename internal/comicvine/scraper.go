@@ -25,10 +25,15 @@ const (
 	JobStatusRunning  = "running"
 	JobStatusComplete = "complete"
 	JobStatusFailed   = "failed"
+	// JobStatusCancelled: the person stopped the job (Pending tasks page).
+	JobStatusCancelled = "cancelled"
 )
 
 // ErrScrapeInProgress is returned by Scrape when another job is already running.
 var ErrScrapeInProgress = errors.New("a scrape job is already in progress")
+
+// ErrJobCancelled is the cancel cause when the person stops a scrape job.
+var ErrJobCancelled = errors.New("scrape job cancelled")
 
 // Errors recorded for outcomes a retry cannot change by itself.
 const (
@@ -221,6 +226,7 @@ func (s *Scraper) Scrape(ctx context.Context, jobID string, books []*library.Com
 	sink := s.jobLog
 	s.mu.Unlock()
 
+	ctx = WithTask(ctx, "Scrape job "+jobID)
 	ctx = withJobLog(ctx, jobID, func(jobID, level, msg string) {
 		ev := log.Debug()
 		if level == JobLogWarn {
@@ -302,8 +308,13 @@ func (s *Scraper) Scrape(ctx context.Context, jobID string, books []*library.Com
 
 	job.Status = JobStatusComplete
 	if ctx.Err() != nil {
-		job.Status = JobStatusFailed
-		jobLog(ctx, JobLogWarn, "Stopped: %v", ctx.Err())
+		if errors.Is(context.Cause(ctx), ErrJobCancelled) {
+			job.Status = JobStatusCancelled
+			jobLog(ctx, JobLogWarn, "Cancelled. Books already finished keep their results")
+		} else {
+			job.Status = JobStatusFailed
+			jobLog(ctx, JobLogWarn, "Stopped: %v", ctx.Err())
+		}
 	}
 	jobLog(ctx, JobLogInfo, "Finished: %d matched, %d to review, %d skipped, %d failed",
 		job.Completed, job.PendingReview, job.Skipped, job.Failed)

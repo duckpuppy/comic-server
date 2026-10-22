@@ -46,6 +46,7 @@ The UI now features multi-page navigation with the following routes:
 - `/devices` - Devices browser page with filtering and search
 - `/devices/:deviceId` - Device detail page with sync history
 - `/sync` - Sync history browser with pagination
+- `/pending-tasks` - Pending tasks (tracker #29): what waits for ComicVine, with live timers, and Cancel for a running scrape job (`js/pendingTasksPage.js`; see COMICVINE.md "Pacing status and timers")
 - `/books/:bookId` - Book detail page (comic-server-br14): record, file, stage, attention flags, ComicVine links, this book's audit history, and an on-demand compare of the file's ComicInfo.xml with what Write Metadata would write (`GET /api/library/books/:id` and `/:id/comicinfo`; `Pages` skipped, empty == absent). Actions (comic-server-2s4f): Re-scrape (`POST /api/scrape {book_ids}`), Write metadata to file (`POST .../workflow/write-metadata {book_ids}` writes those CBZs even when not stale; no body = every stale book), Variant covers (`/variant-covers?book=`), stage rollback (stages before the current one). `BookDetail.actions` carries a `*_blocker` reason per action so a disabled button says why. Characters, teams and the main character on the book page are chips linking to Browse with a `Characters`/`Teams` (list membership) or `MainCharacterOrTeam` (equals) matcher in the `m` URL param (comic-server-n2yb). In-app links use `<a href=... data-route>` (one delegated click handler in app.js); Browse, list cards, workflow drill-ins, Duplicates and History link here.
 
 **Routing Features**:

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -85,6 +86,11 @@ type Server struct {
 	// instead of blocking the request.
 	dmJob   *DMJobStatus
 	dmJobMu sync.RWMutex
+
+	// scrapeCancel stops the running scrape job (Pending tasks page); nil
+	// when none runs. Guarded by scrapeCancelMu.
+	scrapeCancel   context.CancelCauseFunc
+	scrapeCancelMu sync.Mutex
 
 	// exportJob/exportJobMu track the current (or last finished) Export
 	// books run - see bookexport.go.
@@ -294,6 +300,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/library/browse/bulk-edit", s.handleBulkEdit)
 	s.mux.HandleFunc("/api/library/browse/export-books", s.handleBookExportStart)
 	s.mux.HandleFunc("/api/library/browse/export-books-job", s.handleBookExportStatus)
+	s.mux.HandleFunc("/api/comicvine/tasks", s.handleCVTasks)
+	s.mux.HandleFunc("/api/scrape/cancel", s.handleScrapeCancel)
 	s.mux.HandleFunc("/api/library/browse/export-books-config", s.handleBookExportConfig)
 	s.mux.HandleFunc("/api/library/browse/export-columns", s.handleBrowseExportColumns)
 	s.mux.HandleFunc("/api/library/browse/export-csv", s.handleBrowseExportCSV)

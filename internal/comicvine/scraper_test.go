@@ -522,3 +522,28 @@ func TestToReviewCandidatesCarriesDetail(t *testing.T) {
 		t.Fatalf("detail not carried: %+v", out)
 	}
 }
+
+func TestScrape_CancelledByPersonEndsAsCancelled(t *testing.T) {
+	fx := &scrapeFixture{}
+	client, _ := newScrapeFixtureClient(t, fx)
+	scraper := NewScraper(client, testCache(t), &fakeBackend{}, DefaultScraperConfig())
+
+	ctx, cancel := context.WithCancelCause(context.Background())
+	cancel(ErrJobCancelled)
+	books := []*library.ComicBook{{ID: "b1", FilePath: "Batman 001.cbz"}}
+	job, err := scraper.Scrape(ctx, "job-cancel", books, ScrapeOptions{}, nil)
+	if err == nil {
+		t.Error("a cancelled job should return the context error")
+	}
+	if job == nil || job.Status != JobStatusCancelled {
+		t.Fatalf("job = %+v, want status %q", job, JobStatusCancelled)
+	}
+
+	// A plain context cancel (shutdown) stays "failed".
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	cancel2()
+	job2, _ := scraper.Scrape(ctx2, "job-stop", books, ScrapeOptions{}, nil)
+	if job2 == nil || job2.Status != JobStatusFailed {
+		t.Fatalf("job2 = %+v, want %q", job2, JobStatusFailed)
+	}
+}

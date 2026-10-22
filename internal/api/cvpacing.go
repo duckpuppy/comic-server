@@ -26,6 +26,11 @@ func (s *Server) handleCVPacing(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	s.writeJSON(w, http.StatusOK, cvPacingNow())
+}
+
+// cvPacingNow builds the pacing answer from the shared pacer and circuit.
+func cvPacingNow() CVPacingResponse {
 	st, circuit, until, ok := comicvine.SharedPacingStatus()
 	resp := CVPacingResponse{Configured: ok, PacingStatus: st, Circuit: circuit.String()}
 	resp.NextRequestSeconds = st.WaitSeconds
@@ -33,5 +38,5 @@ func (s *Server) handleCVPacing(w http.ResponseWriter, r *http.Request) {
 		resp.CircuitUntil = until.Format(time.RFC3339)
 		resp.NextRequestSeconds = max(resp.NextRequestSeconds, int(time.Until(until).Seconds())+1)
 	}
-	s.writeJSON(w, http.StatusOK, resp)
+	return resp
 }

@@ -128,3 +128,68 @@ func TestPacer_ReportsPauseToJobLog(t *testing.T) {
 		t.Errorf("job log = %q", got)
 	}
 }
+
+func TestPacer_ListsWaitingCallersWhileTheyWait(t *testing.T) {
+	p := NewPacer(WithBurstSize(1), WithBurstPause(time.Hour), WithWindowSize(100), WithWindowPause(time.Hour))
+	p.RecordRequest() // burst used up: the next caller must pause
+
+	if got := p.Waiters(); len(got) != 0 {
+		t.Fatalf("nobody waits yet, got %+v", got)
+	}
+
+	ctx, cancel := context.WithCancel(WithTask(WithBackground(context.Background()), "Test job"))
+	done := make(chan error, 1)
+	go func() { done <- p.Wait(ctx) }()
+
+	var got []Waiter
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if got = p.Waiters(); len(got) == 1 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if len(got) != 1 {
+		t.Fatalf("want 1 waiter, got %+v", got)
+	}
+	w := got[0]
+	if w.Label != "Test job" || !w.Background || w.Reason != "burst" {
+		t.Errorf("waiter = %+v", w)
+	}
+	if d := time.Until(w.RunsAt); d < 50*time.Minute || d > time.Hour+time.Minute {
+		t.Errorf("RunsAt is %v away, want about an hour", d)
+	}
+
+	cancel()
+	if err := <-done; err == nil {
+		t.Error("Wait should return the context error")
+	}
+	if got := p.Waiters(); len(got) != 0 {
+		t.Errorf("a cancelled caller must leave the list, got %+v", got)
+	}
+}
+
+func TestPacer_UnnamedWaiterGetsDefaultLabelAndNoWaitMeansNoEntry(t *testing.T) {
+	p := NewPacer(WithBurstSize(5))
+	if err := p.Wait(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := p.Waiters(); len(got) != 0 {
+		t.Errorf("a request that did not wait must not be listed: %+v", got)
+	}
+	if taskLabel(context.Background()) != "ComicVine request" {
+		t.Error("default label changed")
+	}
+}
+
+func TestPacer_ErrPaceWaitCallerIsNotListed(t *testing.T) {
+	p := NewPacer(WithBurstSize(1), WithBurstPause(time.Hour), WithWindowSize(100), WithWindowPause(time.Hour))
+	p.RecordRequest()
+	err := p.Wait(WithMaxWait(context.Background(), time.Second))
+	if _, ok := err.(ErrPaceWait); !ok {
+		t.Fatalf("want ErrPaceWait, got %v", err)
+	}
+	if got := p.Waiters(); len(got) != 0 {
+		t.Errorf("a caller that gave up at once must not be listed: %+v", got)
+	}
+}
