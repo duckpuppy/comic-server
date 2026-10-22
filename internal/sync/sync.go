@@ -36,6 +36,7 @@ type Syncer struct {
 	filterLists  []*library.ComicListItem       // Optional multiple smart lists to filter books (union of all lists)
 	listSettings map[string]*SharedListSettings // ListID -> per-list settings override; see SetFilterListsWithSettings
 	settings     *SharedListSettings            // Default sync settings - applied to a list with no per-list override in listSettings, or globally when filterLists isn't used
+	syncNothing  bool                           // Device wants no books: plan deletes everything on it; see SetSyncNothing
 
 	// resolvePath translates a book's raw library FilePath into a path
 	// actually readable on this filesystem, before any direct file read -
@@ -195,6 +196,13 @@ func (s *Syncer) SetFilterListsWithSettings(entries []FilterListEntry) error {
 	s.filterList = nil
 	s.listSettings = listSettings
 	return nil
+}
+
+// SetSyncNothing marks the device as wanting no books at all, so the plan
+// removes every book on it. Without this, no filter means "sync the whole
+// library", which is the wrong answer for a device with no lists assigned.
+func (s *Syncer) SetSyncNothing() {
+	s.syncNothing = true
 }
 
 // SetSettings configures the sync settings (filtering, sorting, limiting)
@@ -544,7 +552,9 @@ func (s *Syncer) ComputeSyncPlan(deviceBooks map[string]*DeviceBook) ([]SyncOper
 
 	// Get filtered book list if a filter is set
 	var booksToSync []*library.ComicBook
-	if len(s.filterLists) > 0 {
+	if s.syncNothing {
+		// Device has no lists: keep no books on it.
+	} else if len(s.filterLists) > 0 {
 		// Apply multiple smart list filters (union of all lists) - each
 		// list's own settings (or the default, for a list with no
 		// override) are applied per-list inside computeUnionOfLists, so
