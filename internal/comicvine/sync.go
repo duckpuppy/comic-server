@@ -91,7 +91,7 @@ func collectionVolumeIDs(store string) []int {
 func (s *Syncer) Run(ctx context.Context, owned map[int]int) error {
 	// The sync is a background job: its requests leave headroom for a scrape
 	// or match a person starts (see Pacer).
-	ctx = WithBackground(ctx)
+	ctx = WithTask(WithBackground(ctx), "Background ComicVine sync")
 	for {
 		if ctx.Err() != nil {
 			return ctx.Err()

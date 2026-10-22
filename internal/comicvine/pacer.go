@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 )
@@ -30,6 +31,32 @@ type backgroundKey struct{}
 // treated as interactive and may use the full limits.
 func WithBackground(ctx context.Context) context.Context {
 	return context.WithValue(ctx, backgroundKey{}, true)
+}
+
+type taskKey struct{}
+
+// WithTask names the caller for the Pending tasks page (tracker #29): while a
+// request of this context waits for pacing, the pacer lists it under label.
+// It changes nothing about how the request is paced.
+func WithTask(ctx context.Context, label string) context.Context {
+	return context.WithValue(ctx, taskKey{}, label)
+}
+
+func taskLabel(ctx context.Context) string {
+	l, _ := ctx.Value(taskKey{}).(string)
+	if l == "" {
+		return "ComicVine request"
+	}
+	return l
+}
+
+// Waiter is one caller that is waiting for the pacer right now.
+type Waiter struct {
+	Label      string
+	Background bool
+	Since      time.Time // when this wait began
+	RunsAt     time.Time // an estimate: when the pacer expects to let it go
+	Reason     string    // "burst", "window" or "hourly"
 }
 
 type maxWaitKey struct{}
@@ -82,6 +109,10 @@ type Pacer struct {
 	last  time.Time
 	times []time.Time // request times of the last hour, oldest first
 	store StateStore
+
+	// waiters are the callers inside Wait that are paused right now.
+	waiters    map[int64]*Waiter
+	nextWaiter int64
 }
 
 // StateStore keeps small key-value state across restarts. *Cache satisfies it.
@@ -218,6 +249,12 @@ func (p *Pacer) RequestsLastHour() int {
 // cancelled while waiting.
 func (p *Pacer) Wait(ctx context.Context) error {
 	bg := isBackground(ctx)
+	var waiterID int64
+	defer func() {
+		if waiterID != 0 {
+			p.removeWaiter(waiterID)
+		}
+	}()
 	for {
 		pause, reason := p.pauseNeeded(bg, time.Now())
 		if pause <= 0 {
@@ -232,6 +269,7 @@ func (p *Pacer) Wait(ctx context.Context) error {
 			why = " (the background sync keeps part of the hourly budget free)"
 		}
 		jobLog(ctx, JobLogInfo, "Waiting %s for the ComicVine rate limit%s", pause.Round(time.Second), why)
+		waiterID = p.noteWaiter(waiterID, taskLabel(ctx), bg, pause, reason)
 		select {
 		case <-time.After(pause):
 		case <-ctx.Done():
@@ -239,6 +277,44 @@ func (p *Pacer) Wait(ctx context.Context) error {
 		}
 		// Look again: the counters may have moved while waiting.
 	}
+}
+
+// noteWaiter lists a paused caller, or updates its estimate on a later pass.
+// It returns the id to pass next time.
+func (p *Pacer) noteWaiter(id int64, label string, bg bool, pause time.Duration, reason string) int64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	now := time.Now()
+	if id != 0 {
+		if w := p.waiters[id]; w != nil {
+			w.RunsAt, w.Reason = now.Add(pause), reason
+			return id
+		}
+	}
+	if p.waiters == nil {
+		p.waiters = map[int64]*Waiter{}
+	}
+	p.nextWaiter++
+	p.waiters[p.nextWaiter] = &Waiter{Label: label, Background: bg, Since: now, RunsAt: now.Add(pause), Reason: reason}
+	return p.nextWaiter
+}
+
+func (p *Pacer) removeWaiter(id int64) {
+	p.mu.Lock()
+	delete(p.waiters, id)
+	p.mu.Unlock()
+}
+
+// Waiters returns the callers paused in Wait right now, longest waiting first.
+func (p *Pacer) Waiters() []Waiter {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make([]Waiter, 0, len(p.waiters))
+	for _, w := range p.waiters {
+		out = append(out, *w)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Since.Before(out[j].Since) })
+	return out
 }
 
 // pauseNeeded returns how long to wait before the next request, 0 for none.

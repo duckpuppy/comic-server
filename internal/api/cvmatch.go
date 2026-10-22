@@ -131,7 +131,7 @@ func (s *Server) handleCVMatch(w http.ResponseWriter, r *http.Request) {
 const cvPaceWaitLimit = 20 * time.Second
 
 func cvInteractiveCtx(r *http.Request) context.Context {
-	return comicvine.WithMaxWait(r.Context(), cvPaceWaitLimit)
+	return comicvine.WithTask(comicvine.WithMaxWait(r.Context(), cvPaceWaitLimit), "Match or accept (web request)")
 }
 
 // writeCVError maps a ComicVine failure to a status the page can show.

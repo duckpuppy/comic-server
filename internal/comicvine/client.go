@@ -77,6 +77,18 @@ func SharedPacingStatus() (st PacingStatus, circuit CircuitState, circuitUntil t
 	return p.Status(), cb.State(), cb.BackoffUntil(), true
 }
 
+// SharedWaiters lists the callers paused in the shared pacer right now (nil
+// before a client has created it).
+func SharedWaiters() []Waiter {
+	sharedMu.Lock()
+	p := sharedPacer
+	sharedMu.Unlock()
+	if p == nil {
+		return nil
+	}
+	return p.Waiters()
+}
+
 // Circuit returns the client's circuit breaker.
 func (c *Client) Circuit() *CircuitBreaker { return c.circuit }
 

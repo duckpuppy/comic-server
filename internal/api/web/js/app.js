@@ -116,6 +116,7 @@ let physicalPage = null;
 let bookDetailPage = null;
 let historyPage = null;
 let variantCoversPage = null;
+let pendingTasksPage = null;
 let pageManagerPage = null;
 let readerPage = null;
 let missingIssuesPage = null;
@@ -347,6 +348,15 @@ document.addEventListener('DOMContentLoaded', () => {
             variantCoversPage = new VariantCoversPage();
         }
         await variantCoversPage.init(ctx);
+    });
+
+    router.register('/pending-tasks', async (params, ctx) => {
+        navigation.setActive('pending-tasks');
+        dashboard.hide();
+        if (!pendingTasksPage) {
+            pendingTasksPage = new PendingTasksPage();
+        }
+        await pendingTasksPage.init(ctx);
     });
 
     router.register('/reader', async (params, ctx) => {

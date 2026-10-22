@@ -122,7 +122,7 @@ type RecheckResult struct {
 // retried here.
 func (s *Scraper) RecheckLocalIdentity(ctx context.Context, books []library.ComicBook) (RecheckResult, error) {
 	var res RecheckResult
-	ctx = WithBackground(ctx)
+	ctx = WithTask(WithBackground(ctx), "Local-identity re-check")
 
 	states, err := s.cache.recheckStates()
 	if err != nil {

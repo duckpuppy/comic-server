@@ -167,7 +167,17 @@ func describeCounts(m map[string]int) string {
 // runScrapeJob runs a scrape job to completion, broadcasting WebSocket
 // progress events. It's meant to be called in its own goroutine.
 func (s *Server) runScrapeJob(jobID string, books []*library.ComicBook, opts comicvine.ScrapeOptions) {
-	job, err := s.scraper.Scrape(context.Background(), jobID, books, opts, func(job *comicvine.ScrapeJob, result *comicvine.BookScrapeResult) {
+	ctx, cancel := context.WithCancelCause(context.Background())
+	s.scrapeCancelMu.Lock()
+	s.scrapeCancel = cancel
+	s.scrapeCancelMu.Unlock()
+	defer func() {
+		s.scrapeCancelMu.Lock()
+		s.scrapeCancel = nil
+		s.scrapeCancelMu.Unlock()
+		cancel(nil)
+	}()
+	job, err := s.scraper.Scrape(ctx, jobID, books, opts, func(job *comicvine.ScrapeJob, result *comicvine.BookScrapeResult) {
 		s.wsHub.Broadcast(ws.EventScrapeProgress, map[string]any{
 			"job_id":  job.ID,
 			"book_id": result.BookID,
@@ -184,7 +194,11 @@ func (s *Server) runScrapeJob(jobID string, books []*library.ComicBook, opts com
 		}
 	})
 	if err != nil {
-		log.Warn().Err(err).Str("job_id", jobID).Msg("scrape job ended with error")
+		if errors.Is(context.Cause(ctx), comicvine.ErrJobCancelled) {
+			log.Info().Str("job_id", jobID).Msg("scrape job cancelled")
+		} else {
+			log.Warn().Err(err).Str("job_id", jobID).Msg("scrape job ended with error")
+		}
 	}
 
 	stats := map[string]any{}
