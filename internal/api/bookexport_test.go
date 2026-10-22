@@ -1,6 +1,10 @@
 package api
 
 import (
+	"archive/zip"
+	"bytes"
+	"image"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -153,6 +157,9 @@ func TestBookExport_RefusesBadInput(t *testing.T) {
 		`{"book_ids":["b1"],"subfolder":"../x"}`: http.StatusBadRequest,
 		`{"book_ids":["b1"],"naming":"weird"}`:   http.StatusBadRequest,
 		`not json`:                               http.StatusBadRequest,
+		`{"book_ids":["b1"],"format":"webp"}`:    http.StatusBadRequest,
+		`{"book_ids":["b1"],"resize":"width"}`:   http.StatusBadRequest, // no width
+		`{"book_ids":["b1"],"quality":500}`:      http.StatusBadRequest,
 	} {
 		if code, _ := startExport(t, s, body); code != want {
 			t.Errorf("%s: status %d, want %d", body, code, want)
@@ -267,5 +274,56 @@ func TestBookExport_RefusesFolderHoldingTheOriginals(t *testing.T) {
 	}
 	if _, err := os.Stat(p); err != nil {
 		t.Errorf("original gone: %v", err)
+	}
+}
+
+func TestBookExport_ResizesPages(t *testing.T) {
+	libDir, exportDir := t.TempDir(), t.TempDir()
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 400, 600))); err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(libDir, "big.cbz")
+	f, err := os.Create(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(f)
+	w, _ := zw.Create("page001.png")
+	w.Write(buf.Bytes())
+	zw.Close()
+	f.Close()
+
+	s := newCBZConvertTestServer(t, config.CBZConvertConfig{}, "", []library.ComicBook{{ID: "a", FilePath: src}})
+	s.config.Server.ExportPath = exportDir
+	if code, body := startExport(t, s, `{"book_ids":["a"],"format":"jpeg","quality":60,"resize":"fit","width":100,"height":100}`); code != http.StatusAccepted {
+		t.Fatalf("start: %d %s", code, body)
+	}
+	if job := waitExport(t, s); job.Exported != 1 || job.Failed != 0 {
+		t.Fatalf("job = %+v", job)
+	}
+	zr, err := zip.OpenReader(filepath.Join(exportDir, "big.cbz"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer zr.Close()
+	var found bool
+	for _, e := range zr.File {
+		if e.Name != "000.jpg" {
+			continue
+		}
+		found = true
+		rc, _ := e.Open()
+		cfg, format, err := image.DecodeConfig(rc)
+		rc.Close()
+		if err != nil || format != "jpeg" || cfg.Width != 67 || cfg.Height != 100 {
+			t.Errorf("page = %dx%d %s %v, want 67x100 jpeg", cfg.Width, cfg.Height, format, err)
+		}
+	}
+	if !found {
+		t.Error("000.jpg missing from the export")
+	}
+	if st, _ := os.Stat(src); st == nil || st.Size() == 0 {
+		t.Error("original changed")
 	}
 }

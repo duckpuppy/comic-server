@@ -17,7 +17,7 @@ func TestExportCopy_WritesCopyAndLeavesSourceAlone(t *testing.T) {
 	dest := filepath.Join(t.TempDir(), "out.cbz")
 
 	book := &library.ComicBook{FilePath: src, Series: "S", Number: "1"}
-	n, err := ExportCopy(book, src, dest, Options{}, false)
+	n, err := ExportCopy(book, src, dest, Options{}, PageOptions{}, false)
 	if err != nil || n != 2 {
 		t.Fatalf("ExportCopy = %d, %v", n, err)
 	}
@@ -43,13 +43,13 @@ func TestExportCopy_ExistingTargetNeedsOverwrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	book := &library.ComicBook{FilePath: src}
-	if _, err := ExportCopy(book, src, dest, Options{}, false); !errors.Is(err, ErrExportExists) {
+	if _, err := ExportCopy(book, src, dest, Options{}, PageOptions{}, false); !errors.Is(err, ErrExportExists) {
 		t.Fatalf("want ErrExportExists, got %v", err)
 	}
 	if got, _ := os.ReadFile(dest); string(got) != "old" {
 		t.Error("existing target was changed without overwrite")
 	}
-	if _, err := ExportCopy(book, src, dest, Options{}, true); err != nil {
+	if _, err := ExportCopy(book, src, dest, Options{}, PageOptions{}, true); err != nil {
 		t.Fatalf("overwrite: %v", err)
 	}
 	if got, _ := os.ReadFile(dest); string(got) == "old" {
@@ -60,7 +60,7 @@ func TestExportCopy_ExistingTargetNeedsOverwrite(t *testing.T) {
 func TestExportCopy_RefusesSourceAsTarget(t *testing.T) {
 	src := filepath.Join(t.TempDir(), "book.cbz")
 	writeTestCBZ(t, src, map[string][]byte{"p1.jpg": []byte("one")})
-	if _, err := ExportCopy(&library.ComicBook{FilePath: src}, src, src, Options{}, true); err == nil {
+	if _, err := ExportCopy(&library.ComicBook{FilePath: src}, src, src, Options{}, PageOptions{}, true); err == nil {
 		t.Fatal("exporting onto the source must fail")
 	}
 }
@@ -70,7 +70,7 @@ func TestExportCopy_DropsDeletedPages(t *testing.T) {
 	writeTestCBZ(t, src, map[string][]byte{"p1.jpg": []byte("one"), "p2.jpg": []byte("two")})
 	dest := filepath.Join(t.TempDir(), "out.cbz")
 	book := &library.ComicBook{FilePath: src, Pages: []library.ComicPageInfo{{Image: 1, Type: library.PageTypeDeleted}}}
-	n, err := ExportCopy(book, src, dest, Options{}, false)
+	n, err := ExportCopy(book, src, dest, Options{}, PageOptions{}, false)
 	if err != nil || n != 1 {
 		t.Fatalf("ExportCopy = %d, %v", n, err)
 	}
