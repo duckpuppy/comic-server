@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -1178,7 +1179,12 @@ func applyDeviceConfig(syncer *csync.Syncer, deviceConfig *configdb.Device, back
 	// settings (only-unread, limit, sort, etc.) are applied to that
 	// list's own books before the union, instead of being discarded in
 	// favor of one shared settings object (comic-server-3oq).
-	if len(entries) > 0 {
+	if len(entries) == 0 {
+		// A registered device with no enabled lists wants nothing on it.
+		// No filter would mean the whole library.
+		syncer.SetSyncNothing()
+		logger.Info().Msg("Device has no enabled lists, syncing no books")
+	} else {
 		if err := syncer.SetFilterListsWithSettings(entries); err != nil {
 			return fmt.Errorf("failed to set filter lists: %w", err)
 		}
@@ -1238,6 +1244,10 @@ func triggerManualSync(
 
 	return nil
 }
+
+// errDeviceNotRegistered is returned when a device with no configuration
+// asks to sync. Register the device and assign it lists first.
+var errDeviceNotRegistered = errors.New("device is not registered; register it and assign lists before syncing")
 
 // handleSyncRequest handles a sync request from a device
 func handleSyncRequest(
@@ -1314,27 +1324,30 @@ func handleSyncRequest(
 		syncManager.UpdateProgress(deviceID, percent, total, added, updated, deleted, errorCount)
 	})
 
-	// Apply device config if exists
+	// Apply device config
 	deviceConfig, err := configDB.GetDevice(deviceID)
 	if err != nil {
 		return fmt.Errorf("failed to look up device config: %w", err)
 	}
-	if deviceConfig != nil {
-		if sb, ok := backend.(*storage.SQLiteBackend); ok {
-			if notReady := notReadyDeviceLists(sb, deviceConfig); len(notReady) > 0 {
-				logger.Warn().
-					Strs("lists", notReady).
-					Msg("Sync rejected: library still warming up after a reload")
-				msg := "library still warming up after a reimport; retry shortly"
-				syncManager.FailSync(deviceID, msg)
-				return fmt.Errorf("%s (%d list(s) not yet settled)", msg, len(notReady))
-			}
+	if deviceConfig == nil {
+		// Never sync a device we have no configuration for: with no lists
+		// to filter by, the sync would copy the whole library onto it.
+		logger.Warn().Msg("Sync rejected: device is not registered")
+		syncManager.FailSync(deviceID, errDeviceNotRegistered.Error())
+		return errDeviceNotRegistered
+	}
+	if sb, ok := backend.(*storage.SQLiteBackend); ok {
+		if notReady := notReadyDeviceLists(sb, deviceConfig); len(notReady) > 0 {
+			logger.Warn().
+				Strs("lists", notReady).
+				Msg("Sync rejected: library still warming up after a reload")
+			msg := "library still warming up after a reimport; retry shortly"
+			syncManager.FailSync(deviceID, msg)
+			return fmt.Errorf("%s (%d list(s) not yet settled)", msg, len(notReady))
 		}
-		if err := applyDeviceConfig(syncer, deviceConfig, backend); err != nil {
-			return fmt.Errorf("failed to apply device config: %w", err)
-		}
-	} else {
-		logger.Info().Msg("No sync configuration found, syncing all books")
+	}
+	if err := applyDeviceConfig(syncer, deviceConfig, backend); err != nil {
+		return fmt.Errorf("failed to apply device config: %w", err)
 	}
 
 	// Perform sync

@@ -130,6 +130,8 @@ devices:
 - Fuzzy matching: exact ID → exact name → partial name (case-insensitive)
 - Disambiguates when multiple devices match
 
+**Sync gate** (`handleSyncRequest`): a device with no config.db row is never synced (`errDeviceNotRegistered`); it would otherwise get the whole library. A registered device with no enabled lists syncs nothing: `Syncer.SetSyncNothing` makes the plan delete every book on it.
+
 **Smart List Resolution**:
 
 - Lists identified by GUID (ComicRackCE compatible)

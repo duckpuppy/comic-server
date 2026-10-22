@@ -1965,3 +1965,23 @@ func TestCalculateRequiredSpace_UsesPathResolver(t *testing.T) {
 		t.Errorf("calculateRequiredSpace() = %d, expected close to the real 12345-byte file size, not a fallback estimate", total)
 	}
 }
+
+// TestComputeSyncPlan_SyncNothingRemovesEverything: SetSyncNothing means the
+// device wants no books, not "no filter, so all books".
+func TestComputeSyncPlan_SyncNothingRemovesEverything(t *testing.T) {
+	lib := &library.ComicLibrary{
+		Books: []library.ComicBook{
+			{ID: "book1", Title: "Book 1", FilePath: "/path/book1.cbz"},
+		},
+	}
+	syncer := NewSyncer(NewMockClient(), library.NewXMLBackendFromLibrary(lib, "", nil))
+	syncer.SetSyncNothing()
+
+	ops, err := syncer.ComputeSyncPlan(map[string]*DeviceBook{"old": {Filename: "old.cbp"}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ops) != 1 || ops[0].Type != OperationDelete {
+		t.Errorf("expected a single delete, got %+v", ops)
+	}
+}

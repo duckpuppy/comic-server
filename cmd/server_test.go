@@ -371,3 +371,63 @@ func TestTriggerManualSync_StartsInBackground(t *testing.T) {
 		t.Errorf("expected nil (sync started in the background), got %v", err)
 	}
 }
+
+// TestHandleSyncRequest_UnregisteredDeviceRejected is the regression test
+// for #54: a device with no config.db row used to fall through to "no
+// filter", which synced the whole library onto it. It must now fail before
+// any connection is made.
+func TestHandleSyncRequest_UnregisteredDeviceRejected(t *testing.T) {
+	syncManager := syncstate.NewManager(10)
+	backend := library.NewXMLBackendFromLibrary(&library.ComicLibrary{
+		Books: []library.ComicBook{{ID: "book1", Title: "Book 1"}},
+	}, "", nil)
+	info := &device.Info{ID: "stranger", Name: "New Phone"}
+
+	err := handleSyncRequest(info, "127.0.0.1", &config.Config{}, backend, newTestConfigDB(t), syncManager, nil, nil)
+	if !errors.Is(err, errDeviceNotRegistered) {
+		t.Fatalf("expected errDeviceNotRegistered, got %v", err)
+	}
+	if syncManager.IsDeviceSyncing("stranger") {
+		t.Error("rejected sync must not stay marked as syncing")
+	}
+}
+
+// TestApplyDeviceConfig_NoEnabledListsSyncsNothing covers a registered
+// device with no lists (or only disabled ones): it wants no books, so the
+// plan must delete what is on it and add nothing, not sync everything.
+func TestApplyDeviceConfig_NoEnabledListsSyncsNothing(t *testing.T) {
+	lib := &library.ComicLibrary{
+		Books: []library.ComicBook{
+			{ID: "book1", Title: "Book 1", FilePath: "/path/book1.cbz"},
+		},
+		ComicLists: []library.ComicListItem{
+			{ID: "idlist-1", Name: "To Read", Type: "ComicIdListItem", BookIds: []string{"book1"}},
+		},
+	}
+	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
+
+	cases := map[string]*configdb.Device{
+		"no lists": {DeviceID: "device-1"},
+		"only disabled lists": {
+			DeviceID: "device-1",
+			Lists:    []configdb.DeviceList{{ListID: "idlist-1", ListName: "To Read", Enabled: false}},
+		},
+	}
+	for name, deviceConfig := range cases {
+		t.Run(name, func(t *testing.T) {
+			syncer := csync.NewSyncer(nil, backend)
+			if err := applyDeviceConfig(syncer, deviceConfig, backend); err != nil {
+				t.Fatalf("applyDeviceConfig: %v", err)
+			}
+			ops, err := syncer.ComputeSyncPlan(map[string]*csync.DeviceBook{
+				"old-book": {Filename: "old-book.cbp"},
+			})
+			if err != nil {
+				t.Fatalf("ComputeSyncPlan: %v", err)
+			}
+			if len(ops) != 1 || ops[0].Type != csync.OperationDelete {
+				t.Errorf("expected one delete and no adds, got %+v", ops)
+			}
+		})
+	}
+}
