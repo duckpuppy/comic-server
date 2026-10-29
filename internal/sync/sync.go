@@ -269,6 +269,10 @@ func (o OperationType) String() string {
 	}
 }
 
+// maxUnmappedDeviceBooks is how many device books may lack a readable
+// sidecar before GetDeviceBooks also requires the share to stay under 10%.
+const maxUnmappedDeviceBooks = 5
+
 // GetDeviceBooks retrieves the list of books currently on the device
 // Returns a map of book ID -> DeviceBook for efficient lookup
 func (s *Syncer) GetDeviceBooks() (map[string]*DeviceBook, error) {
@@ -430,9 +434,11 @@ func (s *Syncer) GetDeviceBooks() (map[string]*DeviceBook, error) {
 		// Parse each sidecar XML into ComicBook metadata
 		// Build a new map with correct book IDs from sidecars
 		correctDeviceBooks := make(map[string]*DeviceBook)
+		unmapped := 0
 		for _, deviceBook := range deviceBooks {
 			sidecarData, ok := sidecars[deviceBook.SidecarFilename]
 			if !ok || len(sidecarData) == 0 {
+				unmapped++
 				// No sidecar - use filename as key (shouldn't happen in normal operation)
 				filenameKey := strings.TrimSuffix(filepath.Base(deviceBook.Filename), ".cbp")
 				log.Warn().
@@ -445,6 +451,7 @@ func (s *Syncer) GetDeviceBooks() (map[string]*DeviceBook, error) {
 
 			var book library.ComicBook
 			if err := xml.Unmarshal(sidecarData, &book); err != nil {
+				unmapped++
 				// Can't parse sidecar - use filename as key
 				filenameKey := strings.TrimSuffix(filepath.Base(deviceBook.Filename), ".cbp")
 				sidecarPreview := string(sidecarData)
@@ -469,6 +476,13 @@ func (s *Syncer) GetDeviceBooks() (map[string]*DeviceBook, error) {
 				Msg("Successfully parsed sidecar XML")
 			deviceBook.Metadata = &book
 			correctDeviceBooks[book.ID] = deviceBook
+		}
+		// A filename key never matches a library book ID, so each unmapped
+		// book becomes one Delete plus one Add. A few are a flaky read; a
+		// large share means the device is not answering properly, and the
+		// plan would wipe and re-send the whole device. Stop instead.
+		if unmapped > maxUnmappedDeviceBooks && unmapped*10 > len(deviceBooks) {
+			return nil, fmt.Errorf("%d of %d device books have no readable sidecar; refusing to plan a sync from that (device answered with empty or invalid sidecar files)", unmapped, len(deviceBooks))
 		}
 		return correctDeviceBooks, nil
 	}

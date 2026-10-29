@@ -626,7 +626,7 @@ func TestGetDeviceBooks_ConnectionRefusedGetsExtraGracePeriod(t *testing.T) {
 	client := NewMockClient()
 
 	var fileList string
-	for i := 0; i < 15; i++ {
+	for i := 0; i < 200; i++ {
 		if i > 0 {
 			fileList += "\n"
 		}
@@ -1983,5 +1983,47 @@ func TestComputeSyncPlan_SyncNothingRemovesEverything(t *testing.T) {
 	}
 	if len(ops) != 1 || ops[0].Type != OperationDelete {
 		t.Errorf("expected a single delete, got %+v", ops)
+	}
+}
+
+// deviceWithSidecars builds a mock device with total books; the first
+// badSidecars of them get an empty sidecar file.
+func deviceWithSidecars(total, badSidecars int) *MockClient {
+	client := NewMockClient()
+	for i := 0; i < total; i++ {
+		name := fmt.Sprintf("book%d.cbp", i)
+		client.AddFile(name, []byte("comic data"))
+		sidecar := []byte(fmt.Sprintf(`<?xml version="1.0"?><Book Id="id%d"><Title>Book %d</Title></Book>`, i, i))
+		if i < badSidecars {
+			sidecar = []byte{}
+		}
+		client.AddFile(name+".xml", sidecar)
+	}
+	return client
+}
+
+// TestGetDeviceBooks_MostSidecarsEmptyIsRefused: when the device answers
+// sidecar reads with empty files, the filename-key fallback would plan one
+// Delete plus one Add per book (a full wipe and re-send). It must error.
+func TestGetDeviceBooks_MostSidecarsEmptyIsRefused(t *testing.T) {
+	syncer := NewSyncer(deviceWithSidecars(40, 30), library.NewXMLBackendFromLibrary(&library.ComicLibrary{}, "", nil))
+
+	books, err := syncer.GetDeviceBooks()
+	if err == nil {
+		t.Fatalf("expected an error, got %d books", len(books))
+	}
+}
+
+// TestGetDeviceBooks_FewEmptySidecarsStillWork: a handful of bad sidecars is
+// a flaky read, not a broken device, and keeps the old fallback.
+func TestGetDeviceBooks_FewEmptySidecarsStillWork(t *testing.T) {
+	syncer := NewSyncer(deviceWithSidecars(100, 3), library.NewXMLBackendFromLibrary(&library.ComicLibrary{}, "", nil))
+
+	books, err := syncer.GetDeviceBooks()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(books) != 100 {
+		t.Errorf("expected 100 books, got %d", len(books))
 	}
 }
