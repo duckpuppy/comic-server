@@ -140,6 +140,10 @@ The `--ping-device` flag:
 - Defaults to port 7614 if not specified
 - Useful for WSL2, VPNs, firewalls blocking multicast, or complex network topologies
 
+## Syncing a device that is not on the local network
+
+Multicast discovery does not cross Tailscale or other VPNs. Give the device a manual address (Device settings, Address) and use Sync Now: the server connects to that address directly. See "Manual device address" in [CONFIG_AND_LOGGING.md](CONFIG_AND_LOGGING.md). The device must listen on the VPN address too (the new ComicRack CE app does), and a full sync can be tens of GB.
+
 ## Key Implementation Details
 
 ### Device Discovery (internal/device/discovery.go)

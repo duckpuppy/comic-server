@@ -100,6 +100,30 @@ class DeviceSettings {
                     <div class="form-help">A custom name for this device (optional)</div>
                 </div>
 
+                <div class="form-group">
+                    <label for="device-address">Address (optional)</label>
+                    <div class="form-row">
+                        <input type="text"
+                               id="device-address"
+                               class="form-control"
+                               value="${this.escapeHtml(this.device.address || '')}"
+                               placeholder="100.x.y.z or device.tailnet.ts.net"
+                               autocomplete="off" autocapitalize="off" spellcheck="false">
+                        <button class="btn btn-secondary" onclick="deviceSettings.updateAddress()">
+                            Save
+                        </button>
+                        <button class="btn btn-secondary" onclick="deviceSettings.testAddress()">
+                            Test connection
+                        </button>
+                    </div>
+                    <div class="form-help">
+                        Used by Sync Now when the device is not on this network right now (for example over Tailscale).
+                        On the same network the device is found automatically and this is not needed.
+                        A full sync can be tens of GB: use Wi-Fi, not mobile data.
+                    </div>
+                    <div id="device-address-result" class="form-help" role="status"></div>
+                </div>
+
                 <div class="device-info-readonly">
                     <div class="info-item">
                         <span class="info-label">Device ID:</span>
@@ -496,6 +520,73 @@ class DeviceSettings {
         } catch (error) {
             console.error('Failed to update friendly name:', error);
             dialogs.toast(`Failed to update friendly name: ${error.message}`, 'error');
+        }
+    }
+
+    // Address Methods (tracker #56)
+    async updateAddress() {
+        const input = document.getElementById('device-address');
+        if (!input) return;
+
+        const newAddress = input.value.trim();
+
+        try {
+            const response = await fetch(`/api/devices/${this.deviceId}`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    address: newAddress
+                })
+            });
+
+            if (!response.ok) {
+                const error = await response.text();
+                throw new Error(friendlyErrorText(response, error));
+            }
+
+            this.device.address = newAddress;
+            input.value = newAddress;
+            dialogs.toast(newAddress ? 'Address saved' : 'Address cleared', 'success');
+        } catch (error) {
+            console.error('Failed to save address:', error);
+            dialogs.toast(`Failed to save address: ${error.message}`, 'error');
+        }
+    }
+
+    // Tests what is typed, saved or not. The server reads comicrack.ini
+    // from the device and checks it is the right device; nothing changes
+    // on the device.
+    async testAddress() {
+        const input = document.getElementById('device-address');
+        const result = document.getElementById('device-address-result');
+        if (!input || !result) return;
+
+        result.textContent = 'Testing…';
+        try {
+            const response = await fetch(`/api/devices/${this.deviceId}/test`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ address: input.value.trim() })
+            });
+
+            if (!response.ok) {
+                const error = await response.text();
+                throw new Error(friendlyErrorText(response, error));
+            }
+
+            const data = await response.json();
+            if (data.ok) {
+                result.textContent = `✓ Reached "${data.name || data.device_id}" at ${data.address} (${data.rtt_ms} ms)`;
+            } else {
+                result.textContent = `✗ ${data.error}`;
+            }
+        } catch (error) {
+            console.error('Failed to test address:', error);
+            result.textContent = `✗ ${error.message}`;
         }
     }
 

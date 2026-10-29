@@ -1221,28 +1221,94 @@ func triggerManualSync(
 	deviceLimiter *ratelimit.DeviceLimiter,
 	syncSemaphore chan struct{},
 ) error {
-	dev, ok := registry.Get(deviceID)
-	if !ok {
-		return device.ErrNotConnected
-	}
-
 	if syncManager.IsDeviceSyncing(deviceID) {
 		return &syncstate.DeviceAlreadySyncingError{DeviceID: deviceID}
 	}
 
+	target, err := resolveSyncTarget(deviceID, registry, configDB, time.Now(), device.Probe)
+	if err != nil {
+		return err
+	}
+	if target.viaAddress {
+		// The device is not on the local network right now: remember it
+		// so the Devices page shows it as connected.
+		registry.Add(target.info, target.ip)
+	}
+
 	logger := log.With().
 		Str("device_id", deviceID).
-		Str("device_ip", dev.IPAddress).
+		Str("device_ip", target.ip).
+		Bool("via_manual_address", target.viaAddress).
 		Logger()
 	logger.Info().Msg("Manual sync triggered via API")
 
 	go func() {
-		if err := handleSyncRequest(dev.Info, dev.IPAddress, cfg, backend, configDB, syncManager, deviceLimiter, syncSemaphore); err != nil {
+		if err := handleSyncRequest(target.info, target.ip, cfg, backend, configDB, syncManager, deviceLimiter, syncSemaphore); err != nil {
 			logger.Error().Err(err).Msg("Manually triggered sync failed")
 		}
 	}()
 
 	return nil
+}
+
+// recentPingWindow is how fresh a discovery ping must be for the device to
+// count as on the local network right now. The new CE app pings about
+// every 5 seconds.
+const recentPingWindow = 2 * time.Minute
+
+// syncTarget is where and as whom a manual sync connects.
+type syncTarget struct {
+	info       *device.Info
+	ip         string // IP or hostname
+	viaAddress bool   // true when it came from the device's manual address
+}
+
+// resolveSyncTarget picks the address for a manual sync (tracker #56):
+//  1. a device that pinged recently: its discovered LAN address;
+//  2. else the device's manual address, after probe confirms the device
+//     there is the right one. A wrong device is an error, never a fallback;
+//     if the address is only unreachable, the old discovered address is
+//     tried instead, if there is one;
+//  3. else the old discovered address, however stale;
+//  4. else device.ErrNotConnected.
+func resolveSyncTarget(
+	deviceID string,
+	registry *device.Registry,
+	configDB *configdb.DB,
+	now time.Time,
+	probe func(address, wantID string) (*device.ProbeResult, error),
+) (*syncTarget, error) {
+	dev, seen := registry.Get(deviceID)
+	if seen && now.Sub(dev.LastSeen) <= recentPingWindow {
+		return &syncTarget{info: dev.Info, ip: dev.IPAddress}, nil
+	}
+
+	address := ""
+	if configDB != nil {
+		cfgDev, err := configDB.GetDevice(deviceID)
+		if err != nil {
+			return nil, fmt.Errorf("look up device address: %w", err)
+		}
+		if cfgDev != nil {
+			address = cfgDev.Address
+		}
+	}
+
+	if address != "" {
+		res, err := probe(address, deviceID)
+		if err == nil {
+			return &syncTarget{info: res.Info, ip: address, viaAddress: true}, nil
+		}
+		if errors.Is(err, device.ErrAddressMismatch) || !seen {
+			return nil, err
+		}
+		log.Warn().Err(err).Str("device_id", deviceID).Msg("Manual address did not answer, using the last discovered address")
+	}
+
+	if seen {
+		return &syncTarget{info: dev.Info, ip: dev.IPAddress}, nil
+	}
+	return nil, device.ErrNotConnected
 }
 
 // errDeviceNotRegistered is returned when a device with no configuration
