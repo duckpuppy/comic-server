@@ -461,6 +461,7 @@ func TestPerformSync_AbortCheckFailureStopsSync(t *testing.T) {
 
 	backend := library.NewXMLBackendFromLibrary(lib, "", nil)
 	syncer := NewSyncer(mockClient, backend)
+	syncer.SetReconnectWindow(0) // no waiting: fail at the first lost check
 
 	result, err := syncer.PerformSync()
 	if err == nil {

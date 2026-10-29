@@ -30,6 +30,12 @@ type Client interface {
 
 // Syncer orchestrates synchronization between the library and a device
 type Syncer struct {
+	// reconnectWindow is how long PerformSync waits for a device that stops
+	// answering mid-sync before giving up (tracker #57). sleep is a variable
+	// so tests do not really wait.
+	reconnectWindow time.Duration
+	sleep           func(time.Duration)
+
 	client       Client
 	backend      library.Backend                // Backend for library operations (replaces library + libraryCache)
 	filterList   *library.ComicListItem         // Optional single smart list to filter books (deprecated, use filterLists)
@@ -73,6 +79,14 @@ type Syncer struct {
 // value.
 const defaultConnRefusedGracePeriod = 25 * time.Second
 
+// Reconnect wait (tracker #57): when a device stops answering mid-sync, wait
+// with growing pauses instead of failing at once.
+const (
+	defaultReconnectWindow = 10 * time.Minute
+	reconnectFirstDelay    = 2 * time.Second
+	reconnectMaxDelay      = 30 * time.Second
+)
+
 // NewSyncer creates a new sync orchestrator
 func NewSyncer(client Client, backend library.Backend) *Syncer {
 	return &Syncer{
@@ -84,7 +98,15 @@ func NewSyncer(client Client, backend library.Backend) *Syncer {
 		onStatusDetail:         func(string) {},
 		onProgress:             func(int, int, int, int, int, int) {},
 		connRefusedGracePeriod: defaultConnRefusedGracePeriod,
+		reconnectWindow:        defaultReconnectWindow,
+		sleep:                  time.Sleep,
 	}
+}
+
+// SetReconnectWindow sets how long a sync waits for a device that stops
+// answering before it fails (0 = fail at the first lost abort check).
+func (s *Syncer) SetReconnectWindow(d time.Duration) {
+	s.reconnectWindow = d
 }
 
 // SetStatusDetailCallback registers a callback invoked with a

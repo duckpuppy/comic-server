@@ -144,6 +144,10 @@ The `--ping-device` flag:
 
 Multicast discovery does not cross Tailscale or other VPNs. Give the device a manual address (Device settings, Address) and use Sync Now: the server connects to that address directly. See "Manual device address" in [CONFIG_AND_LOGGING.md](CONFIG_AND_LOGGING.md). The device must listen on the VPN address too (the new ComicRack CE app does), and a full sync can be tens of GB.
 
+### Surviving a lost link mid-sync (tracker #57)
+
+`PerformSync` no longer stops at the first failed abort check. `waitForDevice` (`internal/sync/session.go`) pauses 2, 4, 8, 16, then 30 s and probes with `CheckAbort`, for up to `defaultReconnectWindow` (10 min, `Syncer.SetReconnectWindow`). If an operation fails while the device is unreachable, the same operation is redone after the device is back; `addBook` deletes a leftover partial file first, so a half-written book cannot stay. The same wait covers `SendCompleted`. Client-level retries stay at 1 on purpose: a retried `WriteFile` resends the whole file to a device that may append. A device reached through its manual address also gets `Client.UseSlowLink` (30 s I/O, 10 s connect, 128 KB/s minimum transfer speed for sizing a book's deadline). There is no web Abort route: only the device's own abort answers `CheckAbort`.
+
 ## Key Implementation Details
 
 ### Device Discovery (internal/device/discovery.go)
