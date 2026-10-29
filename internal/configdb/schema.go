@@ -17,8 +17,8 @@ import "fmt"
 // to server_misc_settings (comic-server-r769). Version 14 adds
 // count_covered_as_owned (tracker #46), version 15 adds
 // local_identity_recheck (tracker #47), version 16 adds export_path
-// (tracker #48).
-const schemaVersion = 16
+// (tracker #48), version 17 adds devices.address (tracker #56).
+const schemaVersion = 17
 
 // SchemaVersion is the newest schema this build understands; restore refuses a backup above it.
 const SchemaVersion = schemaVersion
@@ -113,6 +113,11 @@ func (db *DB) initSchema() error {
 		if version < 16 {
 			if err := db.migrateV15ToV16(); err != nil {
 				return fmt.Errorf("migrate v15→v16: %w", err)
+			}
+		}
+		if version < 17 {
+			if err := db.migrateV16ToV17(); err != nil {
+				return fmt.Errorf("migrate v16→v17: %w", err)
 			}
 		}
 	}
@@ -372,6 +377,32 @@ func (db *DB) migrateV15ToV16() error {
 	return db.addExportPathColumn()
 }
 
+// migrateV16ToV17 adds devices.address, the optional manual address
+// (IP or hostname) used when a device is not answering multicast
+// discovery, e.g. over Tailscale (tracker #56).
+func (db *DB) migrateV16ToV17() error {
+	if err := db.createDeviceTables(); err != nil {
+		return fmt.Errorf("migrate v16→v17: %w", err)
+	}
+	return db.addDeviceAddressColumn()
+}
+
+// addDeviceAddressColumn adds devices.address if it is missing. A fresh
+// database already has it from createDeviceTables.
+func (db *DB) addDeviceAddressColumn() error {
+	hasIt, err := db.hasColumn("devices", "address")
+	if err != nil {
+		return fmt.Errorf("add address column: %w", err)
+	}
+	if hasIt {
+		return nil
+	}
+	if _, err := db.Exec(`ALTER TABLE devices ADD COLUMN address TEXT NOT NULL DEFAULT ''`); err != nil {
+		return fmt.Errorf("add address column: %w", err)
+	}
+	return nil
+}
+
 // createDataManagerTables creates the tables backing the Data Manager rule
 // engine (comic-server-764): dm_groups mirrors dataman.dat's nested
 // <group>/<disabled> folder hierarchy (self-referencing parent_id, same
@@ -570,7 +601,8 @@ func (db *DB) createDeviceTables() error {
 			device_id        TEXT PRIMARY KEY,
 			friendly_name    TEXT NOT NULL DEFAULT '',
 			last_seen        TEXT,
-			default_settings TEXT
+			default_settings TEXT,
+			address          TEXT NOT NULL DEFAULT ''
 		)`,
 		`CREATE TABLE IF NOT EXISTS device_lists (
 			device_id  TEXT NOT NULL REFERENCES devices(device_id) ON DELETE CASCADE,

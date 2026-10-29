@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/duckpuppy/comic-server/internal/configdb"
 	"github.com/duckpuppy/comic-server/internal/device"
 	"github.com/duckpuppy/comic-server/internal/log"
 	csync "github.com/duckpuppy/comic-server/internal/sync"
@@ -27,6 +28,8 @@ type DeviceDetail struct {
 	// Config info
 	FriendlyName string             `json:"friendly_name"`
 	Lists        []AssignedListInfo `json:"lists"`
+	// Address is the optional manual IP or hostname (e.g. Tailscale).
+	Address string `json:"address"`
 
 	// Current status
 	IsSyncing bool `json:"is_syncing"`
@@ -101,6 +104,7 @@ func (s *Server) handleGetDeviceDetail(w http.ResponseWriter, r *http.Request) {
 	// Populate config info
 	if inConfig {
 		detail.FriendlyName = deviceConfig.FriendlyName
+		detail.Address = deviceConfig.Address
 
 		// Build assigned lists with book counts
 		detail.Lists = make([]AssignedListInfo, 0, len(deviceConfig.Lists))
@@ -211,6 +215,12 @@ func (s *Server) handleDevicesRouter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// URL: /api/devices/:deviceId/test - check the manual address (#56).
+	if strings.HasSuffix(path, "/test") && !strings.Contains(remainder, "/lists/") {
+		s.handleTestDeviceAddress(w, r)
+		return
+	}
+
 	// URL: /api/devices/:deviceId/lists/:listId/preview - the only
 	// /api/devices/:deviceId/lists... route left on this shape.
 	// Add/remove/update-settings for a device's lists all live on
@@ -302,7 +312,15 @@ func (s *Server) handleTriggerSync(w http.ResponseWriter, r *http.Request) {
 
 	if err := s.triggerSync(deviceID); err != nil {
 		if errors.Is(err, device.ErrNotConnected) {
-			http.Error(w, "Device is not currently connected", http.StatusNotFound)
+			http.Error(w, "Device is not currently connected. Set an address on the device to reach it away from home.", http.StatusNotFound)
+			return
+		}
+		if errors.Is(err, device.ErrAddressMismatch) {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		if errors.Is(err, device.ErrProbeFailed) {
+			http.Error(w, err.Error(), http.StatusBadGateway)
 			return
 		}
 		var alreadySyncing *syncstate.DeviceAlreadySyncingError
@@ -321,4 +339,77 @@ func (s *Server) handleTriggerSync(w http.ResponseWriter, r *http.Request) {
 		"status":    "sync started",
 		"device_id": deviceID,
 	})
+}
+
+// TestAddressRequest optionally carries an address that is not saved yet
+// (the editor tests what is typed). Empty means the saved address.
+type TestAddressRequest struct {
+	Address string `json:"address"`
+}
+
+// TestAddressResponse is the result of a test connection. A failed test is
+// still HTTP 200: the outcome is the data.
+type TestAddressResponse struct {
+	OK       bool   `json:"ok"`
+	Address  string `json:"address"`
+	RTTMs    int64  `json:"rtt_ms,omitempty"`
+	DeviceID string `json:"device_id,omitempty"`
+	Name     string `json:"name,omitempty"`
+	Error    string `json:"error,omitempty"`
+}
+
+// handleTestDeviceAddress checks that a device answers at its manual
+// address and is the right device (POST /api/devices/:deviceId/test). It
+// reads comicrack.ini and changes nothing on the device (#56).
+func (s *Server) handleTestDeviceAddress(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	deviceID := strings.TrimSuffix(r.URL.Path[len("/api/devices/"):], "/test")
+	if deviceID == "" {
+		http.Error(w, "Device ID is required", http.StatusBadRequest)
+		return
+	}
+
+	var req TestAddressRequest
+	if r.Body != nil {
+		// An empty body is fine: test the saved address.
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+	address, err := configdb.ValidateDeviceAddress(req.Address)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if address == "" {
+		deviceConfig, err := s.configDB.GetDevice(deviceID)
+		if err != nil {
+			log.Error().Err(err).Str("device_id", deviceID).Msg("Failed to look up device config")
+			http.Error(w, "Failed to look up device config", http.StatusInternalServerError)
+			return
+		}
+		if deviceConfig != nil {
+			address = deviceConfig.Address
+		}
+	}
+	if address == "" {
+		http.Error(w, "No address to test: enter one first", http.StatusBadRequest)
+		return
+	}
+
+	resp := TestAddressResponse{Address: address}
+	result, err := device.Probe(address, deviceID)
+	if err != nil {
+		resp.Error = err.Error()
+	} else {
+		resp.OK = true
+		resp.RTTMs = result.RTT.Milliseconds()
+		resp.DeviceID = result.Info.ID
+		resp.Name = result.Info.Name
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }

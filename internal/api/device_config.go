@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/duckpuppy/comic-server/internal/configdb"
 	"github.com/duckpuppy/comic-server/internal/log"
 	"github.com/duckpuppy/comic-server/internal/sync"
 )
@@ -15,6 +16,8 @@ import (
 type UpdateDeviceRequest struct {
 	FriendlyName    *string                  `json:"friendly_name,omitempty"`
 	DefaultSettings *sync.SharedListSettings `json:"default_settings,omitempty"`
+	// Address is the optional manual IP or hostname ("" clears it).
+	Address *string `json:"address,omitempty"`
 }
 
 // PreviewRequest represents a request to preview books for given settings
@@ -53,6 +56,18 @@ func (s *Server) handleUpdateDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate the address before saving anything, so a bad one never
+	// leaves a half-applied update.
+	address := ""
+	if req.Address != nil {
+		var err error
+		address, err = configdb.ValidateDeviceAddress(*req.Address)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+
 	// Get device config (create if doesn't exist)
 	deviceConfig, err := s.configDB.GetDevice(deviceID)
 	if err != nil {
@@ -82,6 +97,13 @@ func (s *Server) handleUpdateDevice(w http.ResponseWriter, r *http.Request) {
 		log.Error().Err(err).Str("device_id", deviceID).Msg("Failed to save device config")
 		http.Error(w, "Failed to save configuration", http.StatusInternalServerError)
 		return
+	}
+	if req.Address != nil {
+		if err := s.configDB.SetDeviceAddress(deviceID, address); err != nil {
+			log.Error().Err(err).Str("device_id", deviceID).Msg("Failed to save device address")
+			http.Error(w, "Failed to save address", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	log.Info().

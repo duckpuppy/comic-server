@@ -132,6 +132,8 @@ devices:
 
 **Sync gate** (`handleSyncRequest`): a device with no config.db row is never synced (`errDeviceNotRegistered`); it would otherwise get the whole library. A registered device with no enabled lists syncs nothing: `Syncer.SetSyncNothing` makes the plan delete every book on it.
 
+**Manual device address** (`devices.address` in config.db, schema v17; tracker #56): an optional IP or hostname per device (no port; the device port is 7614), set in the device settings editor. Discovery stays multicast and still sets the address when the device is on the local network. Only "Sync Now" uses the manual address (`resolveSyncTarget` in `cmd/server.go`): a device that pinged within `recentPingWindow` (2 min) uses its discovered address; otherwise the manual address, after `device.Probe` reads `comicrack.ini` and checks the device ID matches (a different device is `device.ErrAddressMismatch`, never a fallback); an unreachable manual address falls back to the last discovered address if there is one. `POST /api/devices/:id/test` runs the same probe without syncing. Sync Now over a manual address is offered even when the device is not in the registry.
+
 **Smart List Resolution**:
 
 - Lists identified by GUID (ComicRackCE compatible)

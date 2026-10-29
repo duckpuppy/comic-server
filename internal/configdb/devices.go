@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/duckpuppy/comic-server/internal/sync"
@@ -16,7 +19,10 @@ type Device struct {
 	FriendlyName    string
 	LastSeen        time.Time                // zero value if never set
 	DefaultSettings *sync.SharedListSettings // nil if unset
-	Lists           []DeviceList
+	// Address is an optional manual host or IP (e.g. a Tailscale name) to
+	// reach the device when multicast discovery cannot. Empty = none.
+	Address string
+	Lists   []DeviceList
 }
 
 // DeviceList is one list assigned to a device for sync.
@@ -70,7 +76,7 @@ func parseNullTime(ns sql.NullString) time.Time {
 // ListDevices returns every registered device with its assigned lists,
 // ordered by device_id.
 func (db *DB) ListDevices() ([]Device, error) {
-	rows, err := db.Query(`SELECT device_id, friendly_name, last_seen, default_settings FROM devices ORDER BY device_id`)
+	rows, err := db.Query(`SELECT device_id, friendly_name, last_seen, default_settings, address FROM devices ORDER BY device_id`)
 	if err != nil {
 		return nil, fmt.Errorf("list devices: %w", err)
 	}
@@ -81,7 +87,7 @@ func (db *DB) ListDevices() ([]Device, error) {
 	for rows.Next() {
 		var d Device
 		var lastSeen, defaultSettings sql.NullString
-		if err := rows.Scan(&d.DeviceID, &d.FriendlyName, &lastSeen, &defaultSettings); err != nil {
+		if err := rows.Scan(&d.DeviceID, &d.FriendlyName, &lastSeen, &defaultSettings, &d.Address); err != nil {
 			return nil, fmt.Errorf("scan device: %w", err)
 		}
 		d.LastSeen = parseNullTime(lastSeen)
@@ -117,8 +123,8 @@ func (db *DB) GetDevice(deviceID string) (*Device, error) {
 	var d Device
 	d.DeviceID = deviceID
 	var lastSeen, defaultSettings sql.NullString
-	err := db.QueryRow(`SELECT friendly_name, last_seen, default_settings FROM devices WHERE device_id = ?`, deviceID).
-		Scan(&d.FriendlyName, &lastSeen, &defaultSettings)
+	err := db.QueryRow(`SELECT friendly_name, last_seen, default_settings, address FROM devices WHERE device_id = ?`, deviceID).
+		Scan(&d.FriendlyName, &lastSeen, &defaultSettings, &d.Address)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -160,6 +166,39 @@ func (db *DB) UpsertDevice(deviceID, friendlyName string, lastSeen time.Time, de
 	}
 	return nil
 }
+
+// SetDeviceAddress stores a device's optional manual address ("" clears
+// it). The device must already be registered. Callers validate the value
+// with ValidateDeviceAddress first.
+func (db *DB) SetDeviceAddress(deviceID, address string) error {
+	res, err := db.Exec(`UPDATE devices SET address = ? WHERE device_id = ?`, address, deviceID)
+	if err != nil {
+		return fmt.Errorf("set device address %s: %w", deviceID, err)
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return fmt.Errorf("set device address %s: device not registered", deviceID)
+	}
+	return nil
+}
+
+// ValidateDeviceAddress checks a manual device address: empty (none), an IP
+// or a hostname, with no port (the device port is fixed). Returns the
+// cleaned value.
+func ValidateDeviceAddress(raw string) (string, error) {
+	addr := strings.TrimSpace(raw)
+	if addr == "" {
+		return "", nil
+	}
+	if net.ParseIP(addr) != nil {
+		return addr, nil
+	}
+	if len(addr) > 253 || !hostnameRe.MatchString(addr) {
+		return "", fmt.Errorf("invalid address %q: use an IP or a hostname", raw)
+	}
+	return addr, nil
+}
+
+var hostnameRe = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*$`)
 
 // DeleteDevice removes a device and (via ON DELETE CASCADE) all of its
 // list assignments.

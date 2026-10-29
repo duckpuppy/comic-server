@@ -202,10 +202,10 @@ class DeviceDetail {
 
     // Sync Now is only offered when the device is actually connected
     // (device.ip is only populated from the registry - see
-    // handleGetDeviceDetail - so an offline/config-only device has
-    // nothing to dial) and not already mid-sync. comic-server-yfp.
+    // handleGetDeviceDetail) or has a manual address to dial (#56), and
+    // not already mid-sync. comic-server-yfp.
     renderSyncNowButton() {
-        if (!this.device.ip) {
+        if (!this.device.ip && !this.device.address) {
             return '';
         }
         if (this.device.is_syncing) {
@@ -230,7 +230,16 @@ class DeviceDetail {
             }
 
             if (response.status === 409) {
-                dialogs.toast('This device is already syncing.', 'error');
+                // Already syncing, or a different device answered at the
+                // manual address: the server's text says which.
+                const text = await response.text();
+                dialogs.toast(text || 'This device is already syncing.', 'error');
+                return;
+            }
+
+            if (response.status === 502) {
+                const text = await response.text();
+                dialogs.toast(text || 'Could not reach the device at its address.', 'error');
                 return;
             }
 
