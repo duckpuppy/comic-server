@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.72.1](https://github.com/duckpuppy/comic-server/compare/v1.72.0...v1.72.1) (2026-10-29)
+
+
+### Bug Fixes
+
+* device detail returns each list's own sync settings ([57679c6](https://github.com/duckpuppy/comic-server/commit/57679c6967ab2d349301481bd8b4410bcf42b5e4))
+* device detail returns each list's own sync settings ([3ac2de3](https://github.com/duckpuppy/comic-server/commit/3ac2de300c35a3f4a03f6afa66c782824531eba8))
+* refuse to plan a sync when most device sidecars are unreadable ([eedbcea](https://github.com/duckpuppy/comic-server/commit/eedbcea7d223c0444355a2e3f90c85420e288ac0))
+
 ## [1.72.0](https://github.com/duckpuppy/comic-server/compare/v1.71.0...v1.72.0) (2026-10-29)
 
 
