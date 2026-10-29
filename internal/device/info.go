@@ -174,9 +174,8 @@ func (i *Info) String() string {
 		i.Name, i.Manufacturer, i.Model, i.ID, i.Edition, i.Version, limitStr)
 }
 
-// ComputeHash calculates the expected SHA1 hash for device validation
-// Hash = SHA1(Model + Manufacturer + Serial + Edition + Version)
-func (i *Info) ComputeHash() string {
+// hashBytes is SHA1(Model + Manufacturer + Serial + Edition + Version).
+func (i *Info) hashBytes() [sha1.Size]byte {
 	concatenated := fmt.Sprintf("%s%s%s%s%d",
 		i.Model,
 		i.Manufacturer,
@@ -184,12 +183,33 @@ func (i *Info) ComputeHash() string {
 		i.Edition,
 		i.Version,
 	)
+	return sha1.Sum([]byte(concatenated))
+}
 
-	hash := sha1.Sum([]byte(concatenated))
+// ComputeHash calculates the expected SHA1 hash for device validation
+// Hash = SHA1(Model + Manufacturer + Serial + Edition + Version), as
+// 40 hex characters.
+func (i *Info) ComputeHash() string {
+	hash := i.hashBytes()
 	return hex.EncodeToString(hash[:])
 }
 
-// ValidateHash checks if the device hash matches the computed hash
+// computeTrimmedHash is the same hash with each byte written without its
+// leading zero ("0b" becomes "b"). ComicRackCE itself computes it this way
+// (ToHexString(trimZeros: true) in DeviceInfo.cs), so a client that copies
+// the desktop sends this form, and it is shorter than 40 characters
+// whenever any byte is below 0x10.
+func (i *Info) computeTrimmedHash() string {
+	hash := i.hashBytes()
+	var b strings.Builder
+	for _, v := range hash {
+		fmt.Fprintf(&b, "%x", v)
+	}
+	return b.String()
+}
+
+// ValidateHash checks if the device hash matches the computed hash, in
+// either the padded or the ComicRackCE trimmed form.
 func (i *Info) ValidateHash() error {
 	expected := i.ComputeHash()
 
@@ -197,7 +217,7 @@ func (i *Info) ValidateHash() error {
 	actualHash := strings.ToLower(strings.TrimSpace(i.Hash))
 	expectedHash := strings.ToLower(expected)
 
-	if actualHash != expectedHash {
+	if actualHash != expectedHash && actualHash != i.computeTrimmedHash() {
 		return fmt.Errorf("device hash mismatch: got %q, expected %q", i.Hash, expected)
 	}
 
