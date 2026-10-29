@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.73.0](https://github.com/duckpuppy/comic-server/compare/v1.72.1...v1.73.0) (2026-10-29)
+
+
+### Features
+
+* optional manual device address for syncing over Tailscale ([3d14a62](https://github.com/duckpuppy/comic-server/commit/3d14a62c62eaf3e1b76a24d8250e8278e4a7dc5b))
+* optional manual device address for syncing over Tailscale ([a06fa0c](https://github.com/duckpuppy/comic-server/commit/a06fa0cf1d0d437f723df7ad053e49b7416c19fa))
+
 ## [1.72.1](https://github.com/duckpuppy/comic-server/compare/v1.72.0...v1.72.1) (2026-10-29)
 
 
