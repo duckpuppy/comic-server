@@ -1,6 +1,7 @@
 package device
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -463,5 +464,35 @@ func TestDeviceInfo_Validate(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestDeviceInfo_ValidateHash_TrimmedForm: ComicRackCE writes each hash byte
+// without its leading zero; a device that copies it must still validate.
+func TestDeviceInfo_ValidateHash_TrimmedForm(t *testing.T) {
+	info := &Info{Model: "m", Manufacturer: "x", Serial: "s", Edition: "Android Full", Version: 103}
+	padded := info.ComputeHash()
+	trimmed := info.computeTrimmedHash()
+
+	// Find a serial whose hash has a byte below 0x10, so the two forms differ.
+	for n := 0; padded == trimmed; n++ {
+		info.Serial = fmt.Sprintf("s%d", n)
+		padded = info.ComputeHash()
+		trimmed = info.computeTrimmedHash()
+	}
+	if len(trimmed) >= len(padded) {
+		t.Fatalf("trimmed hash %q should be shorter than %q", trimmed, padded)
+	}
+
+	for name, hash := range map[string]string{"padded": padded, "trimmed": trimmed} {
+		info.Hash = hash
+		if err := info.ValidateHash(); err != nil {
+			t.Errorf("%s hash rejected: %v", name, err)
+		}
+	}
+
+	info.Hash = trimmed[:len(trimmed)-1] + "z"
+	if err := info.ValidateHash(); err == nil {
+		t.Error("a wrong hash was accepted")
 	}
 }
