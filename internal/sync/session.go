@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/duckpuppy/comic-server/internal/library"
 	"github.com/duckpuppy/comic-server/internal/log"
@@ -163,15 +164,37 @@ func (s *Syncer) PerformSync() (*SyncResult, error) {
 		// grind through the remaining queue would just be a long series
 		// of doomed, individually-timing-out operations against a device
 		// that's already gone.
-		if aborted, err := s.client.CheckAbort(); err != nil {
-			return result, fmt.Errorf("sync stopped: device unresponsive to abort check: %w", err)
-		} else if aborted {
+		//
+		// A failed check no longer stops the sync at once (tracker #57):
+		// a short drop (Wi-Fi hop, relay hiccup) is waited out first, for
+		// up to the reconnect window.
+		aborted, err := s.client.CheckAbort()
+		if err != nil {
+			if werr := s.waitForDevice(err); werr != nil {
+				return result, fmt.Errorf("sync stopped: device unresponsive to abort check: %w", werr)
+			}
+			// Back: ask again, so an abort pressed meanwhile is honoured.
+			aborted, err = s.client.CheckAbort()
+			if err != nil {
+				return result, fmt.Errorf("sync stopped: device unresponsive to abort check: %w", err)
+			}
+		}
+		if aborted {
 			return result, fmt.Errorf("sync aborted by user")
 		}
 
 		// Execute operation
 		percent := ((i + 1) * 100) / totalOps
-		if err := s.executeOperation(op, writtenFiles); err != nil {
+		err = s.executeOperation(op, writtenFiles)
+		if err != nil && s.deviceUnreachable() {
+			// The link dropped during this operation. Wait for the device,
+			// then redo the WHOLE operation: addBook deletes a leftover
+			// partial file first, so a half-written book cannot survive.
+			if s.waitForDevice(err) == nil {
+				err = s.executeOperation(op, writtenFiles)
+			}
+		}
+		if err != nil {
 			errMsg := fmt.Errorf("operation %d/%d failed (%s for %s): %w",
 				i+1, totalOps, op.Type, getTitleForOp(op), err)
 			result.Errors = append(result.Errors, errMsg)
@@ -226,7 +249,11 @@ func (s *Syncer) PerformSync() (*SyncResult, error) {
 
 	// Step 11: CommandCompleted - Signal sync completion
 	log.Info().Msg("Completing synchronization")
-	if err := s.client.SendCompleted(); err != nil {
+	err = s.client.SendCompleted()
+	if err != nil && s.waitForDevice(err) == nil {
+		err = s.client.SendCompleted()
+	}
+	if err != nil {
 		return result, fmt.Errorf("failed to send completion: %w", err)
 	}
 
@@ -238,6 +265,44 @@ func (s *Syncer) PerformSync() (*SyncResult, error) {
 		Msg("Sync complete")
 
 	return result, nil
+}
+
+// deviceUnreachable reports whether the device fails a cheap CheckAbort
+// right now, which tells a lost link from an operation that failed on its own.
+func (s *Syncer) deviceUnreachable() bool {
+	_, err := s.client.CheckAbort()
+	return err != nil
+}
+
+// waitForDevice blocks until the device answers CheckAbort again, pausing
+// 2, 4, 8, 16, then 30 s between tries, for at most s.reconnectWindow
+// (tracker #57). It returns nil when the device is back, or the last error
+// when the window runs out. The time is counted from the pauses requested,
+// so tests with a fake sleep stay fast.
+func (s *Syncer) waitForDevice(cause error) error {
+	delay := reconnectFirstDelay
+	var waited time.Duration
+	for attempt := 1; waited < s.reconnectWindow; attempt++ {
+		log.Warn().
+			Err(cause).
+			Int("attempt", attempt).
+			Dur("waited", waited).
+			Msg("Device not answering, waiting for it to come back")
+		s.onStatusDetail(fmt.Sprintf("waiting for the device (%s so far)", waited.Round(time.Second)))
+		s.sleep(delay)
+		waited += delay
+		_, err := s.client.CheckAbort()
+		if err == nil {
+			log.Info().Dur("waited", waited).Msg("Device is back, continuing")
+			s.onStatusDetail("")
+			return nil
+		}
+		cause = err
+		if delay *= 2; delay > reconnectMaxDelay {
+			delay = reconnectMaxDelay
+		}
+	}
+	return cause
 }
 
 // executeOperation performs a single sync operation

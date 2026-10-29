@@ -43,6 +43,8 @@ type Client struct {
 	sendTimeout       time.Duration
 	connectionTimeout time.Duration
 	retries           int
+	// minThroughput sizes dataTimeout; 0 means minTransferThroughput.
+	minThroughput int64
 }
 
 // NewClient creates a new protocol client for a device
@@ -64,6 +66,24 @@ func (c *Client) SetTimeouts(receive, send, connection time.Duration) {
 	c.connectionTimeout = connection
 }
 
+// Settings for a slow, jittery link such as a Tailscale relay (tracker #57).
+// The retry count is NOT raised: a retried WriteFile re-sends the whole file
+// to a device that may append, so recovery happens a level up, where the
+// whole book operation is redone after deleting any partial file.
+const (
+	slowLinkIOTimeout         = 30 * time.Second
+	slowLinkConnectionTimeout = 10 * time.Second
+	slowLinkMinThroughput     = 128 * 1024 // 128 KB/s
+)
+
+// UseSlowLink loosens timeouts and the assumed minimum transfer speed for a
+// link that is slow or jittery but alive, so a large book is not failed
+// just because the link is a relay.
+func (c *Client) UseSlowLink() {
+	c.SetTimeouts(slowLinkIOTimeout, slowLinkIOTimeout, slowLinkConnectionTimeout)
+	c.minThroughput = slowLinkMinThroughput
+}
+
 // SetRetries sets the number of connection retry attempts
 func (c *Client) SetRetries(retries int) {
 	c.retries = retries
@@ -75,7 +95,11 @@ func (c *Client) SetRetries(retries int) {
 // large enough that minTransferThroughput would need longer. See
 // minTransferThroughput's comment for why this exists.
 func (c *Client) dataTimeout(dataSize int64) time.Duration {
-	scaled := time.Duration(dataSize/minTransferThroughput) * time.Second
+	throughput := c.minThroughput
+	if throughput <= 0 {
+		throughput = minTransferThroughput
+	}
+	scaled := time.Duration(dataSize/throughput) * time.Second
 	if scaled > c.receiveTimeout {
 		return scaled
 	}

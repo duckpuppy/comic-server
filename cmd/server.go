@@ -1402,6 +1402,12 @@ func handleSyncRequest(
 		syncManager.FailSync(deviceID, errDeviceNotRegistered.Error())
 		return errDeviceNotRegistered
 	}
+	if deviceConfig.Address != "" && deviceConfig.Address == deviceIP {
+		// Reached through its manual address (e.g. Tailscale): the link is
+		// slower and jitterier than the local network (tracker #57).
+		client.UseSlowLink()
+		logger.Info().Msg("Using slow-link timeouts for the manual address")
+	}
 	if sb, ok := backend.(*storage.SQLiteBackend); ok {
 		if notReady := notReadyDeviceLists(sb, deviceConfig); len(notReady) > 0 {
 			logger.Warn().

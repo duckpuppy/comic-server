@@ -27,3 +27,29 @@ func TestDataTimeout_ScalesWithSize(t *testing.T) {
 		t.Errorf("a 90MB payload should get roughly 90s, got %v", got)
 	}
 }
+
+// UseSlowLink (tracker #57): a relay that moves under 1 MB/s must not fail
+// a large book, and its message timeouts are loosened.
+func TestUseSlowLink_ScalesDataTimeout(t *testing.T) {
+	const book = 90 * 1024 * 1024 // a typical 90 MB book
+
+	normal := NewClient("127.0.0.1", 7614)
+	if got := normal.dataTimeout(book); got != 90*time.Second {
+		t.Errorf("normal dataTimeout = %v, want 90s", got)
+	}
+
+	slow := NewClient("127.0.0.1", 7614)
+	slow.UseSlowLink()
+	if got := slow.dataTimeout(book); got != 720*time.Second {
+		t.Errorf("slow dataTimeout = %v, want 720s", got)
+	}
+	if got := slow.dataTimeout(1024); got != slowLinkIOTimeout {
+		t.Errorf("slow small-message timeout = %v, want %v", got, slowLinkIOTimeout)
+	}
+	if slow.connectionTimeout != slowLinkConnectionTimeout {
+		t.Errorf("connection timeout = %v", slow.connectionTimeout)
+	}
+	if slow.retries != normal.retries {
+		t.Errorf("UseSlowLink must not raise client retries (a retried WriteFile resends the whole file): %d vs %d", slow.retries, normal.retries)
+	}
+}
