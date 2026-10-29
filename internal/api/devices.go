@@ -9,6 +9,7 @@ import (
 
 	"github.com/duckpuppy/comic-server/internal/device"
 	"github.com/duckpuppy/comic-server/internal/log"
+	csync "github.com/duckpuppy/comic-server/internal/sync"
 	"github.com/duckpuppy/comic-server/internal/syncstate"
 )
 
@@ -37,6 +38,10 @@ type AssignedListInfo struct {
 	ListName  string `json:"list_name"`
 	Enabled   bool   `json:"enabled"`
 	BookCount int    `json:"book_count"`
+
+	// Settings is this list's own sync override; nil means it uses the
+	// device defaults. The settings page reads it back after every reload.
+	Settings *csync.SharedListSettings `json:"settings,omitempty"`
 }
 
 // handleGetDeviceDetail returns detailed info for a specific device
@@ -131,6 +136,7 @@ func (s *Server) handleGetDeviceDetail(w http.ResponseWriter, r *http.Request) {
 				ListName:  listConfig.ListName,
 				Enabled:   listConfig.Enabled,
 				BookCount: count,
+				Settings:  listConfig.Settings,
 			})
 		}
 	}

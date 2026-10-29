@@ -13,6 +13,7 @@ import (
 	"github.com/duckpuppy/comic-server/internal/configdb"
 	"github.com/duckpuppy/comic-server/internal/device"
 	"github.com/duckpuppy/comic-server/internal/library"
+	csync "github.com/duckpuppy/comic-server/internal/sync"
 	"github.com/duckpuppy/comic-server/internal/syncstate"
 	ws "github.com/duckpuppy/comic-server/internal/websocket"
 )
@@ -561,5 +562,67 @@ func TestHandleTriggerSync_DoesNotShadowSyncHistoryRoute(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected /sync-history to still route to sync history (200), got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestHandleGetDeviceDetail_ReturnsListSettings: the settings page reloads
+// the device after every add/remove, so the detail response must carry each
+// list's own settings. It used to drop them, so every list showed "Default"
+// after a reload and the editor opened with defaults.
+func TestHandleGetDeviceDetail_ReturnsListSettings(t *testing.T) {
+	configDB, err := configdb.Open(filepath.Join(t.TempDir(), "config.db"))
+	if err != nil {
+		t.Fatalf("failed to open test config db: %v", err)
+	}
+	t.Cleanup(func() { configDB.Close() })
+	if err := configDB.UpsertDevice("device-123", "Tablet", time.Time{}, nil); err != nil {
+		t.Fatalf("failed to seed test device: %v", err)
+	}
+	unread := csync.DefaultSettings()
+	unread.OnlyUnread = true
+	if err := configDB.AddDeviceList("device-123", configdb.DeviceList{ListID: "list-a", ListName: "A", Enabled: true, Settings: unread}); err != nil {
+		t.Fatalf("failed to add list a: %v", err)
+	}
+	if err := configDB.AddDeviceList("device-123", configdb.DeviceList{ListID: "list-b", ListName: "B", Enabled: true}); err != nil {
+		t.Fatalf("failed to add list b: %v", err)
+	}
+
+	server := &Server{
+		registry:    device.NewRegistry(),
+		config:      &config.Config{},
+		configDB:    configDB,
+		backend:     library.NewXMLBackendFromLibrary(&library.ComicLibrary{}, "", nil),
+		listCache:   library.NewListCache(5 * time.Minute),
+		syncManager: syncstate.NewManager(100),
+	}
+
+	w := httptest.NewRecorder()
+	server.handleGetDeviceDetail(w, httptest.NewRequest("GET", "/api/devices/device-123", nil))
+
+	var response struct {
+		Lists []struct {
+			ListID   string `json:"list_id"`
+			Settings *struct {
+				OnlyUnread bool `json:"only_unread"`
+			} `json:"settings"`
+		} `json:"lists"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(response.Lists) != 2 {
+		t.Fatalf("expected 2 lists, got %d", len(response.Lists))
+	}
+	for _, l := range response.Lists {
+		switch l.ListID {
+		case "list-a":
+			if l.Settings == nil || !l.Settings.OnlyUnread {
+				t.Errorf("list-a lost its only-unread setting: %+v", l.Settings)
+			}
+		case "list-b":
+			if l.Settings != nil {
+				t.Errorf("list-b has no override, got %+v", l.Settings)
+			}
+		}
 	}
 }
