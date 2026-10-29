@@ -594,6 +594,9 @@
     border-radius: 12px;
     transition: width 0.3s ease;
     position: relative;
+    /* Clip the moving shine to the filled part; it used to slide across the
+       empty track as well. */
+    overflow: hidden;
 }
 
 .progress-bar-fill::after {
@@ -644,6 +647,13 @@
         flex-direction: column;
         align-items: stretch;
         gap: 0.5rem;
+    }
+
+    /* In a column, flex: 1 sets the height basis to 0 and overrides
+       height: 24px, so on a phone the track collapsed to a 2px line and the
+       fill was 0px tall. Keep the track's own height. */
+    .progress-bar-container {
+        flex: none;
     }
 
     .progress-percentage {
