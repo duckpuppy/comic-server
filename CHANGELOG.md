@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.72.0](https://github.com/duckpuppy/comic-server/compare/v1.71.0...v1.72.0) (2026-10-29)
+
+
+### Features
+
+* autonumber in Browse bulk edit ([ef4543d](https://github.com/duckpuppy/comic-server/commit/ef4543d082c77c67a584adfda3b7902c63513c2d))
+* autonumber in Browse bulk edit ([#30](https://github.com/duckpuppy/comic-server/issues/30)) ([cfa499e](https://github.com/duckpuppy/comic-server/commit/cfa499e797cdf78574f5148309f850227f08c377))
+* export books to a server folder from Browse ([#7](https://github.com/duckpuppy/comic-server/issues/7), step 1) ([85a5414](https://github.com/duckpuppy/comic-server/commit/85a54141f1dac7869857cc55f9e06fa4fbbc0f2e))
+* export books to a server folder from Browse ([#7](https://github.com/duckpuppy/comic-server/issues/7), step 1) ([c7ef725](https://github.com/duckpuppy/comic-server/commit/c7ef72529ee9d43b88bc76aab9b5ffc1a9381e33))
+* export folder is a Settings value, not file-only ([#48](https://github.com/duckpuppy/comic-server/issues/48)) ([68a72aa](https://github.com/duckpuppy/comic-server/commit/68a72aa311e47f72f30b16025a1a04f8198ef943))
+* export folder is a Settings value, not file-only ([#48](https://github.com/duckpuppy/comic-server/issues/48)) ([7d660c0](https://github.com/duckpuppy/comic-server/commit/7d660c095977128a702e13077643ac48235c5a5e))
+* export page options - re-encode and resize pages ([#7](https://github.com/duckpuppy/comic-server/issues/7), step 2) ([dad4537](https://github.com/duckpuppy/comic-server/commit/dad45379210690b47383fc96b4338d81c90cf2f2))
+* export page options - re-encode and resize pages ([#7](https://github.com/duckpuppy/comic-server/issues/7), step 2) ([2f1af1c](https://github.com/duckpuppy/comic-server/commit/2f1af1c49b42742f470233aef5591885fa219236))
+* Pending tasks page for ComicVine waits, cancel a scrape job ([#29](https://github.com/duckpuppy/comic-server/issues/29), step 1) ([0bc7046](https://github.com/duckpuppy/comic-server/commit/0bc7046fc62c25a0994a9751c3e3dd997d98fbff))
+* Pending tasks page for ComicVine waits, cancel a scrape job ([#29](https://github.com/duckpuppy/comic-server/issues/29), step 1) ([dac6c4e](https://github.com/duckpuppy/comic-server/commit/dac6c4e1f8af8f155282184cc1311ac11ff833f6))
+
+
+### Bug Fixes
+
+* accept the ComicRackCE trimmed device hash ([bfaba2b](https://github.com/duckpuppy/comic-server/commit/bfaba2bd65fd8da6e8370582ec1efe98e8bf2a2f))
+* accept the ComicRackCE trimmed device hash ([37d8e00](https://github.com/duckpuppy/comic-server/commit/37d8e00f79a90cc868f40f76df41bd86b4149bdf))
+* refuse sync for unregistered devices ([#54](https://github.com/duckpuppy/comic-server/issues/54)) ([5ea730f](https://github.com/duckpuppy/comic-server/commit/5ea730f6bdfd1afb156e9b122ab7d94e65db64b6))
+* refuse sync for unregistered devices, sync nothing for devices with no lists ([#54](https://github.com/duckpuppy/comic-server/issues/54)) ([41c2780](https://github.com/duckpuppy/comic-server/commit/41c27806050609793cabcc81b7ce98428e32e1c5))
+
 ## [1.71.0](https://github.com/duckpuppy/comic-server/compare/v1.70.0...v1.71.0) (2026-10-20)
 
 
