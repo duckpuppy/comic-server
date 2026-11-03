@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.74.0](https://github.com/duckpuppy/comic-server/compare/v1.73.0...v1.74.0) (2026-10-29)
+
+
+### Features
+
+* wait out a lost device link during a sync instead of failing ([fc76a67](https://github.com/duckpuppy/comic-server/commit/fc76a676ae655142036d9ed81f2fbdfd58bf7432))
+* wait out a lost device link during a sync instead of failing ([0c53e9f](https://github.com/duckpuppy/comic-server/commit/0c53e9f0550a0e12d16b6fe5cbcfa38b6ad30499))
+
+
+### Bug Fixes
+
+* device page sync progress bar was a 2px line on a phone ([867db95](https://github.com/duckpuppy/comic-server/commit/867db95b5235308b8bf1ef476b2f4aa13c97ec74))
+* device page sync progress bar was a 2px line on a phone ([94a28aa](https://github.com/duckpuppy/comic-server/commit/94a28aa067c3b4ff0e2c38751b9cc47be3d53ff7))
+
 ## [1.73.0](https://github.com/duckpuppy/comic-server/compare/v1.72.1...v1.73.0) (2026-10-29)
 
 
