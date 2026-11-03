@@ -369,6 +369,7 @@ class DeviceDetail {
                         <tr>
                             <th>List Name</th>
                             <th>Books</th>
+                            <th>Size</th>
                             <th>Status</th>
                             <th>Actions</th>
                         </tr>
@@ -384,6 +385,7 @@ class DeviceDetail {
                                     </a>
                                 </td>
                                 <td>${list.book_count.toLocaleString()}</td>
+                                <td${list.size_unknown_count > 0 ? ` title="${list.size_unknown_count.toLocaleString()} comics have no recorded size and are not counted"` : ''}>${list.total_size_bytes > 0 ? this.formatSize(list.total_size_bytes) + (list.size_unknown_count > 0 ? '+' : '') : '&mdash;'}</td>
                                 <td>
                                     <label class="toggle-switch">
                                         <input type="checkbox"
@@ -566,6 +568,15 @@ class DeviceDetail {
         const mins = Math.floor(seconds / 60);
         const secs = seconds % 60;
         return `${mins}m ${secs}s`;
+    }
+
+    // Same shape as the other pages' formatSize; one decimal above bytes.
+    formatSize(bytes) {
+        if (!bytes) return '';
+        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        let v = bytes, u = 0;
+        while (v >= 1024 && u < units.length - 1) { v /= 1024; u++; }
+        return `${u === 0 ? v : v.toFixed(1)} ${units[u]}`;
     }
 
     escapeHtml(text) {

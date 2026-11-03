@@ -16,6 +16,7 @@ import (
 // is invalidated (e.g. on every library reload) - see comic-server-cg1.
 type ListCache struct {
 	counts map[string]*cacheEntry
+	sizes  map[string]*sizeEntry
 	mu     sync.RWMutex
 	ttl    time.Duration
 
@@ -29,10 +30,19 @@ type cacheEntry struct {
 	timestamp time.Time
 }
 
+// sizeEntry is a list's total file size. unknown counts books with no
+// recorded size: they are left out of bytes, never counted as zero bytes.
+type sizeEntry struct {
+	bytes     int64
+	unknown   int
+	timestamp time.Time
+}
+
 // NewListCache creates a new list cache with the given TTL
 func NewListCache(ttl time.Duration) *ListCache {
 	return &ListCache{
 		counts: make(map[string]*cacheEntry),
+		sizes:  make(map[string]*sizeEntry),
 		ttl:    ttl,
 	}
 }
@@ -111,6 +121,30 @@ func (c *ListCache) GetStaleCounts(listID string) (count, unread int, found bool
 	return entry.count, entry.unread, true
 }
 
+// GetSize returns a list's cached total size if it exists and is unexpired.
+// unknown is the number of books whose size is not recorded.
+func (c *ListCache) GetSize(listID string) (bytes int64, unknown int, found bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	entry, exists := c.sizes[listID]
+	if !exists || time.Since(entry.timestamp) > c.ttl {
+		return 0, 0, false
+	}
+	return entry.bytes, entry.unknown, true
+}
+
+// SetSize stores a list's total size and its count of books with no size.
+func (c *ListCache) SetSize(listID string, bytes int64, unknown int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.sizes == nil {
+		c.sizes = make(map[string]*sizeEntry)
+	}
+	c.sizes[listID] = &sizeEntry{bytes: bytes, unknown: unknown, timestamp: time.Now()}
+}
+
 // TryBeginRefresh marks listID as having a background refresh in flight,
 // returning true if the caller won the race and should perform the refresh
 // (calling EndRefresh when done), or false if one is already running and
@@ -145,6 +179,7 @@ func (c *ListCache) Invalidate(listID string) {
 	if entry, ok := c.counts[listID]; ok {
 		entry.timestamp = time.Time{}
 	}
+	delete(c.sizes, listID)
 }
 
 // InvalidateAll marks every cached count stale (GetCounts will miss on all
@@ -156,4 +191,5 @@ func (c *ListCache) InvalidateAll() {
 	for _, entry := range c.counts {
 		entry.timestamp = time.Time{}
 	}
+	clear(c.sizes)
 }
