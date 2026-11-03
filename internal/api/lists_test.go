@@ -625,3 +625,88 @@ func TestHandleGetListDevices(t *testing.T) {
 		t.Errorf("Expected device-1, got %s", response.Devices[0].DeviceID)
 	}
 }
+
+func TestSumBookSizes_UnknownIsNotZero(t *testing.T) {
+	books := []*library.ComicBook{
+		{FileSize: 1000},
+		{FileSize: 0},
+		{FileSize: 500},
+		{},
+	}
+
+	total, unknown := sumBookSizes(books)
+	if total != 1500 {
+		t.Errorf("total = %d, want 1500", total)
+	}
+	if unknown != 2 {
+		t.Errorf("unknown = %d, want 2 (books with no recorded size)", unknown)
+	}
+
+	if total, unknown := sumBookSizes(nil); total != 0 || unknown != 0 {
+		t.Errorf("empty list = (%d, %d), want (0, 0)", total, unknown)
+	}
+}
+
+func TestHandleGetListDetail_IncludesTotalSize(t *testing.T) {
+	lib := &library.ComicLibrary{
+		ComicLists: []library.ComicListItem{
+			{ID: "list-size", Name: "Sized", Type: "ComicSmartListItem", MatcherMode: "And"},
+		},
+	}
+	cache := library.NewListCache(5 * time.Minute)
+	cache.SetCounts("list-size", 20, 20)
+	cache.SetSize("list-size", 1692401664, 3)
+
+	server := &Server{
+		backend:   library.NewXMLBackendFromLibrary(lib, "", nil),
+		listCache: cache,
+	}
+
+	w := httptest.NewRecorder()
+	server.handleGetListDetail(w, httptest.NewRequest("GET", "/api/library/lists/list-size", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		TotalSizeBytes   int64 `json:"total_size_bytes"`
+		SizeUnknownCount int   `json:"size_unknown_count"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.TotalSizeBytes != 1692401664 || resp.SizeUnknownCount != 3 {
+		t.Errorf("size = (%d, %d), want (1692401664, 3)", resp.TotalSizeBytes, resp.SizeUnknownCount)
+	}
+}
+
+func TestGetListSize_CacheMissComputesAndCaches(t *testing.T) {
+	lib := &library.ComicLibrary{
+		ComicLists: []library.ComicListItem{
+			{
+				ID: "list-miss", Name: "Nothing", Type: "ComicSmartListItem", MatcherMode: "And",
+				Matchers: []library.ComicBookMatcher{{Type: "Series", MatchOperator: "1", MatchValue: "No Such Series"}},
+			},
+			// No matchers: evaluation fails, and a failure must not be cached.
+			{ID: "list-broken", Name: "Broken", Type: "ComicSmartListItem", MatcherMode: "And"},
+		},
+	}
+	cache := library.NewListCache(5 * time.Minute)
+	server := &Server{backend: library.NewXMLBackendFromLibrary(lib, "", nil), listCache: cache}
+
+	broken, _ := server.backend.FindListByID("list-broken")
+	server.getListSize(broken)
+	if _, _, found := cache.GetSize("list-broken"); found {
+		t.Error("a failed evaluation must not be cached as a size of zero")
+	}
+
+	list, err := server.backend.FindListByID("list-miss")
+	if err != nil || list == nil {
+		t.Fatalf("FindListByID: %v, %v", list, err)
+	}
+	server.getListSize(list)
+
+	if _, _, found := cache.GetSize("list-miss"); !found {
+		t.Error("a miss should compute the size and cache it")
+	}
+}

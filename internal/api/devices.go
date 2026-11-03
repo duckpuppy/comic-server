@@ -42,6 +42,10 @@ type AssignedListInfo struct {
 	Enabled   bool   `json:"enabled"`
 	BookCount int    `json:"book_count"`
 
+	// TotalSizeBytes and SizeUnknownCount: see ListDetail.
+	TotalSizeBytes   int64 `json:"total_size_bytes"`
+	SizeUnknownCount int   `json:"size_unknown_count,omitempty"`
+
 	// Settings is this list's own sync override; nil means it uses the
 	// device defaults. The settings page reads it back after every reload.
 	Settings *csync.SharedListSettings `json:"settings,omitempty"`
@@ -135,12 +139,22 @@ func (s *Server) handleGetDeviceDetail(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
+			var totalSize int64
+			var sizeUnknown int
+			if s.backend != nil {
+				if targetList, err := s.backend.FindListByID(listConfig.ListID); err == nil && targetList != nil {
+					totalSize, sizeUnknown = s.getListSize(targetList)
+				}
+			}
+
 			detail.Lists = append(detail.Lists, AssignedListInfo{
-				ListID:    listConfig.ListID,
-				ListName:  listConfig.ListName,
-				Enabled:   listConfig.Enabled,
-				BookCount: count,
-				Settings:  listConfig.Settings,
+				ListID:           listConfig.ListID,
+				ListName:         listConfig.ListName,
+				Enabled:          listConfig.Enabled,
+				BookCount:        count,
+				TotalSizeBytes:   totalSize,
+				SizeUnknownCount: sizeUnknown,
+				Settings:         listConfig.Settings,
 			})
 		}
 	}

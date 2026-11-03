@@ -234,6 +234,9 @@ class ListDetail {
                     ${this.list.unread_count > 0
                         ? ` &mdash; <span class="list-unread-count">${this.list.unread_count.toLocaleString()} unread</span>`
                         : ' &mdash; <span class="list-all-read">all read</span>'}
+                    ${this.list.total_size_bytes > 0
+                        ? ` &mdash; <span class="list-total-size" title="${this.list.size_unknown_count > 0 ? `${this.list.size_unknown_count.toLocaleString()} comics have no recorded size and are not counted` : 'Total file size'}">${this.formatSize(this.list.total_size_bytes)}${this.list.size_unknown_count > 0 ? '+' : ''}</span>`
+                        : ''}
                 </p>
             </div>
 
@@ -1521,6 +1524,15 @@ class ListDetail {
             console.error('Failed to remove Komga target:', error);
             dialogs.toast('Failed to remove Komga target', 'error');
         }
+    }
+
+    // Same shape as the other pages' formatSize; one decimal above bytes.
+    formatSize(bytes) {
+        if (!bytes) return '';
+        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        let v = bytes, u = 0;
+        while (v >= 1024 && u < units.length - 1) { v /= 1024; u++; }
+        return `${u === 0 ? v : v.toFixed(1)} ${units[u]}`;
     }
 
     escapeHtml(text) {

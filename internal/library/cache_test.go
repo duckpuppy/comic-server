@@ -97,3 +97,52 @@ func TestListCache_TryBeginRefresh(t *testing.T) {
 		t.Error("expected TryBeginRefresh to succeed again after EndRefresh")
 	}
 }
+
+func TestListCache_SizeSetGetAndMiss(t *testing.T) {
+	cache := NewListCache(5 * time.Minute)
+
+	if _, _, found := cache.GetSize("list-1"); found {
+		t.Fatal("expected a miss before SetSize")
+	}
+
+	cache.SetSize("list-1", 1614, 2)
+	bytes, unknown, found := cache.GetSize("list-1")
+	if !found || bytes != 1614 || unknown != 2 {
+		t.Errorf("GetSize = (%d, %d, %v), want (1614, 2, true)", bytes, unknown, found)
+	}
+}
+
+func TestListCache_SizeExpires(t *testing.T) {
+	cache := NewListCache(50 * time.Millisecond)
+	cache.SetSize("list-1", 10, 0)
+	time.Sleep(80 * time.Millisecond)
+
+	if _, _, found := cache.GetSize("list-1"); found {
+		t.Error("expected the size to expire with the TTL")
+	}
+}
+
+func TestListCache_InvalidateClearsSize(t *testing.T) {
+	cache := NewListCache(5 * time.Minute)
+	cache.SetSize("list-1", 10, 0)
+	cache.SetSize("list-2", 20, 0)
+
+	cache.Invalidate("list-1")
+	if _, _, found := cache.GetSize("list-1"); found {
+		t.Error("Invalidate should drop the size of that list")
+	}
+	if _, _, found := cache.GetSize("list-2"); !found {
+		t.Error("Invalidate should leave other lists alone")
+	}
+
+	cache.InvalidateAll()
+	if _, _, found := cache.GetSize("list-2"); found {
+		t.Error("InvalidateAll should drop every size")
+	}
+}
+
+func TestListCache_ZeroValueSetSizeDoesNotPanic(t *testing.T) {
+	var cache ListCache
+	cache.SetSize("list-1", 5, 0)
+	cache.InvalidateAll()
+}

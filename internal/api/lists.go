@@ -90,6 +90,38 @@ func countUnread(books []*library.ComicBook) int {
 	return n
 }
 
+// sumBookSizes adds up the recorded file sizes of books. A book with no
+// recorded size is counted in unknown and left out of the total: unknown is
+// not zero. The sizes come from the library data, so no file is touched.
+func sumBookSizes(books []*library.ComicBook) (total int64, unknown int) {
+	for _, b := range books {
+		if b.FileSize > 0 {
+			total += b.FileSize
+		} else {
+			unknown++
+		}
+	}
+	return total, unknown
+}
+
+// getListSize returns the total size of the books in list and the number of
+// books with no recorded size. It reads the cache first; a miss evaluates the
+// list once and caches the result (cleared by Invalidate/InvalidateAll with
+// the counts).
+func (s *Server) getListSize(list *library.ComicListItem) (total int64, unknown int) {
+	if t, u, found := s.listCache.GetSize(list.ID); found {
+		return t, u
+	}
+	matches, err := s.backend.GetBooksForList(list)
+	if err != nil {
+		log.Warn().Err(err).Str("list_id", list.ID).Str("list_name", list.Name).Msg("Failed to get books for list size")
+		return 0, 0
+	}
+	total, unknown = sumBookSizes(matches)
+	s.listCache.SetSize(list.ID, total, unknown)
+	return total, unknown
+}
+
 // getListCounts returns (book count, unread count) for list, preferring the
 // fresh cache, then a stale-but-last-known cached value (kicking off a
 // background recompute to refresh it), and only falling back to a
@@ -400,14 +432,19 @@ func (s *Server) handleListsRouter(w http.ResponseWriter, r *http.Request) {
 
 // ListDetail represents full details of a smart list
 type ListDetail struct {
-	ID                   string                `json:"id"`
-	Name                 string                `json:"name"`
-	Type                 string                `json:"type"`
-	MatcherMode          string                `json:"matcher_mode"`
-	MatcherModeFormatted string                `json:"matcher_mode_formatted"`
-	BookCount            int                   `json:"book_count"`
-	UnreadCount          int                   `json:"unread_count"`
-	Matchers             []library.MatcherInfo `json:"matchers"`
+	ID                   string `json:"id"`
+	Name                 string `json:"name"`
+	Type                 string `json:"type"`
+	MatcherMode          string `json:"matcher_mode"`
+	MatcherModeFormatted string `json:"matcher_mode_formatted"`
+	BookCount            int    `json:"book_count"`
+	UnreadCount          int    `json:"unread_count"`
+	// TotalSizeBytes is the summed file size of the list's books.
+	// SizeUnknownCount is how many books have no recorded size and are left
+	// out of it, so the UI can say the total is partial.
+	TotalSizeBytes   int64                 `json:"total_size_bytes"`
+	SizeUnknownCount int                   `json:"size_unknown_count,omitempty"`
+	Matchers         []library.MatcherInfo `json:"matchers"`
 	// CBL import provenance (comic-server-zw0o) - CBLSource is the raw
 	// "git:<repo-url>:<path>" / "local_file" string, empty when
 	// CBLImported is false. The frontend uses CBLImported for the badge
@@ -447,6 +484,7 @@ func (s *Server) handleGetListDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	count, unread := s.getListCounts(targetList)
+	totalSize, sizeUnknown := s.getListSize(targetList)
 
 	// Format matchers
 	matchers := make([]library.MatcherInfo, len(targetList.Matchers))
@@ -462,6 +500,8 @@ func (s *Server) handleGetListDetail(w http.ResponseWriter, r *http.Request) {
 		MatcherModeFormatted: library.FormatMatcherMode(targetList.MatcherMode),
 		BookCount:            count,
 		UnreadCount:          unread,
+		TotalSizeBytes:       totalSize,
+		SizeUnknownCount:     sizeUnknown,
 		Matchers:             matchers,
 	}
 	if sb, ok := s.backend.(*storage.SQLiteBackend); ok {

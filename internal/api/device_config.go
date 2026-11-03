@@ -165,10 +165,9 @@ func (s *Server) handlePreviewListBooks(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Calculate total size
-	// TODO: Implement size calculation by reading file sizes
-	// For now, we'll return 0 as this requires file system access
-	var totalSize int64
+	// Total size from the recorded file sizes (no file is read). Books with
+	// no recorded size are left out, so this can be a little low.
+	totalSize, _ := sumBookSizes(filteredBooks)
 
 	// Get sample titles (first 10)
 	sampleTitles := make([]string, 0, 10)
