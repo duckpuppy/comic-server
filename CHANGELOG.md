@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.76.0](https://github.com/duckpuppy/comic-server/compare/v1.75.0...v1.76.0) (2026-11-03)
+
+
+### Features
+
+* answer discovery pings from unregistered devices ([15de067](https://github.com/duckpuppy/comic-server/commit/15de067100903e6d5a7919ebc12463273e78f5dd))
+* answer discovery pings from unregistered devices ([a1ee97d](https://github.com/duckpuppy/comic-server/commit/a1ee97d3a298d8cc4f96d186e9e849c63329b44d))
+
 ## [1.75.0](https://github.com/duckpuppy/comic-server/compare/v1.74.0...v1.75.0) (2026-11-03)
 
 
