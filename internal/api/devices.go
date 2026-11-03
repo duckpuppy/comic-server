@@ -229,6 +229,13 @@ func (s *Server) handleDevicesRouter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// URL: /api/devices/:deviceId/repair - move this device's lists,
+	// settings and history to a new device ID (#53).
+	if strings.HasSuffix(path, "/repair") && !strings.Contains(remainder, "/lists/") {
+		s.handleRepairDevice(w, r)
+		return
+	}
+
 	// URL: /api/devices/:deviceId/test - check the manual address (#56).
 	if strings.HasSuffix(path, "/test") && !strings.Contains(remainder, "/lists/") {
 		s.handleTestDeviceAddress(w, r)
