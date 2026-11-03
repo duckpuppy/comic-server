@@ -137,3 +137,7 @@ The UI now features multi-page navigation with the following routes:
 - No external dependencies for deployment
 - Served from root path `/` by API server
 - Automatic content-type detection
+
+## Device page Sync Now (tracker #68)
+
+`deviceDetail.js` greys the button as "Starting…" the moment it is clicked (the server may take seconds to find the device) and ignores a second click. After a 202 it shows "Syncing…" while the sync is in `/api/sync/status`, and for `START_GRACE_MS` (8 s) before it appears there. When neither holds, `syncEnded()` resets the button, reloads the device and history, and toasts the newest history entry if it failed in the last minute (`error_message`).
