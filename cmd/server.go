@@ -1225,7 +1225,7 @@ func triggerManualSync(
 		return &syncstate.DeviceAlreadySyncingError{DeviceID: deviceID}
 	}
 
-	target, err := resolveSyncTarget(deviceID, registry, configDB, time.Now(), device.Probe)
+	target, err := resolveSyncTarget(deviceID, registry, configDB, time.Now(), device.Probe, device.ProbeQuick)
 	if err != nil {
 		return err
 	}
@@ -1263,20 +1263,28 @@ type syncTarget struct {
 	viaAddress bool   // true when it came from the device's manual address
 }
 
-// resolveSyncTarget picks the address for a manual sync (tracker #56):
+// probeFunc checks that the device at address has the ID wantID.
+type probeFunc func(address, wantID string) (*device.ProbeResult, error)
+
+// resolveSyncTarget picks the address for a manual sync (tracker #56, #68):
 //  1. a device that pinged recently: its discovered LAN address;
-//  2. else the device's manual address, after probe confirms the device
+//  2. else, if the device has a manual address and was seen on the LAN
+//     before: the old LAN address, checked with quickProbe. Home is tried
+//     first so a click at home does not wait on a manual address that does
+//     not answer there. A stale address that is dead or now belongs to
+//     another device is skipped, not an error;
+//  3. else the device's manual address, after probe confirms the device
 //     there is the right one. A wrong device is an error, never a fallback;
 //     if the address is only unreachable, the old discovered address is
 //     tried instead, if there is one;
-//  3. else the old discovered address, however stale;
-//  4. else device.ErrNotConnected.
+//  4. else the old discovered address, however stale;
+//  5. else device.ErrNotConnected.
 func resolveSyncTarget(
 	deviceID string,
 	registry *device.Registry,
 	configDB *configdb.DB,
 	now time.Time,
-	probe func(address, wantID string) (*device.ProbeResult, error),
+	probe, quickProbe probeFunc,
 ) (*syncTarget, error) {
 	dev, seen := registry.Get(deviceID)
 	if seen && now.Sub(dev.LastSeen) <= recentPingWindow {
@@ -1291,6 +1299,12 @@ func resolveSyncTarget(
 		}
 		if cfgDev != nil {
 			address = cfgDev.Address
+		}
+	}
+
+	if address != "" && seen && dev.IPAddress != "" && dev.IPAddress != address {
+		if res, err := quickProbe(dev.IPAddress, deviceID); err == nil {
+			return &syncTarget{info: res.Info, ip: dev.IPAddress}, nil
 		}
 	}
 

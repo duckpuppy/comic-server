@@ -75,22 +75,49 @@ class DeviceDetail {
             const data = await response.json();
             const mine = (data.active_syncs || []).find(s => s.device_id === this.deviceId) || null;
 
-            if (JSON.stringify(mine) === JSON.stringify(this.syncProgress)) {
+            // "Syncing" is true while the sync is active, and for a short
+            // grace after Sync Now was accepted (the server may still be
+            // dialling the device). Without this the button stayed greyed
+            // out when a sync failed to start (tracker #68).
+            if (mine) this.syncStartedAt = null;
+            const pending = !!this.syncStartedAt && (Date.now() - this.syncStartedAt) < DeviceDetail.START_GRACE_MS;
+            const syncing = !!mine || pending;
+
+            if (JSON.stringify(mine) === JSON.stringify(this.syncProgress) && syncing === !!this.device.is_syncing) {
                 return; // nothing changed - skip the re-render
             }
 
-            const hadPanel = !!this.syncProgress;
+            const wasSyncing = !!this.device.is_syncing;
             this.syncProgress = mine;
+            this.device.is_syncing = syncing;
+            if (!syncing) this.syncStartedAt = null;
             this.render();
             this.attachListeners();
 
-            if (hadPanel && !mine) {
-                // A sync for this device just ended - refresh history
-                // instead of waiting for the next scheduled reload.
-                this.loadSyncHistory();
+            if (wasSyncing && !syncing) {
+                await this.syncEnded();
             }
         } catch (error) {
             console.error('Failed to poll sync status:', error);
+        }
+    }
+
+    // A sync for this device just ended or never started: refresh the device
+    // and history, and say so when it failed. The newest history entry is the
+    // one that just ended.
+    async syncEnded() {
+        await this.loadDeviceInfo();
+        if (!this.device) return;
+        this.render();
+        this.attachListeners();
+
+        this.historyOffset = 0;
+        await this.loadSyncHistory();
+        const last = (this.syncHistory || [])[0];
+        const justEnded = last && last.end_time && (Date.now() - new Date(last.end_time).getTime()) < 60000;
+        if (last && last.status === 'failed' && justEnded) {
+            const reason = last.error_message ? `: ${last.error_message}` : '.';
+            dialogs.toast(`The sync failed${reason}`, 'error');
         }
     }
 
@@ -211,21 +238,39 @@ class DeviceDetail {
         if (this.device.is_syncing) {
             return `<button class="btn btn-primary" disabled>⏳ Syncing…</button>`;
         }
+        if (this.startingSync) {
+            return `<button class="btn btn-primary" disabled>⏳ Starting…</button>`;
+        }
         return `<button class="btn btn-primary" onclick="deviceDetail.triggerSyncNow()">🔄 Sync Now</button>`;
     }
 
+    // How long after an accepted Sync Now the page keeps showing "Syncing"
+    // while the server is still dialling the device and the sync is not in
+    // /api/sync/status yet. After that, no active sync means it ended or
+    // never started (tracker #68).
+    static START_GRACE_MS = 8000;
+
     async triggerSyncNow() {
+        // The server can take several seconds to answer while it finds the
+        // device, so show the click at once and ignore a second one.
+        if (this.startingSync || this.device.is_syncing) return;
+        this.startingSync = true;
+        this.render();
+        this.attachListeners();
+
         try {
             const response = await fetch(`/api/devices/${this.deviceId}/sync`, { method: 'POST' });
 
             if (response.status === 202) {
-                // Sync accepted. The next pollSyncStatus tick (up to 5s
-                // away) will also flip this via the sync progress panel,
-                // but set it immediately too so the button disables
-                // without waiting on that round trip.
+                // Sync accepted. pollSyncStatus keeps "Syncing" up while
+                // the sync is active, and for START_GRACE_MS before it
+                // shows up there; after that it resets the button and
+                // reports a failure. Poll soon so a fast failure is not
+                // left waiting for the 5 s tick.
+                this.syncStartedAt = Date.now();
                 this.device.is_syncing = true;
-                this.render();
-                this.attachListeners();
+                setTimeout(() => this.pollSyncStatus(), 1500);
+                setTimeout(() => this.pollSyncStatus(), DeviceDetail.START_GRACE_MS + 500);
                 return;
             }
 
@@ -258,6 +303,10 @@ class DeviceDetail {
         } catch (error) {
             console.error('Failed to trigger sync:', error);
             dialogs.toast('Failed to start sync. Please try again.', 'error');
+        } finally {
+            this.startingSync = false;
+            this.render();
+            this.attachListeners();
         }
     }
 

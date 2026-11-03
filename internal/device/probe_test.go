@@ -69,3 +69,19 @@ func TestProbe_BadHashIsProbeFailed(t *testing.T) {
 		t.Fatalf("err = %v, want ErrProbeFailed", err)
 	}
 }
+
+func TestProbeQuick_UsesQuickDial(t *testing.T) {
+	oldDial, oldQuick := dial, quickDial
+	defer func() { dial, quickDial = oldDial, oldQuick }()
+
+	dialCalls, quickCalls := 0, 0
+	dial = func(string) iniReader { dialCalls++; return fakeReader{err: errors.New("slow dial used")} }
+	quickDial = func(string) iniReader { quickCalls++; return fakeReader{err: errors.New("no answer")} }
+
+	if _, err := ProbeQuick("192.168.0.171", "d1"); !errors.Is(err, ErrProbeFailed) {
+		t.Fatalf("err = %v, want ErrProbeFailed", err)
+	}
+	if quickCalls != 1 || dialCalls != 0 {
+		t.Errorf("quick=%d dial=%d, want 1 and 0", quickCalls, dialCalls)
+	}
+}

@@ -26,6 +26,19 @@ var dial = func(address string) iniReader {
 	return protocol.NewClient(address, DevicePort)
 }
 
+// quickDial is like dial but gives up fast and does not retry. It is for a
+// check made on every click, where an address that does not answer must cost
+// about a second, not several.
+var quickDial = func(address string) iniReader {
+	c := protocol.NewClient(address, DevicePort)
+	c.SetTimeouts(quickProbeTimeout, quickProbeTimeout, quickProbeTimeout)
+	c.SetRetries(0)
+	return c
+}
+
+// quickProbeTimeout bounds connect, read and write in ProbeQuick.
+const quickProbeTimeout = time.Second
+
 // ProbeResult is what a successful Probe learned about the device.
 type ProbeResult struct {
 	Info *Info
@@ -38,8 +51,18 @@ type ProbeResult struct {
 // wrong hostname must never sync another device. Probe changes nothing on
 // the device.
 func Probe(address, wantID string) (*ProbeResult, error) {
+	return probeWith(dial, address, wantID)
+}
+
+// ProbeQuick is Probe with a one-second limit and no retry, for checking an
+// address that is probably right but may be stale (the last LAN address).
+func ProbeQuick(address, wantID string) (*ProbeResult, error) {
+	return probeWith(quickDial, address, wantID)
+}
+
+func probeWith(open func(string) iniReader, address, wantID string) (*ProbeResult, error) {
 	start := time.Now()
-	iniData, err := dial(address).ReadFile("comicrack.ini")
+	iniData, err := open(address).ReadFile("comicrack.ini")
 	if err != nil {
 		return nil, fmt.Errorf("%w (%s): %w", ErrProbeFailed, address, err)
 	}
