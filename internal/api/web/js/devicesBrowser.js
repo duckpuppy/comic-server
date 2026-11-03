@@ -219,6 +219,7 @@ class DevicesBrowser {
                             Unregister
                         </button>
                     ` : `
+                        ${this.renderRepairHint(device)}
                         <button class="btn btn-primary btn-register" data-device-id="${device.id}">
                             Register
                         </button>
@@ -226,6 +227,29 @@ class DevicesBrowser {
                 </div>
             </div>
         `;
+    }
+
+    // A device that is not registered but has the name of one that is may be
+    // the same app with a new Sync ID. Only a suggestion, and only when
+    // exactly one registered device has that name: two devices can share a
+    // name, so it is never re-paired by name alone (tracker #53).
+    findKnownMatch(device) {
+        const nameOf = d => (d.friendly_name || d.name || '').trim().toLowerCase();
+        const wanted = nameOf(device);
+        if (!wanted) return null;
+        const matches = this.devices.filter(d => d.is_registered && d.id !== device.id && nameOf(d) === wanted);
+        return matches.length === 1 ? matches[0] : null;
+    }
+
+    renderRepairHint(device) {
+        const match = this.findKnownMatch(device);
+        if (!match) return '';
+        const name = this.escapeHtml(match.friendly_name || match.name);
+        return `
+            <span class="repair-hint" onclick="event.stopPropagation()">Looks like a known device: ${name}.</span>
+            <button class="btn btn-secondary btn-repair-hint" data-old-id="${this.escapeHtml(match.id)}" data-new-id="${this.escapeHtml(device.id)}">
+                Re-pair it…
+            </button>`;
     }
 
     // Sync Now is only offered for a device the registry actually has an
@@ -356,6 +380,25 @@ class DevicesBrowser {
                 e.stopPropagation();
                 const deviceId = btn.dataset.deviceId;
                 this.triggerSync(deviceId);
+            });
+        });
+
+        // Re-pair hint buttons: move a known device onto this new ID
+        document.querySelectorAll('.btn-repair-hint').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const oldDevice = this.devices.find(d => d.id === btn.dataset.oldId);
+                const newDevice = this.devices.find(d => d.id === btn.dataset.newId);
+                if (!oldDevice || !newDevice) return;
+                const moved = await deviceRepair.confirmAndRepair(
+                    { id: oldDevice.id, name: oldDevice.friendly_name || oldDevice.name },
+                    newDevice.id,
+                    newDevice.friendly_name || newDevice.name,
+                );
+                if (moved) {
+                    await this.loadDevices();
+                    this.updateGrid();
+                }
             });
         });
 

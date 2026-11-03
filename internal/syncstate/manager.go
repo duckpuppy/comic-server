@@ -426,6 +426,21 @@ func (m *Manager) GetHistoryPaginated(limit, offset int) *HistoryPage {
 	}
 }
 
+// RenameDevice re-labels the in-memory history of oldID as newID after a
+// re-pair (tracker #53). The config.db rows are moved by
+// configdb.RepairDevice; this keeps the cache in step. A sync that is
+// running for either ID must be refused by the caller first.
+func (m *Manager) RenameDevice(oldID, newID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, state := range m.history {
+		if state.DeviceID == oldID {
+			state.DeviceID = newID
+		}
+	}
+}
+
 // GetHistoryForDevice returns sync history filtered by device ID with pagination
 func (m *Manager) GetHistoryForDevice(deviceID string, limit, offset int) ([]*SyncState, PaginationMetadata) {
 	m.mu.RLock()
