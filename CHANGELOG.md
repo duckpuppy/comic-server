@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.75.0](https://github.com/duckpuppy/comic-server/compare/v1.74.0...v1.75.0) (2026-11-03)
+
+
+### Features
+
+* show total size on list details and device lists ([9083eb4](https://github.com/duckpuppy/comic-server/commit/9083eb44513956b96123a966dced143c39b53514))
+* show total size on list details and device lists ([659cf99](https://github.com/duckpuppy/comic-server/commit/659cf99de342bdeef87882a000320feab01c92d5))
+
+
+### Bug Fixes
+
+* Sync Now gives feedback at once, resets after a failed start, tries home first ([9739ad7](https://github.com/duckpuppy/comic-server/commit/9739ad72f02ae874192aeb59815cf4863560eb4a))
+* Sync Now gives feedback at once, resets after a failed start, tries home first ([352bf7f](https://github.com/duckpuppy/comic-server/commit/352bf7fee82cc0f76374ccf52e3e77467670198b))
+
 ## [1.74.0](https://github.com/duckpuppy/comic-server/compare/v1.73.0...v1.74.0) (2026-10-29)
 
 
