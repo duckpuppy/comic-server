@@ -140,6 +140,8 @@ The `--ping-device` flag:
 - Defaults to port 7614 if not specified
 - Useful for WSL2, VPNs, firewalls blocking multicast, or complex network topologies
 
+**Answering discovery pings (tracker #55).** `handleDiscoveredDevice` answers a ping that is not a sync request with `CommandClientPong` through `answerDevice` (`cmd/server.go`), for registered and unregistered devices alike, and on the first ping of a new device too. The new ComicRack CE app keeps showing that it cannot find a server until it gets a pong. The pong only says a server is here: a sync request from an unregistered device is still refused in `handleSyncRequest` (`errDeviceNotRegistered`), and a device matching `--ignore-device` is never answered. An unregistered device is logged once at info level (`unregisteredAnswered`), then at debug. The IP rate limiter is unchanged.
+
 ## Syncing a device that is not on the local network
 
 Multicast discovery does not cross Tailscale or other VPNs. Give the device a manual address (Device settings, Address) and use Sync Now: the server connects to that address directly. See "Manual device address" in [CONFIG_AND_LOGGING.md](CONFIG_AND_LOGGING.md). The device must listen on the VPN address too (the new ComicRack CE app does), and a full sync can be tens of GB.
