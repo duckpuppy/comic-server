@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -855,20 +856,8 @@ func handleDiscoveredDevice(
 			return
 		}
 
-		// If device is registered and not requesting sync, send pong to make sync button appear
-		registeredDevice, err := configDB.GetDevice(dev.Info.ID)
-		if err != nil {
-			logger.Error().Err(err).Msg("Failed to look up device registration in config database")
-		}
-		if registeredDevice != nil {
-			logger.Debug().Msg("Sending ClientPong to registered device")
-			client := protocol.NewClient(discovered.IPAddress, device.DevicePort)
-			if err := client.SendClientPong(); err != nil {
-				logger.Debug().Err(err).Msg("Failed to send ClientPong (device may be offline)")
-			} else {
-				logger.Debug().Msg("ClientPong sent successfully")
-			}
-		}
+		// Not asking to sync: answer with a pong so the app sees a server.
+		answerDevice(configDB, dev.Info.ID, discovered.IPAddress)
 		return
 	}
 
@@ -926,6 +915,11 @@ func handleDiscoveredDevice(
 		Int("total_devices", registry.Count()).
 		Msg("Device registered successfully")
 
+	// Answer its first ping too, so the app does not wait for the next one.
+	if !discovered.WantsSync {
+		answerDevice(configDB, info.ID, discovered.IPAddress)
+	}
+
 	// Handle sync request if device wants sync and auto-sync is enabled
 	if discovered.WantsSync && cfg.Server.AutoSync {
 		logger.Info().Msg("Device requested sync, starting automatic sync")
@@ -935,6 +929,49 @@ func handleDiscoveredDevice(
 	} else if discovered.WantsSync && !cfg.Server.AutoSync {
 		logger.Info().Msg("Device requested sync but auto-sync is disabled")
 	}
+}
+
+// pongSender sends the discovery pong to a device. A variable so tests can
+// record the calls.
+var pongSender = func(ip string) error {
+	return protocol.NewClient(ip, device.DevicePort).SendClientPong()
+}
+
+// unregisteredAnswered holds the IDs of unregistered devices already logged
+// at info level, so a device that pings every few seconds is logged once.
+var unregisteredAnswered sync.Map
+
+// answerDevice sends the discovery pong that makes the device's app show the
+// server as available (its sync button appears). It answers registered and
+// unregistered devices alike (tracker #55): the new ComicRack CE app keeps
+// saying it cannot find a server until it gets a pong. The pong only says a
+// server is here. A sync from an unregistered device is still refused in
+// handleSyncRequest, and nothing here starts one.
+func answerDevice(configDB *configdb.DB, deviceID, ip string) {
+	registered := true // if the lookup fails, answer anyway: a pong is harmless
+	if configDB != nil {
+		cfgDev, err := configDB.GetDevice(deviceID)
+		if err != nil {
+			log.Error().Err(err).Str("device_id", deviceID).Msg("Failed to look up device registration in config database")
+		} else {
+			registered = cfgDev != nil
+		}
+	}
+
+	if !registered {
+		if _, seen := unregisteredAnswered.LoadOrStore(deviceID, true); !seen {
+			log.Info().
+				Str("device_id", deviceID).
+				Str("ip", ip).
+				Msg("Answering a device that is not registered so its app can find the server. Register it on the Devices page to sync it")
+		}
+	}
+
+	if err := pongSender(ip); err != nil {
+		log.Debug().Err(err).Str("device_id", deviceID).Msg("Failed to send ClientPong (device may be offline)")
+		return
+	}
+	log.Debug().Str("device_id", deviceID).Bool("registered", registered).Msg("ClientPong sent")
 }
 
 // migrateDevicesToConfigDB imports every device registration and list
