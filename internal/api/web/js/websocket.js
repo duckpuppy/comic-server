@@ -31,12 +31,17 @@ class WebSocketClient {
             };
 
             this.ws.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    this.handleEvent(data);
-                } catch (error) {
-                    console.error('Failed to parse WebSocket message:', error);
-                }
+                // The server packs events that queue up together into one
+                // frame, one JSON object per line.
+                event.data.split('\n').forEach(line => {
+                    if (!line.trim()) return;
+                    try {
+                        const data = JSON.parse(line);
+                        this.handleEvent(data);
+                    } catch (error) {
+                        console.error('Failed to parse WebSocket message:', error);
+                    }
+                });
             };
 
             this.ws.onerror = (error) => {

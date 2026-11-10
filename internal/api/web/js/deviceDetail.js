@@ -196,6 +196,9 @@ class DeviceDetail {
                     </div>
                     <div class="device-header-actions">
                         ${this.renderSyncNowButton()}
+                        <button class="btn btn-secondary" onclick="deviceDetail.startRepair()" title="The app made a new Sync ID? Move this device's lists, settings and history to it.">
+                            🔗 Re-pair…
+                        </button>
                         <button class="btn btn-secondary" onclick="router.navigate('/devices/${this.deviceId}/settings'); return false;">
                             ⚙️ Settings
                         </button>
@@ -249,6 +252,16 @@ class DeviceDetail {
     // /api/sync/status yet. After that, no active sync means it ended or
     // never started (tracker #68).
     static START_GRACE_MS = 8000;
+
+    // Move this device's lists, settings and history to a new device ID
+    // (tracker #53). On success the old ID is gone, so open the new one.
+    async startRepair() {
+        const newId = await deviceRepair.start({
+            id: this.deviceId,
+            name: this.device.friendly_name || this.device.name,
+        });
+        if (newId) router.navigate(`/devices/${encodeURIComponent(newId)}`);
+    }
 
     async triggerSyncNow() {
         // The server can take several seconds to answer while it finds the

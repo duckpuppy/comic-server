@@ -391,6 +391,30 @@ curl http://localhost:7620/api/devices/SM-T970
 
 ---
 
+### POST /api/devices/:deviceId/repair
+
+Re-pair a device (tracker #53): move its lists, settings and sync history to a new device ID. Use it when the app made a new Sync ID (reinstall, cleared data, new phone).
+
+**Request body:**
+```json
+{ "new_device_id": "c19403b4-f01a-4d1d-8066-4ab50a601fab" }
+```
+
+The move is one transaction: the friendly name, default settings, last seen time, manual address, every list assignment (with its enabled flag and settings) and the sync history go to the new ID, and the old ID is removed. If anything fails, nothing changes.
+
+**Responses:**
+- `200` `{ "old_device_id", "new_device_id", "name", "list_count" }`
+- `400` the new ID is missing, malformed (letters, digits and `. _ : -` only, up to 128 characters) or the same as the old one
+- `404` the old ID is not registered
+- `409` a sync is running for either ID, or the new ID already has lists or real sync history (a completed sync, or one that changed books)
+
+**Notes:**
+- The new ID may already be registered if that entry is empty (no lists, no real history). Registering the new device first is the usual case, and the empty entry is replaced. Failed attempts such as "device is not registered" do not count as history.
+- To undo a re-pair, re-pair from the new ID back to the old one.
+- The device page has a **Re-pair…** button. An unregistered device that has the same name as exactly one registered device gets a "Looks like a known device" suggestion on the Devices page.
+
+---
+
 ### GET /api/devices/:deviceId/sync-history
 
 Get paginated sync history for a specific device.
