@@ -155,7 +155,7 @@ Multicast discovery does not cross Tailscale or other VPNs. Give the device a ma
 ### Device Discovery (internal/device/discovery.go)
 
 - Uses `golang.org/x/net/ipv4` for proper multicast support
-- Joins multicast group on default network interface
+- Joins the multicast group on the interface that owns the default-route address (`getDefaultInterface`, tracker #66). The address comes from a UDP dial to a documentation IP, which sends no packet. With no default route it falls back to the first interface that is up, multicast-capable and has an IPv4 address. `pickInterface` holds the rule and is tested with a fake interface list.
 - Parses broadcasts using `strings.HasPrefix("ComicRack")` to match any variant
 - Sends discovered devices to channel for processing
 

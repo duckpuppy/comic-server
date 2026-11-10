@@ -203,38 +203,89 @@ func parseDiscoveryMessage(message string, sourceIP string) (DiscoveredDevice, e
 	}, nil
 }
 
-// getDefaultInterface returns the network interface with the default route
+// ifaceInfo is a network interface with its addresses. It lets the choice of
+// interface be tested without real network cards.
+type ifaceInfo struct {
+	iface net.Interface
+	addrs []net.Addr
+}
+
+// defaultRouteIP returns the local IPv4 address the OS would use to reach the
+// internet, that is the address on the default route. Dialing UDP sends no
+// packet: it only makes the OS pick a route. A variable so tests can replace it.
+var defaultRouteIP = func() net.IP {
+	conn, err := net.Dial("udp4", "192.0.2.1:9")
+	if err != nil {
+		return nil
+	}
+	defer conn.Close()
+	if addr, ok := conn.LocalAddr().(*net.UDPAddr); ok {
+		return addr.IP
+	}
+	return nil
+}
+
+// getDefaultInterface returns the network interface with the default route.
+// If the OS has no default route, it returns the first eligible interface.
 func getDefaultInterface() (*net.Interface, error) {
 	interfaces, err := net.Interfaces()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list interfaces: %w", err)
 	}
 
-	// Try to find an interface that is up and has multicast support
+	infos := make([]ifaceInfo, 0, len(interfaces))
 	for _, iface := range interfaces {
-		// Skip loopback and interfaces that are down
-		if iface.Flags&net.FlagLoopback != 0 || iface.Flags&net.FlagUp == 0 {
-			continue
-		}
-
-		// Check if interface supports multicast
-		if iface.Flags&net.FlagMulticast == 0 {
-			continue
-		}
-
-		// Check if interface has an IPv4 address
 		addrs, err := iface.Addrs()
 		if err != nil {
 			continue
 		}
+		infos = append(infos, ifaceInfo{iface: iface, addrs: addrs})
+	}
 
-		for _, addr := range addrs {
-			if ipnet, ok := addr.(*net.IPNet); ok && ipnet.IP.To4() != nil {
-				// Found a suitable interface
-				return &iface, nil
+	return pickInterface(infos, defaultRouteIP())
+}
+
+// pickInterface chooses the interface for multicast discovery. An interface is
+// eligible when it is up, supports multicast, is not loopback and has an IPv4
+// address. The eligible interface that owns routeIP (the default-route address)
+// wins. Without a match, the first eligible interface is used.
+func pickInterface(infos []ifaceInfo, routeIP net.IP) (*net.Interface, error) {
+	var first *net.Interface
+
+	for i := range infos {
+		info := infos[i]
+		if info.iface.Flags&net.FlagLoopback != 0 || info.iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+		if info.iface.Flags&net.FlagMulticast == 0 {
+			continue
+		}
+
+		hasIPv4, ownsRoute := false, false
+		for _, addr := range info.addrs {
+			ipnet, ok := addr.(*net.IPNet)
+			if !ok || ipnet.IP.To4() == nil {
+				continue
 			}
+			hasIPv4 = true
+			if routeIP != nil && ipnet.IP.Equal(routeIP) {
+				ownsRoute = true
+			}
+		}
+		if !hasIPv4 {
+			continue
+		}
+
+		if ownsRoute {
+			return &info.iface, nil
+		}
+		if first == nil {
+			first = &info.iface
 		}
 	}
 
-	return nil, fmt.Errorf("no suitable network interface found")
+	if first == nil {
+		return nil, fmt.Errorf("no suitable network interface found")
+	}
+	return first, nil
 }
