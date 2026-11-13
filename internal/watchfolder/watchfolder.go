@@ -7,10 +7,14 @@
 package watchfolder
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
+
+	"github.com/duckpuppy/comic-server/internal/comicvine"
 )
 
 // comicExtensions are the archive formats ComicRack (and comic-server)
@@ -26,6 +30,39 @@ var comicExtensions = map[string]bool{
 // archive format, case-insensitively.
 func IsComicFile(path string) bool {
 	return comicExtensions[strings.ToLower(filepath.Ext(path))]
+}
+
+// ambiguousExtensions are archive formats that are just as often not a comic.
+// The "cb*" extensions say "comic" by name; these do not.
+var ambiguousExtensions = map[string]bool{".zip": true, ".rar": true, ".7z": true}
+
+func isAmbiguousArchive(path string) bool {
+	return ambiguousExtensions[strings.ToLower(filepath.Ext(path))]
+}
+
+// listPages returns the image page names of an archive without reading any
+// page data. A variable so tests can replace it.
+var listPages = comicvine.ListPageNames
+
+// pageCheck remembers the answer per file (path, size, modified time) so a
+// refresh of the New Files list does not open the same archives again.
+var pageCheck sync.Map // string -> bool
+
+// hasImagePages reports whether an ambiguous archive holds at least one image.
+// Reads only the archive's file list. A file that cannot be opened counts as
+// "no": it would fail the same way on import.
+func hasImagePages(path string, info os.FileInfo) bool {
+	key := path
+	if info != nil {
+		key = fmt.Sprintf("%s|%d|%d", path, info.Size(), info.ModTime().UnixNano())
+	}
+	if v, ok := pageCheck.Load(key); ok {
+		return v.(bool)
+	}
+	names, err := listPages(path)
+	ok := err == nil && len(names) > 0
+	pageCheck.Store(key, ok)
+	return ok
 }
 
 // DiscoveredFile is one comic archive found under a watch folder that
@@ -66,6 +103,11 @@ func Scan(folders []string, knownPaths map[string]struct{}) ([]DiscoveredFile, e
 				return nil
 			}
 			info, err := d.Info()
+			// A .zip, .rar or .7z may be a manual archive or other data, not a
+			// comic. Only those three are opened, and only for the file list.
+			if isAmbiguousArchive(path) && !hasImagePages(path, info) {
+				return nil
+			}
 			var size int64
 			var modTime string
 			if err == nil {

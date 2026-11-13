@@ -145,3 +145,7 @@ The UI now features multi-page navigation with the following routes:
 ## Workflow page: Add All new files
 
 The New Files card (`workflowPage.js`) has an "Add All (N)" button, and the New Files list has one next to "Start Processing". Both call `startProcessing(paths)` with every file the page loaded, so a watched folder goes into the pipeline in one click. There is no confirm step: the folders are the configured watch folders, and the server still re-checks each path against a fresh scan (`POST /api/library/workflow/new-files/start`). "Start Processing" with no argument still uses the ticked rows. "Process a Folder…" is for a one-off folder that is not a watch folder.
+
+### Watch folder: only real comics are listed
+
+`watchfolder.Scan` lists `.cbz/.cbr/.cb7/.cbt` by name. A `.zip`, `.rar` or `.7z` is listed only when it holds at least one image page: the archive's file list is read (`comicvine.ListPageNames`, no page data) and the answer is remembered per path, size and modified time (`pageCheck`), so a refresh does not open it again. A file that cannot be opened is not listed; it changes size or time when a download finishes, and is then checked again. The file picker (`IsComicFile`) is unchanged. Books already imported from such a file stay in the library.
