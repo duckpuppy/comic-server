@@ -129,3 +129,76 @@ func TestHandleRunCBZConvertWorkflow_MissingSourceFileIsReportedNotFatal(t *test
 		t.Errorf("unexpected result: %+v", result)
 	}
 }
+
+// updateRecorder records each UpdateBooks call and can fail from the nth on.
+type updateRecorder struct {
+	library.Backend
+	sizes  []int
+	failAt int // 1-based call number that fails; 0 = never
+}
+
+func (u *updateRecorder) UpdateBooks(books []*library.ComicBook) error {
+	u.sizes = append(u.sizes, len(books))
+	if u.failAt > 0 && len(u.sizes) >= u.failAt {
+		return os.ErrPermission
+	}
+	return u.Backend.UpdateBooks(books)
+}
+
+func newTwoBookConvertServer(t *testing.T) (*Server, *updateRecorder) {
+	t.Helper()
+	libDir := t.TempDir()
+	var books []library.ComicBook
+	for _, id := range []string{"1", "2"} {
+		src := filepath.Join(libDir, "book"+id+".cbz")
+		writeTestCBZFixture(t, src)
+		b := library.ComicBook{ID: id, Series: "Batman", FilePath: src}
+		workflow.SetStage(&b, workflow.StageConvertToCBZ)
+		books = append(books, b)
+	}
+	s := newCBZConvertTestServer(t, config.CBZConvertConfig{Enabled: true}, t.TempDir(), books)
+	rec := &updateRecorder{Backend: s.backend}
+	s.backend = rec
+	return s, rec
+}
+
+func runConvertForTest(t *testing.T, s *Server) CBZConvertResult {
+	t.Helper()
+	w := httptest.NewRecorder()
+	s.handleRunCBZConvertWorkflow(w, httptest.NewRequest(http.MethodPost, "/api/library/workflow/convert-cbz", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var result CBZConvertResult
+	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	return result
+}
+
+// Each converted book is saved on its own, right after its file changes, so the
+// New Files scan never sees a converted file that has no matching record.
+func TestHandleRunCBZConvertWorkflow_SavesEachBookRightAfterItConverts(t *testing.T) {
+	s, rec := newTwoBookConvertServer(t)
+	result := runConvertForTest(t, s)
+	if result.Converted != 2 {
+		t.Fatalf("expected 2 converted, got %+v", result)
+	}
+	if len(rec.sizes) != 2 || rec.sizes[0] != 1 || rec.sizes[1] != 1 {
+		t.Errorf("expected two single-book saves, got %v", rec.sizes)
+	}
+}
+
+// If a save fails, the run stops instead of converting more files that would
+// have no record.
+func TestHandleRunCBZConvertWorkflow_StopsWhenASaveFails(t *testing.T) {
+	s, rec := newTwoBookConvertServer(t)
+	rec.failAt = 1
+	result := runConvertForTest(t, s)
+	if result.Converted != 0 || len(result.Errors) != 1 {
+		t.Errorf("expected the run to stop at the first failed save, got %+v", result)
+	}
+	if len(rec.sizes) != 1 {
+		t.Errorf("expected exactly one save attempt, got %v", rec.sizes)
+	}
+}

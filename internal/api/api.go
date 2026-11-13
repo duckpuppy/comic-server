@@ -109,6 +109,12 @@ type Server struct {
 	// each independently scan the whole library - see workflow_cache.go.
 	workflowCache   *workflowCacheEntry
 	workflowCacheMu sync.RWMutex
+	// workflowStale is the snapshot before the last invalidation, served only
+	// while a rebuild is running. workflowBuilding is that rebuild; workflowGen
+	// counts invalidations so a build that raced one is not stored.
+	workflowStale    *workflowCacheEntry
+	workflowBuilding *workflowBuild
+	workflowGen      uint64
 	// cvAttention memoises the ComicVine cache slice the attention flags
 	// read (comic-server-8fee); see cvAttentionData.
 	cvAttention   *attention.CVData

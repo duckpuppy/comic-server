@@ -38,17 +38,70 @@ type workflowCacheEntry struct {
 	booksByFlag map[attention.Flag][]*library.ComicBook
 }
 
+// workflowBuild is one snapshot build in progress. Requests that arrive while
+// it runs share its result instead of each loading every book again.
+type workflowBuild struct {
+	done  chan struct{}
+	entry *workflowCacheEntry
+	err   error
+}
+
 // getOrBuildWorkflowCache returns the current cached snapshot, building a
 // fresh one (and caching it) if none exists yet - e.g. right after
 // InvalidateWorkflowCache, or on the very first request since startup.
+//
+// Only one build runs at a time. A request that arrives during a build gets
+// the previous snapshot at once when there is one (it may be a few seconds
+// old), otherwise it waits for the build. Before this, every request that
+// found the cache empty loaded all books by itself, and a busy pipeline run
+// piled up dozens of full loads at the same time.
 func (s *Server) getOrBuildWorkflowCache() (*workflowCacheEntry, error) {
-	s.workflowCacheMu.RLock()
-	entry := s.workflowCache
-	s.workflowCacheMu.RUnlock()
-	if entry != nil {
+	s.workflowCacheMu.Lock()
+	if entry := s.workflowCache; entry != nil {
+		s.workflowCacheMu.Unlock()
 		return entry, nil
 	}
+	if call := s.workflowBuilding; call != nil {
+		stale := s.workflowStale
+		s.workflowCacheMu.Unlock()
+		if stale != nil {
+			return stale, nil
+		}
+		<-call.done
+		return call.entry, call.err
+	}
+	call := &workflowBuild{done: make(chan struct{})}
+	s.workflowBuilding = call
+	gen := s.workflowGen
+	s.workflowCacheMu.Unlock()
 
+	defer func() {
+		// Runs even if the build panics, so waiters are never stuck.
+		s.workflowCacheMu.Lock()
+		s.workflowBuilding = nil
+		s.workflowCacheMu.Unlock()
+		close(call.done)
+	}()
+
+	call.entry, call.err = s.buildWorkflowCache()
+	if call.err != nil {
+		return nil, call.err
+	}
+
+	s.workflowCacheMu.Lock()
+	// Keep the result only if nothing invalidated the cache during the build;
+	// otherwise it may already be out of date and the next request rebuilds.
+	if gen == s.workflowGen && s.workflowCache == nil {
+		s.workflowCache = call.entry
+		s.workflowStale = nil
+	}
+	s.workflowCacheMu.Unlock()
+
+	return call.entry, nil
+}
+
+// buildWorkflowCache scans every book once and builds a snapshot.
+func (s *Server) buildWorkflowCache() (*workflowCacheEntry, error) {
 	allBooks, err := s.backend.GetAllBooks()
 	if err != nil {
 		return nil, err
@@ -109,18 +162,7 @@ func (s *Server) getOrBuildWorkflowCache() (*workflowCacheEntry, error) {
 		}
 	}
 
-	s.workflowCacheMu.Lock()
-	// Another request may have built and stored one while we were
-	// scanning - keep whichever won the race rather than clobbering it,
-	// same "don't bother being the second writer" shortcut listCache's
-	// own callers already accept.
-	if s.workflowCache == nil {
-		s.workflowCache = built
-	}
-	entry = s.workflowCache
-	s.workflowCacheMu.Unlock()
-
-	return entry, nil
+	return built, nil
 }
 
 // InvalidateWorkflowCache discards the cached stage snapshot so the next
@@ -131,6 +173,23 @@ func (s *Server) getOrBuildWorkflowCache() (*workflowCacheEntry, error) {
 // existing InvalidateListCache call for the same event.
 func (s *Server) InvalidateWorkflowCache() {
 	s.workflowCacheMu.Lock()
+	if s.workflowCache != nil {
+		// Kept so requests that arrive while the rebuild runs are not blocked.
+		s.workflowStale = s.workflowCache
+	}
 	s.workflowCache = nil
+	s.workflowGen++
+	s.workflowCacheMu.Unlock()
+}
+
+// InvalidateWorkflowCacheNow is InvalidateWorkflowCache for actions where the
+// user must see the effect at once (removing a record, relinking a file): it
+// also drops the previous snapshot, so the next request waits for a fresh
+// build instead of being handed one that still lists the old state.
+func (s *Server) InvalidateWorkflowCacheNow() {
+	s.workflowCacheMu.Lock()
+	s.workflowCache = nil
+	s.workflowStale = nil
+	s.workflowGen++
 	s.workflowCacheMu.Unlock()
 }
