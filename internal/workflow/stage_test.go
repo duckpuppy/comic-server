@@ -383,3 +383,50 @@ func TestLocalIdentity_StageAndMarkerReplace(t *testing.T) {
 		t.Error("second clear should report no change")
 	}
 }
+
+// While the Scan Info setting is off the stage is skipped (tracker #70).
+func TestScanInfoStageSkippedWhileOff(t *testing.T) {
+	SetScanInfoEnabled(false)
+	t.Cleanup(func() { SetScanInfoEnabled(true) })
+
+	for _, st := range ActiveStages() {
+		if st == StageScanInfo {
+			t.Fatal("ActiveStages must not list scan_info while off")
+		}
+	}
+	if len(ActiveStages()) != len(Stages)-1 {
+		t.Errorf("ActiveStages = %d, want %d", len(ActiveStages()), len(Stages)-1)
+	}
+
+	// A book with no scan tag is not held at scan_info.
+	book := &library.ComicBook{FilePath: "x.cbz", CustomValuesStore: ""}
+	book.CustomValuesStore = library.SetCustomValue(book.CustomValuesStore, "comicvine_volume", "1")
+	if got := InferStage(book, nil); got != StageToMove {
+		t.Errorf("InferStage = %v, want to_move (no scan stage, no rules)", got)
+	}
+
+	// A book already stored at scan_info reads as data_manager.
+	SetStage(book, StageScanInfo)
+	if got := GetStage(book); got != StageDataManager {
+		t.Errorf("GetStage = %v, want data_manager", got)
+	}
+
+	// Scrape hands a book straight to Data Manager.
+	SetStage(book, StageScrape)
+	if !AdvanceIfAtOrBefore(book, StageScrape, nil) {
+		t.Fatal("expected the book to advance")
+	}
+	if got := GetStage(book); got != StageDataManager {
+		t.Errorf("after scrape: %v, want data_manager", got)
+	}
+
+	// Turning the setting back on restores the stored stage.
+	SetStage(book, StageScanInfo)
+	SetScanInfoEnabled(true)
+	if got := GetStage(book); got != StageScanInfo {
+		t.Errorf("after re-enabling: %v, want scan_info", got)
+	}
+	if len(ActiveStages()) != len(Stages) {
+		t.Errorf("ActiveStages = %d, want all %d", len(ActiveStages()), len(Stages))
+	}
+}

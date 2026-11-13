@@ -292,6 +292,9 @@ class WorkflowPage {
                 <p class="workflow-stage-desc">Not in the library yet</p>
                 <p class="workflow-stage-count">${nfCount}</p>
                 <div class="workflow-card-actions">
+                    <button class="btn btn-primary" id="workflow-add-all-new-files-btn" ${nfCount === 0 || this.startingProcessing ? 'disabled' : ''}>
+                        ${this.startingProcessing ? 'Adding…' : `Add All${nfCount > 0 ? ` (${nfCount})` : ''}`}
+                    </button>
                     <button class="btn btn-secondary" id="workflow-view-new-files-btn" ${nfCount === 0 ? 'disabled' : ''}>View</button>
                     <button class="btn btn-secondary" id="workflow-process-folder-btn" ${this.processingFolder ? 'disabled' : ''}>
                         ${this.processingFolder ? 'Scanning…' : 'Process a Folder…'}
@@ -667,6 +670,9 @@ class WorkflowPage {
                     <button class="btn btn-primary" id="workflow-start-processing-btn" ${this.startingProcessing || this.selectedNewFiles.size === 0 ? 'disabled' : ''}>
                         ${this.startingProcessing ? 'Starting…' : `Start Processing (${this.selectedNewFiles.size})`}
                     </button>
+                    <button class="btn btn-secondary" id="workflow-drill-add-all-btn" ${this.startingProcessing ? 'disabled' : ''}>
+                        Add All (${files.length})
+                    </button>
                 </div>
             `;
         }
@@ -758,6 +764,12 @@ class WorkflowPage {
             this.render();
             this.attachListeners();
         });
+
+        for (const id of ['workflow-add-all-new-files-btn', 'workflow-drill-add-all-btn']) {
+            const addAllBtn = document.getElementById(id);
+            if (addAllBtn) addAllBtn.addEventListener('click', () => this.startProcessing(
+                (this.newFiles.files || []).map(f => f.path)));
+        }
 
         const processFolderBtn = document.getElementById('workflow-process-folder-btn');
         if (processFolderBtn) processFolderBtn.addEventListener('click', () => this.processFolder());
@@ -1063,8 +1075,11 @@ class WorkflowPage {
         }
     }
 
-    async startProcessing() {
-        if (this.selectedNewFiles.size === 0) return;
+    // startProcessing brings files from the watch folders into the library.
+    // With no argument it uses the ticked rows; "Add All" passes every
+    // new file the page has loaded. The server re-checks each path.
+    async startProcessing(paths = Array.from(this.selectedNewFiles)) {
+        if (this.startingProcessing || paths.length === 0) return;
         this.startingProcessing = true;
         this.lastResult = null;
         this.render();
@@ -1074,7 +1089,7 @@ class WorkflowPage {
             const response = await fetch('/api/library/workflow/new-files/start', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ paths: Array.from(this.selectedNewFiles) }),
+                body: JSON.stringify({ paths }),
             });
             const text = await response.text();
             if (!response.ok) {

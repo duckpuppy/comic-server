@@ -12,8 +12,18 @@ import (
 	"github.com/duckpuppy/comic-server/internal/workflow"
 )
 
+// resetScanInfoStage puts the package-wide Scan Info stage switch back to
+// "on" when the test ends. The switch is global (workflow.SetScanInfoEnabled),
+// so a test that saves the setting must not leak "off" into the next one.
+func resetScanInfoStage(t *testing.T) {
+	t.Helper()
+	workflow.SetScanInfoEnabled(true)
+	t.Cleanup(func() { workflow.SetScanInfoEnabled(true) })
+}
+
 func newScanInfoTestServer(t *testing.T, scanInfoCfg config.ScanInfoConfig, books []library.ComicBook) *Server {
 	t.Helper()
+	resetScanInfoStage(t)
 	lib := &library.ComicLibrary{
 		Books: books,
 		ComicLists: []library.ComicListItem{
