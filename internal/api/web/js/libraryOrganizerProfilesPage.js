@@ -20,6 +20,12 @@ class LibraryOrganizerProfilesPage {
         this.expandedId = null;
         this.loading = true;
         this.error = null;
+        // Import of a ComicRack losettingsx.dat (tracker #71): the chosen
+        // File, the server's preview of it, and one editable row per profile.
+        this.importFile = null;
+        this.importPreview = null;
+        this.importRows = [];
+        this.importBusy = false;
     }
 
     async init(ctx) {
@@ -82,8 +88,10 @@ class LibraryOrganizerProfilesPage {
                 <div class="panel">
                     <div class="datamanager-actions">
                         <button class="btn btn-primary" id="lop-new-btn">+ New Profile</button>
+                        <button class="btn btn-secondary" id="lop-import-btn" ${this.importBusy ? 'disabled' : ''}>Import losettingsx.dat…</button>
+                        <input type="file" id="lop-import-file" accept=".dat,.xml" hidden>
                     </div>
-                    ${this.loading ? '<p class="empty-message">Loading…</p>' : this.renderBody()}
+                    ${this.loading ? '<p class="empty-message">Loading…</p>' : (this.importPreview ? this.renderImportPreview() : this.renderBody())}
                 </div>
             </div>
         `;
@@ -94,7 +102,7 @@ class LibraryOrganizerProfilesPage {
             return `<p class="datamanager-errors">${this.escapeHtml(this.error)}</p>`;
         }
         if (this.profiles.length === 0) {
-            return '<p class="empty-message">No profiles yet. Click "New Profile" to create one, or import from ComicRack via the CLI.</p>';
+            return '<p class="empty-message">No profiles yet. Click "New Profile" to create one, or click "Import losettingsx.dat…" to bring in your ComicRack Library Organizer profiles.</p>';
         }
         return `<ul class="dmr-tree">${this.profiles.map(p => this.renderProfile(p)).join('')}</ul>`;
     }
@@ -278,6 +286,18 @@ class LibraryOrganizerProfilesPage {
     attachListeners() {
         const newBtn = document.getElementById('lop-new-btn');
         if (newBtn) newBtn.addEventListener('click', () => this.createProfile());
+
+        const importBtn = document.getElementById('lop-import-btn');
+        const importInput = document.getElementById('lop-import-file');
+        if (importBtn && importInput) {
+            importBtn.addEventListener('click', () => importInput.click());
+            importInput.addEventListener('change', () => {
+                const f = importInput.files && importInput.files[0];
+                importInput.value = '';
+                if (f) this.previewImport(f);
+            });
+        }
+        this.attachImportListeners();
 
         document.querySelectorAll('.lop-toggle-btn').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -492,6 +512,199 @@ class LibraryOrganizerProfilesPage {
         const items = (p[category] || []).slice();
         items.splice(index, 1);
         await this.updateProfileField(profileId, category, items);
+    }
+
+    // ----- Import a ComicRack losettingsx.dat (tracker #71) -----
+
+    // Sends the chosen file to the server, which parses it and writes nothing.
+    // The reply fills the editable preview below.
+    async previewImport(file) {
+        this.importBusy = true;
+        this.renderAndReattach();
+        try {
+            const form = new FormData();
+            form.append('file', file);
+            const response = await fetch('/api/library/organize-profiles/import-preview', { method: 'POST', body: form });
+            const text = await response.text();
+            if (!response.ok) throw new Error(friendlyErrorText(response, text, 'Failed to read the file'));
+            const data = JSON.parse(text);
+            this.importFile = file;
+            this.importPreview = data;
+            this.importRows = data.profiles.map(p => ({
+                index: p.index,
+                import: true,
+                name: p.name,
+                base: p.suggested_base_folder,
+                failed: p.suggested_failed_folder,
+                replace: false,
+            }));
+        } catch (error) {
+            console.error('Failed to preview import:', error);
+            dialogs.toast(error.message, 'error');
+        } finally {
+            this.importBusy = false;
+            this.renderAndReattach();
+        }
+    }
+
+    static looksLikeWindowsPath(path) {
+        return /^[A-Za-z]:[\\/]/.test(path) || path.startsWith('\\\\');
+    }
+
+    renderImportPreview() {
+        const pv = this.importPreview;
+        const hint = pv.library_root
+            ? `The server's library folder is <code>${this.escapeHtml(pv.library_root)}</code>.`
+            : 'No library folder mapping is set on the server, so paths are shown as written in the file.';
+        const rows = pv.profiles.map((p, i) => this.renderImportRow(p, this.importRows[i])).join('');
+        const chosen = this.importRows.filter(r => r.import).length;
+        return `
+            <div class="lop-import">
+                <h2>Import profiles</h2>
+                <p class="empty-message">${this.escapeHtml(this.importFile ? this.importFile.name : '')}: ${pv.profiles.length} profile${pv.profiles.length === 1 ? '' : 's'} found. Paths from Windows do not exist on this server. Change each base folder to the path the server uses. ${hint}</p>
+                ${rows}
+                <div class="datamanager-actions">
+                    <button class="btn btn-primary" id="lop-import-confirm" ${this.importBusy || chosen === 0 ? 'disabled' : ''}>${this.importBusy ? 'Importing…' : `Import ${chosen} profile${chosen === 1 ? '' : 's'}`}</button>
+                    <button class="btn btn-secondary" id="lop-import-cancel" ${this.importBusy ? 'disabled' : ''}>Cancel</button>
+                </div>
+            </div>
+        `;
+    }
+
+    renderImportRow(p, r) {
+        const i = this.escapeAttr(String(r.index));
+        const winWarn = (path) => LibraryOrganizerProfilesPage.looksLikeWindowsPath(path)
+            ? '<span class="lop-import-warn">Still looks like a Windows path. The server cannot reach it.</span>' : '';
+        return `
+            <div class="lop-import-row panel" data-row="${i}">
+                <label class="lop-import-pick">
+                    <input type="checkbox" class="lop-imp-import" data-row="${i}" ${r.import ? 'checked' : ''}>
+                    <strong>${this.escapeHtml(p.name)}</strong>
+                    <span class="dmr-ruleset-summary">${p.copy_mode ? 'Copy' : 'Move'} · ${p.item_count} list entr${p.item_count === 1 ? 'y' : 'ies'} · ${p.exclude_rule_count} exclude rule${p.exclude_rule_count === 1 ? '' : 's'}</span>
+                </label>
+                <div class="lop-import-fields" ${r.import ? '' : 'style="opacity:.5"'}>
+                    <div class="form-group">
+                        <label>Name</label>
+                        <input type="text" class="form-control lop-imp-name" data-row="${i}" value="${this.escapeAttr(r.name)}">
+                    </div>
+                    ${p.existing_profile_id ? `
+                    <div class="form-group">
+                        <label><input type="checkbox" class="lop-imp-replace" data-row="${i}" ${r.replace ? 'checked' : ''}> A profile named "${this.escapeHtml(p.existing_profile_name)}" already exists. Replace it.</label>
+                        <div class="form-help">Or change the name above to keep both.</div>
+                    </div>` : ''}
+                    <div class="form-group">
+                        <label>Base folder <span class="form-help">(file: <code>${this.escapeHtml(p.base_folder)}</code>)</span></label>
+                        <div class="lop-import-path">
+                            <input type="text" class="form-control lop-imp-base" data-row="${i}" value="${this.escapeAttr(r.base)}">
+                            <button type="button" class="btn btn-secondary lop-imp-browse" data-row="${i}" data-field="base">Browse…</button>
+                        </div>
+                        <span class="lop-imp-base-warn" data-row="${i}">${winWarn(r.base)}</span>
+                    </div>
+                    ${p.failed_folder ? `
+                    <div class="form-group">
+                        <label>Failed folder <span class="form-help">(file: <code>${this.escapeHtml(p.failed_folder)}</code>)</span></label>
+                        <div class="lop-import-path">
+                            <input type="text" class="form-control lop-imp-failed" data-row="${i}" value="${this.escapeAttr(r.failed)}">
+                            <button type="button" class="btn btn-secondary lop-imp-browse" data-row="${i}" data-field="failed">Browse…</button>
+                        </div>
+                        <span class="lop-imp-failed-warn" data-row="${i}">${winWarn(r.failed)}</span>
+                    </div>` : ''}
+                    <div class="form-help">Folder template: <code>${this.escapeHtml(p.folder_template)}</code><br>File template: <code>${this.escapeHtml(p.file_template)}</code></div>
+                </div>
+            </div>
+        `;
+    }
+
+    attachImportListeners() {
+        const row = (el) => this.importRows.find(r => String(r.index) === el.dataset.row);
+        const warnHtml = (path) => LibraryOrganizerProfilesPage.looksLikeWindowsPath(path)
+            ? 'Still looks like a Windows path. The server cannot reach it.' : '';
+        const setWarn = (kind, el, path) => {
+            const target = document.querySelector(`.lop-imp-${kind}-warn[data-row="${el.dataset.row}"]`);
+            if (target) target.innerHTML = warnHtml(path) ? `<span class="lop-import-warn">${warnHtml(path)}</span>` : '';
+        };
+
+        document.querySelectorAll('.lop-imp-import').forEach(el => el.addEventListener('change', () => {
+            row(el).import = el.checked;
+            this.renderAndReattach();
+        }));
+        document.querySelectorAll('.lop-imp-replace').forEach(el => el.addEventListener('change', () => { row(el).replace = el.checked; }));
+        document.querySelectorAll('.lop-imp-name').forEach(el => el.addEventListener('input', () => { row(el).name = el.value; }));
+        document.querySelectorAll('.lop-imp-base').forEach(el => el.addEventListener('input', () => {
+            row(el).base = el.value;
+            setWarn('base', el, el.value);
+        }));
+        document.querySelectorAll('.lop-imp-failed').forEach(el => el.addEventListener('input', () => {
+            row(el).failed = el.value;
+            setWarn('failed', el, el.value);
+        }));
+        document.querySelectorAll('.lop-imp-browse').forEach(btn => btn.addEventListener('click', async () => {
+            const r = row(btn);
+            const key = btn.dataset.field === 'failed' ? 'failed' : 'base';
+            const current = r[key];
+            const start = current && !LibraryOrganizerProfilesPage.looksLikeWindowsPath(current)
+                ? current : (this.importPreview.library_root || '/');
+            const picked = await dialogs.browseServerDirectory({ title: 'Choose a Folder', startPath: start });
+            if (picked) {
+                r[key] = picked;
+                this.renderAndReattach();
+            }
+        }));
+
+        const confirmBtn = document.getElementById('lop-import-confirm');
+        if (confirmBtn) confirmBtn.addEventListener('click', () => this.confirmImport());
+        const cancelBtn = document.getElementById('lop-import-cancel');
+        if (cancelBtn) cancelBtn.addEventListener('click', () => this.cancelImport());
+    }
+
+    cancelImport() {
+        this.importFile = null;
+        this.importPreview = null;
+        this.importRows = [];
+        this.renderAndReattach();
+    }
+
+    async confirmImport() {
+        const chosen = this.importRows.filter(r => r.import);
+        if (chosen.length === 0) return;
+        const winPaths = chosen.filter(r => LibraryOrganizerProfilesPage.looksLikeWindowsPath(r.base || ''));
+        if (winPaths.length > 0) {
+            const ok = await dialogs.confirm({
+                title: 'Windows paths remain',
+                message: `${winPaths.length} profile${winPaths.length === 1 ? ' still has a base folder that looks' : 's still have base folders that look'} like a Windows path (${winPaths.map(r => r.name).join(', ')}). The server cannot move files there. Import anyway? You can fix the path later by editing the profile.`,
+                confirmLabel: 'Import anyway',
+            });
+            if (!ok) return;
+        }
+        this.importBusy = true;
+        this.renderAndReattach();
+        try {
+            const form = new FormData();
+            form.append('file', this.importFile);
+            form.append('choices', JSON.stringify(this.importRows.map(r => ({
+                index: r.index,
+                import: r.import,
+                name: r.name,
+                base_folder: r.base,
+                failed_folder: r.failed || '',
+                replace: r.replace,
+            }))));
+            const response = await fetch('/api/library/organize-profiles/import', { method: 'POST', body: form });
+            const text = await response.text();
+            if (!response.ok) throw new Error(friendlyErrorText(response, text, 'Failed to import'));
+            const result = JSON.parse(text);
+            dialogs.toast(`Imported ${result.imported} profile${result.imported === 1 ? '' : 's'}${result.replaced ? ` (replaced ${result.replaced})` : ''}.`, 'success');
+            this.importFile = null;
+            this.importPreview = null;
+            this.importRows = [];
+            await this.loadProfiles();
+        } catch (error) {
+            console.error('Failed to import profiles:', error);
+            dialogs.toast(error.message, 'error');
+        } finally {
+            this.importBusy = false;
+            this.renderAndReattach();
+        }
     }
 
     escapeHtml(text) {

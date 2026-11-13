@@ -260,6 +260,12 @@ func (s *Server) handleLOProfilesRouter(w http.ResponseWriter, r *http.Request) 
 	case len(segments) == 1 && segments[0] == "schema":
 		s.handleLOSchema(w, r)
 		return
+	case len(segments) == 1 && segments[0] == "import-preview":
+		s.handleLOImportPreview(w, r)
+		return
+	case len(segments) == 1 && segments[0] == "import":
+		s.handleLOImport(w, r)
+		return
 	case len(segments) == 1 && segments[0] != "":
 		s.handleLOProfileItem(w, r, segments[0])
 		return

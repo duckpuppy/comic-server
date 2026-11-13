@@ -195,3 +195,10 @@
     min-width: 8rem;
     flex: 1 1 8rem;
 }
+
+/* Library Organizer profile import (losettingsx.dat) */
+.lop-import-row { margin: 0.75rem 0; padding: 0.75rem; }
+.lop-import-pick { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.lop-import-path { display: flex; gap: 0.5rem; }
+.lop-import-path .form-control { flex: 1; min-width: 0; }
+.lop-import-warn { color: var(--warning, #b7791f); font-size: 0.85em; }
