@@ -141,3 +141,7 @@ The UI now features multi-page navigation with the following routes:
 ## Device page Sync Now (tracker #68)
 
 `deviceDetail.js` greys the button as "Starting…" the moment it is clicked (the server may take seconds to find the device) and ignores a second click. After a 202 it shows "Syncing…" while the sync is in `/api/sync/status`, and for `START_GRACE_MS` (8 s) before it appears there. When neither holds, `syncEnded()` resets the button, reloads the device and history, and toasts the newest history entry if it failed in the last minute (`error_message`).
+
+## Workflow page: Add All new files
+
+The New Files card (`workflowPage.js`) has an "Add All (N)" button, and the New Files list has one next to "Start Processing". Both call `startProcessing(paths)` with every file the page loaded, so a watched folder goes into the pipeline in one click. There is no confirm step: the folders are the configured watch folders, and the server still re-checks each path against a fresh scan (`POST /api/library/workflow/new-files/start`). "Start Processing" with no argument still uses the ticked rows. "Process a Folder…" is for a one-off folder that is not a watch folder.
