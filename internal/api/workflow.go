@@ -48,7 +48,7 @@ func (s *Server) handleGetWorkflowSummary(w http.ResponseWriter, r *http.Request
 	}
 
 	summary := WorkflowSummary{CVDBSkip: entry.cvdbSkip, CVNoMatch: len(entry.cvNoMatch), Unstaged: entry.unstaged}
-	for _, st := range workflow.Stages {
+	for _, st := range workflow.ActiveStages() {
 		summary.Stages = append(summary.Stages, WorkflowStageSummary{
 			Stage: st.String(),
 			Label: st.Label(),

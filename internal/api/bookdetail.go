@@ -275,7 +275,7 @@ func (s *Server) bookDetailActions(book *library.ComicBook, issueID int) BookDet
 
 	// Rollback only moves backwards, and needs the audit log (config.db).
 	if cur := workflow.GetStage(book); cur != workflow.StageUnknown && s.configDB != nil {
-		for _, st := range workflow.Stages {
+		for _, st := range workflow.ActiveStages() {
 			if st >= cur {
 				break
 			}

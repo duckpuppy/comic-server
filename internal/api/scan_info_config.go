@@ -7,6 +7,7 @@ import (
 	"github.com/duckpuppy/comic-server/internal/config"
 	"github.com/duckpuppy/comic-server/internal/log"
 	"github.com/duckpuppy/comic-server/internal/scaninfo"
+	"github.com/duckpuppy/comic-server/internal/workflow"
 )
 
 // ScanInfoConfigResponse is the GET/PUT /api/settings/scan-info wire
@@ -19,6 +20,11 @@ type ScanInfoConfigResponse struct {
 	Blacklist []string `json:"blacklist"`
 	Prefix    string   `json:"prefix"`
 	Unknown   string   `json:"unknown"`
+
+	// DefaultScanners/DefaultBlacklist are the built-in lists the page's
+	// "Reset to defaults" button restores. Read-only: PUT ignores them.
+	DefaultScanners  []string `json:"default_scanners"`
+	DefaultBlacklist []string `json:"default_blacklist"`
 }
 
 func toScanInfoConfigResponse(cfg config.ScanInfoConfig) ScanInfoConfigResponse {
@@ -36,6 +42,9 @@ func toScanInfoConfigResponse(cfg config.ScanInfoConfig) ScanInfoConfigResponse 
 		Blacklist: blacklist,
 		Prefix:    cfg.Prefix,
 		Unknown:   cfg.Unknown,
+
+		DefaultScanners:  scaninfo.DefaultScanners(),
+		DefaultBlacklist: scaninfo.DefaultBlacklist(),
 	}
 }
 
@@ -60,13 +69,39 @@ func (s *Server) effectiveScanInfo() (config.ScanInfoConfig, error) {
 	if err != nil {
 		return config.ScanInfoConfig{}, err
 	}
+
+	var cfg config.ScanInfoConfig
 	if stored != nil {
-		return *stored, nil
+		cfg = *stored
+	} else {
+		s.configMu.RLock()
+		cfg = s.config.Server.ScanInfo
+		s.configMu.RUnlock()
 	}
 
-	s.configMu.RLock()
-	defer s.configMu.RUnlock()
-	return s.config.Server.ScanInfo, nil
+	// Nothing configured yet: start from the lists that ship with
+	// ComicRack's plugin (tracker #70). Only when BOTH lists are empty, so
+	// a list the user edited is never replaced.
+	if len(cfg.Scanners) == 0 && len(cfg.Blacklist) == 0 {
+		cfg.Scanners = scaninfo.DefaultScanners()
+		cfg.Blacklist = scaninfo.DefaultBlacklist()
+	}
+	return cfg, nil
+}
+
+// applyScanInfoStageSetting tells the workflow package whether the Scan Info
+// setting is on, so the pipeline skips that stage while it is off
+// (tracker #70). Called at start and after every save.
+func (s *Server) applyScanInfoStageSetting() {
+	if s.configDB == nil || s.config == nil {
+		return
+	}
+	cfg, err := s.effectiveScanInfo()
+	if err != nil {
+		log.Error().Err(err).Msg("Could not read the Scan Info setting; leaving the Scan Info stage as it was")
+		return
+	}
+	workflow.SetScanInfoEnabled(cfg.Enabled)
 }
 
 // handleScanInfoConfig serves GET/PUT /api/settings/scan-info.
@@ -121,6 +156,9 @@ func (s *Server) handlePutScanInfoConfig(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "Failed to save scan info config", http.StatusInternalServerError)
 		return
 	}
+
+	s.applyScanInfoStageSetting()
+	s.InvalidateWorkflowCache()
 
 	s.writeJSON(w, http.StatusOK, toScanInfoConfigResponse(cfg))
 }

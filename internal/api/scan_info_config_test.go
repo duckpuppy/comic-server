@@ -8,10 +8,14 @@ import (
 	"testing"
 
 	"github.com/duckpuppy/comic-server/internal/config"
+	"github.com/duckpuppy/comic-server/internal/library"
+	"github.com/duckpuppy/comic-server/internal/scaninfo"
+	"github.com/duckpuppy/comic-server/internal/workflow"
 )
 
 func newScanInfoConfigTestServer(t *testing.T) *Server {
 	t.Helper()
+	resetScanInfoStage(t)
 	return &Server{
 		config:   &config.Config{},
 		configDB: newTestConfigDB(t),
@@ -164,5 +168,103 @@ func TestHandleScanInfoConfig_WrongMethod(t *testing.T) {
 
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Errorf("expected 405, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestEffectiveScanInfo_FillsEmptyListsWithDefaults(t *testing.T) {
+	server := newScanInfoConfigTestServer(t)
+
+	cfg, err := server.effectiveScanInfo()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Scanners) != len(scaninfo.DefaultScanners()) || len(cfg.Blacklist) != len(scaninfo.DefaultBlacklist()) {
+		t.Fatalf("nothing configured: want the built-in lists, got %d scanners and %d blacklist", len(cfg.Scanners), len(cfg.Blacklist))
+	}
+
+	// A saved row with both lists empty has never been configured: same.
+	if err := server.configDB.UpsertScanInfo(config.ScanInfoConfig{Enabled: false}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ = server.effectiveScanInfo()
+	if len(cfg.Scanners) == 0 {
+		t.Error("an untouched saved row should still get the defaults")
+	}
+}
+
+func TestEffectiveScanInfo_KeepsUserLists(t *testing.T) {
+	server := newScanInfoConfigTestServer(t)
+	if err := server.configDB.UpsertScanInfo(config.ScanInfoConfig{Scanners: []string{"Mine"}}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ := server.effectiveScanInfo()
+	if len(cfg.Scanners) != 1 || cfg.Scanners[0] != "Mine" {
+		t.Errorf("scanners = %v, want only the user's entry", cfg.Scanners)
+	}
+	if len(cfg.Blacklist) != 0 {
+		t.Errorf("blacklist = %d entries, want the user's empty list kept when scanners were edited", len(cfg.Blacklist))
+	}
+}
+
+func TestGetScanInfoConfig_ReturnsDefaultsForResetButton(t *testing.T) {
+	server := newScanInfoConfigTestServer(t)
+	w := httptest.NewRecorder()
+	server.handleScanInfoConfig(w, httptest.NewRequest(http.MethodGet, "/api/settings/scan-info", nil))
+	var got ScanInfoConfigResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.DefaultScanners) == 0 || len(got.DefaultBlacklist) == 0 {
+		t.Errorf("default lists missing from the response: %d / %d", len(got.DefaultScanners), len(got.DefaultBlacklist))
+	}
+}
+
+// Saving the setting turns the Scan Info stage off or on in the pipeline
+// summary at once (tracker #70).
+func TestPutScanInfoConfig_SkipsStageWhileOff(t *testing.T) {
+	book := library.ComicBook{ID: "1", Series: "Batman", FilePath: "Batman 001.cbz"}
+	workflow.SetStage(&book, workflow.StageScanInfo)
+	s := newScanInfoTestServer(t, config.ScanInfoConfig{Enabled: true, Scanners: []string{"X"}}, []library.ComicBook{book})
+
+	stageCounts := func() map[string]int {
+		w := httptest.NewRecorder()
+		s.handleGetWorkflowSummary(w, httptest.NewRequest(http.MethodGet, "/api/library/workflow", nil))
+		var sum WorkflowSummary
+		if err := json.Unmarshal(w.Body.Bytes(), &sum); err != nil {
+			t.Fatal(err)
+		}
+		m := map[string]int{}
+		for _, st := range sum.Stages {
+			m[st.Stage] = st.Count
+		}
+		return m
+	}
+	put := func(enabled bool) {
+		body, _ := json.Marshal(ScanInfoConfigResponse{Enabled: enabled, Scanners: []string{"X"}, Prefix: "Scanner:", Unknown: "Unknown"})
+		w := httptest.NewRecorder()
+		s.handleScanInfoConfig(w, httptest.NewRequest(http.MethodPut, "/api/settings/scan-info", bytes.NewReader(body)))
+		if w.Code != http.StatusOK {
+			t.Fatalf("PUT enabled=%v: %d %s", enabled, w.Code, w.Body.String())
+		}
+	}
+
+	on := stageCounts()
+	if on["scan_info"] != 1 {
+		t.Fatalf("with the setting on, want the book at scan_info, got %v", on)
+	}
+
+	put(false)
+	off := stageCounts()
+	if _, present := off["scan_info"]; present {
+		t.Errorf("with the setting off, the summary must not list scan_info: %v", off)
+	}
+	if off["data_manager"] != 1 {
+		t.Errorf("with the setting off, the book should count under data_manager: %v", off)
+	}
+
+	put(true)
+	back := stageCounts()
+	if back["scan_info"] != 1 {
+		t.Errorf("turning the setting back on should bring the book back to scan_info: %v", back)
 	}
 }

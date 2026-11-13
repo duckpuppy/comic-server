@@ -26,6 +26,7 @@ package workflow
 
 import (
 	"strings"
+	"sync/atomic"
 
 	"github.com/duckpuppy/comic-server/internal/datamanager"
 	"github.com/duckpuppy/comic-server/internal/library"
@@ -60,6 +61,33 @@ const (
 
 // Stages is every real stage in pipeline order (excludes StageUnknown).
 var Stages = []Stage{StageConvertToCBZ, StageScrape, StageScanInfo, StageDataManager, StageToMove, StageOrganized}
+
+// scanInfoSkipped is true while the Scan Info setting is off (tracker #70).
+// The zero value (false) keeps the stage active, so code and tests that never
+// call SetScanInfoEnabled see all stages. The server sets it from the saved
+// setting at start and on every change.
+var scanInfoSkipped atomic.Bool
+
+// SetScanInfoEnabled turns the Scan Info stage on or off for the pipeline.
+// While off, the stage is skipped: ActiveStages leaves it out, a book stored
+// at Scan Info reads as Data Manager, InferStage does not stop a book there,
+// and Scrape hands a book straight to Data Manager. Stored stage values are
+// not rewritten, so turning the setting back on brings those books back.
+func SetScanInfoEnabled(enabled bool) { scanInfoSkipped.Store(!enabled) }
+
+// ActiveStages is Stages without the Scan Info stage while that setting is off.
+func ActiveStages() []Stage {
+	if !scanInfoSkipped.Load() {
+		return Stages
+	}
+	out := make([]Stage, 0, len(Stages)-1)
+	for _, st := range Stages {
+		if st != StageScanInfo {
+			out = append(out, st)
+		}
+	}
+	return out
+}
 
 // String returns the stable string form stored in CustomValuesStore -
 // deliberately distinct from any display label so a future label wording
@@ -147,7 +175,11 @@ func GetStage(book *library.ComicBook) Stage {
 	if !ok {
 		return StageUnknown
 	}
-	return parseStage(v)
+	st := parseStage(v)
+	if st == StageScanInfo && scanInfoSkipped.Load() {
+		return StageDataManager
+	}
+	return st
 }
 
 // SetStage writes stage onto book explicitly.
@@ -189,7 +221,7 @@ func InferStage(book *library.ComicBook, rulesets []datamanager.Ruleset) Stage {
 	if _, tagged := library.GetCustomValue(book.CustomValuesStore, "comicvine_volume"); !tagged && !ExemptFromScrape(book) {
 		return StageScrape
 	}
-	if book.ScanInformation == "" {
+	if book.ScanInformation == "" && !scanInfoSkipped.Load() {
 		return StageScanInfo
 	}
 	if dataManagerWouldChange(book, rulesets) {
@@ -314,12 +346,16 @@ func RegressToStageIfPast(book *library.ComicBook, target Stage) bool {
 // terminal stage (StageOrganized).
 func nextStage(s Stage) Stage {
 	for i, st := range Stages {
-		if st == s {
-			if i+1 < len(Stages) {
-				return Stages[i+1]
-			}
-			return s
+		if st != s {
+			continue
 		}
+		for _, next := range Stages[i+1:] {
+			if next == StageScanInfo && scanInfoSkipped.Load() {
+				continue
+			}
+			return next
+		}
+		return s
 	}
 	return s
 }
