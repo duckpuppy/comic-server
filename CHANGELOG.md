@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.77.1](https://github.com/duckpuppy/comic-server/compare/v1.77.0...v1.77.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* a removed or relinked record must leave the Needs Attention list at once ([b65c284](https://github.com/duckpuppy/comic-server/commit/b65c284bd6b16f77fb7b9be2777a39c95a19c5f9))
+* share one workflow snapshot build and save CBZ conversions per book ([41ac7db](https://github.com/duckpuppy/comic-server/commit/41ac7db04ba80d1510f37231843c8493d2fd82a0))
+* share one workflow snapshot build and save CBZ conversions per book ([e230e6a](https://github.com/duckpuppy/comic-server/commit/e230e6a49c679c14c53aba3f1c8fbfb6288af25d))
+
 ## [1.77.0](https://github.com/duckpuppy/comic-server/compare/v1.76.0...v1.77.0) (2026-11-13)
 
 
