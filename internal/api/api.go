@@ -253,6 +253,8 @@ func NewServer(syncManager *syncstate.Manager, registry *device.Registry, backen
 		log.Error().Err(err).Msg("Failed to load registered devices from config.db")
 	}
 
+	s.applyScanInfoStageSetting()
+
 	s.registerRoutes()
 	return s
 }

@@ -169,7 +169,7 @@ func countFacets(books []*library.ComicBook, flags map[string][]attention.Flag) 
 	}
 	fc := FacetCounts{Publishers: options(pubs), Formats: options(fmts), Stages: []FacetOption{}, Flags: []FacetOption{}}
 	// Stages in pipeline order, then "not staged".
-	for _, st := range workflow.Stages {
+	for _, st := range workflow.ActiveStages() {
 		if n := stages[st.String()]; n > 0 {
 			fc.Stages = append(fc.Stages, FacetOption{Value: st.String(), Label: st.Label(), Count: n})
 		}

@@ -367,6 +367,11 @@ class ScanInfoSettings {
                 prefix: data.prefix || '',
                 unknown: data.unknown || ''
             };
+            // Built-in lists from ComicRack's plugin, for "Reset to defaults".
+            this.scanInfoDefaults = {
+                scanners: data.default_scanners || [],
+                blacklist: data.default_blacklist || []
+            };
         } catch (error) {
             console.error('Failed to load scan info settings:', error);
             this.error = 'Failed to load scan info settings. Please try again.';
@@ -1223,7 +1228,7 @@ class ScanInfoSettings {
                         <span class="toggle-slider"></span>
                     </label>
                     <span class="form-label-inline">Enabled</span>
-                    <div class="form-help">When enabled, "Run Scan Info" on a smart list detects each book's scan group from its filename and writes it to ScanInformation.</div>
+                    <div class="form-help">When enabled, "Run Scan Info" on a smart list detects each book's scan group from its filename and writes it to ScanInformation. When off, the Scan Info step is left out of the Pipeline and books go straight from Scrape to Data Manager.</div>
                 </div>
 
                 <div class="form-group">
@@ -1243,6 +1248,9 @@ class ScanInfoSettings {
                 <div class="scan-info-actions">
                     <button class="btn btn-primary" id="scan-info-save" ${this.saving ? 'disabled' : ''}>
                         ${this.saving ? 'Saving...' : 'Save'}
+                    </button>
+                    <button class="btn btn-secondary" id="scan-info-reset-defaults" ${this.saving ? 'disabled' : ''}>
+                        Reset lists to defaults
                     </button>
                 </div>
             </div>
@@ -1508,6 +1516,28 @@ class ScanInfoSettings {
         if (saveBtn) {
             saveBtn.addEventListener('click', () => this.save());
         }
+
+        const resetBtn = document.getElementById('scan-info-reset-defaults');
+        if (resetBtn) {
+            resetBtn.addEventListener('click', () => this.resetListsToDefaults());
+        }
+    }
+
+    // Replaces both lists with the lists from ComicRack's plugin. Nothing is
+    // saved until the user clicks Save.
+    async resetListsToDefaults() {
+        const d = this.scanInfoDefaults || { scanners: [], blacklist: [] };
+        const ok = await dialogs.confirm({
+            title: 'Reset lists to defaults',
+            message: `Replace the Scanners and Blacklist lists with the built-in ones (${d.scanners.length} scanners, ${d.blacklist.length} blacklist entries)? Your own entries in both lists will be removed. Nothing is saved until you click Save.`,
+            confirmLabel: 'Reset',
+        });
+        if (!ok) return;
+        this.config.scanners = [...d.scanners];
+        this.config.blacklist = [...d.blacklist];
+        this.dirty = true;
+        this.render();
+        this.attachListeners();
     }
 
     addListItem(field) {

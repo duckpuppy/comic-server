@@ -24,6 +24,10 @@ import (
 
 func newTestConfigDB(t *testing.T) *configdb.DB {
 	t.Helper()
+	// Most servers built in tests start from this DB. NewServer and the Scan
+	// Info settings handler flip a package-wide stage switch, so reset it
+	// here and again when the test ends.
+	resetScanInfoStage(t)
 	db, err := configdb.Open(t.TempDir() + "/config.db")
 	if err != nil {
 		t.Fatalf("failed to open test config db: %v", err)
