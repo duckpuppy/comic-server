@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/duckpuppy/comic-server/internal/config"
 	"github.com/duckpuppy/comic-server/internal/library"
@@ -126,5 +128,125 @@ func TestHandleRunScanInfoWorkflow_SummaryReflectsChangeImmediately(t *testing.T
 	}
 	if countFor(after, "data_manager") != 1 {
 		t.Errorf("expected 1 book advanced to data_manager after the run, got %d", countFor(after, "data_manager"))
+	}
+}
+
+// gatedBackend counts GetAllBooks calls and can hold them until released.
+type gatedBackend struct {
+	library.Backend
+	calls   atomic.Int32
+	started chan struct{}
+	release chan struct{}
+}
+
+func (g *gatedBackend) GetAllBooks() ([]library.ComicBook, error) {
+	g.calls.Add(1)
+	g.started <- struct{}{}
+	<-g.release
+	return g.Backend.GetAllBooks()
+}
+
+func newGatedServer(t *testing.T) (*Server, *gatedBackend) {
+	t.Helper()
+	book := library.ComicBook{ID: "1", FilePath: "/comics/book1.cbz"}
+	workflow.SetStage(&book, workflow.StageScrape)
+	s := newWorkflowTestServer(t, []library.ComicBook{book})
+	g := &gatedBackend{Backend: s.backend, started: make(chan struct{}, 8), release: make(chan struct{})}
+	s.backend = g
+	return s, g
+}
+
+// Requests that arrive while a build runs must share it, not each load every book.
+func TestGetOrBuildWorkflowCache_ConcurrentRequestsShareOneBuild(t *testing.T) {
+	s, g := newGatedServer(t)
+
+	results := make(chan *workflowCacheEntry, 3)
+	for i := 0; i < 3; i++ {
+		go func() {
+			e, err := s.getOrBuildWorkflowCache()
+			if err != nil {
+				t.Errorf("getOrBuildWorkflowCache: %v", err)
+			}
+			results <- e
+		}()
+		if i == 0 {
+			<-g.started // first build is now running and blocked
+		}
+	}
+	time.Sleep(50 * time.Millisecond) // let the other two reach the wait
+	close(g.release)
+
+	first := <-results
+	for i := 0; i < 2; i++ {
+		if e := <-results; e != first {
+			t.Errorf("request %d got a different snapshot", i+2)
+		}
+	}
+	if n := g.calls.Load(); n != 1 {
+		t.Errorf("GetAllBooks called %d times, want 1", n)
+	}
+}
+
+// While a rebuild runs, a request gets the previous snapshot instead of waiting.
+func TestGetOrBuildWorkflowCache_ServesPreviousSnapshotDuringRebuild(t *testing.T) {
+	s, g := newGatedServer(t)
+	close(g.release)
+	old, err := s.getOrBuildWorkflowCache()
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-g.started // drain the signal of the first build
+
+	g.release = make(chan struct{}) // block the next build
+	s.InvalidateWorkflowCache()
+	rebuilt := make(chan *workflowCacheEntry, 1)
+	go func() {
+		e, _ := s.getOrBuildWorkflowCache()
+		rebuilt <- e
+	}()
+	<-g.started
+
+	got := make(chan *workflowCacheEntry, 1)
+	go func() {
+		e, _ := s.getOrBuildWorkflowCache()
+		got <- e
+	}()
+	select {
+	case e := <-got:
+		if e != old {
+			t.Error("expected the previous snapshot while the rebuild runs")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("request waited for the rebuild instead of getting the previous snapshot")
+	}
+
+	close(g.release)
+	fresh := <-rebuilt
+	if fresh == old {
+		t.Error("rebuild returned the old snapshot")
+	}
+	if again, _ := s.getOrBuildWorkflowCache(); again != fresh {
+		t.Error("the rebuilt snapshot was not cached")
+	}
+}
+
+// A build that races an invalidation must not be stored as current.
+func TestGetOrBuildWorkflowCache_InvalidationDuringBuildDiscardsResult(t *testing.T) {
+	s, g := newGatedServer(t)
+	done := make(chan struct{})
+	go func() {
+		_, _ = s.getOrBuildWorkflowCache()
+		close(done)
+	}()
+	<-g.started
+	s.InvalidateWorkflowCache()
+	close(g.release)
+	<-done
+
+	s.workflowCacheMu.RLock()
+	cached := s.workflowCache
+	s.workflowCacheMu.RUnlock()
+	if cached != nil {
+		t.Error("a build that raced an invalidation was stored as current")
 	}
 }

@@ -65,13 +65,18 @@ func (s *Server) handleRunCBZConvertWorkflow(w http.ResponseWriter, r *http.Requ
 			log.Error().Err(err).Msg("Failed to save cbz-convert updates")
 			result.Errors = append(result.Errors, err.Error())
 		}
+	}
+	if len(toUpdate) > 0 || result.Converted > 0 {
 		s.InvalidateWorkflowCache()
 	}
 
 	s.writeJSON(w, http.StatusOK, result)
 }
 
-// runCBZConvertOverBooks is the core handleRunCBZConvertWorkflow runs.
+// runCBZConvertOverBooks is the core handleRunCBZConvertWorkflow runs. Each
+// converted book is saved as soon as its file is replaced. The returned slice
+// holds only books the caller still has to save (web-comic pointers that were
+// moved on without a conversion).
 func (s *Server) runCBZConvertOverBooks(books []*library.ComicBook, tr *trash.Trash) (CBZConvertResult, []*library.ComicBook) {
 	result := CBZConvertResult{Processed: len(books)}
 	var toUpdate []*library.ComicBook
@@ -101,7 +106,15 @@ func (s *Server) runCBZConvertOverBooks(books []*library.ComicBook, tr *trash.Tr
 		book.FilePath = converted.NewFilePath
 		book.PageCount = converted.PageCount
 		workflow.AdvanceIfAtOrBefore(book, workflow.StageConvertToCBZ, rulesets)
-		toUpdate = append(toUpdate, book)
+		// Save this book now, not after the whole run. The new .cbz is on disk
+		// already; until the record points at it, the New Files scan lists it
+		// and a click on Add All makes a duplicate book. A run over thousands of
+		// books used to leave that gap open for the entire run.
+		if err := s.audited(audit.ActionConvertCBZ).UpdateBooks([]*library.ComicBook{book}); err != nil {
+			log.Error().Err(err).Str("book_id", book.ID).Msg("Failed to save cbz-convert update; stopping the run")
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: saving the book failed, run stopped: %v", book.ID, err))
+			break
+		}
 		result.Converted++
 	}
 
