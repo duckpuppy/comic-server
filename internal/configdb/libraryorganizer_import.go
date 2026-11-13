@@ -1,6 +1,9 @@
 package configdb
 
-import "fmt"
+import (
+	"database/sql"
+	"fmt"
+)
 
 // LOImportProfile/LOImportItem/LOImportExcludeRule are the persistence-
 // layer shape of an imported Library Organizer profile - structurally
@@ -73,41 +76,77 @@ func (db *DB) ImportLibraryOrganizerProfiles(profiles []LOImportProfile, wipeExi
 	}
 
 	for _, p := range profiles {
-		if _, err := tx.Exec(`
-			INSERT INTO lo_profiles (
-				id, name, base_folder, folder_template, file_template, empty_folder,
-				mode, copy_mode, use_folder, use_filename, replace_multiple_spaces,
-				auto_space_fields, remove_empty_folder, move_fileless, fileless_format,
-				fail_empty_values, move_failed, failed_folder, exclude_mode, exclude_operator,
-				sort_order
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, p.ID, p.Name, p.BaseFolder, p.FolderTemplate, p.FileTemplate, p.EmptyFolder,
-			p.Mode, p.CopyMode, p.UseFolder, p.UseFileName, p.ReplaceMultipleSpaces,
-			p.AutoSpaceFields, p.RemoveEmptyFolder, p.MoveFileless, p.FilelessFormat,
-			p.FailEmptyValues, p.MoveFailed, p.FailedFolder, p.ExcludeMode, p.ExcludeOperator,
-			p.SortOrder); err != nil {
-			return fmt.Errorf("import lo_profile %s (%s): %w", p.ID, p.Name, err)
-		}
-
-		for _, item := range p.Items {
-			if _, err := tx.Exec(`
-				INSERT INTO lo_profile_items (profile_id, category, name, value)
-				VALUES (?, ?, ?, ?)
-			`, p.ID, item.Category, item.Name, item.Value); err != nil {
-				return fmt.Errorf("import lo_profile_item for profile %s (%s): %w", p.ID, item.Category, err)
-			}
-		}
-
-		for i, rule := range p.ExcludeRules {
-			if _, err := tx.Exec(`
-				INSERT INTO lo_exclude_rules (profile_id, field, operator, value, sort_order)
-				VALUES (?, ?, ?, ?, ?)
-			`, p.ID, rule.Field, rule.Operator, rule.Value, i); err != nil {
-				return fmt.Errorf("import lo_exclude_rule for profile %s: %w", p.ID, err)
-			}
+		if err := insertLOImportProfile(tx, p); err != nil {
+			return err
 		}
 	}
 
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit library organizer import transaction: %w", err)
+	}
+	return nil
+}
+
+// insertLOImportProfile inserts one profile with its items and exclude rules
+// inside tx.
+func insertLOImportProfile(tx *sql.Tx, p LOImportProfile) error {
+	if _, err := tx.Exec(`
+		INSERT INTO lo_profiles (
+			id, name, base_folder, folder_template, file_template, empty_folder,
+			mode, copy_mode, use_folder, use_filename, replace_multiple_spaces,
+			auto_space_fields, remove_empty_folder, move_fileless, fileless_format,
+			fail_empty_values, move_failed, failed_folder, exclude_mode, exclude_operator,
+			sort_order
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, p.ID, p.Name, p.BaseFolder, p.FolderTemplate, p.FileTemplate, p.EmptyFolder,
+		p.Mode, p.CopyMode, p.UseFolder, p.UseFileName, p.ReplaceMultipleSpaces,
+		p.AutoSpaceFields, p.RemoveEmptyFolder, p.MoveFileless, p.FilelessFormat,
+		p.FailEmptyValues, p.MoveFailed, p.FailedFolder, p.ExcludeMode, p.ExcludeOperator,
+		p.SortOrder); err != nil {
+		return fmt.Errorf("import lo_profile %s (%s): %w", p.ID, p.Name, err)
+	}
+
+	for _, item := range p.Items {
+		if _, err := tx.Exec(`
+			INSERT INTO lo_profile_items (profile_id, category, name, value)
+			VALUES (?, ?, ?, ?)
+		`, p.ID, item.Category, item.Name, item.Value); err != nil {
+			return fmt.Errorf("import lo_profile_item for profile %s (%s): %w", p.ID, item.Category, err)
+		}
+	}
+
+	for i, rule := range p.ExcludeRules {
+		if _, err := tx.Exec(`
+			INSERT INTO lo_exclude_rules (profile_id, field, operator, value, sort_order)
+			VALUES (?, ?, ?, ?, ?)
+		`, p.ID, rule.Field, rule.Operator, rule.Value, i); err != nil {
+			return fmt.Errorf("import lo_exclude_rule for profile %s: %w", p.ID, err)
+		}
+	}
+	return nil
+}
+
+// AddLibraryOrganizerProfiles adds imported profiles WITHOUT wiping the
+// others (tracker #71). Existing profiles listed in replaceIDs are deleted
+// first (items and exclude rules go with them). Everything lands in one
+// transaction or nothing does.
+func (db *DB) AddLibraryOrganizerProfiles(profiles []LOImportProfile, replaceIDs []string) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin library organizer import transaction: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op if committed
+
+	for _, id := range replaceIDs {
+		if _, err := tx.Exec(`DELETE FROM lo_profiles WHERE id = ?`, id); err != nil {
+			return fmt.Errorf("replace lo_profile %s: %w", id, err)
+		}
+	}
+	for _, p := range profiles {
+		if err := insertLOImportProfile(tx, p); err != nil {
+			return err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit library organizer import transaction: %w", err)
 	}
