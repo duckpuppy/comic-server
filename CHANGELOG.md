@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.77.2](https://github.com/duckpuppy/comic-server/compare/v1.77.1...v1.77.2) (2026-11-13)
+
+
+### Bug Fixes
+
+* list a .zip/.rar/.7z in the watch folder only when it holds images ([3d09119](https://github.com/duckpuppy/comic-server/commit/3d091198e234c89579387b4c004c2c12b4d62e74))
+* list a .zip/.rar/.7z in the watch folder only when it holds images ([fd9c3f2](https://github.com/duckpuppy/comic-server/commit/fd9c3f29181d185dfc50b57726803ac9093ee32d))
+
 ## [1.77.1](https://github.com/duckpuppy/comic-server/compare/v1.77.0...v1.77.1) (2026-11-13)
 
 
