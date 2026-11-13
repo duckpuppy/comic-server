@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.77.0](https://github.com/duckpuppy/comic-server/compare/v1.76.0...v1.77.0) (2026-11-13)
+
+
+### Features
+
+* add an Add All button for new files in watch folders ([ee23fca](https://github.com/duckpuppy/comic-server/commit/ee23fca188a7118406ccf9f29710ab151b4fe886))
+* add an Add All button for new files in watch folders ([1bf9784](https://github.com/duckpuppy/comic-server/commit/1bf978426c9beab30704cb57d48ea4e08a6a8eef))
+* built-in Scan Info lists, and skip the Scan Info stage while it is off ([43ad302](https://github.com/duckpuppy/comic-server/commit/43ad302dcc897a8ff381d86965eecd1349a5059a))
+* built-in Scan Info lists, and skip the Scan Info stage while it is off ([a282bf4](https://github.com/duckpuppy/comic-server/commit/a282bf4d05f5dd6018e4f4eaf6c54371f499b03f))
+* import Library Organizer profiles from the web UI ([3368a26](https://github.com/duckpuppy/comic-server/commit/3368a26135eeb418b6b9940bd2b30756ebc7103e))
+* import Library Organizer profiles from the web UI ([a446617](https://github.com/duckpuppy/comic-server/commit/a4466176556628204ef856ed1b267e0912060faa))
+
+
+### Bug Fixes
+
+* join the discovery multicast group on the default-route interface ([d721805](https://github.com/duckpuppy/comic-server/commit/d7218056085dd769aa326125cf5e652622c244fd))
+* join the discovery multicast group on the default-route interface ([288dcb3](https://github.com/duckpuppy/comic-server/commit/288dcb3076558ee7f5d180ce01a0b4aeedae71a2))
+
 ## [1.76.0](https://github.com/duckpuppy/comic-server/compare/v1.75.0...v1.76.0) (2026-11-10)
 
 
