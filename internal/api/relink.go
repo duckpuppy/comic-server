@@ -182,7 +182,7 @@ func (s *Server) forgetMissing(ids ...string) {
 		delete(s.disk.missing, id)
 	}
 	s.disk.mu.Unlock()
-	s.InvalidateWorkflowCache()
+	s.InvalidateWorkflowCacheNow()
 }
 
 type relinkRequest struct {

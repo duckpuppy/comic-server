@@ -181,3 +181,15 @@ func (s *Server) InvalidateWorkflowCache() {
 	s.workflowGen++
 	s.workflowCacheMu.Unlock()
 }
+
+// InvalidateWorkflowCacheNow is InvalidateWorkflowCache for actions where the
+// user must see the effect at once (removing a record, relinking a file): it
+// also drops the previous snapshot, so the next request waits for a fresh
+// build instead of being handed one that still lists the old state.
+func (s *Server) InvalidateWorkflowCacheNow() {
+	s.workflowCacheMu.Lock()
+	s.workflowCache = nil
+	s.workflowStale = nil
+	s.workflowGen++
+	s.workflowCacheMu.Unlock()
+}

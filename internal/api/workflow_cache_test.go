@@ -250,3 +250,35 @@ func TestGetOrBuildWorkflowCache_InvalidationDuringBuildDiscardsResult(t *testin
 		t.Error("a build that raced an invalidation was stored as current")
 	}
 }
+
+// A record removed while a snapshot build is running must not come back:
+// the build started before the removal, so its result is discarded, and the
+// next request does not get the old snapshot either.
+func TestForgetMissing_RemovedRecordNotListedAfterRacingBuild(t *testing.T) {
+	s, g := newGatedServer(t)
+	done := make(chan struct{})
+	go func() {
+		_, _ = s.getOrBuildWorkflowCache()
+		close(done)
+	}()
+	<-g.started // a build that has already read the old book list is running
+
+	if err := s.backend.(*gatedBackend).Backend.DeleteBook("1"); err != nil {
+		t.Fatal(err)
+	}
+	s.forgetMissing("1")
+	close(g.release)
+	<-done
+
+	entry, err := s.getOrBuildWorkflowCache()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for stage, books := range entry.booksByStage {
+		for _, b := range books {
+			if b.ID == "1" {
+				t.Errorf("removed book still listed at stage %v", stage)
+			}
+		}
+	}
+}
