@@ -58,6 +58,8 @@ func (s *Server) handleRunCBZConvertWorkflow(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	s.convertRunning.Add(1)
+	defer s.convertRunning.Add(-1)
 	result, toUpdate := s.runCBZConvertOverBooks(books, tr)
 
 	if len(toUpdate) > 0 {

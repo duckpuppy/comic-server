@@ -367,3 +367,48 @@ func writeTestCBZWithComicInfo(t *testing.T, path, comicInfoXML string) {
 		t.Fatal(err)
 	}
 }
+
+// While a CBZ conversion runs, adding watch-folder files is refused: the
+// converted .cbz files have no saved record yet and would become duplicates.
+func TestStartProcessingNewFiles_RefusedWhileConverting(t *testing.T) {
+	s := newWorkflowTestServer(t, nil)
+	dir := t.TempDir()
+	post := func() *httptest.ResponseRecorder {
+		body := strings.NewReader(`{"paths":["` + filepath.ToSlash(filepath.Join(dir, "a.cbz")) + `"],"folder":"` + filepath.ToSlash(dir) + `"}`)
+		w := httptest.NewRecorder()
+		s.handleStartProcessingNewFiles(w, httptest.NewRequest(http.MethodPost, "/api/library/workflow/new-files/start", body))
+		return w
+	}
+
+	s.convertRunning.Store(1)
+	if w := post(); w.Code != http.StatusConflict {
+		t.Errorf("while converting: status %d, want 409", w.Code)
+	}
+	s.convertRunning.Store(0)
+	if w := post(); w.Code != http.StatusOK {
+		t.Errorf("after converting: status %d, want 200", w.Code)
+	}
+}
+
+func TestScanAdHocFolder_ReportsConverting(t *testing.T) {
+	s := newWorkflowTestServer(t, nil)
+	dir := t.TempDir()
+	get := func() bool {
+		w := httptest.NewRecorder()
+		s.handleScanAdHocFolder(w, httptest.NewRequest(http.MethodGet, "/api/library/workflow/scan-folder?path="+dir, nil))
+		var out struct {
+			Converting bool `json:"converting"`
+		}
+		if err := json.NewDecoder(w.Body).Decode(&out); err != nil {
+			t.Fatal(err)
+		}
+		return out.Converting
+	}
+	if get() {
+		t.Error("converting reported while idle")
+	}
+	s.convertRunning.Store(1)
+	if !get() {
+		t.Error("converting not reported during a run")
+	}
+}
