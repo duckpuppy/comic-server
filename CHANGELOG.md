@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.80.0](https://github.com/duckpuppy/comic-server/compare/v1.79.0...v1.80.0) (2026-11-14)
+
+
+### Features
+
+* stage activity counter, action feedback toasts, SQL stage counts ([22fd6c4](https://github.com/duckpuppy/comic-server/commit/22fd6c4cd99f9e503fc196ecfc76695ec547fe17))
+* stage activity counter, action feedback toasts, SQL stage counts ([58fd329](https://github.com/duckpuppy/comic-server/commit/58fd3295598e530791573b6c8d9db70f443b1892))
+
 ## [1.79.0](https://github.com/duckpuppy/comic-server/compare/v1.78.0...v1.79.0) (2026-11-14)
 
 
