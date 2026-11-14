@@ -117,6 +117,7 @@ type Server struct {
 	// zero, new watch-folder files cannot be added (see handleStartProcessingNewFiles).
 	convertRunning atomic.Int32
 	// activities holds the pipeline actions running now (see activity.go).
+	inPlace          inPlaceGuard
 	activityMu       sync.Mutex
 	activities       map[string]*stageActivity
 	workflowStale    *workflowCacheEntry
@@ -344,6 +345,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/library/workflow", s.handleGetWorkflowSummary)
 	s.mux.HandleFunc("/api/library/workflow/scan-info", s.handleRunScanInfoWorkflow)
 	s.mux.HandleFunc("/api/library/workflow/activity", s.handleWorkflowActivity)
+	s.mux.HandleFunc("/api/library/workflow/in-place-preview", s.handleInPlacePreview)
+	s.mux.HandleFunc("/api/library/workflow/in-place-apply", s.handleInPlaceApply)
 	s.mux.HandleFunc("/api/library/workflow/convert-cbz", s.handleRunCBZConvertWorkflow)
 	s.mux.HandleFunc("/api/library/workflow/stale-writes", s.handleStaleWrites)
 	s.mux.HandleFunc("/api/library/workflow/write-metadata", s.handleWriteMetadata)
