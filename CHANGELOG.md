@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.81.0](https://github.com/duckpuppy/comic-server/compare/v1.80.0...v1.81.0) (2026-11-14)
+
+
+### Features
+
+* advance To Move books that already sit at their planned path ([85356b7](https://github.com/duckpuppy/comic-server/commit/85356b706400935b227a8af97504240563d0f14e))
+* advance To Move books that already sit at their planned path ([6de1931](https://github.com/duckpuppy/comic-server/commit/6de19318fccd44981a644f79035b691582e972c8))
+
 ## [1.80.0](https://github.com/duckpuppy/comic-server/compare/v1.79.0...v1.80.0) (2026-11-14)
 
 
