@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.79.0](https://github.com/duckpuppy/comic-server/compare/v1.78.0...v1.79.0) (2026-11-14)
+
+
+### Features
+
+* verify covers when scraping by default, skip fileless books, ignore filler words ([aa9ddca](https://github.com/duckpuppy/comic-server/commit/aa9ddcade79b80e74426f7ecb99270e1fb8abd73))
+* verify covers when scraping by default, skip fileless books, ignore filler words in name check ([58280cd](https://github.com/duckpuppy/comic-server/commit/58280cd267128e33a1ea7b3d74bfdd72900dace0))
+
 ## [1.78.0](https://github.com/duckpuppy/comic-server/compare/v1.77.2...v1.78.0) (2026-11-14)
 
 
