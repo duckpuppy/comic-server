@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/duckpuppy/comic-server/internal/cblrepo"
@@ -112,6 +113,9 @@ type Server struct {
 	// workflowStale is the snapshot before the last invalidation, served only
 	// while a rebuild is running. workflowBuilding is that rebuild; workflowGen
 	// counts invalidations so a build that raced one is not stored.
+	// convertRunning counts CBZ conversion runs in progress. While it is above
+	// zero, new watch-folder files cannot be added (see handleStartProcessingNewFiles).
+	convertRunning   atomic.Int32
 	workflowStale    *workflowCacheEntry
 	workflowBuilding *workflowBuild
 	workflowGen      uint64

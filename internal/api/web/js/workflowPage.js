@@ -204,6 +204,13 @@ class WorkflowPage {
         }
     }
 
+    // Files cannot be added while a CBZ conversion runs: its new .cbz files
+    // have no saved record yet and would be added as duplicate books. The
+    // server refuses too; this keeps the buttons honest.
+    addBlocked() {
+        return this.running === 'convert_cbz' || !!(this.newFiles && this.newFiles.converting);
+    }
+
     async loadNewFiles() {
         try {
             const response = await fetch('/api/library/workflow/new-files');
@@ -285,14 +292,16 @@ class WorkflowPage {
 
         // Stage 0: New Files.
         const nfCount = this.newFiles.total;
+        const addBlocked = this.addBlocked();
         html += `
             <div class="workflow-stage ${nfCount > 0 ? 'is-active' : 'is-empty'}" role="listitem">
                 <div class="workflow-stage-step">1</div>
                 <h2 class="workflow-stage-name">New Files</h2>
                 <p class="workflow-stage-desc">Not in the library yet</p>
                 <p class="workflow-stage-count">${nfCount}</p>
+                ${addBlocked ? '<p class="workflow-stage-desc">A conversion is running. Adding waits until it ends.</p>' : ''}
                 <div class="workflow-card-actions">
-                    <button class="btn btn-primary" id="workflow-add-all-new-files-btn" ${nfCount === 0 || this.startingProcessing ? 'disabled' : ''}>
+                    <button class="btn btn-primary" id="workflow-add-all-new-files-btn" ${nfCount === 0 || this.startingProcessing || addBlocked ? 'disabled' : ''} ${addBlocked ? 'title="A conversion is running. Wait until it finishes."' : ''}>
                         ${this.startingProcessing ? 'Adding…' : `Add All${nfCount > 0 ? ` (${nfCount})` : ''}`}
                     </button>
                     <button class="btn btn-secondary" id="workflow-view-new-files-btn" ${nfCount === 0 ? 'disabled' : ''}>View</button>
@@ -667,10 +676,10 @@ class WorkflowPage {
             html += '</tbody></table>';
             html += `
                 <div class="workflow-card-actions">
-                    <button class="btn btn-primary" id="workflow-start-processing-btn" ${this.startingProcessing || this.selectedNewFiles.size === 0 ? 'disabled' : ''}>
+                    <button class="btn btn-primary" id="workflow-start-processing-btn" ${this.startingProcessing || this.addBlocked() || this.selectedNewFiles.size === 0 ? 'disabled' : ''}>
                         ${this.startingProcessing ? 'Starting…' : `Start Processing (${this.selectedNewFiles.size})`}
                     </button>
-                    <button class="btn btn-secondary" id="workflow-drill-add-all-btn" ${this.startingProcessing ? 'disabled' : ''}>
+                    <button class="btn btn-secondary" id="workflow-drill-add-all-btn" ${this.startingProcessing || this.addBlocked() ? 'disabled' : ''}>
                         Add All (${files.length})
                     </button>
                 </div>
@@ -1079,7 +1088,7 @@ class WorkflowPage {
     // With no argument it uses the ticked rows; "Add All" passes every
     // new file the page has loaded. The server re-checks each path.
     async startProcessing(paths = Array.from(this.selectedNewFiles)) {
-        if (this.startingProcessing || paths.length === 0) return;
+        if (this.startingProcessing || this.addBlocked() || paths.length === 0) return;
         this.startingProcessing = true;
         this.lastResult = null;
         this.render();

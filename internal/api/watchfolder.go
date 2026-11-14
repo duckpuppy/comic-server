@@ -36,7 +36,7 @@ func (s *Server) handleGetWatchFolderNewFiles(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if len(folders) == 0 {
-		s.writeJSON(w, http.StatusOK, map[string]any{"files": []watchfolder.DiscoveredFile{}, "total": 0})
+		s.writeJSON(w, http.StatusOK, map[string]any{"files": []watchfolder.DiscoveredFile{}, "total": 0, "converting": s.convertRunning.Load() > 0})
 		return
 	}
 
@@ -46,7 +46,7 @@ func (s *Server) handleGetWatchFolderNewFiles(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	s.writeJSON(w, http.StatusOK, map[string]any{"files": found, "total": len(found)})
+	s.writeJSON(w, http.StatusOK, map[string]any{"files": found, "total": len(found), "converting": s.convertRunning.Load() > 0})
 }
 
 // handleScanAdHocFolder previews an ad-hoc, one-off folder pick
@@ -79,7 +79,7 @@ func (s *Server) handleScanAdHocFolder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.writeJSON(w, http.StatusOK, map[string]any{"files": found, "total": len(found)})
+	s.writeJSON(w, http.StatusOK, map[string]any{"files": found, "total": len(found), "converting": s.convertRunning.Load() > 0})
 }
 
 // scanWatchFolders builds the known-FilePath set from every current book
@@ -130,6 +130,13 @@ func (s *Server) handleStartProcessingNewFiles(w http.ResponseWriter, r *http.Re
 	}
 	if s.backend == nil {
 		http.Error(w, "Library not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	// A running conversion has already written new .cbz files whose records
+	// are not saved yet; adding them now would create duplicate books.
+	if s.convertRunning.Load() > 0 {
+		http.Error(w, "A conversion is running. Wait until it finishes, then add the files.", http.StatusConflict)
 		return
 	}
 
