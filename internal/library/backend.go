@@ -60,3 +60,20 @@ type Backend interface {
 	// Returns false if the backend is read-only or no storage path is configured.
 	CanPersist() bool
 }
+
+// StageCounts is what the workflow summary card needs, counted by the store
+// without loading any book (tracker #72). Stages holds the stored stage value
+// ("scrape", "to_move"...) of every book that has a file, with the number of
+// books at each. FilesTotal is every book that has a file.
+type StageCounts struct {
+	Stages     map[string]int
+	FilesTotal int
+	CVDBSkip   int // books tagged CVDBSKIP
+	CVNoMatch  int // books marked not in ComicVine
+}
+
+// StageCounter is implemented by backends that can count stages without
+// loading every book (the SQLite backend).
+type StageCounter interface {
+	StageCounts(stageKey, noCVMatchKey, cvdbSkipTag string) (StageCounts, error)
+}

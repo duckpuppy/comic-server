@@ -88,7 +88,11 @@ func (s *Server) runCBZConvertOverBooks(books []*library.ComicBook, tr *trash.Tr
 	embedComicBook := s.config != nil && s.config.Server.CBZConvert.EmbedComicBook
 	s.configMu.RUnlock()
 
-	for _, book := range books {
+	progress, endActivity := s.beginActivity("convert_cbz", len(books))
+	defer endActivity()
+
+	for i, book := range books {
+		progress(i)
 		// A web-comic pointer (.cbw) has no pages to repack. It may already
 		// be staged at convert_cbz from before it was excluded, so move it
 		// on instead of failing on it every run.

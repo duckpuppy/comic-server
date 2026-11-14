@@ -182,6 +182,34 @@ func GetStage(book *library.ComicBook) Stage {
 	return st
 }
 
+// CountStored turns SQL counts of stored stage values into per-stage counts the
+// way GetStage reads them one book at a time: an unknown value is not a stage,
+// and Scan Info reads as Data Manager while that stage is skipped. The second
+// result is the books with a file that are in no stage (not backfilled yet).
+func CountStored(stored map[string]int, filesTotal int) (map[Stage]int, int) {
+	counts := make(map[Stage]int, len(Stages))
+	staged := 0
+	for value, n := range stored {
+		st := parseStage(value)
+		if st == StageUnknown {
+			continue
+		}
+		if st == StageScanInfo && scanInfoSkipped.Load() {
+			st = StageDataManager
+		}
+		counts[st] += n
+		staged += n
+	}
+	return counts, max(filesTotal-staged, 0)
+}
+
+// StageValueKey and CVDBSkipTag (with KeyNoCVMatch) expose the stored names a
+// backend needs to count stages itself (tracker #72).
+const (
+	StageValueKey = customValueKey
+	CVDBSkipTag   = cvdbSkipTag
+)
+
 // SetStage writes stage onto book explicitly.
 func SetStage(book *library.ComicBook, stage Stage) {
 	book.CustomValuesStore = library.SetCustomValue(book.CustomValuesStore, customValueKey, stage.String())

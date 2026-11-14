@@ -41,6 +41,23 @@ func (s *Server) handleGetWorkflowSummary(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// A backend that can count in SQL answers without loading every book, so
+	// the pipeline cards appear at once (tracker #72). Drill-ins and flags still
+	// use the full snapshot.
+	if counter, ok := s.backend.(library.StageCounter); ok {
+		if sc, err := counter.StageCounts(workflow.StageValueKey, workflow.KeyNoCVMatch, workflow.CVDBSkipTag); err == nil {
+			byStage, unstaged := workflow.CountStored(sc.Stages, sc.FilesTotal)
+			summary := WorkflowSummary{CVDBSkip: sc.CVDBSkip, CVNoMatch: sc.CVNoMatch, Unstaged: unstaged}
+			for _, st := range workflow.ActiveStages() {
+				summary.Stages = append(summary.Stages, WorkflowStageSummary{Stage: st.String(), Label: st.Label(), Count: byStage[st]})
+			}
+			s.writeJSON(w, http.StatusOK, summary)
+			return
+		} else {
+			log.Warn().Err(err).Msg("SQL stage counts failed; counting from the full snapshot")
+		}
+	}
+
 	entry, err := s.getOrBuildWorkflowCache()
 	if err != nil {
 		http.Error(w, "Failed to load books", http.StatusInternalServerError)

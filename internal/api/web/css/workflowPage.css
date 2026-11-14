@@ -158,6 +158,17 @@
 
 .workflow-result { margin-bottom: 1rem; }
 
+/* A stage that is working now (tracker #73): a bar and a done-of-total line. */
+.workflow-stage-activity:empty { display: none; }
+.workflow-stage-activity { margin: 0 0 0.5rem; }
+.workflow-stage-activity progress { display: block; width: 100%; height: 0.5rem; accent-color: var(--primary-color, #4f8cff); }
+.workflow-activity-text { display: block; margin-top: 0.25rem; font-size: 0.85rem; color: var(--text-secondary); }
+.workflow-stage.is-working { border-color: var(--primary-color, #4f8cff); }
+@media (prefers-reduced-motion: no-preference) {
+    .workflow-stage.is-working { animation: workflow-working-pulse 2s ease-in-out infinite; }
+}
+@keyframes workflow-working-pulse { 50% { box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.25); } }
+
 @media (max-width: 700px) {
     .workflow-page { padding: 1rem; }
     .workflow-stage { flex-basis: 100%; border-right: none; border-bottom: 1px solid var(--border-color); }

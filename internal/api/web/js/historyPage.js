@@ -250,11 +250,24 @@ class HistoryPage {
                 body: JSON.stringify({ field, locked }),
             });
             if (!res.ok) throw new Error((await res.text()).trim() || res.status);
-            this.message = '';
+            this.notify(`${locked ? 'Locked' : 'Unlocked'} ${field}.`, true);
         } catch (e) {
-            this.message = `Could not ${locked ? 'lock' : 'unlock'} ${field}: ${e.message || e}`;
+            this.notify(`Could not ${locked ? 'lock' : 'unlock'} ${field}: ${e.message || e}`, false);
         }
         await this.openUndo(u.entry.id);
+    }
+
+    // bookLabel names a book for a message, from any loaded entry for it.
+    bookLabel(bookId) {
+        const e = this.entries.find(x => x.book_id === bookId);
+        return e ? `${e.series || e.book_id}${e.number ? ' #' + e.number : ''}` : 'the book';
+    }
+
+    // notify shows the result as a toast, which stays visible wherever the
+    // page is scrolled, and keeps the inline message for the record.
+    notify(text, ok) {
+        this.message = text;
+        if (typeof dialogs !== 'undefined') dialogs.toast(text, ok ? 'success' : 'error', ok ? 5000 : 8000);
     }
 
     async applyUndo() {
@@ -266,11 +279,13 @@ class HistoryPage {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ entry_id: u.entry.id, fields, apply: true, force: u.force }),
             });
-            this.message = res.ok
-                ? `Restored ${fields.length} field${fields.length === 1 ? '' : 's'}.`
-                : `Could not undo: ${(await res.text()).trim() || res.status}`;
+            if (res.ok) {
+                this.notify(`Restored ${fields.length} field${fields.length === 1 ? '' : 's'} on ${this.bookLabel(u.entry.book_id)}.`, true);
+            } else {
+                this.notify(`Could not undo: ${(await res.text()).trim() || res.status}`, false);
+            }
         } catch (e) {
-            this.message = 'Could not undo (network error).';
+            this.notify('Could not undo (network error).', false);
         }
         this.undo = null;
         await this.reload(true);
@@ -291,12 +306,14 @@ class HistoryPage {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ book_id: bookId, stage }),
             });
-            this.message = res.ok
-                ? `Book reset to "${stage}".`
-                : `Could not roll back: ${(await res.text()).trim() || res.status}`;
+            if (res.ok) {
+                this.notify(`Sent ${this.bookLabel(bookId)} back to ${stage}. The pipeline runs it again from there.`, true);
+            } else {
+                this.notify(`Could not roll back: ${(await res.text()).trim() || res.status}`, false);
+            }
         } catch (e) {
             console.error('Rollback failed:', e);
-            this.message = 'Could not roll back (network error).';
+            this.notify('Could not roll back (network error).', false);
         }
         await this.reload(true);
     }

@@ -248,6 +248,14 @@ func (b *SQLiteBackend) GetAllBooks() ([]library.ComicBook, error) {
 	return b.db.GetAllBooks()
 }
 
+// StageCounts counts books per workflow stage in SQL (library.StageCounter).
+func (b *SQLiteBackend) StageCounts(stageKey, noCVMatchKey, cvdbSkipTag string) (library.StageCounts, error) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	return b.db.StageCounts(stageKey, noCVMatchKey, cvdbSkipTag)
+}
+
 // FindListByID finds a list by its ID.
 func (b *SQLiteBackend) FindListByID(id string) (*library.ComicListItem, error) {
 	b.mu.RLock()

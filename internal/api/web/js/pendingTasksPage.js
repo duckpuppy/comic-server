@@ -170,8 +170,10 @@ class PendingTasksPage {
         try {
             const res = await fetch('/api/scrape/cancel', { method: 'POST' });
             if (!res.ok && res.status !== 409) throw new Error((await res.text()).trim() || `HTTP ${res.status}`);
+            dialogs.toast(res.status === 409 ? 'The job had already finished.' : 'Stopping the scrape job. Books it finished keep their results.', 'success');
         } catch (e) {
             this.error = `Cancel failed: ${e.message}`;
+            dialogs.toast(this.error, 'error', 8000);
         }
         this.cancelling = false;
         await this.load();

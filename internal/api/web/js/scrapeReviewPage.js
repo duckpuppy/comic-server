@@ -360,6 +360,7 @@ class ScrapeReviewPage {
             return;
         }
         this.busy.delete(bookId);
+        dialogs.toast('Match applied.', 'success');
         await this.load();
         this.render();
     }
