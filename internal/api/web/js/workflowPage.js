@@ -62,6 +62,7 @@ class WorkflowPage {
         // (tracker #73): { stage: { done, total } }.
         this.activity = {};
         this.activityTimer = null;
+        this.inPlaceBusy = false; // checking which To Move books already sit in place
     }
 
     // activityHtml is the "working" line of one stage card: a bar and a
@@ -385,7 +386,8 @@ class WorkflowPage {
                     <div class="workflow-card-actions">
                         <button class="btn btn-secondary workflow-view-btn" data-stage="${s.stage}" data-label="${this.escapeAttr(s.label)}" ${s.count === 0 ? 'disabled' : ''}>View</button>
                         ${isToMove ? `
-                        <button class="btn btn-primary" id="workflow-organize-btn" ${s.count === 0 ? 'disabled' : ''}>Organize</button>` : ''}
+                        <button class="btn btn-primary" id="workflow-organize-btn" ${s.count === 0 ? 'disabled' : ''}>Organize</button>
+                        <button class="btn btn-secondary" id="workflow-in-place-btn" title="Move books that already sit at their planned path on to Organized. No file is touched." ${s.count === 0 || running || this.inPlaceBusy ? 'disabled' : ''}>${this.inPlaceBusy ? 'Checking…' : 'Advance books already in place'}</button>` : ''}
                         ${btnId ? `
                         <button class="btn btn-primary" id="${btnId}" data-stage="${s.stage}" ${running || s.count === 0 ? 'disabled' : ''}>
                             ${running ? 'Running…' : labelFor[s.stage]}
@@ -989,6 +991,8 @@ class WorkflowPage {
 
         const organizeBtn = document.getElementById('workflow-organize-btn');
         if (organizeBtn) organizeBtn.addEventListener('click', () => router.navigate('/organize'));
+        const inPlaceBtn = document.getElementById('workflow-in-place-btn');
+        if (inPlaceBtn) inPlaceBtn.addEventListener('click', () => this.advanceInPlace());
     }
 
     // Preview, confirm, then apply a relink of every file_missing book
@@ -1141,6 +1145,42 @@ class WorkflowPage {
             this.lastResult = `Failed: ${error.message}`;
         } finally {
             this.running = null;
+            this.render();
+            this.attachListeners();
+        }
+    }
+
+    // advanceInPlace moves To Move books that already sit exactly where the
+    // Organizer profile would put them on to Organized. It asks for a count
+    // first, then for a confirmation. No file is moved, copied or trashed.
+    async advanceInPlace() {
+        if (this.inPlaceBusy) return;
+        this.inPlaceBusy = true;
+        this.render();
+        this.attachListeners();
+        try {
+            const res = await fetch('/api/library/workflow/in-place-preview');
+            const text = await res.text();
+            if (!res.ok) throw new Error(friendlyErrorText(res, text, 'Could not check the books'));
+            const p = JSON.parse(text);
+            if (p.in_place === 0) {
+                dialogs.toast(`None of the ${p.to_move} To Move books sit at their planned path yet (profile: ${p.profile}).`, 'info', 8000);
+                return;
+            }
+            const sample = (p.examples || []).length ? `\n\nFor example:\n${p.examples.join('\n')}` : '';
+            const ok = await dialogs.confirm({
+                title: 'Advance books already in place',
+                message: `${p.in_place} of ${p.to_move} books already sit at the path the "${p.profile}" profile plans. They move on to Organized. No file is touched. ${p.need_move} still need a real move${p.other ? ` and ${p.other} are excluded or blocked` : ''}; they stay at To Move.${sample}`,
+                confirmLabel: `Advance ${p.in_place} books`,
+            });
+            if (!ok) return;
+            this.inPlaceBusy = false;
+            await this.runAction('to_move', '/api/library/workflow/in-place-apply', r =>
+                `Moved ${r.advanced} of ${r.in_place} books on to Organized.${r.errors && r.errors.length ? ` ${r.errors.length} problem(s): ${r.errors[0]}` : ''}`);
+        } catch (error) {
+            dialogs.toast(`Could not advance the books: ${error.message}`, 'error', 8000);
+        } finally {
+            this.inPlaceBusy = false;
             this.render();
             this.attachListeners();
         }
