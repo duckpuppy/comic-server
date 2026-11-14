@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -199,7 +201,13 @@ func (c *Client) FetchVolumeIssues(ctx context.Context, volumeCVID int) ([]Issue
 }
 
 // SearchVolumes searches ComicVine for volumes matching a query string.
+//
+// A blank query fails at once without a request. ComicVine answers it with
+// error 101 and it still uses up a request slot.
 func (c *Client) SearchVolumes(ctx context.Context, query string) ([]Volume, error) {
+	if strings.TrimSpace(query) == "" {
+		return nil, errors.New("empty search name: the book has no series name")
+	}
 	params := url.Values{
 		"query":      {query},
 		"resources":  {"volume"},

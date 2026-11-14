@@ -593,6 +593,9 @@ func TestHasNameEvidence(t *testing.T) {
 		{"Batman", "Detective Comics", false},
 		{"Moon Knight", "Knight Rider", true}, // 1 of 2 words is exactly half: kept on purpose, a real series may drop a word
 		{"", "Batman", false},
+		{"Concerned - The Half-Life and Death of Gordon Frohman", "The Life and Death of Toyo Harada", false}, // only "the", "and", "of" and two real words shared
+		{"DCP Archive Edition - The Complete Fifty-Two", "City Hunter: Complete Edition", false},
+		{"The", "The", true}, // all filler: still compared as written
 		{"Amazing Spider-Man Annual Special", "Amazing Spider-Man", true},
 		{"Grimm Fairy Tales Presents Realm War", "Marvel Zombies", false},
 	}

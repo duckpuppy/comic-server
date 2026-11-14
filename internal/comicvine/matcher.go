@@ -96,11 +96,11 @@ func SelectIssue(issueNumber string, issues []Issue) *Issue {
 // name has nothing to do with the book (a one-word series matched to an
 // unrelated volume).
 func hasNameEvidence(bookName, volumeName string) bool {
-	bookWords := splitNameWords(bookName)
+	bookWords := significantWords(splitNameWords(bookName))
 	if len(bookWords) == 0 {
 		return false
 	}
-	volWords := splitNameWords(volumeName)
+	volWords := significantWords(splitNameWords(volumeName))
 	matched := 0
 	for _, w := range bookWords {
 		if idx := indexOf(volWords, w); idx >= 0 {
@@ -109,6 +109,30 @@ func hasNameEvidence(bookName, volumeName string) bool {
 		}
 	}
 	return matched >= 1 && matched*2 >= len(bookWords)
+}
+
+// nameFillerWords are small words that say nothing about which series a name
+// belongs to. "the", "and" and "of" would otherwise let two unrelated titles
+// look half alike ("The Half-Life and Death of Gordon Frohman" against "The
+// Life and Death of Toyo Harada").
+var nameFillerWords = map[string]bool{
+	"the": true, "a": true, "an": true, "and": true, "of": true, "in": true,
+	"on": true, "to": true, "for": true, "at": true, "by": true, "with": true,
+}
+
+// significantWords drops the filler words. A name made only of filler words
+// keeps them, so it can still be compared.
+func significantWords(words []string) []string {
+	out := make([]string, 0, len(words))
+	for _, w := range words {
+		if !nameFillerWords[w] {
+			out = append(out, w)
+		}
+	}
+	if len(out) == 0 {
+		return words
+	}
+	return out
 }
 
 func assignConfidence(results []MatchResult) {

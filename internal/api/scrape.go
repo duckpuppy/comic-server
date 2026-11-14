@@ -26,11 +26,13 @@ type scrapeRequest struct {
 }
 
 type scrapeRequestOptions struct {
-	AutoOnly    bool `json:"auto_only"`
-	Rescrape    bool `json:"rescrape"`
-	DryRun      bool `json:"dry_run"`
-	BatchSize   int  `json:"batch_size"`
-	CoverVerify bool `json:"cover_verify"`
+	AutoOnly  bool `json:"auto_only"`
+	Rescrape  bool `json:"rescrape"`
+	DryRun    bool `json:"dry_run"`
+	BatchSize int  `json:"batch_size"`
+	// CoverVerify: left out, the "verify covers" setting decides (on by
+	// default). An explicit true or false overrides it.
+	CoverVerify *bool `json:"cover_verify"`
 	// RetryHeldBack includes, in a whole-library scrape, books held back
 	// for a past outcome (comic-server-fohc). CVDBSKIP books stay out.
 	RetryHeldBack bool `json:"retry_held_back"`
@@ -84,12 +86,16 @@ func (s *Server) handleScrapeStart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jobID := fmt.Sprintf("api-%d", time.Now().UnixNano())
+	coverVerify := s.scrapeCoverVerifyOn()
+	if req.Options.CoverVerify != nil {
+		coverVerify = *req.Options.CoverVerify
+	}
 	opts := comicvine.ScrapeOptions{
 		FastRescrape: req.Options.Rescrape,
 		AutoOnly:     req.Options.AutoOnly,
 		DryRun:       req.Options.DryRun,
 		BatchSize:    req.Options.BatchSize,
-		CoverVerify:  req.Options.CoverVerify,
+		CoverVerify:  coverVerify,
 	}
 
 	s.wsHub.Broadcast(ws.EventScrapeStarted, map[string]any{
@@ -233,6 +239,12 @@ func selectScrapeBooks(allBooks []library.ComicBook, bookIDs []string, rescrape 
 	var out []*library.ComicBook
 	for i := range allBooks {
 		if comicvine.HasComicVineTag(allBooks[i].CustomValuesStore) && !rescrape {
+			continue
+		}
+		if allBooks[i].FilePath == "" {
+			// A Wanted placeholder or paper copy: nothing to read a name or
+			// cover from. A whole-library scrape once sent 1529 of these
+			// to ComicVine as empty searches.
 			continue
 		}
 		out = append(out, &allBooks[i])

@@ -17,8 +17,9 @@ import "fmt"
 // to server_misc_settings (comic-server-r769). Version 14 adds
 // count_covered_as_owned (tracker #46), version 15 adds
 // local_identity_recheck (tracker #47), version 16 adds export_path
-// (tracker #48), version 17 adds devices.address (tracker #56).
-const schemaVersion = 17
+// (tracker #48), version 17 adds devices.address (tracker #56),
+// version 18 adds scrape_cover_verify (on by default).
+const schemaVersion = 18
 
 // SchemaVersion is the newest schema this build understands; restore refuses a backup above it.
 const SchemaVersion = schemaVersion
@@ -118,6 +119,11 @@ func (db *DB) initSchema() error {
 		if version < 17 {
 			if err := db.migrateV16ToV17(); err != nil {
 				return fmt.Errorf("migrate v16→v17: %w", err)
+			}
+		}
+		if version < 18 {
+			if err := db.migrateV17ToV18(); err != nil {
+				return fmt.Errorf("migrate v17→v18: %w", err)
 			}
 		}
 	}
@@ -375,6 +381,14 @@ func (db *DB) migrateV15ToV16() error {
 		return fmt.Errorf("migrate v15→v16: %w", err)
 	}
 	return db.addExportPathColumn()
+}
+
+// migrateV17ToV18 adds scrape_cover_verify to server_misc_settings.
+func (db *DB) migrateV17ToV18() error {
+	if err := db.createServerMiscSettingsTable(); err != nil {
+		return fmt.Errorf("migrate v17→v18: %w", err)
+	}
+	return db.addScrapeCoverVerifyColumn()
 }
 
 // migrateV16ToV17 adds devices.address, the optional manual address

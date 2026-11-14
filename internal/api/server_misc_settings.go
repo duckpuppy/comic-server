@@ -31,6 +31,10 @@ type ServerMiscSettingsResponse struct {
 	// ExportPathFallback is read-only (GET only): the config file / env
 	// value that is in use while ExportPath is empty.
 	ExportPathFallback string `json:"export_path_fallback,omitempty"`
+	// ScrapeCoverVerify: the web Scrape button checks covers before it trusts
+	// a match. On by default. A pointer so a PUT that leaves it out keeps the
+	// stored value instead of turning it off.
+	ScrapeCoverVerify *bool `json:"scrape_cover_verify"`
 }
 
 // handleServerMiscSettings serves GET/PUT /api/settings/server-misc.
@@ -56,8 +60,11 @@ func (s *Server) handleGetServerMiscSettings(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "Failed to load server misc settings", http.StatusInternalServerError)
 		return
 	}
-	resp := ServerMiscSettingsResponse{IgnoreDevices: []string{}}
+	on := true
+	resp := ServerMiscSettingsResponse{IgnoreDevices: []string{}, ScrapeCoverVerify: &on}
 	if stored != nil {
+		v := stored.ScrapeCoverVerify
+		resp.ScrapeCoverVerify = &v
 		resp.CBZConvertEnabled = stored.CBZConvertEnabled
 		resp.IgnoreDevices = stored.IgnoreDevices
 		resp.AutoSync = stored.AutoSync
@@ -109,6 +116,11 @@ func (s *Server) handlePutServerMiscSettings(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
+	if req.ScrapeCoverVerify == nil {
+		v := s.scrapeCoverVerifyOn()
+		req.ScrapeCoverVerify = &v
+	}
+
 	before := s.countCoveredAsOwned()
 	if err := s.configDB.UpsertServerMiscSettings(configdb.ServerMiscSettings{
 		CBZConvertEnabled:    req.CBZConvertEnabled,
@@ -117,6 +129,7 @@ func (s *Server) handlePutServerMiscSettings(w http.ResponseWriter, r *http.Requ
 		CountCoveredAsOwned:  req.CountCoveredAsOwned,
 		LocalIdentityRecheck: req.LocalIdentityRecheck,
 		ExportPath:           req.ExportPath,
+		ScrapeCoverVerify:    *req.ScrapeCoverVerify,
 	}); err != nil {
 		log.Error().Err(err).Msg("Failed to save server misc settings")
 		http.Error(w, "Failed to save server misc settings", http.StatusInternalServerError)
@@ -146,6 +159,19 @@ func (s *Server) handlePutServerMiscSettings(w http.ResponseWriter, r *http.Requ
 		req.IgnoreDevices = []string{}
 	}
 	s.writeJSON(w, http.StatusOK, req)
+}
+
+// scrapeCoverVerifyOn reads the "verify covers when scraping" setting. On
+// when config.db has never been given settings.
+func (s *Server) scrapeCoverVerifyOn() bool {
+	if s.configDB == nil {
+		return true
+	}
+	st, err := s.configDB.GetServerMiscSettings()
+	if err != nil || st == nil {
+		return true
+	}
+	return st.ScrapeCoverVerify
 }
 
 // countCoveredAsOwned reads the "count covered issues as owned" setting

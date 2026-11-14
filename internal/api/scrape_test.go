@@ -530,3 +530,19 @@ func TestScrapeReviewList_OffersOnlyIssueOfOneIssueVolume(t *testing.T) {
 		}
 	}
 }
+
+func TestSelectScrapeBooks_WholeLibrarySkipsBooksWithoutAFile(t *testing.T) {
+	books := []library.ComicBook{
+		{ID: "real", FilePath: "/comics/A/A #1.cbz"},
+		{ID: "wanted"}, // placeholder: no file
+	}
+	got := selectScrapeBooks(books, nil, false)
+	if len(got) != 1 || got[0].ID != "real" {
+		t.Fatalf("selected %d books, want only the one with a file", len(got))
+	}
+	// Picking a book by id still works, so a user can aim at one on purpose.
+	got = selectScrapeBooks(books, []string{"wanted"}, false)
+	if len(got) != 1 || got[0].ID != "wanted" {
+		t.Errorf("explicit id not honoured: %v", got)
+	}
+}
