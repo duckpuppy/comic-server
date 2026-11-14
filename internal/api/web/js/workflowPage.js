@@ -58,6 +58,60 @@ class WorkflowPage {
         // Count fill / format detection preview (comic-server-6y63). Loaded
         // only on click: each GET scans the whole library.
         this.toolPreview = null; // { kind, data, error, loading, applying } or null
+        // Stages working right now, from GET /api/library/workflow/activity
+        // (tracker #73): { stage: { done, total } }.
+        this.activity = {};
+        this.activityTimer = null;
+    }
+
+    // activityHtml is the "working" line of one stage card: a bar and a
+    // done-of-total counter. Empty when the stage is idle.
+    activityHtml(stage) {
+        const a = this.activity[stage];
+        if (!a) return '';
+        const known = a.total > 0;
+        const pct = known ? Math.min(100, Math.round((a.done / a.total) * 100)) : 0;
+        const text = known ? `Working: ${a.done} of ${a.total} (${pct}%)` : 'Working…';
+        return `<progress ${known ? `value="${a.done}" max="${a.total}"` : ''} aria-label="${this.escapeAttr(text)}"></progress><span class="workflow-activity-text">${this.escapeHtml(text)}</span>`;
+    }
+
+    // drawActivity refreshes the counters in place, without a full render.
+    drawActivity() {
+        document.querySelectorAll('[data-activity]').forEach(el => {
+            el.innerHTML = this.activityHtml(el.dataset.activity);
+        });
+    }
+
+    // startActivityPolling asks the server every few seconds what is running.
+    // It stops by itself once the page is no longer on screen. A stage that
+    // starts or ends redraws the cards (button state) and, on an end, reloads
+    // the counts.
+    startActivityPolling() {
+        clearInterval(this.activityTimer);
+        const tick = async () => {
+            if (!document.querySelector('.workflow-page')) { clearInterval(this.activityTimer); return; }
+            if (document.hidden) return;
+            let list;
+            try {
+                const res = await fetch('/api/library/workflow/activity');
+                if (!res.ok) return;
+                list = (await res.json()).activities || [];
+            } catch (e) { return; }
+            const next = {};
+            list.forEach(a => { next[a.stage] = a; });
+            const before = Object.keys(this.activity).sort().join(',');
+            const ended = Object.keys(this.activity).some(k => !next[k]);
+            this.activity = next;
+            if (before !== Object.keys(next).sort().join(',')) {
+                if (ended && !this.running) await this.load();
+                this.render();
+                this.attachListeners();
+            } else {
+                this.drawActivity();
+            }
+        };
+        tick();
+        this.activityTimer = setInterval(tick, 3000);
     }
 
     async init(ctx) {
@@ -72,6 +126,7 @@ class WorkflowPage {
         // buttons were dead until the whole reload below finished.
         this.render();
         this.attachListeners();
+        this.startActivityPolling();
         await this.loadSummary();
         if (ctx && ctx.aborted) return;
         this.render(); // pipeline shows as soon as the summary is in
@@ -315,16 +370,18 @@ class WorkflowPage {
         for (const s of this.summary.stages) {
             step++;
             const btnId = actionFor[s.stage];
-            const running = this.running === s.stage;
+            const working = !!this.activity[s.stage];
+            const running = this.running === s.stage || working;
             const isToMove = s.stage === 'to_move';
             const terminal = s.stage === 'organized';
             const cls = terminal ? 'is-terminal' : (s.count > 0 ? 'is-active' : 'is-empty');
             html += `
-                <div class="workflow-stage ${cls}" role="listitem" data-stage-cell="${this.escapeAttr(s.stage)}">
+                <div class="workflow-stage ${cls}${working ? ' is-working' : ''}" role="listitem" data-stage-cell="${this.escapeAttr(s.stage)}">
                     <div class="workflow-stage-step">${step}</div>
                     <h2 class="workflow-stage-name">${this.escapeHtml(s.label)}</h2>
                     <p class="workflow-stage-desc">${this.escapeHtml(descFor[s.stage] || '')}</p>
                     <p class="workflow-stage-count">${s.count}</p>
+                    <div class="workflow-stage-activity" data-activity="${this.escapeAttr(s.stage)}" aria-live="polite">${this.activityHtml(s.stage)}</div>
                     <div class="workflow-card-actions">
                         <button class="btn btn-secondary workflow-view-btn" data-stage="${s.stage}" data-label="${this.escapeAttr(s.label)}" ${s.count === 0 ? 'disabled' : ''}>View</button>
                         ${isToMove ? `
@@ -339,6 +396,11 @@ class WorkflowPage {
         }
         html += '</div>';
 
+        if (this.lastResult && this.lastResult !== this.toastedResult) {
+            // The inline panel can be off screen; a toast shows the result at once.
+            dialogs.toast(this.lastResult, /^Failed/.test(this.lastResult) ? 'error' : 'success', 7000);
+        }
+        this.toastedResult = this.lastResult;
         if (this.lastResult) {
             html += `<div class="panel workflow-result"><p>${this.escapeHtml(this.lastResult)}</p></div>`;
         }

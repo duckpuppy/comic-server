@@ -86,7 +86,11 @@ func (s *Server) runScanInfoOverBooks(books []*library.ComicBook, detector *scan
 	var toUpdate []*library.ComicBook
 	rulesets := s.loadWorkflowRulesets()
 
-	for _, book := range books {
+	progress, endActivity := s.beginActivity("scan_info", len(books))
+	defer endActivity()
+
+	for i, book := range books {
+		progress(i)
 		tag, ok := detector.DetectTag(toScanInfoBook(book))
 		if !ok {
 			result.Skipped++

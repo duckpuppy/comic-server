@@ -152,7 +152,10 @@ func (s *Server) handleWriteMetadata(w http.ResponseWriter, r *http.Request) {
 
 	result.Processed = len(books)
 	var toUpdate []*library.ComicBook
-	for _, book := range books {
+	progress, endActivity := s.beginActivity("write_metadata", len(books))
+	defer endActivity()
+	for i, book := range books {
+		progress(i)
 		updated, err := cbzconvert.UpdateMetadata(book, s.resolveBookFilePath, tr, cbzconvert.Options{EmbedComicBook: embed})
 		if err != nil {
 			log.Error().Err(err).Str("book_id", book.ID).Str("file_path", book.FilePath).Msg("write-metadata failed for book")
