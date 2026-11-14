@@ -119,3 +119,37 @@ func TestServerMiscSettings_CountCoveredAsOwnedRoundTripAndDefaultOff(t *testing
 		t.Error("setting not cleared")
 	}
 }
+
+func TestServerMiscSettings_ScrapeCoverVerifyDefaultsOnAndKeepsWhenLeftOut(t *testing.T) {
+	s := newServerMiscSettingsTestServer(t)
+	if !s.scrapeCoverVerifyOn() {
+		t.Fatal("must default to on")
+	}
+	put := func(body string) {
+		w := httptest.NewRecorder()
+		s.handleServerMiscSettings(w, httptest.NewRequest(http.MethodPut, "/api/settings/server-misc", bytes.NewReader([]byte(body))))
+		if w.Code != http.StatusOK {
+			t.Fatalf("put: %d %s", w.Code, w.Body.String())
+		}
+	}
+	put(`{"scrape_cover_verify":false}`)
+	if s.scrapeCoverVerifyOn() {
+		t.Error("setting not turned off")
+	}
+	// A save that does not mention the setting must not change it.
+	put(`{"auto_sync":true}`)
+	if s.scrapeCoverVerifyOn() {
+		t.Error("a PUT that left the setting out turned it back on")
+	}
+	put(`{"scrape_cover_verify":true}`)
+	if !s.scrapeCoverVerifyOn() {
+		t.Error("setting not turned on")
+	}
+	w := httptest.NewRecorder()
+	s.handleServerMiscSettings(w, httptest.NewRequest(http.MethodGet, "/api/settings/server-misc", nil))
+	var got ServerMiscSettingsResponse
+	_ = json.Unmarshal(w.Body.Bytes(), &got)
+	if got.ScrapeCoverVerify == nil || !*got.ScrapeCoverVerify {
+		t.Errorf("GET = %+v", got)
+	}
+}

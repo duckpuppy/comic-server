@@ -46,3 +46,16 @@ func TestServerMiscSettings_UpsertAndGet(t *testing.T) {
 		t.Errorf("GetServerMiscSettings after second upsert = %+v, want CBZConvertEnabled=false, empty IgnoreDevices", got2)
 	}
 }
+
+func TestServerMiscSettings_ScrapeCoverVerifyRoundTrips(t *testing.T) {
+	db := newTestDB(t)
+	for _, want := range []bool{true, false} {
+		if err := db.UpsertServerMiscSettings(ServerMiscSettings{ScrapeCoverVerify: want}); err != nil {
+			t.Fatal(err)
+		}
+		got, err := db.GetServerMiscSettings()
+		if err != nil || got == nil || got.ScrapeCoverVerify != want {
+			t.Errorf("got %+v, %v; want ScrapeCoverVerify=%v", got, err, want)
+		}
+	}
+}

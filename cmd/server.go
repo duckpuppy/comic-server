@@ -1080,6 +1080,7 @@ func applyServerMiscSettings(cfg *config.Config, configDB *configdb.DB, configPa
 			CBZConvertEnabled: cfg.Server.CBZConvert.Enabled,
 			IgnoreDevices:     cfg.Server.IgnoreDevices,
 			AutoSync:          cfg.Server.AutoSync,
+			ScrapeCoverVerify: true,
 		}
 		if err := configDB.UpsertServerMiscSettings(seed); err != nil {
 			return fmt.Errorf("migrate server misc settings to config database: %w", err)

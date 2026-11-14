@@ -253,3 +253,16 @@ func TestGet_RateLimitReplyOpensCircuitAndIsPaced(t *testing.T) {
 		})
 	}
 }
+
+func TestSearchVolumes_BlankQueryFailsWithoutARequest(t *testing.T) {
+	called := false
+	client := testClient(t, func(w http.ResponseWriter, r *http.Request) { called = true })
+	for _, q := range []string{"", "   "} {
+		if _, err := client.SearchVolumes(context.Background(), q); err == nil {
+			t.Errorf("SearchVolumes(%q) = nil error, want one", q)
+		}
+	}
+	if called {
+		t.Error("a blank search sent a request to ComicVine")
+	}
+}
