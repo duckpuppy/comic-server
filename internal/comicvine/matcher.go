@@ -86,6 +86,31 @@ func SelectIssue(issueNumber string, issues []Issue) *Issue {
 	return nil
 }
 
+// hasNameEvidence reports whether a candidate volume's name shares enough
+// words with the book's series name to be trusted without a review: at least
+// half of the book's words appear in the volume name, and at least one does.
+//
+// The overall score cannot tell this on its own. The issue-number check adds
+// +100 to any volume that could have that issue, so a lone candidate, or one
+// beating a rival that cannot have the issue, scores "high" even when its
+// name has nothing to do with the book (a one-word series matched to an
+// unrelated volume).
+func hasNameEvidence(bookName, volumeName string) bool {
+	bookWords := splitNameWords(bookName)
+	if len(bookWords) == 0 {
+		return false
+	}
+	volWords := splitNameWords(volumeName)
+	matched := 0
+	for _, w := range bookWords {
+		if idx := indexOf(volWords, w); idx >= 0 {
+			matched++
+			volWords = append(volWords[:idx], volWords[idx+1:]...)
+		}
+	}
+	return matched >= 1 && matched*2 >= len(bookWords)
+}
+
 func assignConfidence(results []MatchResult) {
 	if len(results) == 0 {
 		return
