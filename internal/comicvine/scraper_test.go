@@ -547,3 +547,58 @@ func TestScrape_CancelledByPersonEndsAsCancelled(t *testing.T) {
 		t.Fatalf("job2 = %+v, want %q", job2, JobStatusFailed)
 	}
 }
+
+// A lone candidate scores "high" on the issue-number check alone. When its
+// name shares no word with the book, it must go to review, not be written.
+func TestScrape_LoneCandidateWithUnrelatedNameGoesToReview(t *testing.T) {
+	fx := &scrapeFixture{
+		searchResults: map[string][]Volume{
+			"Batman": {{ID: 7, Name: "Detective Comics", StartYear: "2016", Publisher: Publisher{Name: "DC Comics"}, CountOfIssues: 85}},
+		},
+		issuesByVolume: map[int][]Issue{7: {{ID: 701, IssueNumber: "1"}}},
+		issueDetails:   map[int]*IssueDetail{701: {ID: 701, IssueNumber: "1", Name: "Wrong"}},
+	}
+	client, _ := newScrapeFixtureClient(t, fx)
+	cache := testCache(t)
+	backend := &fakeBackend{}
+	scraper := NewScraper(client, cache, backend, DefaultScraperConfig())
+
+	books := []*library.ComicBook{{ID: "book-1", FilePath: "Batman 001.cbz"}}
+	job, err := scraper.Scrape(context.Background(), "job-1", books, ScrapeOptions{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.PendingReview != 1 || len(backend.updated) != 0 {
+		t.Errorf("job = %+v, writes = %d; want PendingReview=1 and no writes", job, len(backend.updated))
+	}
+
+	job2, err := scraper.Scrape(context.Background(), "job-2", books, ScrapeOptions{AutoOnly: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job2.Skipped != 1 || len(backend.updated) != 0 {
+		t.Errorf("auto-only job = %+v, writes = %d; want Skipped=1 and no writes", job2, len(backend.updated))
+	}
+}
+
+func TestHasNameEvidence(t *testing.T) {
+	cases := []struct {
+		book, vol string
+		want      bool
+	}{
+		{"Batman", "Batman", true},
+		{"Batman", "Batman: The Dark Knight Returns", true},
+		{"The Amazing Spider-Man", "Amazing Spider-Man", true},
+		{"Walking Dead Deluxe", "The Walking Dead Deluxe", true},
+		{"Batman", "Detective Comics", false},
+		{"Moon Knight", "Knight Rider", true}, // 1 of 2 words is exactly half: kept on purpose, a real series may drop a word
+		{"", "Batman", false},
+		{"Amazing Spider-Man Annual Special", "Amazing Spider-Man", true},
+		{"Grimm Fairy Tales Presents Realm War", "Marvel Zombies", false},
+	}
+	for _, c := range cases {
+		if got := hasNameEvidence(c.book, c.vol); got != c.want {
+			t.Errorf("hasNameEvidence(%q, %q) = %v, want %v", c.book, c.vol, got, c.want)
+		}
+	}
+}

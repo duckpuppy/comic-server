@@ -453,12 +453,21 @@ func (s *Scraper) scrapeOneBook(ctx context.Context, book *library.ComicBook, ca
 	best := scored[0]
 	jobLog(ctx, JobLogInfo, "Best match: %s", describeMatch(best))
 
-	if ambiguousCover || best.Confidence != ConfidenceHigh {
+	// A "high" score does not prove the name fits (see hasNameEvidence), so a
+	// top match whose name shares too few words with the book goes to review.
+	weakName := best.Confidence == ConfidenceHigh && !hasNameEvidence(parsed.Series, best.Volume.Name)
+	if weakName {
+		jobLog(ctx, JobLogInfo, "Best match name %q shares too few words with %q; sending to review", best.Volume.Name, parsed.Series)
+	}
+
+	if ambiguousCover || weakName || best.Confidence != ConfidenceHigh {
 		if opts.AutoOnly {
 			result.Status = BookStatusSkipped
 			reason := fmt.Sprintf("best match confidence %q below auto-only threshold", best.Confidence)
 			if ambiguousCover {
 				reason = "ambiguous cover match between top candidates"
+			} else if weakName {
+				reason = "best match name shares too few words with the book's series"
 			}
 			result.Error = reason
 			return result
