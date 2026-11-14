@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.78.0](https://github.com/duckpuppy/comic-server/compare/v1.77.2...v1.78.0) (2026-11-14)
+
+
+### Features
+
+* block adding watch-folder files while a CBZ conversion runs ([48b241f](https://github.com/duckpuppy/comic-server/commit/48b241f33d3d59a104c5f7dc0218b4f599fe8fe7))
+* block adding watch-folder files while a CBZ conversion runs ([d444dd5](https://github.com/duckpuppy/comic-server/commit/d444dd51143ccb7ae789e6f9a289b7e61fdf3f66))
+
+
+### Bug Fixes
+
+* send scrape matches with an unrelated name to review ([2fcb395](https://github.com/duckpuppy/comic-server/commit/2fcb3956a78067230ce6759f0ab386550fc0b54e))
+* send scrape matches with an unrelated name to review ([6e8d847](https://github.com/duckpuppy/comic-server/commit/6e8d8478759bf6a8e1025f20706af52e123f29e1))
+
 ## [1.77.2](https://github.com/duckpuppy/comic-server/compare/v1.77.1...v1.77.2) (2026-11-13)
 
 
