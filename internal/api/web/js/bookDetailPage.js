@@ -771,7 +771,7 @@ class BookDetailPage {
         if (type === 'textarea') {
             input = `<textarea ${attrs} rows="4">${this.escapeHtml(v)}</textarea>`;
         } else if (type === 'bool') {
-            return `<label class="bd-edit-check"><input type="checkbox" ${attrs} ${b[name] ? 'checked' : ''}> ${this.escapeHtml(label)}${this.lockToggle(name)}</label>`;
+            return `<div class="bd-edit-check"><label class="bd-edit-checklabel"><input type="checkbox" ${attrs} ${b[name] ? 'checked' : ''}> <span class="bd-edit-label">${this.escapeHtml(label)}</span></label>${this.lockToggle(name)}</div>`;
         } else if (BookDetailPage.EDIT_CHOICES[type]) {
             const opts = BookDetailPage.EDIT_CHOICES[type].slice();
             if (v && !opts.some(o => o[0] === v)) opts.push([v, v]); // keep a value the list does not know
@@ -783,28 +783,31 @@ class BookDetailPage {
                 : 'type="text"';
             input = `<input ${extra} ${attrs} value="${this.escapeHtml(v)}">`;
         }
-        return `<label class="bd-edit-field${type === 'textarea' ? ' bd-edit-wide' : ''}" for="${id}"><span>${this.escapeHtml(label)}${this.lockToggle(name)}</span>${input}</label>`;
+        return `<div class="bd-edit-field${type === 'textarea' ? ' bd-edit-wide' : ''}"><div class="bd-edit-head"><label class="bd-edit-label" for="${id}">${this.escapeHtml(label)}</label>${this.lockToggle(name)}</div>${input}</div>`;
     }
 
     // lockToggle is the small "lock against undo" checkbox beside a field
     // label (tracker #27). It saves at once, apart from the form's Save.
     lockToggle(name) {
         const locked = ((this.detail && this.detail.locked_fields) || []).includes(name);
-        return ` <span class="bd-lock" title="Lock: History undo will never change this field"><input type="checkbox" class="bd-lock-check" data-lock-field="${this.escapeHtml(name)}" ${locked ? 'checked' : ''} aria-label="Lock ${this.escapeHtml(name)} against undo"> 🔒</span>`;
+        return `<label class="bd-lock" title="${locked ? 'Locked: History undo never changes this field. Click to unlock.' : 'Lock this field so History undo never changes it.'}"><input type="checkbox" class="bd-lock-check" data-lock-field="${this.escapeHtml(name)}" ${locked ? 'checked' : ''} aria-label="Lock ${this.escapeHtml(name)} against undo"><span class="bd-lock-icon" aria-hidden="true">&#128274;</span></label>`;
     }
 
     renderEditForm(b) {
-        const groups = BookDetailPage.EDIT_GROUPS.map(([title, fields]) => `
-            <fieldset class="panel bd-edit-group">
+        const groups = BookDetailPage.EDIT_GROUPS.map(([title, fields], i) => `
+            <fieldset class="panel bd-edit-group" id="bd-edit-group-${i}">
                 <legend>${this.escapeHtml(title)}</legend>
                 <div class="bd-edit-grid">${fields.map(f => this.renderEditField(b, f)).join('')}</div>
             </fieldset>`).join('');
+        const nav = BookDetailPage.EDIT_GROUPS.map(([title], i) =>
+            `<button type="button" class="bd-edit-jump" data-group="${i}">${this.escapeHtml(title)}</button>`).join('');
         const note = this.detail.file
             ? 'Saving changes the library only. Fields that go into ComicInfo.xml mark the file out of date; use "Write metadata to file" to update it.'
             : 'Saving changes the library only.';
         return `
             <form id="bd-edit-form" class="bd-edit-form" novalidate>
-                <p class="empty-message">${note} Comma-separate lists such as writers and characters.</p>
+                <nav class="bd-edit-nav" aria-label="Sections">${nav}</nav>
+                <p class="bd-edit-note">${note} Comma-separate lists such as writers and characters.</p>
                 ${groups}
                 <div class="bd-edit-buttons">
                     <button type="submit" class="btn btn-primary" id="bd-edit-save" ${this.busy ? 'disabled' : ''}>Save</button>
@@ -836,7 +839,8 @@ class BookDetailPage {
         const form = document.getElementById('bd-edit-form');
         const bad = form && [...form.querySelectorAll('input[type=number]')].find(el => !el.checkValidity());
         if (bad) {
-            dialogs.toast(`${bad.closest('label').querySelector('span').textContent}: ${bad.validationMessage}`, 'error', 6000);
+            const badLabel = bad.closest('.bd-edit-field, .bd-edit-check');
+            dialogs.toast(`${(badLabel && badLabel.querySelector('.bd-edit-label') || { textContent: 'A field' }).textContent}: ${bad.validationMessage}`, 'error', 6000);
             bad.focus();
             return;
         }
@@ -872,6 +876,10 @@ class BookDetailPage {
     attachEditListeners() {
         document.querySelectorAll('.bd-lock-check').forEach(el => el.addEventListener('change', () =>
             this.setFieldLock(el.dataset.lockField, el.checked, el)));
+        document.querySelectorAll('.bd-edit-jump').forEach(btn => btn.addEventListener('click', () => {
+            const g = document.getElementById(`bd-edit-group-${btn.dataset.group}`);
+            if (g) g.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }));
         const form = document.getElementById('bd-edit-form');
         if (!form) return;
         form.addEventListener('submit', e => { e.preventDefault(); this.saveEdits(); });
