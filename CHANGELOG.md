@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.81.1](https://github.com/duckpuppy/comic-server/compare/v1.81.0...v1.81.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* lay out the book edit form so it is easy to read ([fc10e1a](https://github.com/duckpuppy/comic-server/commit/fc10e1ab0bc6a0aef0e2f228a83cf44c64eeda8d))
+* lay out the book edit form so it is easy to read ([e8a4d8d](https://github.com/duckpuppy/comic-server/commit/e8a4d8d659d11906bb0056e19df9830864a5accd))
+
 ## [1.81.0](https://github.com/duckpuppy/comic-server/compare/v1.80.0...v1.81.0) (2026-11-14)
 
 
